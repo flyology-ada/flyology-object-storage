@@ -44,7 +44,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketCors | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketInventoryConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketInventoryConfiguration | Get_Inventory_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketLocation | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

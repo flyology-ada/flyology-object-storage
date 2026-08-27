@@ -5092,6 +5092,139 @@ package Flyology.Object_Storage.Client.Buckets is
       Token      : access Flyology.Cancellation.Token;
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
       return Get_Bucket_Intelligent_Tiering_Result;
+   --  Shape of a terminal GetBucketInventoryConfiguration read.
+   --  @enum Get_Bucket_Inventory_Response_Available Modeled
+   --  response exists
+   --  @enum Get_Bucket_Inventory_Exchange_Failed No complete
+   --  response exists
+   type Get_Bucket_Inventory_Result_Kind is
+     (Get_Bucket_Inventory_Response_Available,
+      Get_Bucket_Inventory_Exchange_Failed);
+
+   --  Typed inventory configuration response or composable HTTP
+   --  failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Bucket_Inventory_Result is record
+      Kind        : Get_Bucket_Inventory_Result_Kind;
+      Failure     : Failure_Reason;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty;
+      Response    :
+        Low_Level.Get_Bucket_Inventory_Configuration_Outcome;
+      HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+      HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+      Detail      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  One bounded named inventory-configuration read with one
+   --  hidden HTTP child. It owns its signed request and response through
+   --  Finish.
+   type Get_Bucket_Inventory_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one named inventory-configuration read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose inventory configuration is
+   --  requested
+   --  @param Parameters Complete modeled identifier and owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established inventory
+   --  read
+   procedure Get_Inventory_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_With_ID_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Get_Bucket_Inventory_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one named inventory-configuration read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose inventory configuration is
+   --  requested
+   --  @param Parameters Complete modeled identifier and owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven inventory read
+   function Get_Inventory_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_With_ID_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Get_Bucket_Inventory_Operation;
+
+   --  Consume one terminal GetBucketInventoryConfiguration
+   --  operation.
+   --  @param Operation Terminal inventory read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Bucket_Inventory_Operation;
+      Result    : out Get_Bucket_Inventory_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one named inventory configuration by waiting on the same
+   --  owner-driven state machine used by composable callers.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose inventory configuration is
+   --  requested
+   --  @param Parameters Complete modeled identifier and owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Inventory_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_With_ID_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return Get_Bucket_Inventory_Result;
 
    --  Shape of a terminal PutBucketReplication mutation.
    --  @enum Put_Bucket_Replication_Response_Available Modeled response exists
@@ -9517,6 +9650,59 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Get_Bucket_Intelligent_Tiering_Operation);
+   --  @exclude
+   function Decode_Get_Bucket_Inventory_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Get_Bucket_Inventory_Result;
+
+   --  @exclude
+   function Normalize_Get_Bucket_Inventory_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Get_Bucket_Inventory_Result;
+
+   --  @exclude
+   package Get_Bucket_Inventory_Reads is new
+     Flyology.Object_Storage.Client.Bounded_REST_XML_Reads
+       (Result_Type       => Get_Bucket_Inventory_Result,
+        Operation_Name    => "GetBucketInventoryConfiguration",
+        Start_Exchange    =>
+          Low_Level.Get_Bucket_Inventory_Configuration,
+        Decode_Response   => Decode_Get_Bucket_Inventory_Response,
+        Normalize_Failure => Normalize_Get_Bucket_Inventory_Failure);
+
+   --  @exclude
+   type Get_Bucket_Inventory_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : Get_Bucket_Inventory_Reads.State (Set);
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Get_Bucket_Inventory_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Bucket_Inventory_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Inventory_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Inventory_Operation);
 
    --  @exclude
    type Put_Bucket_Replication_Operation

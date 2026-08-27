@@ -155,3 +155,13 @@ read-only classification, typed fixtures, and exact valid XML. Seven reviewed
 lanes plus 30 generated XML negatives execute 37 signed socket cases; the
 strict Intelligent-Tiering codec and small typed adapter are the only new
 operation-specific mechanics.
+
+GetBucketInventoryConfiguration is the next shared-family consumer. The model
+supplies its `inventory` target, required identifier, complete 21-shape
+closure, nested destination and encryption graph, exact boolean and enum
+domains, optional-field list, and routine negative cases. The reviewed
+manifest supplies the public name, read-only absence mapping, caller-owned
+endpoint exclusion, typed fixtures, and exact valid XML. Seven reviewed lanes
+plus 38 generated XML negatives execute 45 signed socket cases; the strict
+inventory codec and small typed result adapter are the only operation-specific
+mechanics.

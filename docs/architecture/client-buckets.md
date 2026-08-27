@@ -196,6 +196,21 @@ ceiling. The limited constructor, operation-last restart, typed `Finish`, and
 synchronous wait share the same state machine; this remains a client-only wire
 boundary.
 
+`Client.Buckets.Get_Inventory_Configuration` reads one named inventory
+configuration through the shared bounded REST/XML family. Its exact preparer
+binds the required `id` query and optional expected-owner header to
+GetBucketInventoryConfiguration. The typed response preserves the required
+destination, enabled state, identifier, included-version selection, and
+schedule; optional filter and ordered optional fields; and the complete nested
+S3 destination, format, prefix, account, and encryption graph. Enum domains
+remain exact, including all 16 optional-field values. The pinned structural
+model permits SSE-S3 and SSE-KMS independently, so the decoder does not invent
+a one-of rule. It also records S3 Express endpoint selection as an intentional
+exclusion: callers continue to supply the exact origin and addressing style.
+The limited constructor, operation-last restart, typed `Finish`, and
+synchronous wait share the same state machine; this remains a client-only wire
+boundary.
+
 The scalar write companion covers ABAC, acceleration, raw bucket policy,
 requester payment, and public-access block. The four structured operations
 serialize exact AWS-namespaced XML; policy preserves the caller's bytes

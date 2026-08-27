@@ -469,6 +469,285 @@
       ],
       "valid_document": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>reviewed-tiering</Id><Filter><And><Prefix>reviewed-prefix</Prefix><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></And></Filter><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering><Tiering><Days>180</Days><AccessTier>DEEP_ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
     },
+    "GetBucketInventoryConfiguration": {
+      "cases": [
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-accountid",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-encryption",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-encryption-1-ssekms",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-encryption-1-ssekms-1-keyid",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-encryption-1-sses3",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-destination-1-s3bucketdestination-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-includedobjectversions",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-isenabled",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-schedule",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-schedule-1-frequency",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>__INVALID_MODEL_ENUM__</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-destination-1-s3bucketdestination-1-format-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>__INVALID_MODEL_ENUM__</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-includedobjectversions-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>__INVALID_MODEL_ENUM__</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-schedule-1-frequency-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 5
+          }
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 701
+          }
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 21
+          }
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 147
+          }
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination /><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS /></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-destination-1-s3bucketdestination-1-encryption-1-ssekms-1-keyid",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter /><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-includedobjectversions",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-isenabled",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-schedule",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule /></ns0:InventoryConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-schedule-1-frequency",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Destination><ns1:S3BucketDestination><ns1:AccountId>123456789012</ns1:AccountId><ns1:Bucket>arn:aws:s3:::reviewed-destination</ns1:Bucket><ns1:Format>CSV</ns1:Format><ns1:Prefix>reviewed/</ns1:Prefix><ns1:Encryption><ns1:SSE-S3 /><ns1:SSE-KMS><ns1:KeyId>reviewed-key</ns1:KeyId></ns1:SSE-KMS></ns1:Encryption></ns1:S3BucketDestination></ns1:Destination><ns1:IsEnabled>true</ns1:IsEnabled><ns1:Filter><ns1:Prefix>logs/</ns1:Prefix></ns1:Filter><ns1:Id>reviewed-inventory</ns1:Id><ns1:IncludedObjectVersions>All</ns1:IncludedObjectVersions><ns1:OptionalFields><ns1:Field>Size</ns1:Field><ns1:Field>ChecksumAlgorithm</ns1:Field><ns1:Field>LifecycleExpirationDate</ns1:Field></ns1:OptionalFields><ns1:Schedule><ns1:Frequency>Daily</ns1:Frequency></ns1:Schedule></ns0:InventoryConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-inventoryconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-inventoryconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:InventoryConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Destination><ns0:S3BucketDestination><ns0:AccountId>123456789012</ns0:AccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Prefix>reviewed/</ns0:Prefix><ns0:Encryption><ns0:SSE-S3 /><ns0:SSE-KMS><ns0:KeyId>reviewed-key</ns0:KeyId></ns0:SSE-KMS></ns0:Encryption></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Filter><ns0:Prefix>logs/</ns0:Prefix></ns0:Filter><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:OptionalFields><ns0:Field>Size</ns0:Field><ns0:Field>ChecksumAlgorithm</ns0:Field><ns0:Field>LifecycleExpirationDate</ns0:Field></ns0:OptionalFields><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule><UnknownModelMember /></ns0:InventoryConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-inventoryconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><AccountId>123456789012</AccountId><Bucket>arn:aws:s3:::reviewed-destination</Bucket><Format>CSV</Format><Prefix>reviewed/</Prefix><Encryption><SSE-S3></SSE-S3><SSE-KMS><KeyId>reviewed-key</KeyId></SSE-KMS></Encryption></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Filter><Prefix>logs/</Prefix></Filter><Id>reviewed-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><OptionalFields><Field>Size</Field><Field>ChecksumAlgorithm</Field><Field>LifecycleExpirationDate</Field></OptionalFields><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>"
+    },
     "GetBucketMetricsConfiguration": {
       "cases": [
         {

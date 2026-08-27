@@ -414,6 +414,212 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "GetBucketInventoryConfiguration": {
+      "adapter": "./bin/s3_get_bucket_inventory_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::low-level</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>false</IsEnabled><Id>low-level-inventory</Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "low-level% inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?id=low-level%25%20inventory&inventory"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-inventory",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><AccountId>123456789012</AccountId><Bucket>arn:aws:s3:::qualified-destination</Bucket><Format>Parquet</Format><Prefix>inventory/</Prefix><Encryption><SSE-S3></SSE-S3><SSE-KMS><KeyId>key-123</KeyId></SSE-KMS></Encryption></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Filter><Prefix>logs/</Prefix></Filter><Id>synchronous-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><OptionalFields><Field>ETag</Field><Field>ChecksumAlgorithm</Field><Field>LifecycleExpirationDate</Field></OptionalFields><Schedule><Frequency>Weekly</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "synchronous inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?id=synchronous%20inventory&inventory"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-inventory",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::empty-id</Bucket><Format>ORC</Format></S3BucketDestination></Destination><IsEnabled>false</IsEnabled><Id></Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty-id",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": ""
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty-id?id&inventory"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "",
+          "id": "empty-identifier-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::composable</Bucket><Format>ORC</Format><Encryption><SSE-KMS><KeyId></KeyId></SSE-KMS></Encryption></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>composable-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><OptionalFields></OptionalFields><Schedule><Frequency>Weekly</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "composable-inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?id=composable-inventory&inventory"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-inventory",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::restart</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>restart-inventory</Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart-inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?id=restart-inventory&inventory"
+            },
+            {
+              "body": "<Error><Code>NoSuchConfiguration</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart-inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?id=restart-inventory&inventory"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::duplicate</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>duplicate-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "duplicate-inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?id=duplicate-inventory&inventory"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::bounded</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>bounded-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "bounded-inventory"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?id=bounded-inventory&inventory"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 80
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "GetBucketMetricsConfiguration": {
       "adapter": "./bin/s3_get_bucket_metrics_configuration_qualification",
       "cases": [
