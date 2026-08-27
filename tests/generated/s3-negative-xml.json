@@ -2,6 +2,250 @@
   "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
   "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
   "operations": {
+    "GetBucketAnalyticsConfiguration": {
+      "cases": [
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-bucketaccountid",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-storageclassanalysis-1-dataexport-1-outputschemaversion",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>__INVALID_MODEL_ENUM__</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-format-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>__INVALID_MODEL_ENUM__</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-storageclassanalysis-1-dataexport-1-outputschemaversion-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 5
+          }
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 582
+          }
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 16
+          }
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 125
+          }
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis-1-dataexport-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination /></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis-1-dataexport-1-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-storageclassanalysis-1-dataexport-1-outputschemaversion",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Id>reviewed-analytics</ns1:Id><ns1:Filter><ns1:And><ns1:Prefix>reviewed-prefix</ns1:Prefix><ns1:Tag><ns1:Key>reviewed-key</ns1:Key><ns1:Value>reviewed-value</ns1:Value></ns1:Tag></ns1:And></ns1:Filter><ns1:StorageClassAnalysis><ns1:DataExport><ns1:OutputSchemaVersion>V_1</ns1:OutputSchemaVersion><ns1:Destination><ns1:S3BucketDestination><ns1:Format>CSV</ns1:Format><ns1:BucketAccountId>123456789012</ns1:BucketAccountId><ns1:Bucket>arn:aws:s3:::reviewed-destination</ns1:Bucket><ns1:Prefix>reviewed-output/</ns1:Prefix></ns1:S3BucketDestination></ns1:Destination></ns1:DataExport></ns1:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-analyticsconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis></ns0:AnalyticsConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-analyticsconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:AnalyticsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-analytics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:StorageClassAnalysis><ns0:DataExport><ns0:OutputSchemaVersion>V_1</ns0:OutputSchemaVersion><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format><ns0:BucketAccountId>123456789012</ns0:BucketAccountId><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Prefix>reviewed-output/</ns0:Prefix></ns0:S3BucketDestination></ns0:Destination></ns0:DataExport></ns0:StorageClassAnalysis><UnknownModelMember /></ns0:AnalyticsConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-analyticsconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>reviewed-analytics</Id><Filter><And><Prefix>reviewed-prefix</Prefix><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></And></Filter><StorageClassAnalysis><DataExport><OutputSchemaVersion>V_1</OutputSchemaVersion><Destination><S3BucketDestination><Format>CSV</Format><BucketAccountId>123456789012</BucketAccountId><Bucket>arn:aws:s3:::reviewed-destination</Bucket><Prefix>reviewed-output/</Prefix></S3BucketDestination></Destination></DataExport></StorageClassAnalysis></AnalyticsConfiguration>"
+    },
     "GetBucketMetricsConfiguration": {
       "cases": [
         {

@@ -40,7 +40,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketAbac | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketAccelerateConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketAcl | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketAnalyticsConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketCors | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketIntelligentTieringConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |

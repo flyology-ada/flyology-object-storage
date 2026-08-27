@@ -170,6 +170,18 @@ The limited constructor, operation-last restart, typed `Finish`, and
 synchronous wait share one state machine; no backend, server, or external
 provider support is claimed.
 
+`Client.Buckets.Get_Analytics_Configuration` applies the same owner-driven
+bounded REST/XML family to one caller-selected analytics identifier. Its
+low-level preparer binds the required `id` query and optional expected-owner
+header to GetBucketAnalyticsConfiguration. The strict typed response preserves
+the required identifier and storage-class analysis, the optional Prefix,
+Tag, and And filter graph, ordered flattened And tags, and the optional data
+export destination with exact CSV and V_1 enum domains. The pinned structural
+model permits independently present filter members and an empty
+StorageClassAnalysis, so the decoder does not invent cross-field rules. The
+limited constructor, operation-last restart, typed `Finish`, and synchronous
+wait share the same state machine; this remains a client-only wire boundary.
+
 The scalar write companion covers ABAC, acceleration, raw bucket policy,
 requester payment, and public-access block. The four structured operations
 serialize exact AWS-namespaced XML; policy preserves the caller's bytes

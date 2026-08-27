@@ -136,3 +136,12 @@ coverage oracle now discovers registered test sources by test tree rather than
 requiring another operation-specific filename in a maintained shell list; the
 registry still requires explicit executable evidence before a coverage cell
 can become `covered`.
+
+GetBucketAnalyticsConfiguration is the next shared-family operation. Its
+reviewed manifest adds only the public name, read-only error classification,
+typed fixtures, and exact valid XML. The model supplies its `analytics` target,
+required identifier, complete 19-shape closure, two exact enum domains,
+flattened And/Tag member, and routine negative cases. Seven reviewed lanes and
+33 generated XML negatives execute 40 signed socket cases through the same
+transport family; only the typed Analytics codec and small result adapter are
+operation-specific.

@@ -2,6 +2,212 @@
   "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
   "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
   "operations": {
+    "GetBucketAnalyticsConfiguration": {
+      "adapter": "./bin/s3_get_bucket_analytics_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>low-level-analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "low-level% analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?analytics&id=low-level%25%20analytics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-analytics",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>synchronous-analytics</Id><Filter><And><Prefix>logs/</Prefix><Tag><Key>team</Key><Value>storage</Value></Tag></And></Filter><StorageClassAnalysis><DataExport><OutputSchemaVersion>V_1</OutputSchemaVersion><Destination><S3BucketDestination><Format>CSV</Format><BucketAccountId>123456789012</BucketAccountId><Bucket>arn:aws:s3:::qualified-destination</Bucket><Prefix>reports/</Prefix></S3BucketDestination></Destination></DataExport></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "synchronous analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?analytics&id=synchronous%20analytics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-analytics",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id></Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty-id",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": ""
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty-id?analytics&id"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "",
+          "id": "empty-identifier-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>composable-analytics</Id><Filter><Tag><Key>key</Key><Value>value</Value></Tag></Filter><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "composable-analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?analytics&id=composable-analytics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-analytics",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>restart-analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart-analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?analytics&id=restart-analytics"
+            },
+            {
+              "body": "<Error><Code>NoSuchConfiguration</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart-analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?analytics&id=restart-analytics"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>duplicate-analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "duplicate-analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?analytics&id=duplicate-analytics"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<AnalyticsConfiguration><Id>bounded-analytics</Id>                                                                <StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "bounded-analytics"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?analytics&id=bounded-analytics"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 80
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "GetBucketMetricsConfiguration": {
       "adapter": "./bin/s3_get_bucket_metrics_configuration_qualification",
       "cases": [
