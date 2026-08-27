@@ -79,7 +79,7 @@ ListParts	core	covered	covered	covered	covered
 PutBucketAbac	extended	missing	covered	missing	covered
 PutBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 PutBucketAcl	extended	missing	partial	missing	missing
-PutBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
+PutBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	missing	covered	missing	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing

@@ -89,7 +89,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketAbac | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketAccelerateConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketAcl | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketAnalyticsConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | PutBucketCors | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketEncryption | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketIntelligentTieringConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |

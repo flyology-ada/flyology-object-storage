@@ -615,4 +615,199 @@ package body Flyology.Object_Storage.S3.Analytics is
          raise Malformed_Analytics with "malformed analytics-list XML";
    end Parse_List;
 
+   function Serialize
+     (Value : Analytics_Configuration; Limits : XML.Parse_Limits)
+      return String
+   is
+      Result     : US.Unbounded_String;
+      Elements   : Natural := 1;
+      Text_Bytes : Natural := 0;
+      Depth      : Positive := 1;
+
+      --  Pinned PutBucketAnalyticsConfiguration REST/XML root and namespace.
+      --  Changing either changes the provider wire contract and signature.
+      Prefix : constant String :=
+        "<AnalyticsConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</AnalyticsConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Analytics with
+              "analytics document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Start_Element (Name : String; At_Depth : Positive) is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Analytics with
+              "analytics elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+         Depth := Positive'Max (Depth, At_Depth);
+         Append_Bounded ("<" & Name & ">");
+      end Start_Element;
+
+      procedure End_Element (Name : String) is
+      begin
+         Append_Bounded ("</" & Name & ">");
+      end End_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Analytics with
+              "analytics text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      exception
+         when XML.XML_Error =>
+            raise Malformed_Analytics with "invalid analytics XML text";
+      end Add_Text;
+
+      procedure Add_Scalar
+        (Name : String; Text : String; At_Depth : Positive) is
+      begin
+         Start_Element (Name, At_Depth);
+         Add_Text (Text);
+         End_Element (Name);
+      end Add_Scalar;
+
+      procedure Add_Optional
+        (Name : String; Item : Optional_String; At_Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar (Name, US.To_String (Item.Value), At_Depth);
+         elsif US.Length (Item.Value) /= 0 then
+            raise Malformed_Analytics with
+              "absent analytics member contains text";
+         end if;
+      end Add_Optional;
+
+      procedure Add_Tag (Item : Analytics_Tag; At_Depth : Positive) is
+      begin
+         if US.Length (Item.Key) = 0 then
+            raise Malformed_Analytics with "empty analytics tag key";
+         end if;
+         Start_Element ("Tag", At_Depth);
+         Add_Scalar ("Key", US.To_String (Item.Key), At_Depth + 1);
+         Add_Scalar ("Value", US.To_String (Item.Value), At_Depth + 1);
+         End_Element ("Tag");
+      end Add_Tag;
+
+      function Has_Filter_Content (Item : Analytics_Filter) return Boolean is
+        (Item.Prefix.Is_Set
+         or else US.Length (Item.Prefix.Value) /= 0
+         or else Item.Tag.Is_Set
+         or else US.Length (Item.Tag.Value.Key) /= 0
+         or else US.Length (Item.Tag.Value.Value) /= 0
+         or else Item.And_Predicates.Is_Set
+         or else Item.And_Predicates.Prefix.Is_Set
+         or else US.Length (Item.And_Predicates.Prefix.Value) /= 0
+         or else not Item.And_Predicates.Tags.Is_Empty);
+
+      function Has_Data_Export_Content (Item : Data_Export) return Boolean is
+        (Item.Destination.S3_Bucket.Bucket_Account_ID.Is_Set
+         or else
+           US.Length (Item.Destination.S3_Bucket.Bucket_Account_ID.Value) /= 0
+         or else US.Length (Item.Destination.S3_Bucket.Bucket) /= 0
+         or else Item.Destination.S3_Bucket.Prefix.Is_Set
+         or else US.Length (Item.Destination.S3_Bucket.Prefix.Value) /= 0);
+
+      --  These exhaustive mappings are the pinned Botocore enum domains.
+      --  Adding a typed value must also choose its exact compatible wire text.
+      function Image (Value : Schema_Version) return String is
+        (case Value is when V_1 => "V_1");
+
+      function Image (Value : Export_File_Format) return String is
+        (case Value is when CSV => "CSV");
+   begin
+      Append_Bounded (Prefix);
+      Add_Scalar ("Id", US.To_String (Value.ID), 2);
+
+      if Value.Filter.Is_Set then
+         Start_Element ("Filter", 2);
+         Add_Optional ("Prefix", Value.Filter.Prefix, 3);
+         if Value.Filter.Tag.Is_Set then
+            Add_Tag (Value.Filter.Tag.Value, 3);
+         elsif US.Length (Value.Filter.Tag.Value.Key) /= 0
+           or else US.Length (Value.Filter.Tag.Value.Value) /= 0
+         then
+            raise Malformed_Analytics with
+              "absent analytics tag contains text";
+         end if;
+         if Value.Filter.And_Predicates.Is_Set then
+            Start_Element ("And", 3);
+            Add_Optional
+              ("Prefix", Value.Filter.And_Predicates.Prefix, 4);
+            for Tag of Value.Filter.And_Predicates.Tags loop
+               Add_Tag (Tag, 4);
+            end loop;
+            End_Element ("And");
+         elsif Value.Filter.And_Predicates.Prefix.Is_Set
+           or else US.Length (Value.Filter.And_Predicates.Prefix.Value) /= 0
+           or else not Value.Filter.And_Predicates.Tags.Is_Empty
+         then
+            raise Malformed_Analytics with
+              "absent analytics And contains members";
+         end if;
+         End_Element ("Filter");
+      elsif Has_Filter_Content (Value.Filter) then
+         raise Malformed_Analytics with
+           "absent analytics filter contains members";
+      end if;
+
+      Start_Element ("StorageClassAnalysis", 2);
+      if Value.Storage_Class_Analysis.Data_Export.Is_Set then
+         declare
+            Export : Data_Export renames
+              Value.Storage_Class_Analysis.Data_Export.Value;
+            Destination : S3_Bucket_Destination renames
+              Export.Destination.S3_Bucket;
+         begin
+            Start_Element ("DataExport", 3);
+            Add_Scalar
+              ("OutputSchemaVersion", Image (Export.Output_Schema_Version), 4);
+            Start_Element ("Destination", 4);
+            Start_Element ("S3BucketDestination", 5);
+            Add_Scalar ("Format", Image (Destination.Format), 6);
+            Add_Optional
+              ("BucketAccountId", Destination.Bucket_Account_ID, 6);
+            Add_Scalar ("Bucket", US.To_String (Destination.Bucket), 6);
+            Add_Optional ("Prefix", Destination.Prefix, 6);
+            End_Element ("S3BucketDestination");
+            End_Element ("Destination");
+            End_Element ("DataExport");
+         end;
+      elsif Has_Data_Export_Content
+        (Value.Storage_Class_Analysis.Data_Export.Value)
+      then
+         raise Malformed_Analytics with
+           "absent analytics data export contains members";
+      end if;
+      End_Element ("StorageClassAnalysis");
+
+      Append_Bounded (Suffix);
+      if Depth > Limits.Maximum_Depth then
+         raise Malformed_Analytics with
+           "analytics depth exceeds caller limit";
+      end if;
+      declare
+         Document : constant String := US.To_String (Result);
+         Verified : constant Analytics_Configuration :=
+           Parse (Document, Limits);
+         pragma Unreferenced (Verified);
+      begin
+         return Document;
+      end;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Analytics with "invalid analytics XML text";
+   end Serialize;
+
 end Flyology.Object_Storage.S3.Analytics;

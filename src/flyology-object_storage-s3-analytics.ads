@@ -162,4 +162,15 @@ package Flyology.Object_Storage.S3.Analytics is
      (Document : String; Limits : XML.Parse_Limits)
       return Analytics_Configuration_Page;
 
+   --  Serialize one complete PutBucketAnalyticsConfiguration payload. The
+   --  caller-selected XML limits bound the exact signed document; no new
+   --  client-side policy or cross-field constraint is introduced.
+   --  @param Value Complete presence-preserving analytics graph
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Exact S3 REST/XML request document
+   --  @exception Malformed_Analytics Value or document violates the model
+   function Serialize
+     (Value : Analytics_Configuration; Limits : XML.Parse_Limits)
+      return String;
+
 end Flyology.Object_Storage.S3.Analytics;
