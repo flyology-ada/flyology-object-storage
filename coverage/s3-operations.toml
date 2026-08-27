@@ -1221,13 +1221,12 @@ absence = "legacy_preserved"
 errors = ["legacy_preserved"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["deprecated in the pinned service model; GetBucketLifecycleConfiguration is the maintained replacement"]
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
 implementation_mode = "generated"
-generator_eligible = true
+generator_eligible = false
 human_decisions_resolved = false
-generation = { public_result = "unresolved_public_result", response_representation = "unresolved_response_representation", replay = "not_applicable_read_only", ownership = "unresolved_ownership", retained_borrows = "unresolved_retained_borrows", cross_field_validation = "unresolved_cross_field_validation", intentional_exclusions = [] }
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -1614,13 +1613,12 @@ absence = "legacy_preserved"
 errors = ["legacy_preserved"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["deprecated in the pinned service model; GetBucketNotificationConfiguration is the maintained replacement"]
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
 implementation_mode = "generated"
-generator_eligible = true
+generator_eligible = false
 human_decisions_resolved = false
-generation = { public_result = "unresolved_public_result", response_representation = "unresolved_response_representation", replay = "not_applicable_read_only", ownership = "unresolved_ownership", retained_borrows = "unresolved_retained_borrows", cross_field_validation = "unresolved_cross_field_validation", intentional_exclusions = [] }
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]

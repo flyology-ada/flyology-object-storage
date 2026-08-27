@@ -45,14 +45,14 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketInventoryConfiguration | Get_Inventory_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | generated | true | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketLocation | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketMetadataTableConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | generated | true | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketNotificationConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketPolicy | legacy_preserved | buckets | bounded_document_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

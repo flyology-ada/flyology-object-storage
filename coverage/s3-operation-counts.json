@@ -31,8 +31,8 @@
     "streaming_read": 2
   },
   "generator_eligible": {
-    "false": 114,
-    "true": 2
+    "false": 116,
+    "true": 0
   },
   "implementation_mode": {
     "generated": 21,

@@ -1260,7 +1260,7 @@
         "server": []
       },
       "family": "bounded_rest_xml_read",
-      "generator_eligible": true,
+      "generator_eligible": false,
       "human_decisions_resolved": false,
       "implementation_mode": "generated",
       "provenance": {
@@ -1485,7 +1485,7 @@
         "server": []
       },
       "family": "bounded_rest_xml_read",
-      "generator_eligible": true,
+      "generator_eligible": false,
       "human_decisions_resolved": false,
       "implementation_mode": "generated",
       "provenance": {
