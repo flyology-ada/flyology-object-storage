@@ -31,6 +31,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
    package Analytics renames Flyology.Object_Storage.S3.Analytics;
+   package Intelligent_Tiering renames
+     Flyology.Object_Storage.S3.Intelligent_Tiering;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
    package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
    package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
@@ -8391,6 +8393,17 @@ package body Flyology.Object_Storage.Client.Low_Level is
          US.Null_Unbounded_String, False, Identity, Region, Timestamp,
          Parameters.ID, True));
 
+   function Prepare_Get_Bucket_Intelligent_Tiering_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Intelligent_Tiering_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp,
+         Parameters.ID, True));
+
    function Prepare_Get_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -8894,6 +8907,59 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed GetBucketAnalyticsConfiguration response";
    end Decode_Get_Bucket_Analytics_Configuration_Response;
 
+   function Empty_Intelligent_Tiering_Configuration
+      return Intelligent_Tiering.Intelligent_Tiering_Configuration is
+     --  The enum initializers are unreachable response payload state for a
+     --  rejected outcome; Kind determines whether Configuration is meaningful.
+     ((ID       => US.Null_Unbounded_String,
+       Filter   =>
+         (Is_Set         => False,
+          Prefix         => (False, US.Null_Unbounded_String),
+          Tag            =>
+            (Is_Set => False,
+             Value =>
+               (Key   => US.Null_Unbounded_String,
+                Value => US.Null_Unbounded_String)),
+          And_Predicates =>
+            (Is_Set => False,
+             Prefix => (False, US.Null_Unbounded_String),
+             Tags   => Intelligent_Tiering.Tag_Vectors.Empty_Vector)),
+       Status   => Intelligent_Tiering.Enabled,
+       Tierings => Intelligent_Tiering.Tiering_Vectors.Empty_Vector));
+
+   function Decode_Get_Bucket_Intelligent_Tiering_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Intelligent_Tiering_Configuration_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with
+              "empty GetBucketIntelligentTieringConfiguration response";
+         end if;
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration => Intelligent_Tiering.Parse (Payload, Limits),
+            Error         => (others => <>));
+      end if;
+      return
+        (Kind          => Get_Bucket_Control_Rejected,
+         Status        => Status,
+         Configuration => Empty_Intelligent_Tiering_Configuration,
+         Error         =>
+           Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Intelligent_Tiering.Malformed_Intelligent_Tiering
+         | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketIntelligentTieringConfiguration response";
+   end Decode_Get_Bucket_Intelligent_Tiering_Configuration_Response;
+
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -9277,6 +9343,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Analytics_Configuration;
+
+   function Execute_Get_Bucket_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Intelligent_Tiering_Configuration_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.Get_Bucket_Intelligent_Tiering_Configuration_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Intelligent_Tiering_Configuration_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Intelligent_Tiering_Configuration;
 
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -14022,6 +14106,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Get_Bucket_Analytics_Configuration_Operation, Client, Prepared,
          Sink, Deadline, Token, Operation);
    end Get_Bucket_Analytics_Configuration;
+
+   procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Exact_Bucket_Control_Get
+        (Model.Get_Bucket_Intelligent_Tiering_Configuration_Operation,
+         Client, Prepared, Sink, Deadline, Token, Operation);
+   end Get_Bucket_Intelligent_Tiering_Configuration;
 
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

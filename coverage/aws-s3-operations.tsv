@@ -33,7 +33,7 @@ GetBucketAcl	extended	missing	covered	covered	covered
 GetBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	missing	covered	missing	covered
-GetBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
+GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 GetBucketInventoryConfiguration	extended	missing	partial	missing	missing
 GetBucketLifecycle	extended	missing	partial	missing	missing
 GetBucketLifecycleConfiguration	extended	missing	covered	missing	covered

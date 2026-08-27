@@ -246,6 +246,229 @@
       ],
       "valid_document": "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>reviewed-analytics</Id><Filter><And><Prefix>reviewed-prefix</Prefix><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></And></Filter><StorageClassAnalysis><DataExport><OutputSchemaVersion>V_1</OutputSchemaVersion><Destination><S3BucketDestination><Format>CSV</Format><BucketAccountId>123456789012</BucketAccountId><Bucket>arn:aws:s3:::reviewed-destination</Bucket><Prefix>reviewed-output/</Prefix></S3BucketDestination></Destination></DataExport></StorageClassAnalysis></AnalyticsConfiguration>"
     },
+    "GetBucketIntelligentTieringConfiguration": {
+      "cases": [
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-status",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-tierings-1-accesstier",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-tierings-1-days",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-tierings-2-accesstier",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-tierings-2-days",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status></ns0:IntelligentTieringConfiguration>",
+          "category": "empty-required-flattened-list",
+          "expected_http_result": "response_invalid",
+          "id": "empty-required-flattened-list-tierings",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>__INVALID_MODEL_ENUM__</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-status-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>__INVALID_MODEL_ENUM__</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-tierings-1-accesstier-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>__INVALID_MODEL_ENUM__</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-tierings-2-accesstier-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 4
+          }
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 438
+          }
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 14
+          }
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 101
+          }
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-status",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-tierings-1-accesstier",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-tierings-1-days",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-tierings-2-accesstier",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-tierings-2-days",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Id>reviewed-tiering</ns1:Id><ns1:Filter><ns1:And><ns1:Prefix>reviewed-prefix</ns1:Prefix><ns1:Tag><ns1:Key>reviewed-key</ns1:Key><ns1:Value>reviewed-value</ns1:Value></ns1:Tag></ns1:And></ns1:Filter><ns1:Status>Enabled</ns1:Status><ns1:Tiering><ns1:Days>90</ns1:Days><ns1:AccessTier>ARCHIVE_ACCESS</ns1:AccessTier></ns1:Tiering><ns1:Tiering><ns1:Days>180</ns1:Days><ns1:AccessTier>DEEP_ARCHIVE_ACCESS</ns1:AccessTier></ns1:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-intelligenttieringconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering></ns0:IntelligentTieringConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-intelligenttieringconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:IntelligentTieringConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-tiering</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:And></ns0:Filter><ns0:Status>Enabled</ns0:Status><ns0:Tiering><ns0:Days>90</ns0:Days><ns0:AccessTier>ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><ns0:Tiering><ns0:Days>180</ns0:Days><ns0:AccessTier>DEEP_ARCHIVE_ACCESS</ns0:AccessTier></ns0:Tiering><UnknownModelMember /></ns0:IntelligentTieringConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-intelligenttieringconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>reviewed-tiering</Id><Filter><And><Prefix>reviewed-prefix</Prefix><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></And></Filter><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering><Tiering><Days>180</Days><AccessTier>DEEP_ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+    },
     "GetBucketMetricsConfiguration": {
       "cases": [
         {

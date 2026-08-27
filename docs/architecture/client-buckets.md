@@ -182,6 +182,20 @@ StorageClassAnalysis, so the decoder does not invent cross-field rules. The
 limited constructor, operation-last restart, typed `Finish`, and synchronous
 wait share the same state machine; this remains a client-only wire boundary.
 
+`Client.Buckets.Get_Intelligent_Tiering_Configuration` reads one named
+Intelligent-Tiering configuration through that same bounded REST/XML family.
+Its low-level preparer binds the required `id` query and optional
+expected-owner header to GetBucketIntelligentTieringConfiguration. The strict
+typed response preserves the required identifier, status, and nonempty
+ordered flattened Tiering list, the optional Prefix, Tag, and And filter
+graph, flattened And tags, arbitrary-precision signed decimal Days text, and
+the exact Enabled/Disabled and ARCHIVE_ACCESS/DEEP_ARCHIVE_ACCESS domains.
+The pinned structural model permits independently present filter members and
+does not bound Days, so the decoder does not invent a one-of rule or numeric
+ceiling. The limited constructor, operation-last restart, typed `Finish`, and
+synchronous wait share the same state machine; this remains a client-only wire
+boundary.
+
 The scalar write companion covers ABAC, acceleration, raw bucket policy,
 requester payment, and public-access block. The four structured operations
 serialize exact AWS-namespaced XML; policy preserves the caller's bytes

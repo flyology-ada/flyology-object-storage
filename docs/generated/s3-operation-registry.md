@@ -43,7 +43,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketCors | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketIntelligentTieringConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketInventoryConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |

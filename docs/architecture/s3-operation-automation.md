@@ -145,3 +145,13 @@ flattened And/Tag member, and routine negative cases. Seven reviewed lanes and
 33 generated XML negatives execute 40 signed socket cases through the same
 transport family; only the typed Analytics codec and small result adapter are
 operation-specific.
+
+GetBucketIntelligentTieringConfiguration continues the same workflow without
+copying another transport or lifetime engine. The model supplies its
+`intelligent-tiering` target, required identifier, complete 18-shape closure,
+flattened Tiering and And/Tag lists, exact status and access-tier domains, and
+routine negative cases. The reviewed manifest supplies only the public name,
+read-only classification, typed fixtures, and exact valid XML. Seven reviewed
+lanes plus 30 generated XML negatives execute 37 signed socket cases; the
+strict Intelligent-Tiering codec and small typed adapter are the only new
+operation-specific mechanics.
