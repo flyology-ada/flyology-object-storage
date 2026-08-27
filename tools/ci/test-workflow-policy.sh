@@ -42,6 +42,10 @@ expect_rejection missing-docs-tool \
     's/run: alr install gnatdoc_bin=26.0.0/run: alr install gnatdoc_bin=25.0.0/' \
     "$WORKFLOW"
 
+expect_rejection wrong-uv-version \
+  'integrity and test jobs must install exact uv 0.11.28' \
+  sed 's/version: "0.11.28"/version: "0.11.27"/g' "$WORKFLOW"
+
 expect_rejection persisted-credentials \
   'every checkout must disable persisted credentials' \
   awk '
@@ -52,4 +56,4 @@ expect_rejection persisted-credentials \
     { print }
   ' "$WORKFLOW"
 
-echo "workflow policy negative oracle: 4 unsafe mutations rejected"
+echo "workflow policy negative oracle: 5 unsafe mutations rejected"

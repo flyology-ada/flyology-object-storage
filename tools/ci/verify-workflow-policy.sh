@@ -43,6 +43,11 @@ test "$(grep -Ec '^[[:space:]]+contents:[[:space:]]+read$' "$WORKFLOW")" = 1 || 
 test "$(grep -Fc 'run: alr install gnatdoc_bin=26.0.0' "$WORKFLOW")" = 1 || \
   fail "docs job must install exact gnatdoc_bin=26.0.0 once"
 
+test "$(grep -Fc 'uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0' "$WORKFLOW")" = 2 || \
+  fail "integrity and test jobs must install uv through exact setup-uv v9.0.0"
+test "$(grep -Fc 'version: "0.11.28"' "$WORKFLOW")" = 2 || \
+  fail "integrity and test jobs must install exact uv 0.11.28"
+
 test "$(grep -Fc 'run: alr install gnatprove=16.1.0' "$WORKFLOW")" = 1 || \
   fail "proof job must install exact gnatprove=16.1.0 once"
 test "$(grep -Fc "grep -Fxq 'FSF 16.1.0'" "$WORKFLOW")" = 1 || \
