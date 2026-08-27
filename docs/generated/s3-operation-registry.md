@@ -76,7 +76,7 @@ remain inventory-only until their audits gain executable evidence.
 | HeadObject | legacy_preserved | objects | response_head_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListBucketAnalyticsConfigurations | List_Analytics_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListBucketIntelligentTieringConfigurations | List_Intelligent_Tiering_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListBucketInventoryConfigurations | legacy_preserved | buckets | paginated_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| ListBucketInventoryConfigurations | List_Inventory_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListBucketMetricsConfigurations | List_Metrics_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListBuckets | legacy_preserved | buckets | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListDirectoryBuckets | legacy_preserved | buckets | paginated_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |

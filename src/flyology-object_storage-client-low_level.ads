@@ -2745,6 +2745,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound ListBucketInventoryConfigurations request.
+   function Prepare_List_Bucket_Inventory_Configurations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : List_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketAcl request.
    --  @param Origin Parsed HTTP origin
    --  @param Style Path or virtual-hosted bucket addressing
@@ -3103,6 +3109,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Shape of one strict ListBucketInventoryConfigurations response.
+   --  @enum Bucket_Inventory_Configurations_Listed Complete page exists
+   --  @enum List_Bucket_Inventory_Configurations_Rejected S3 rejected read
+   type List_Bucket_Inventory_Configurations_Outcome_Kind is
+     (Bucket_Inventory_Configurations_Listed,
+      List_Bucket_Inventory_Configurations_Rejected);
+
+   --  Strict inventory-configuration page or structured S3 rejection. Kind
+   --  determines which payload is meaningful; no public sentinel is chosen.
+   --  @field Kind Whether a complete page or rejection exists
+   --  @field Status Exact physical HTTP status
+   --  @field Result Complete presence-preserving page
+   --  @field Error Structured bounded S3 rejection
+   type List_Bucket_Inventory_Configurations_Outcome is record
+      Kind   : List_Bucket_Inventory_Configurations_Outcome_Kind;
+      Status : Flyology.HTTP.Status_Code;
+      Result : S3.Inventory.Inventory_Configuration_Page;
+      Error  : S3.Errors.Error_Response;
+   end record;
+
    --  Strict GetBucketLogging outcome with physical status preserved.
    --  @field Kind Whether logging status or a strict S3 error was returned
    --  @field Status Exact physical HTTP status
@@ -3315,6 +3341,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Inventory_Configuration_Outcome;
+   --  Decode one complete bounded ListBucketInventoryConfigurations response.
+   function Decode_List_Bucket_Inventory_Configurations_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Inventory_Configurations_Outcome;
    --  Decode one complete bounded GetBucketLogging response.
    function Decode_Get_Bucket_Logging_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -3519,6 +3551,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Inventory_Configuration_Outcome;
+   --  Execute one exact prepared ListBucketInventoryConfigurations exchange.
+   function Execute_List_Bucket_Inventory_Configurations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Inventory_Configurations_Outcome;
    --  Execute one exact prepared GetBucketLogging exchange.
    function Execute_Get_Bucket_Logging
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -5853,6 +5892,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared GetBucketInventoryConfiguration exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
    procedure Get_Bucket_Inventory_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start one exact prepared ListBucketInventoryConfigurations exchange.
+   --  Another prepared operation is rejected before HTTP admission.
+   procedure List_Bucket_Inventory_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

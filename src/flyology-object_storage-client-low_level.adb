@@ -8523,6 +8523,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
          US.Null_Unbounded_String, False, Identity, Region, Timestamp,
          Parameters.ID, True));
 
+   function Prepare_List_Bucket_Inventory_Configurations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : List_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_List
+        (Model.List_Bucket_Inventory_Configurations_Operation,
+         Origin, Style, Bucket, Parameters, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -9261,6 +9270,48 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed GetBucketInventoryConfiguration response";
    end Decode_Get_Bucket_Inventory_Configuration_Response;
 
+   function Empty_Inventory_Configuration_Page
+      return Inventory.Inventory_Configuration_Page is
+     ((Has_Is_Truncated        => False,
+       Is_Truncated            => False,
+       Continuation_Token      =>
+         (Is_Set => False, Value => US.Null_Unbounded_String),
+       Next_Continuation_Token =>
+         (Is_Set => False, Value => US.Null_Unbounded_String),
+       Configurations          =>
+         Inventory.Configuration_Vectors.Empty_Vector));
+
+   function Decode_List_Bucket_Inventory_Configurations_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Inventory_Configurations_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with
+              "empty ListBucketInventoryConfigurations response";
+         end if;
+         return
+           (Kind   => Bucket_Inventory_Configurations_Listed,
+            Status => Status,
+            Result => Inventory.Parse_List (Payload, Limits),
+            Error  => (others => <>));
+      end if;
+      return
+        (Kind   => List_Bucket_Inventory_Configurations_Rejected,
+         Status => Status,
+         Result => Empty_Inventory_Configuration_Page,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Inventory.Malformed_Inventory | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed ListBucketInventoryConfigurations response";
+   end Decode_List_Bucket_Inventory_Configurations_Response;
+
    function Empty_Logging_Status return Logging.Logging_Status is
      --  The enum initializers are unreachable response payload state for a
      --  rejected outcome; Kind determines whether Configuration is meaningful.
@@ -9833,6 +9884,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Inventory_Configuration;
+
+   function Execute_List_Bucket_Inventory_Configurations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Inventory_Configurations_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.List_Bucket_Inventory_Configurations_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_List_Bucket_Inventory_Configurations_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_List_Bucket_Inventory_Configurations;
 
    function Execute_Get_Bucket_Logging
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -14682,6 +14751,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Get_Bucket_Inventory_Configuration_Operation, Client,
          Prepared, Sink, Deadline, Token, Operation);
    end Get_Bucket_Inventory_Configuration;
+
+   procedure List_Bucket_Inventory_Configurations
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Exact_Bucket_Control_Get
+        (Model.List_Bucket_Inventory_Configurations_Operation, Client,
+         Prepared, Sink, Deadline, Token, Operation);
+   end List_Bucket_Inventory_Configurations;
 
    procedure Get_Bucket_Logging
      (Client    : not null access Flyology.HTTP.Client.Client;

@@ -239,11 +239,24 @@ lists, and exact status and access-tier domains. Seven reviewed lanes plus 21
 generated XML negatives execute 28 signed socket cases. Its reviewed manifest
 adds no timeout, page-size, retry, or automatic-pagination policy.
 
+ListBucketInventoryConfigurations is the third follow-on rollout. It reuses
+the same page envelope, prepared-list projection, bounded state machine, and
+provider-owned call shapes while delegating every repeated item to the already
+qualified GetBucketInventoryConfiguration decoder. The pinned model supplies
+the `GET` method, `/{Bucket}?inventory` target, optional continuation query,
+expected-owner header, 200 status, complete 25-shape closure, flattened
+configuration list, ordered nested optional-field list, destination and
+encryption members, and exact format, frequency, version, and optional-field
+domains.
+Seven reviewed lanes plus 31 generated XML negatives execute 38 signed socket
+cases. Its reviewed manifest adds no timeout, page-size, retry, automatic
+pagination, or mutation policy.
+
 Human-owned files are the generic Ada specification and body, provider and
 low-level declarations/callbacks, the domain page projections, typed test
 adapters, and reviewed TOML decisions. Coverage ledgers, operation counts, test
 registration, signed socket fixtures, routine negative XML cases, and the
-registry page remain generated. The same envelope is intended next for
-ListBucketInventoryConfigurations; it still requires a reviewed manifest,
-domain result adapter, and executable equivalence evidence before coverage is
-promoted.
+registry page remain generated. Further list operations can use the same
+envelope only after adding a reviewed manifest, domain result adapter, and
+executable equivalence evidence; registry presence alone cannot promote
+coverage.

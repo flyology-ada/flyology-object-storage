@@ -1,4 +1,5 @@
 with Flyology.Object_Storage.S3.Wire_Core;
+with Flyology.Object_Storage.S3.Paginated_REST_XML_Reads;
 
 package body Flyology.Object_Storage.S3.Inventory is
 
@@ -506,6 +507,104 @@ package body Flyology.Object_Storage.S3.Inventory is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
+   procedure Reset_Handler (Item : in out Inventory_Handler) is
+   begin
+      Item.Depth := 0;
+      Item.Root_Seen := False;
+      Item.Destination_Seen := False;
+      Item.S3_Destination_Seen := False;
+      Item.Is_Enabled_Seen := False;
+      Item.Filter_Seen := False;
+      Item.Filter_Prefix_Seen := False;
+      Item.ID_Seen := False;
+      Item.Versions_Seen := False;
+      Item.Optional_Fields_Seen := False;
+      Item.Schedule_Seen := False;
+      Item.Frequency_Seen := False;
+      Item.Account_ID_Seen := False;
+      Item.Bucket_Seen := False;
+      Item.Format_Seen := False;
+      Item.Destination_Prefix_Seen := False;
+      Item.Encryption_Seen := False;
+      Item.SSE_S3_Seen := False;
+      Item.SSE_KMS_Seen := False;
+      Item.KMS_Key_ID_Seen := False;
+      Item.Namespace := Namespace_Not_Selected;
+      Item.Container := No_Container;
+      Item.Scalar := No_Scalar;
+      Item.Text_Value := US.Null_Unbounded_String;
+      Item.Value := Empty_Configuration;
+   end Reset_Handler;
+
+   function Read_Handler
+     (Item : Inventory_Handler) return Inventory_Configuration is
+   begin
+      if Item.Depth /= 0
+        or else not Item.Root_Seen
+        or else not Item.Destination_Seen
+        or else not Item.Is_Enabled_Seen
+        or else not Item.ID_Seen
+        or else not Item.Versions_Seen
+        or else not Item.Schedule_Seen
+        or else Item.Container /= No_Container
+      then
+         raise Malformed_Inventory with "incomplete inventory document";
+      end if;
+      return Item.Value;
+   end Read_Handler;
+
+   function Empty_Page return Inventory_Configuration_Page is
+     ((Has_Is_Truncated        => False,
+       Is_Truncated            => False,
+       Continuation_Token      => Empty_String,
+       Next_Continuation_Token => Empty_String,
+       Configurations          => Configuration_Vectors.Empty_Vector));
+
+   procedure Set_Page_Is_Truncated
+     (Result : in out Inventory_Configuration_Page; Value : Boolean) is
+   begin
+      Result.Has_Is_Truncated := True;
+      Result.Is_Truncated := Value;
+   end Set_Page_Is_Truncated;
+
+   procedure Set_Page_Continuation_Token
+     (Result : in out Inventory_Configuration_Page; Value : String) is
+   begin
+      Result.Continuation_Token :=
+        (Is_Set => True, Value => US.To_Unbounded_String (Value));
+   end Set_Page_Continuation_Token;
+
+   procedure Set_Page_Next_Continuation_Token
+     (Result : in out Inventory_Configuration_Page; Value : String) is
+   begin
+      Result.Next_Continuation_Token :=
+        (Is_Set => True, Value => US.To_Unbounded_String (Value));
+   end Set_Page_Next_Continuation_Token;
+
+   procedure Append_Page_Item
+     (Result : in out Inventory_Configuration_Page;
+      Value  : Inventory_Configuration) is
+   begin
+      Result.Configurations.Append (Value);
+   end Append_Page_Item;
+
+   --  Both element names are fixed by the pinned Botocore operation/output
+   --  model. Changing either changes accepted S3 wire documents.
+   package Page_Decoder is new Paginated_REST_XML_Reads
+     (Root_Name                   =>
+        "ListBucketInventoryConfigurationsOutput",
+      Item_Name                   => "InventoryConfiguration",
+      Item_Type                   => Inventory_Configuration,
+      Item_Handler_Type           => Inventory_Handler,
+      Reset_Item                  => Reset_Handler,
+      Read_Item                   => Read_Handler,
+      Result_Type                 => Inventory_Configuration_Page,
+      Empty_Result                => Empty_Page,
+      Set_Is_Truncated            => Set_Page_Is_Truncated,
+      Set_Continuation_Token      => Set_Page_Continuation_Token,
+      Set_Next_Continuation_Token => Set_Page_Next_Continuation_Token,
+      Append_Item                 => Append_Page_Item);
+
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Inventory_Configuration
@@ -513,16 +612,20 @@ package body Flyology.Object_Storage.S3.Inventory is
       Handler : aliased Inventory_Handler;
    begin
       XML.Parse (Document, Handler, Limits);
-      if Handler.Depth /= 0
-        or else not Handler.Root_Seen
-        or else Handler.Container /= No_Container
-      then
-         raise Malformed_Inventory with "incomplete inventory document";
-      end if;
-      return Handler.Value;
+      return Read_Handler (Handler);
    exception
       when XML.XML_Error =>
          raise Malformed_Inventory with "malformed inventory XML";
    end Parse;
+
+   function Parse_List
+     (Document : String; Limits : XML.Parse_Limits)
+      return Inventory_Configuration_Page is
+   begin
+      return Page_Decoder.Parse (Document, Limits);
+   exception
+      when Page_Decoder.Malformed_Page =>
+         raise Malformed_Inventory with "malformed inventory-list XML";
+   end Parse_List;
 
 end Flyology.Object_Storage.S3.Inventory;

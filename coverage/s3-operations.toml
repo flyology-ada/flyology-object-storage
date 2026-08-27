@@ -50,6 +50,14 @@ list_bucket_intelligent_tiering_configurations = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+list_bucket_inventory_configurations = [
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketInventoryConfigurations"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-bucket-inventory-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_analytics_configuration = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketAnalyticsConfiguration"],
@@ -96,7 +104,7 @@ get_bucket_website = [
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 30
-socket_qualifier_count = 10
+socket_qualifier_count = 11
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -167,6 +175,7 @@ socket_qualifiers = [
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketAnalyticsConfigurations"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketIntelligentTieringConfigurations"],
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketInventoryConfigurations"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketAnalyticsConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketIntelligentTieringConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketInventoryConfiguration"],
@@ -2069,15 +2078,89 @@ tier = "extended"
 provider = "buckets"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_paginated_rest_xml_and_singleton_headers"
+public_name = "List_Inventory_Configurations"
+absence = "404 NoSuchBucket maps to Not_Found"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
-evidence = { backend = [], client = [], server = [], corpus = [] }
+exclusions = ["automatic S3 Express regional endpoint selection"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-inventory.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"] }
+decision_status = "reviewed"
+qualification = "list_bucket_inventory_configurations"
+ada_symbols = ["Prepare_List_Bucket_Inventory_Configurations", "Execute_List_Bucket_Inventory_Configurations", "List_Bucket_Inventory_Operation", "List_Inventory_Configurations", "Finish"]
+
+[operation.negative_xml]
+valid_document = "<ListBucketInventoryConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::reviewed-destination</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>reviewed-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>"
+xml_namespace = "http://s3.amazonaws.com/doc/2006-03-01/"
+
+[operation.signed_socket]
+adapter = "./bin/s3_list_bucket_inventory_configurations_qualification"
+negative_template = "synchronous-success"
+
+[[operation.signed_socket.case]]
+id = "low-level-success"
+lane = "low_level"
+expected = "success"
+expected_value = "low-level-inventory"
+exchange = [
+  { input_values = { Bucket = "qualified-low-level", ContinuationToken = "low level% cursor", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-request-id", "low-level-request"]], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken>low level% cursor</ContinuationToken><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::low-level</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>false</IsEnabled><Id>low-level-inventory</Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "synchronous-success"
+lane = "synchronous"
+expected = "success"
+expected_value = "synchronous-inventory"
+exchange = [
+  { input_values = { Bucket = "qualified-sync", ContinuationToken = "sync cursor", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>true</IsTruncated><ContinuationToken>sync cursor</ContinuationToken><NextContinuationToken>next cursor</NextContinuationToken><InventoryConfiguration><Destination><S3BucketDestination><AccountId>123456789012</AccountId><Bucket>arn:aws:s3:::qualified-destination</Bucket><Format>Parquet</Format><Prefix>inventory/</Prefix><Encryption><SSE-S3></SSE-S3><SSE-KMS><KeyId>key-123</KeyId></SSE-KMS></Encryption></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Filter><Prefix>logs/</Prefix></Filter><Id>synchronous-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><OptionalFields><Field>ETag</Field><Field>ChecksumAlgorithm</Field><Field>LifecycleExpirationDate</Field></OptionalFields><Schedule><Frequency>Weekly</Frequency></Schedule></InventoryConfiguration><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::second</Bucket><Format>ORC</Format></S3BucketDestination></Destination><IsEnabled>false</IsEnabled><Id>second-inventory</Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "empty-cursor-empty-page"
+lane = "synchronous"
+expected = "success"
+expected_value = ""
+exchange = [
+  { input_values = { Bucket = "qualified-empty", ContinuationToken = "", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken></ContinuationToken></ListBucketInventoryConfigurationsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "composable-success"
+lane = "composable"
+expected = "success"
+expected_value = "composable-inventory"
+exchange = [
+  { input_values = { Bucket = "qualified-composable", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-id-2", "composable-host"]], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::composable</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>composable-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "restart-ownership"
+lane = "restart"
+expected = "not_found"
+exchange = [
+  { input_values = { Bucket = "qualified-restart", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::restart</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>restart-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>" },
+  { input_values = { Bucket = "qualified-restart-second", ExpectedBucketOwner = "123456789012" }, status = "404 Not Found", headers = [["x-amz-request-id", "restart-missing"]], body = "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>" },
+]
+
+[[operation.signed_socket.case]]
+id = "duplicate-singleton-header"
+lane = "invalid_xml"
+expected = "response_invalid"
+exchange = [
+  { input_values = { Bucket = "qualified-duplicate", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated></ListBucketInventoryConfigurationsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "bounded-response"
+lane = "invalid_xml"
+expected = "response_sink_failed"
+limits = { maximum_document_bytes = 96 }
+exchange = [
+  { input_values = { Bucket = "qualified-bounded", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<ListBucketInventoryConfigurationsOutput><IsTruncated>false</IsTruncated>                                                                                                </ListBucketInventoryConfigurationsOutput>" },
+]
 
 [[operation]]
 name = "ListBucketMetricsConfigurations"

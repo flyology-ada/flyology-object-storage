@@ -1820,6 +1820,236 @@
       ],
       "valid_document": "<ListBucketIntelligentTieringConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><IntelligentTieringConfiguration><Id>reviewed-tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration></ListBucketIntelligentTieringConfigurationsOutput>"
     },
+    "ListBucketInventoryConfigurations": {
+      "cases": [
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-continuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-includedobjectversions",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-isenabled",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-schedule",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-inventoryconfigurationlist-1-schedule-1-frequency",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-istruncated",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-nextcontinuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>__INVALID_MODEL_ENUM__</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-inventoryconfigurationlist-1-destination-1-s3bucketdestination-1-format-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>__INVALID_MODEL_ENUM__</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-inventoryconfigurationlist-1-includedobjectversions-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>__INVALID_MODEL_ENUM__</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-inventoryconfigurationlist-1-schedule-1-frequency-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 4
+          }
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 620
+          }
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 13
+          }
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 98
+          }
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination /><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-destination-1-s3bucketdestination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-destination-1-s3bucketdestination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-destination-1-s3bucketdestination-1-format",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-includedobjectversions",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-isenabled",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-schedule",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule /></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-inventoryconfigurationlist-1-schedule-1-frequency",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:IsTruncated>true</ns1:IsTruncated><ns1:ContinuationToken>reviewed-current</ns1:ContinuationToken><ns1:NextContinuationToken>reviewed-next</ns1:NextContinuationToken><ns1:InventoryConfiguration><ns1:Destination><ns1:S3BucketDestination><ns1:Bucket>arn:aws:s3:::reviewed-destination</ns1:Bucket><ns1:Format>CSV</ns1:Format></ns1:S3BucketDestination></ns1:Destination><ns1:IsEnabled>true</ns1:IsEnabled><ns1:Id>reviewed-inventory</ns1:Id><ns1:IncludedObjectVersions>All</ns1:IncludedObjectVersions><ns1:Schedule><ns1:Frequency>Daily</ns1:Frequency></ns1:Schedule></ns1:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-listbucketinventoryconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-listbucketinventoryconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketInventoryConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:InventoryConfiguration><ns0:Destination><ns0:S3BucketDestination><ns0:Bucket>arn:aws:s3:::reviewed-destination</ns0:Bucket><ns0:Format>CSV</ns0:Format></ns0:S3BucketDestination></ns0:Destination><ns0:IsEnabled>true</ns0:IsEnabled><ns0:Id>reviewed-inventory</ns0:Id><ns0:IncludedObjectVersions>All</ns0:IncludedObjectVersions><ns0:Schedule><ns0:Frequency>Daily</ns0:Frequency></ns0:Schedule></ns0:InventoryConfiguration><UnknownModelMember /></ns0:ListBucketInventoryConfigurationsOutput>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-listbucketinventoryconfigurationsoutput",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ListBucketInventoryConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><InventoryConfiguration><Destination><S3BucketDestination><Bucket>arn:aws:s3:::reviewed-destination</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>reviewed-inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration></ListBucketInventoryConfigurationsOutput>"
+    },
     "ListBucketMetricsConfigurations": {
       "cases": [
         {
