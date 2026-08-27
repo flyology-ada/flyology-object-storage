@@ -181,6 +181,17 @@ attribute violations, an empty required flattened list, and each XML resource
 limit. All 23 cases execute the real signer, socket transport, family state
 machine, decoder, classifier, and typed provider result.
 
+`S3_Bounded_REST_XML_Read_Qualification` is the test-only Ada driver for new
+family consumers. It owns environment decoding, the fixed signed-corpus
+identity and timestamp, caller-selected XML-limit forwarding, serial client
+setup, low-level/synchronous/composable dispatch, typed `Finish`, operation-
+last restart, cancellation drain followed by reuse, and shutdown on normal and
+exceptional paths. An operation adapter supplies typed preparation,
+construction, restart, completion, and result-observation callbacks; result
+types are not erased to fit the harness. The socket runner's optional
+`--adapter` argument permits prospective or generated adapters to execute an
+existing corpus without replacing its committed authoritative adapter.
+
 Generated files are unchanged by the Ada family itself. The human-owned files
 are the generic specification/body, each provider's private instantiation and
 decoder/classifier callbacks, and the operation-specific manifest decisions.
