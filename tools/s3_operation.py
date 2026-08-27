@@ -246,7 +246,9 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
             "bounded_document_read",
         }:
             raise Audit_Error(f"negative XML configured for non-XML read: {name}")
-        if set(negative) != {"valid_document", "xml_namespace"}:
+        if not {"valid_document", "xml_namespace"}.issubset(negative) or not set(
+            negative
+        ).issubset({"valid_document", "xml_namespace", "payload_shape"}):
             raise Audit_Error(f"invalid negative XML decisions: {name}")
         if not isinstance(negative["valid_document"], str) or not negative[
             "valid_document"
@@ -254,6 +256,11 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
             raise Audit_Error(f"negative XML valid document is empty: {name}")
         if not isinstance(negative["xml_namespace"], str):
             raise Audit_Error(f"invalid XML namespace decision: {name}")
+        if "payload_shape" in negative and (
+            not isinstance(negative["payload_shape"], str)
+            or not negative["payload_shape"]
+        ):
+            raise Audit_Error(f"invalid XML payload shape decision: {name}")
     if socket is None:
         return
     adapter = socket.get("adapter")
@@ -571,10 +578,33 @@ def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def namespace_uri(tag: str) -> str:
+    return tag[1:].split("}", 1)[0] if tag.startswith("{") else ""
+
+
 def xml_member_specs(
     model: dict[str, Any], shape_name: str
 ) -> list[dict[str, Any]]:
     shape = model["shapes"][shape_name]
+    if shape["type"] == "list":
+        member = shape["member"]
+        member_shape_name = member["shape"]
+        member_shape = model["shapes"][member_shape_name]
+        return [
+            {
+                "name": member_shape_name,
+                "tag": member.get(
+                    "locationName",
+                    member_shape.get("locationName", member_shape_name),
+                ),
+                "shape": member_shape_name,
+                "required": False,
+                "flattened": False,
+                "list": True,
+                "xml_attribute": False,
+                "attribute_namespace": "",
+            }
+        ]
     if shape["type"] != "structure":
         return []
     result = []
@@ -591,15 +621,24 @@ def xml_member_specs(
         target_shape = (
             member_shape["member"]["shape"] if flattened else member_shape_name
         )
+        xml_attribute = bool(member.get("xmlAttribute", False))
+        raw_tag = member.get("locationName", member.get("xmlName", member_name))
+        shape_namespace = shape.get("xmlNamespace", {})
+        attribute_namespace = ""
+        if xml_attribute and ":" in raw_tag:
+            prefix, raw_tag = raw_tag.split(":", 1)
+            if shape_namespace.get("prefix") == prefix:
+                attribute_namespace = shape_namespace.get("uri", "")
         result.append(
             {
                 "name": member_name,
-                "tag": member.get("locationName", member.get("xmlName", member_name)),
+                "tag": raw_tag,
                 "shape": target_shape,
                 "required": member_name in shape.get("required", []),
                 "flattened": flattened,
                 "list": member_shape["type"] == "list",
-                "xml_attribute": bool(member.get("xmlAttribute", False)),
+                "xml_attribute": xml_attribute,
+                "attribute_namespace": attribute_namespace,
             }
         )
     return result
@@ -624,7 +663,32 @@ def negative_xml_cases(
     model: dict[str, Any], operation_name: str, decisions: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """Derive routine invalid REST/XML documents from reviewed valid input."""
-    payload_shape = output_payload_shape(model, operation_name)
+    modeled_payload_shape = output_payload_shape(model, operation_name)
+    payload_shape = decisions.get("payload_shape", modeled_payload_shape)
+    if (
+        payload_shape not in model["shapes"]
+        or model["shapes"][payload_shape]["type"] != "structure"
+    ):
+        raise Audit_Error(
+            f"reviewed XML payload shape is invalid: {operation_name}"
+        )
+    if payload_shape != modeled_payload_shape:
+        ignored_alias_traits = {"documentation", "locationName"}
+        modeled_contract = {
+            key: value
+            for key, value in model["shapes"][modeled_payload_shape].items()
+            if key not in ignored_alias_traits
+        }
+        reviewed_contract = {
+            key: value
+            for key, value in model["shapes"][payload_shape].items()
+            if key not in ignored_alias_traits
+        }
+        if reviewed_contract != modeled_contract:
+            raise Audit_Error(
+                f"reviewed XML payload alias is not structurally equivalent: "
+                f"{operation_name}"
+            )
     valid_document = decisions["valid_document"]
     try:
         valid_root = ET.fromstring(valid_document)
@@ -680,6 +744,43 @@ def negative_xml_cases(
         children = list(element)
         for spec in specs:
             if spec["xml_attribute"]:
+                attribute_name = (
+                    "{" + spec["attribute_namespace"] + "}" + spec["tag"]
+                    if spec["attribute_namespace"]
+                    else spec["tag"]
+                )
+                matching_attributes = [
+                    name
+                    for name in element.attrib
+                    if namespace_uri(name) == spec["attribute_namespace"]
+                    and local_name(name) == spec["tag"]
+                ]
+                member_path = [*path, spec["name"]]
+                if spec["required"] and matching_attributes:
+                    changed = deepcopy(valid_root)
+                    target = find_element(changed, path)
+                    del target.attrib[attribute_name]
+                    add_case("missing-required-attribute", member_path, changed)
+                target_shape = model["shapes"][spec["shape"]]
+                if (
+                    matching_attributes
+                    and target_shape["type"] == "string"
+                    and target_shape.get("enum")
+                ):
+                    changed = deepcopy(valid_root)
+                    target = find_element(changed, path)
+                    target.set(attribute_name, "__INVALID_MODEL_ENUM__")
+                    add_case("invalid-attribute-enum", member_path, changed)
+                if matching_attributes and spec["attribute_namespace"]:
+                    changed = deepcopy(valid_root)
+                    target = find_element(changed, path)
+                    value = target.attrib.pop(attribute_name)
+                    target.set(
+                        "{urn:flyology:invalid-attribute-namespace}"
+                        + spec["tag"],
+                        value,
+                    )
+                    add_case("attribute-namespace-violation", member_path, changed)
                 continue
             matching = [
                 child for child in children if local_name(child.tag) == spec["tag"]
@@ -725,7 +826,7 @@ def negative_xml_cases(
                     ]
                     changed_matches[index].text = "__INVALID_MODEL_ENUM__"
                     add_case("invalid-enum", [*member_path, str(index + 1)], changed)
-            if target_shape["type"] == "structure":
+            if target_shape["type"] in {"structure", "list"}:
                 for index, child in enumerate(matching):
                     walk(child, spec["shape"], [*member_path, str(index + 1)])
 
@@ -805,11 +906,14 @@ def validate_reviewed_xml(
     child_specs = [spec for spec in specs if not spec["xml_attribute"]]
     attribute_specs = [spec for spec in specs if spec["xml_attribute"]]
     known = {spec["tag"] for spec in child_specs}
-    known_attributes = {spec["tag"] for spec in attribute_specs}
+    known_attributes = {
+        (spec["attribute_namespace"], spec["tag"])
+        for spec in attribute_specs
+    }
     unknown_attributes = [
-        local_name(name)
+        name
         for name in element.attrib
-        if local_name(name) not in known_attributes
+        if (namespace_uri(name), local_name(name)) not in known_attributes
     ]
     if unknown_attributes:
         raise Audit_Error(
@@ -830,7 +934,8 @@ def validate_reviewed_xml(
         values = [
             value
             for attribute_name, value in element.attrib.items()
-            if local_name(attribute_name) == spec["tag"]
+            if namespace_uri(attribute_name) == spec["attribute_namespace"]
+            and local_name(attribute_name) == spec["tag"]
         ]
         if spec["required"] and not values:
             raise Audit_Error(
@@ -861,7 +966,7 @@ def validate_reviewed_xml(
                     raise Audit_Error(
                         f"reviewed XML enum is outside {spec['name']}: {operation_name}"
                     )
-        if target_shape["type"] == "structure":
+        if target_shape["type"] in {"structure", "list"}:
             for child in matching:
                 validate_reviewed_xml(
                     model, spec["shape"], child, namespace, operation_name

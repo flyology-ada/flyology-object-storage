@@ -38,7 +38,7 @@ GetBucketInventoryConfiguration	extended	missing	covered	missing	covered
 GetBucketLifecycle	extended	missing	partial	missing	missing
 GetBucketLifecycleConfiguration	extended	missing	covered	missing	covered
 GetBucketLocation	core	covered	covered	covered	covered
-GetBucketLogging	extended	missing	partial	missing	missing
+GetBucketLogging	extended	missing	covered	missing	covered
 GetBucketMetadataConfiguration	extended	missing	partial	missing	missing
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	covered	missing	covered

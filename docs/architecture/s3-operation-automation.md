@@ -162,6 +162,17 @@ closure, nested destination and encryption graph, exact boolean and enum
 domains, optional-field list, and routine negative cases. The reviewed
 manifest supplies the public name, read-only absence mapping, caller-owned
 endpoint exclusion, typed fixtures, and exact valid XML. Seven reviewed lanes
-plus 38 generated XML negatives execute 45 signed socket cases; the strict
+plus 41 generated XML negatives execute 48 signed socket cases; the strict
 inventory codec and small typed result adapter are the only operation-specific
 mechanics.
+
+GetBucketLogging extends the model verifier for exact namespaced attributes and
+nonflattened list members. The model supplies its `logging` target, complete
+20-shape response closure, ordered grants, required grantee `xsi:type`
+attribute, and exact grantee, permission, and partition-date enum domains. The
+reviewed manifest records the paired `BucketLoggingStatus` payload shape that
+the operation output does not link mechanically, the successful disabled
+state, caller-owned endpoint exclusion, typed fixtures, and structural-only
+key-format interpretation. Seven reviewed lanes plus 38 generated XML
+negatives execute 45 signed socket cases; the strict logging codec and small
+typed result adapter remain operation-specific.

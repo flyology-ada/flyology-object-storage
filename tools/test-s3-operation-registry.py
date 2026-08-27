@@ -65,6 +65,34 @@ def main() -> None:
         "unexpected-attribute": 1,
         "unknown-member": 1,
     }
+    logging_cases = negative["operations"]["GetBucketLogging"]["cases"]
+    assert len(logging_cases) == 38
+    assert Counter(case["category"] for case in logging_cases) == {
+        "attribute-namespace-violation": 3,
+        "duplicate-singleton": 16,
+        "invalid-attribute-enum": 3,
+        "invalid-enum": 4,
+        "limit-failure": 4,
+        "missing-required-attribute": 3,
+        "missing-required-member": 2,
+        "namespace-violation": 1,
+        "unexpected-attribute": 1,
+        "unknown-member": 1,
+    }
+    invalid_logging_decisions = copy.deepcopy(
+        registry.operations["GetBucketLogging"]["negative_xml"]
+    )
+    invalid_logging_decisions["payload_shape"] = "GetBucketLoggingRequest"
+    try:
+        s3_operation.negative_xml_cases(
+            s3_operation.load_model(s3_operation.model_path(None)),
+            "GetBucketLogging",
+            invalid_logging_decisions,
+        )
+    except s3_operation.Audit_Error:
+        pass
+    else:
+        raise AssertionError("unrelated reviewed XML payload alias was accepted")
 
     stale = copy.deepcopy(negative)
     stale["model_sha256"] = "0" * 64
@@ -104,6 +132,13 @@ def main() -> None:
     assert empty_id_request["target"] == (
         "/qualified-empty-id?id&metrics"
     )
+    logging_socket_operation = socket_plan["operations"]["GetBucketLogging"]
+    assert len(logging_socket_operation["cases"]) == 7
+    logging_request = logging_socket_operation["cases"][0]["exchange"][0]
+    assert logging_request["target"] == "/qualified-low-level?logging"
+    assert logging_request["request_headers"] == {
+        "x-amz-expected-bucket-owner": "123456789012"
+    }
     stale_socket = copy.deepcopy(socket_plan)
     stale_socket["model_sha256"] = "0" * 64
     with tempfile.TemporaryDirectory(prefix="s3-operation-registry-") as directory:

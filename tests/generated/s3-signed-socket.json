@@ -620,6 +620,199 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "GetBucketLogging": {
+      "adapter": "./bin/s3_get_bucket_logging_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus><LoggingEnabled><TargetBucket>low-level-logging</TargetBucket><TargetPrefix>low-level/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?logging"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-logging",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><LoggingEnabled><TargetBucket>synchronous-logging</TargetBucket><TargetGrants><Grant><Grantee xsi:type=\"CanonicalUser\"><ID>canonical-id</ID><DisplayName>canonical</DisplayName></Grantee><Permission>FULL_CONTROL</Permission></Grant><Grant><Grantee xsi:type=\"AmazonCustomerByEmail\"><EmailAddress>logs@example.com</EmailAddress></Grantee><Permission>READ</Permission></Grant><Grant><Grantee xsi:type=\"Group\"><URI>group-uri</URI></Grantee><Permission>WRITE</Permission></Grant></TargetGrants><TargetPrefix>qualified/</TargetPrefix><TargetObjectKeyFormat><SimplePrefix></SimplePrefix><PartitionedPrefix><PartitionDateSource>DeliveryTime</PartitionDateSource></PartitionedPrefix></TargetObjectKeyFormat></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?logging"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-logging",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus></BucketLoggingStatus>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-disabled",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-disabled?logging"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "disabled",
+          "id": "disabled-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus><LoggingEnabled><TargetBucket>composable-logging</TargetBucket><TargetPrefix>composable/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?logging"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-logging",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus><LoggingEnabled><TargetBucket>restart-logging</TargetBucket><TargetPrefix>restart/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?logging"
+            },
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?logging"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-not-found",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus><LoggingEnabled><TargetBucket>duplicate-logging</TargetBucket><TargetPrefix>duplicate/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?logging"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<BucketLoggingStatus><LoggingEnabled><TargetBucket>bounded-logging</TargetBucket><TargetPrefix>                                                                bounded/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?logging"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 80
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "GetBucketMetricsConfiguration": {
       "adapter": "./bin/s3_get_bucket_metrics_configuration_qualification",
       "cases": [

@@ -13,6 +13,7 @@ with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Analytics;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Inventory;
+with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Copies;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -2675,6 +2676,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketLogging request.
+   function Prepare_Get_Bucket_Logging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketMetricsConfiguration request.
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -2997,6 +3004,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Strict GetBucketLogging outcome with physical status preserved.
+   --  @field Kind Whether logging status or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Presence-preserving logging status
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Logging_Outcome is record
+      Kind          : Get_Bucket_Control_Outcome_Kind;
+      Status        : Flyology.HTTP.Status_Code;
+      Configuration : S3.Logging.Logging_Status;
+      Error         : S3.Errors.Error_Response;
+   end record;
+
    --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
    --  established deterministic aggregate sentinel only.
    --  @field Kind Whether policy or a strict S3 error was returned
@@ -3166,6 +3185,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Inventory_Configuration_Outcome;
+   --  Decode one complete bounded GetBucketLogging response.
+   function Decode_Get_Bucket_Logging_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Logging_Outcome;
    --  Decode one complete bounded GetBucketAcl response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -3336,6 +3361,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Inventory_Configuration_Outcome;
+   --  Execute one exact prepared GetBucketLogging exchange.
+   function Execute_Get_Bucket_Logging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Logging_Outcome;
    --  Execute one exact prepared GetBucketAcl request.
    --  The 30-second default is the established low-level synchronous-client
    --  compatibility budget; callers may select a different absolute budget.
@@ -5623,6 +5655,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared GetBucketInventoryConfiguration exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
    procedure Get_Bucket_Inventory_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetBucketLogging exchange into a bounded sink.
+   --  Another prepared operation is rejected before HTTP admission.
+   procedure Get_Bucket_Logging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access
