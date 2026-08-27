@@ -89,6 +89,8 @@ package body Flyology.Object_Storage.S3.Strict_XML_Codecs is
       end loop;
       if not Found then
          raise Malformed_Document with "invalid modeled enumeration";
+      elsif not Matches_Pattern (Element, Value) then
+         raise Malformed_Document with "invalid modeled string pattern";
       end if;
    end Validate_Scalar;
 

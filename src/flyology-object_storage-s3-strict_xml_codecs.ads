@@ -22,6 +22,8 @@ generic
    with function Enumeration_Count (Element : Element_Id) return Natural;
    with function Enumeration_Value
      (Element : Element_Id; Index : Positive) return String;
+   with function Matches_Pattern
+     (Element : Element_Id; Value : String) return Boolean;
    type Result_Type is limited private;
    with procedure Start_Node
      (Result : in out Result_Type; Element : Element_Id);

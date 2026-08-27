@@ -53,11 +53,11 @@
       },
       "operation": "GetBucketWebsite",
       "prospective_output": {
-        "body_lines": 227,
-        "body_sha256": "9f70b6ff1fab7e52ccad76fd3dc044de9c74335f81142a40e6ba68255ba15c6b",
+        "body_lines": 237,
+        "body_sha256": "6d32fb0ed892a0e1a96e97f32240b2b6f688af5532ada2254bdd289a8575cef9",
         "committed": false,
-        "spec_lines": 70,
-        "spec_sha256": "451a11d0c877d93c7fccda9b8ecb9076e2d688c5cb78f12d5314cedf05e749c3",
+        "spec_lines": 72,
+        "spec_sha256": "3f5b5a0d0af33dffb18e32039aaa1f5df88021d324dfe28adf88acb0b67c4ad8",
         "unit": "flyology-object_storage-s3-generated_get_bucket_website_xml"
       },
       "public_contract": {
@@ -92,6 +92,7 @@
           "duplicate_singletons": "reject",
           "enumerations": "exact_model_domain",
           "namespaces": "unqualified_or_exact_s3_consistently",
+          "patterns": "exact_supported_model_domain",
           "required_members": "reject_when_absent",
           "unknown_members": "reject",
           "xml_limits": "caller_supplied"

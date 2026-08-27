@@ -101,8 +101,12 @@ Botocore revision, and model digest and are never hand-edited.
 runtime for those descriptors. It rejects unknown members, duplicate
 singletons, missing required members, inconsistent or foreign namespaces,
 unexpected or wrongly namespaced attributes, invalid booleans and integers,
-and values outside exact modeled enum domains. It delegates document, depth,
-element, and text ceilings to the existing caller-supplied `S3.XML` limits.
+values outside exact modeled enum domains, and values outside an explicitly
+supported modeled string-pattern domain. Pattern support is fail-closed: the
+generator currently recognizes the exact Botocore S3/S3 Express bucket ARN
+pattern and refuses an operation containing any other pattern rather than
+silently omitting its constraint. It delegates document, depth, element, and
+text ceilings to the existing caller-supplied `S3.XML` limits.
 Repeated members additionally require an explicit caller-supplied collection
 limit; the runtime deliberately has no default and therefore introduces no
 resource policy.
