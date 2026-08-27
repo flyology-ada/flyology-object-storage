@@ -23,6 +23,7 @@ REGISTRY_PATH = ROOT / "coverage/s3-operations.toml"
 LEDGER_PATH = ROOT / "coverage/aws-s3-operations.tsv"
 COUNTS_PATH = ROOT / "coverage/s3-operation-counts.json"
 INVENTORY_PATH = ROOT / "coverage/s3-operation-inventory.json"
+CANARY_PATH = ROOT / "coverage/s3-generation-canaries.json"
 TEST_REGISTRATION_PATH = ROOT / "tests/generated/s3-operation-tests.sh"
 DOCUMENTATION_PATH = ROOT / "docs/generated/s3-operation-registry.md"
 NEGATIVE_XML_PATH = ROOT / "tests/generated/s3-negative-xml.json"
@@ -1548,6 +1549,25 @@ def generated_outputs(
         DOCUMENTATION_PATH: documentation_text(registry),
     }
     if model is not None:
+        import s3_codegen
+
+        website_canary = s3_codegen.get_bucket_website_canary(registry, model)
+        if website_canary["findings"]:
+            raise Audit_Error(
+                "GetBucketWebsite generation canary findings: "
+                + ", ".join(website_canary["findings"])
+            )
+        result[CANARY_PATH] = json.dumps(
+            {
+                "model_revision": EXPECTED_MODEL_REVISION,
+                "model_sha256": EXPECTED_MODEL_SHA256,
+                "canaries": {
+                    "GetBucketWebsite": website_canary
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        ) + "\n"
         result[NEGATIVE_XML_PATH] = negative_xml_text(registry, model)
         result[SIGNED_SOCKET_PATH] = signed_socket_text(registry, model)
     return result

@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 import s3_operation
+import s3_codegen
 
 
 def main() -> None:
@@ -186,6 +187,26 @@ def main() -> None:
     model_name = os.environ.get("FLYOLOGY_S3_SERVICE_MODEL")
     if model_name:
         model = s3_operation.load_model(Path(model_name))
+        website_canary = s3_codegen.get_bucket_website_canary(registry, model)
+        assert website_canary["status"] == "equivalent"
+        assert website_canary["findings"] == []
+        assert website_canary["model_contract"] == {
+            "method": "GET",
+            "uri": "/{Bucket}?website",
+            "response_status": 200,
+            "input_shape": "GetBucketWebsiteRequest",
+            "output_shape": "GetBucketWebsiteOutput",
+            "reachable_shape_count": 20,
+            "payload_shape": "WebsiteConfiguration",
+            "wire_node_count": 19,
+        }
+        assert website_canary["strict_xml"]["negative_case_count"] == 32
+        assert website_canary["strict_xml"][
+            "unsupported_generator_traits"
+        ] == []
+        assert website_canary["prospective_output"]["committed"] is False
+        assert website_canary["prospective_output"]["spec_lines"] > 40
+        assert website_canary["prospective_output"]["body_lines"] > 200
         derived = s3_operation.negative_xml_cases(
             model, "GetBucketReplication", canary["negative_xml"]
         )
