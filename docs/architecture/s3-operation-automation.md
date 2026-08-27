@@ -209,6 +209,14 @@ decoder/classifier callbacks, and the operation-specific manifest decisions.
 Future bounded reads should add those small typed adapters instead of copying
 the transport and operation-lifetime state machine.
 
+`Client.Paginated_REST_XML_Reads` preserves the same owner-driven lifecycle
+for model-generated page reads while carrying a distinct caller-selected
+collection limit into terminal decoding. It does not derive that limit from
+the document or element ceilings and supplies no default. New paginated
+operations can therefore share bounded buffering, cancellation, drain,
+restart, exception retention, and typed `Finish` without losing the separate
+collection policy required by generated list codecs.
+
 GetBucketMetricsConfiguration is the first new operation built through this
 workflow. Its human-owned surface is limited to the strict typed metrics codec,
 provider and low-level callbacks, reviewed TOML decisions and socket fixtures,
