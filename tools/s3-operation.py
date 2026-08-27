@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +45,22 @@ def audit(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
     }
     result["unresolved_human_decisions"] = unresolved
     result["evidence_findings"] = findings
+    if "negative_xml" in entry:
+        result["generated_negative_xml"] = s3_operation.negative_xml_cases(
+            model, args.operation, entry["negative_xml"]
+        )
+    if "signed_socket" in entry:
+        generated_socket = json.loads(
+            s3_operation.signed_socket_text(registry, model)
+        )["operations"][args.operation]
+        result["signed_socket_cases"] = [
+            {
+                "id": case["id"],
+                "lane": case["lane"],
+                "exchange_count": len(case["exchange"]),
+            }
+            for case in generated_socket["cases"]
+        ]
     print(json.dumps(result, indent=2, sort_keys=True))
     return 1 if unresolved or findings else 0
 
@@ -64,6 +81,13 @@ def scaffold(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
     model = s3_operation.load_model(s3_operation.model_path(args.model))
     s3_operation.verify_registry_model_inventory(registry, model)
     result = s3_operation.operation_audit(model, args.operation)
+    negative = (
+        s3_operation.negative_xml_cases(
+            model, args.operation, entry["negative_xml"]
+        )
+        if "negative_xml" in entry
+        else []
+    )
     print(
         json.dumps(
             {
@@ -73,6 +97,14 @@ def scaffold(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
                 "public_name": entry["public_name"],
                 "codec": entry["codec"],
                 "model": result,
+                "generated_negative_xml": negative,
+                "signed_socket": (
+                    json.loads(s3_operation.signed_socket_text(registry, model))[
+                        "operations"
+                    ].get(args.operation)
+                    if "signed_socket" in entry
+                    else None
+                ),
                 "note": (
                     "deterministic reviewed scaffold input; no source was "
                     "written and no policy was inferred"
@@ -104,11 +136,22 @@ def qualify(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
 
 
 def generate(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
+    model = None
+    if args.model or os.environ.get("FLYOLOGY_S3_SERVICE_MODEL"):
+        model = s3_operation.load_model(s3_operation.model_path(args.model))
+        s3_operation.verify_registry_model_inventory(registry, model)
     if args.check:
-        s3_operation.check_generated_outputs(registry)
+        s3_operation.check_generated_outputs(registry, model)
         print("S3 operation generated outputs: current")
         return 0
-    for path, expected in s3_operation.generated_outputs(registry).items():
+    if any(
+        "negative_xml" in entry or "signed_socket" in entry
+        for entry in registry.operations.values()
+    ) and model is None:
+        raise s3_operation.Audit_Error(
+            "generating model-derived qualification requires the pinned model"
+        )
+    for path, expected in s3_operation.generated_outputs(registry, model).items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(expected, encoding="utf-8")
         print(f"generated {path.relative_to(s3_operation.ROOT)}")

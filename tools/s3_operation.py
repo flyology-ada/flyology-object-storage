@@ -4,11 +4,16 @@
 from __future__ import annotations
 
 import hashlib
+import http
 import json
 import os
+import re
 import shlex
 import subprocess
 import tomllib
+import urllib.parse
+import xml.etree.ElementTree as ET
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -19,6 +24,8 @@ LEDGER_PATH = ROOT / "coverage/aws-s3-operations.tsv"
 COUNTS_PATH = ROOT / "coverage/s3-operation-counts.json"
 TEST_REGISTRATION_PATH = ROOT / "tests/generated/s3-operation-tests.sh"
 DOCUMENTATION_PATH = ROOT / "docs/generated/s3-operation-registry.md"
+NEGATIVE_XML_PATH = ROOT / "tests/generated/s3-negative-xml.json"
+SIGNED_SOCKET_PATH = ROOT / "tests/generated/s3-signed-socket.json"
 # These values identify the committed Botocore service model that owns the
 # generated S3 schema. Changing any of them is a model compatibility update,
 # not a coverage-policy choice.
@@ -157,7 +164,7 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
         ):
             raise Audit_Error(f"invalid qualification command list: {name}")
     registration = raw.get("test_registration", {})
-    for name in ("model_verifiers", "corpora"):
+    for name in ("model_verifiers", "corpora", "socket_qualifiers"):
         commands = registration.get(name)
         if not isinstance(commands, list) or any(
             not isinstance(command, list)
@@ -171,6 +178,7 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
     expected_counts = {
         "model_verifiers": registration.get("model_verifier_count"),
         "corpora": registration.get("corpus_count"),
+        "socket_qualifiers": registration.get("socket_qualifier_count"),
     }
     for name, expected in expected_counts.items():
         if expected != len(registration[name]):
@@ -183,15 +191,21 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
         or registration["corpus_repetitions"] < 1
     ):
         raise Audit_Error("invalid generated corpus repetition count")
-    validate_test_registration(registration)
+    validate_test_registration(registration, set(operations))
+    for name, entry in operations.items():
+        validate_operation_qualification(name, entry)
     return Registry(raw, operations, qualification)
 
 
-def validate_test_registration(registration: dict[str, Any]) -> None:
+def validate_test_registration(
+    registration: dict[str, Any], operation_names: set[str]
+) -> None:
     """Bind generated commands to maintained verifier and corpus sources."""
     for command in registration["model_verifiers"]:
         if command[:5] != ["uv", "run", "--python", "3.13", "--"]:
-            raise Audit_Error(f"model verifier does not use pinned uv Python: {command}")
+            raise Audit_Error(
+                f"model verifier does not use pinned uv Python: {command}"
+            )
         verifier = repository_path(command[-1])
         if not verifier.is_file() or verifier.suffix != ".py":
             raise Audit_Error(f"missing registered model verifier: {command[-1]}")
@@ -209,6 +223,149 @@ def validate_test_registration(registration: dict[str, Any]) -> None:
             raise Audit_Error(
                 f"registered operation corpus lacks maintained source: {source.name}"
             )
+    for command in registration["socket_qualifiers"]:
+        if command[:5] != ["uv", "run", "--python", "3.13", "--"]:
+            raise Audit_Error(
+                f"socket qualifier does not use pinned uv Python: {command}"
+            )
+        if len(command) != 7 or command[5] != "../tools/s3-signed-socket.py":
+            raise Audit_Error(f"invalid socket qualifier command: {command}")
+        if command[6] not in operation_names:
+            raise Audit_Error(
+                f"socket qualifier names unknown operation: {command[6]}"
+            )
+
+
+def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
+    negative = entry.get("negative_xml")
+    socket = entry.get("signed_socket")
+    if negative is not None:
+        if entry["family"] not in {
+            "bounded_rest_xml_read",
+            "paginated_rest_xml_read",
+            "bounded_document_read",
+        }:
+            raise Audit_Error(f"negative XML configured for non-XML read: {name}")
+        if set(negative) != {"valid_document", "xml_namespace"}:
+            raise Audit_Error(f"invalid negative XML decisions: {name}")
+        if not isinstance(negative["valid_document"], str) or not negative[
+            "valid_document"
+        ]:
+            raise Audit_Error(f"negative XML valid document is empty: {name}")
+        if not isinstance(negative["xml_namespace"], str):
+            raise Audit_Error(f"invalid XML namespace decision: {name}")
+    if socket is None:
+        return
+    adapter = socket.get("adapter")
+    if set(socket) != {"adapter", "negative_template", "case"}:
+        raise Audit_Error(f"invalid signed socket decisions: {name}")
+    if not isinstance(adapter, str) or not adapter.startswith("./bin/"):
+        raise Audit_Error(f"invalid signed socket adapter: {name}")
+    adapter_source = ROOT / "tests/src" / (Path(adapter).name + ".adb")
+    if not adapter_source.is_file():
+        raise Audit_Error(f"missing signed socket adapter source: {name}")
+    cases = socket.get("case")
+    if not isinstance(cases, list) or not cases:
+        raise Audit_Error(f"signed socket qualification has no cases: {name}")
+    identifiers: set[str] = set()
+    for case in cases:
+        identifier = case.get("id")
+        if (
+            not isinstance(identifier, str)
+            or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", identifier)
+            or identifier in identifiers
+        ):
+            raise Audit_Error(f"invalid signed socket case id: {name}")
+        identifiers.add(identifier)
+        allowed_case_fields = {
+            "exchange",
+            "expected",
+            "expected_value",
+            "id",
+            "lane",
+            "limits",
+        }
+        if not set(case).issubset(allowed_case_fields):
+            raise Audit_Error(f"invalid signed socket case fields: {name}/{identifier}")
+        if case.get("lane") not in {
+            "low_level",
+            "synchronous",
+            "composable",
+            "restart",
+            "invalid_xml",
+        }:
+            raise Audit_Error(f"invalid signed socket call lane: {name}/{identifier}")
+        if case.get("expected") not in {
+            "success",
+            "not_found",
+            "response_invalid",
+            "response_sink_failed",
+        }:
+            raise Audit_Error(f"invalid signed socket expectation: {name}/{identifier}")
+        if "expected_value" in case and not isinstance(
+            case["expected_value"], str
+        ):
+            raise Audit_Error(
+                f"invalid signed socket expected value: {name}/{identifier}"
+            )
+        limits = case.get("limits", {})
+        if not isinstance(limits, dict) or any(
+            key
+            not in {
+                "maximum_document_bytes",
+                "maximum_depth",
+                "maximum_elements",
+                "maximum_text_bytes",
+            }
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 1
+            for key, value in limits.items()
+        ):
+            raise Audit_Error(f"invalid signed socket limits: {name}/{identifier}")
+        exchanges = case.get("exchange")
+        if not isinstance(exchanges, list) or not exchanges:
+            raise Audit_Error(
+                f"signed socket case has no exchange: {name}/{identifier}"
+            )
+        for exchange in exchanges:
+            required = {"input_values", "status", "headers", "body"}
+            if set(exchange) != required:
+                raise Audit_Error(
+                    f"invalid signed socket exchange fields: {name}/{identifier}"
+                )
+            if (
+                not isinstance(exchange["input_values"], dict)
+                or any(
+                    not isinstance(member, str)
+                    or not member
+                    or not isinstance(value, str)
+                    for member, value in exchange["input_values"].items()
+                )
+            ):
+                raise Audit_Error(
+                    f"invalid signed socket input values: {name}/{identifier}"
+                )
+            headers = exchange["headers"]
+            if not isinstance(exchange["status"], str) or not exchange["status"]:
+                raise Audit_Error(
+                    f"invalid signed response status: {name}/{identifier}"
+                )
+            if not isinstance(exchange["body"], str):
+                raise Audit_Error(
+                    f"invalid signed response body: {name}/{identifier}"
+                )
+            if not isinstance(headers, list) or any(
+                not isinstance(item, list)
+                or len(item) != 2
+                or any(not isinstance(value, str) for value in item)
+                for item in headers
+            ):
+                raise Audit_Error(
+                    f"invalid signed response headers: {name}/{identifier}"
+                )
+    if socket.get("negative_template") not in identifiers:
+        raise Audit_Error(f"unknown signed socket negative template: {name}")
 
 
 def model_path(explicit: str | None) -> Path:
@@ -410,6 +567,469 @@ def operation_audit(model: dict[str, Any], name: str) -> dict[str, Any]:
     }
 
 
+def local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def xml_member_specs(
+    model: dict[str, Any], shape_name: str
+) -> list[dict[str, Any]]:
+    shape = model["shapes"][shape_name]
+    if shape["type"] != "structure":
+        return []
+    result = []
+    for member_name, member in shape.get("members", {}).items():
+        member_shape_name = member["shape"]
+        member_shape = model["shapes"][member_shape_name]
+        flattened = (
+            member_shape["type"] == "list"
+            and bool(member_shape.get("flattened", False))
+        )
+        target_shape = (
+            member_shape["member"]["shape"] if flattened else member_shape_name
+        )
+        result.append(
+            {
+                "name": member_name,
+                "tag": member.get("locationName", member.get("xmlName", member_name)),
+                "shape": target_shape,
+                "required": member_name in shape.get("required", []),
+                "flattened": flattened,
+                "list": member_shape["type"] == "list",
+                "xml_attribute": bool(member.get("xmlAttribute", False)),
+            }
+        )
+    return result
+
+
+def output_payload_shape(model: dict[str, Any], operation_name: str) -> str:
+    operation = model["operations"][operation_name]
+    output_name = operation.get("output", {}).get("shape")
+    if output_name is None:
+        raise Audit_Error(f"operation has no XML output shape: {operation_name}")
+    output = model["shapes"][output_name]
+    payload = output.get("payload")
+    if payload is None:
+        return output_name
+    member = output.get("members", {}).get(payload)
+    if member is None:
+        raise Audit_Error(f"output payload member is absent: {operation_name}")
+    return member["shape"]
+
+
+def negative_xml_cases(
+    model: dict[str, Any], operation_name: str, decisions: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Derive routine invalid REST/XML documents from reviewed valid input."""
+    payload_shape = output_payload_shape(model, operation_name)
+    valid_document = decisions["valid_document"]
+    try:
+        valid_root = ET.fromstring(valid_document)
+    except ET.ParseError as error:
+        raise Audit_Error(
+            f"reviewed valid XML is not well formed: {operation_name}: {error}"
+        ) from error
+    expected_root = model["shapes"][payload_shape].get(
+        "locationName", payload_shape
+    )
+    if local_name(valid_root.tag) != expected_root:
+        raise Audit_Error(
+            f"reviewed XML root/model payload mismatch: {operation_name}"
+        )
+    validate_reviewed_xml(
+        model,
+        payload_shape,
+        valid_root,
+        decisions["xml_namespace"],
+        operation_name,
+    )
+
+    cases: list[dict[str, Any]] = []
+    identifiers: set[str] = set()
+
+    def add_case(
+        category: str,
+        path: list[str],
+        root: ET.Element,
+        *,
+        limits: dict[str, int] | None = None,
+        expected_http_result: str = "response_invalid",
+    ) -> None:
+        stem = "-".join([category, *path])
+        identifier = re.sub(r"[^a-z0-9]+", "-", stem.casefold()).strip("-")
+        if identifier in identifiers:
+            raise Audit_Error(
+                f"duplicate generated XML case id: {operation_name}/{identifier}"
+            )
+        identifiers.add(identifier)
+        cases.append(
+            {
+                "id": identifier,
+                "category": category,
+                "body": ET.tostring(root, encoding="unicode"),
+                "limits": limits or {},
+                "expected_http_result": expected_http_result,
+            }
+        )
+
+    def walk(element: ET.Element, shape_name: str, path: list[str]) -> None:
+        specs = xml_member_specs(model, shape_name)
+        children = list(element)
+        for spec in specs:
+            if spec["xml_attribute"]:
+                continue
+            matching = [
+                child for child in children if local_name(child.tag) == spec["tag"]
+            ]
+            member_path = [*path, spec["name"]]
+            if spec["required"] and matching:
+                changed = deepcopy(valid_root)
+                target = find_element(changed, path)
+                changed_matches = [
+                    child
+                    for child in list(target)
+                    if local_name(child.tag) == spec["tag"]
+                ]
+                if spec["flattened"]:
+                    for child in changed_matches:
+                        target.remove(child)
+                    add_case("empty-required-flattened-list", member_path, changed)
+                else:
+                    target.remove(changed_matches[0])
+                    add_case("missing-required-member", member_path, changed)
+            if matching and not spec["list"]:
+                changed = deepcopy(valid_root)
+                target = find_element(changed, path)
+                changed_match = next(
+                    child
+                    for child in list(target)
+                    if local_name(child.tag) == spec["tag"]
+                )
+                target.insert(
+                    list(target).index(changed_match) + 1,
+                    deepcopy(changed_match),
+                )
+                add_case("duplicate-singleton", member_path, changed)
+            target_shape = model["shapes"][spec["shape"]]
+            if target_shape["type"] == "string" and target_shape.get("enum"):
+                for index, _ in enumerate(matching):
+                    changed = deepcopy(valid_root)
+                    target = find_element(changed, path)
+                    changed_matches = [
+                        child
+                        for child in list(target)
+                        if local_name(child.tag) == spec["tag"]
+                    ]
+                    changed_matches[index].text = "__INVALID_MODEL_ENUM__"
+                    add_case("invalid-enum", [*member_path, str(index + 1)], changed)
+            if target_shape["type"] == "structure":
+                for index, child in enumerate(matching):
+                    walk(child, spec["shape"], [*member_path, str(index + 1)])
+
+    def find_element(root: ET.Element, path: list[str]) -> ET.Element:
+        if not path:
+            return root
+        current = root
+        current_shape = payload_shape
+        cursor = 0
+        while cursor < len(path):
+            member_name = path[cursor]
+            cursor += 1
+            spec = next(
+                item
+                for item in xml_member_specs(model, current_shape)
+                if item["name"] == member_name
+            )
+            index = int(path[cursor]) if cursor < len(path) else 1
+            if cursor < len(path):
+                cursor += 1
+            matches = [
+                child for child in list(current) if local_name(child.tag) == spec["tag"]
+            ]
+            current = matches[index - 1]
+            current_shape = spec["shape"]
+        return current
+
+    walk(valid_root, payload_shape, [])
+
+    changed = deepcopy(valid_root)
+    ET.SubElement(changed, "UnknownModelMember")
+    add_case("unknown-member", [expected_root], changed)
+
+    changed = deepcopy(valid_root)
+    changed.set("unexpected-model-attribute", "true")
+    add_case("unexpected-attribute", [expected_root], changed)
+
+    if decisions["xml_namespace"]:
+        changed = deepcopy(valid_root)
+        changed.tag = "{urn:flyology:invalid-s3-namespace}" + local_name(changed.tag)
+        add_case("namespace-violation", [expected_root], changed)
+
+    statistics = xml_statistics(valid_root, valid_document)
+    for field, value in statistics.items():
+        if value > 1:
+            add_case(
+                "limit-failure",
+                [field.replace("maximum_", "")],
+                deepcopy(valid_root),
+                limits={field: value - 1},
+                expected_http_result=(
+                    "response_sink_failed"
+                    if field == "maximum_document_bytes"
+                    else "response_invalid"
+                ),
+            )
+    return sorted(cases, key=lambda item: item["id"])
+
+
+def validate_reviewed_xml(
+    model: dict[str, Any],
+    shape_name: str,
+    element: ET.Element,
+    namespace: str,
+    operation_name: str,
+) -> None:
+    """Reject a scaffold seed that is not structurally valid by the model."""
+    if namespace:
+        actual_namespace = (
+            element.tag[1:].split("}", 1)[0] if element.tag.startswith("{") else ""
+        )
+        if actual_namespace != namespace:
+            raise Audit_Error(
+                f"reviewed XML namespace mismatch: {operation_name}"
+            )
+    specs = xml_member_specs(model, shape_name)
+    child_specs = [spec for spec in specs if not spec["xml_attribute"]]
+    attribute_specs = [spec for spec in specs if spec["xml_attribute"]]
+    known = {spec["tag"] for spec in child_specs}
+    known_attributes = {spec["tag"] for spec in attribute_specs}
+    unknown_attributes = [
+        local_name(name)
+        for name in element.attrib
+        if local_name(name) not in known_attributes
+    ]
+    if unknown_attributes:
+        raise Audit_Error(
+            f"reviewed XML has unknown attributes for {operation_name}: "
+            f"{unknown_attributes}"
+        )
+    children = list(element)
+    unknown = [
+        local_name(child.tag)
+        for child in children
+        if local_name(child.tag) not in known
+    ]
+    if unknown:
+        raise Audit_Error(
+            f"reviewed XML has unknown members for {operation_name}: {unknown}"
+        )
+    for spec in attribute_specs:
+        values = [
+            value
+            for attribute_name, value in element.attrib.items()
+            if local_name(attribute_name) == spec["tag"]
+        ]
+        if spec["required"] and not values:
+            raise Audit_Error(
+                f"reviewed XML lacks required attribute {spec['name']}: "
+                f"{operation_name}"
+            )
+        target_shape = model["shapes"][spec["shape"]]
+        if target_shape["type"] == "string" and target_shape.get("enum"):
+            if any(value not in target_shape["enum"] for value in values):
+                raise Audit_Error(
+                    f"reviewed XML attribute enum is outside {spec['name']}: "
+                    f"{operation_name}"
+                )
+    for spec in child_specs:
+        matching = [child for child in children if local_name(child.tag) == spec["tag"]]
+        if spec["required"] and not matching:
+            raise Audit_Error(
+                f"reviewed XML lacks required {spec['name']}: {operation_name}"
+            )
+        if not spec["list"] and len(matching) > 1:
+            raise Audit_Error(
+                f"reviewed XML duplicates singleton {spec['name']}: {operation_name}"
+            )
+        target_shape = model["shapes"][spec["shape"]]
+        if target_shape["type"] == "string" and target_shape.get("enum"):
+            for child in matching:
+                if (child.text or "") not in target_shape["enum"]:
+                    raise Audit_Error(
+                        f"reviewed XML enum is outside {spec['name']}: {operation_name}"
+                    )
+        if target_shape["type"] == "structure":
+            for child in matching:
+                validate_reviewed_xml(
+                    model, spec["shape"], child, namespace, operation_name
+                )
+
+
+def xml_statistics(root: ET.Element, document: str) -> dict[str, int]:
+    def depth(element: ET.Element) -> int:
+        children = list(element)
+        return 1 if not children else 1 + max(depth(child) for child in children)
+
+    return {
+        "maximum_document_bytes": len(document.encode("utf-8")),
+        "maximum_depth": depth(root),
+        "maximum_elements": sum(1 for _ in root.iter()),
+        "maximum_text_bytes": sum(
+            len((element.text or "").encode("utf-8")) for element in root.iter()
+        ),
+    }
+
+
+def negative_xml_text(registry: Registry, model: dict[str, Any]) -> str:
+    operations = {
+        name: {
+            "cases": negative_xml_cases(model, name, entry["negative_xml"]),
+            "valid_document": entry["negative_xml"]["valid_document"],
+        }
+        for name, entry in sorted(registry.operations.items())
+        if "negative_xml" in entry
+    }
+    return json.dumps(
+        {
+            "model_revision": EXPECTED_MODEL_REVISION,
+            "model_sha256": EXPECTED_MODEL_SHA256,
+            "operations": operations,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+
+
+def signed_socket_exchange(
+    model: dict[str, Any], operation_name: str, exchange: dict[str, Any]
+) -> dict[str, Any]:
+    """Derive one exact signed request from reviewed operation inputs."""
+    operation = model["operations"][operation_name]
+    input_shape = model["shapes"][operation["input"]["shape"]]
+    members = input_shape.get("members", {})
+    required = set(input_shape.get("required", []))
+    values = exchange["input_values"]
+    unknown = set(values) - set(members)
+    if unknown:
+        raise Audit_Error(
+            f"signed socket inputs are absent from {operation_name}: "
+            + ", ".join(sorted(unknown))
+        )
+    missing = required - set(values)
+    if missing:
+        raise Audit_Error(
+            f"signed socket inputs omit required {operation_name} members: "
+            + ", ".join(sorted(missing))
+        )
+
+    target = operation["http"]["requestUri"]
+    request_headers: dict[str, str] = {}
+    query_values: list[tuple[str, str]] = []
+    for member_name, spec in members.items():
+        if member_name not in values:
+            continue
+        value = values[member_name]
+        location = spec.get("location")
+        location_name = spec.get("locationName", member_name)
+        encoded = urllib.parse.quote(value, safe="-_.~")
+        if location == "uri":
+            marker = "{" + location_name + "}"
+            if marker not in target:
+                raise Audit_Error(
+                    f"model URI omits {operation_name}.{member_name} marker"
+                )
+            target = target.replace(marker, encoded)
+        elif location == "querystring":
+            marker = "{" + location_name + "}"
+            if marker in target:
+                target = target.replace(marker, encoded)
+            else:
+                query_values.append((location_name, value))
+        elif location == "header":
+            request_headers[location_name] = value
+        else:
+            raise Audit_Error(
+                f"signed socket cannot derive {operation_name}.{member_name} "
+                f"at location {location!r}"
+            )
+    if re.search(r"\{[^}]+\}", target):
+        raise Audit_Error(
+            f"model URI remains unresolved for {operation_name}: {target}"
+        )
+    path, separator, existing_query = target.partition("?")
+    query_components = (
+        existing_query.split("&") if separator and existing_query else []
+    )
+    if query_values:
+        query_components.extend(
+            urllib.parse.quote(name, safe="-_.~")
+            + "="
+            + urllib.parse.quote(value, safe="-_.~")
+            for name, value in query_values
+        )
+    target = path
+    if query_components:
+        # The signer writes the canonical query ordering. Botocore owns the
+        # fixed and member components; lexical ordering is the SigV4 wire
+        # representation already used by the generated low-level client.
+        target += "?" + "&".join(sorted(query_components))
+    status = exchange["status"]
+    if status == "modeled_success":
+        response_code = int(operation["http"].get("responseCode", 200))
+        try:
+            status = f"{response_code} {http.HTTPStatus(response_code).phrase}"
+        except ValueError as error:
+            raise Audit_Error(
+                f"model names an unsupported HTTP status for {operation_name}: "
+                f"{response_code}"
+            ) from error
+    elif not re.fullmatch(r"[1-5][0-9][0-9] [\x20-\x7e]+", status):
+        raise Audit_Error(
+            f"reviewed signed socket status is invalid: {operation_name}/{status}"
+        )
+    return {
+        "body": exchange["body"],
+        "headers": exchange["headers"],
+        "input_values": values,
+        "method": operation["http"]["method"],
+        "request_headers": request_headers,
+        "status": status,
+        "target": target,
+    }
+
+
+def signed_socket_text(registry: Registry, model: dict[str, Any]) -> str:
+    operations: dict[str, Any] = {}
+    for name, entry in sorted(registry.operations.items()):
+        if "signed_socket" not in entry:
+            continue
+        source = entry["signed_socket"]
+        cases = []
+        for case in source["case"]:
+            generated = {
+                key: value for key, value in case.items() if key != "exchange"
+            }
+            generated["exchange"] = [
+                signed_socket_exchange(model, name, exchange)
+                for exchange in case["exchange"]
+            ]
+            cases.append(generated)
+        operations[name] = {
+            "adapter": source["adapter"],
+            "cases": cases,
+            "negative_template": source["negative_template"],
+        }
+    return json.dumps(
+        {
+            "model_revision": EXPECTED_MODEL_REVISION,
+            "model_sha256": EXPECTED_MODEL_SHA256,
+            "operations": operations,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+
+
 def unresolved_decisions(entry: dict[str, Any]) -> list[str]:
     required = (
         "provider",
@@ -567,6 +1187,9 @@ def test_registration_text(registry: Registry) -> str:
     lines.extend(("}", "", "run_s3_operation_corpora() {"))
     for command in registration["corpora"]:
         lines.append("  " + shell_words(command))
+    lines.extend(("}", "", "run_s3_socket_qualifiers() {"))
+    for command in registration["socket_qualifiers"]:
+        lines.append("  " + shell_words(command))
     lines.extend(("}", ""))
     return "\n".join(lines)
 
@@ -607,16 +1230,74 @@ def documentation_text(registry: Registry) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generated_outputs(registry: Registry) -> dict[Path, str]:
-    return {
+def generated_outputs(
+    registry: Registry, model: dict[str, Any] | None = None
+) -> dict[Path, str]:
+    result = {
         LEDGER_PATH: ledger_text(registry),
         COUNTS_PATH: counts_text(registry),
         TEST_REGISTRATION_PATH: test_registration_text(registry),
         DOCUMENTATION_PATH: documentation_text(registry),
     }
+    if model is not None:
+        result[NEGATIVE_XML_PATH] = negative_xml_text(registry, model)
+        result[SIGNED_SOCKET_PATH] = signed_socket_text(registry, model)
+    return result
 
 
-def check_generated_outputs(registry: Registry) -> None:
+def validate_committed_negative_xml(
+    registry: Registry, path: Path = NEGATIVE_XML_PATH
+) -> None:
+    if not path.is_file():
+        raise Audit_Error("generated negative XML corpus is missing")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if value.get("model_revision") != EXPECTED_MODEL_REVISION:
+        raise Audit_Error("negative XML corpus names an unexpected model revision")
+    if value.get("model_sha256") != EXPECTED_MODEL_SHA256:
+        raise Audit_Error("negative XML corpus names an unexpected model hash")
+    expected = {
+        name for name, entry in registry.operations.items() if "negative_xml" in entry
+    }
+    if set(value.get("operations", {})) != expected:
+        raise Audit_Error("negative XML operation inventory differs from registry")
+    for name, operation in value["operations"].items():
+        cases = operation.get("cases")
+        if not isinstance(cases, list) or not cases:
+            raise Audit_Error(f"negative XML operation has no cases: {name}")
+        identifiers = [case.get("id") for case in cases]
+        if len(set(identifiers)) != len(identifiers):
+            raise Audit_Error(f"duplicate negative XML case: {name}")
+
+
+def validate_committed_signed_socket(
+    registry: Registry, path: Path = SIGNED_SOCKET_PATH
+) -> None:
+    if not path.is_file():
+        raise Audit_Error("generated signed socket plan is missing")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if value.get("model_revision") != EXPECTED_MODEL_REVISION:
+        raise Audit_Error("signed socket plan names an unexpected model revision")
+    if value.get("model_sha256") != EXPECTED_MODEL_SHA256:
+        raise Audit_Error("signed socket plan names an unexpected model hash")
+    expected = {
+        name for name, entry in registry.operations.items() if "signed_socket" in entry
+    }
+    if set(value.get("operations", {})) != expected:
+        raise Audit_Error("signed socket operation inventory differs from registry")
+    for name, operation in value["operations"].items():
+        cases = operation.get("cases")
+        if not isinstance(cases, list) or not cases:
+            raise Audit_Error(f"signed socket operation has no cases: {name}")
+        identifiers = [case.get("id") for case in cases]
+        if len(set(identifiers)) != len(identifiers):
+            raise Audit_Error(f"duplicate signed socket case: {name}")
+        if operation.get("negative_template") not in identifiers:
+            raise Audit_Error(f"signed socket negative template is absent: {name}")
+
+
+def check_generated_outputs(
+    registry: Registry, model: dict[str, Any] | None = None
+) -> None:
     findings = {
         name: evidence_findings(entry, include_partial=False)
         for name, entry in registry.operations.items()
@@ -624,7 +1305,9 @@ def check_generated_outputs(registry: Registry) -> None:
     findings = {name: values for name, values in findings.items() if values}
     if findings:
         raise Audit_Error(f"covered operation evidence findings: {findings}")
-    for path, expected in generated_outputs(registry).items():
+    validate_committed_negative_xml(registry)
+    validate_committed_signed_socket(registry)
+    for path, expected in generated_outputs(registry, model).items():
         if not path.exists() or path.read_text(encoding="utf-8") != expected:
             raise Audit_Error(
                 f"generated output differs: {path.relative_to(ROOT)}"

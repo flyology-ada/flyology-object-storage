@@ -11,6 +11,7 @@ get_bucket_replication = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-replication-preparation.py"],
   ["@tests", "alr", "-n", "build"],
   ["@tests", "./bin/s3_get_bucket_replication_corpus"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketReplication"],
   ["@tests", "./bin/s3_http_socket_corpus"],
   ["./tools/verify-coverage.sh"],
   ["./tools/build-api-docs.sh", "/private/tmp/fos-s3-operation-gnatdoc"],
@@ -23,6 +24,7 @@ get_bucket_replication = [
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 30
+socket_qualifier_count = 1
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -86,6 +88,9 @@ corpora = [
   ["./bin/s3_http_socket_corpus"],
   ["./bin/s3_create_session_tls_corpus"],
   ["./bin/s3_transfer_many_corpus"],
+]
+socket_qualifiers = [
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketReplication"],
 ]
 
 [[operation]]
@@ -876,6 +881,87 @@ evidence = { backend = [], client = ["src/flyology-object_storage-client-bounded
 decision_status = "reviewed"
 qualification = "get_bucket_replication"
 ada_symbols = ["Prepare_Get_Bucket_Replication", "Execute_Get_Bucket_Replication", "Get_Bucket_Replication_Operation", "Get_Replication_Configuration", "Finish"]
+negative_xml = { valid_document = "<ReplicationConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Role>reviewed-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>reviewed-destination</Bucket></Destination></Rule></ReplicationConfiguration>", xml_namespace = "http://s3.amazonaws.com/doc/2006-03-01/" }
+
+[operation.signed_socket]
+adapter = "./bin/s3_get_bucket_replication_qualification"
+negative_template = "synchronous-success"
+
+[[operation.signed_socket.case]]
+id = "low-level-success"
+lane = "low_level"
+expected = "success"
+expected_value = "low-level-role"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-low-level", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = [["x-amz-request-id", "low-level-request"], ["x-amz-id-2", "low-level-host"]]
+body = "<ReplicationConfiguration><Role>low-level-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>low-level-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+
+[[operation.signed_socket.case]]
+id = "synchronous-success"
+lane = "synchronous"
+expected = "success"
+expected_value = "synchronous-role"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-sync", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = [["x-amz-request-id", "synchronous-request"]]
+body = "<ReplicationConfiguration><Role>synchronous-role</Role><Rule><Status>Disabled</Status><Destination><Bucket>synchronous-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+
+[[operation.signed_socket.case]]
+id = "composable-success"
+lane = "composable"
+expected = "success"
+expected_value = "composable-role"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-composable", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = []
+body = "<ReplicationConfiguration><Role>composable-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>composable-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+
+[[operation.signed_socket.case]]
+id = "restart-ownership"
+lane = "restart"
+expected = "not_found"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-restart", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = []
+body = "<ReplicationConfiguration><Role>restart-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>restart-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-restart-second", ExpectedBucketOwner = "123456789012" }
+status = "404 Not Found"
+headers = [["x-amz-request-id", "restart-missing"]]
+body = "<Error><Code>ReplicationConfigurationNotFoundError</Code><Message>missing</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "duplicate-singleton-header"
+lane = "invalid_xml"
+expected = "response_invalid"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-duplicate", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]]
+body = "<ReplicationConfiguration><Role>duplicate-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>duplicate-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+
+[[operation.signed_socket.case]]
+id = "bounded-response"
+lane = "invalid_xml"
+expected = "response_sink_failed"
+limits = { maximum_document_bytes = 64 }
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-bounded", ExpectedBucketOwner = "123456789012" }
+status = "modeled_success"
+headers = []
+body = "<ReplicationConfiguration>                                                                </ReplicationConfiguration>"
 
 [[operation]]
 name = "GetBucketRequestPayment"

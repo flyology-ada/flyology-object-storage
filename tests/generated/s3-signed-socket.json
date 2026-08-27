@@ -1,0 +1,186 @@
+{
+  "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
+  "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
+  "operations": {
+    "GetBucketReplication": {
+      "adapter": "./bin/s3_get_bucket_replication_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration><Role>low-level-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>low-level-destination</Bucket></Destination></Rule></ReplicationConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ],
+                [
+                  "x-amz-id-2",
+                  "low-level-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?replication"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-role",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration><Role>synchronous-role</Role><Rule><Status>Disabled</Status><Destination><Bucket>synchronous-destination</Bucket></Destination></Rule></ReplicationConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "synchronous-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?replication"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-role",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration><Role>composable-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>composable-destination</Bucket></Destination></Rule></ReplicationConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?replication"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-role",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration><Role>restart-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>restart-destination</Bucket></Destination></Rule></ReplicationConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?replication"
+            },
+            {
+              "body": "<Error><Code>ReplicationConfigurationNotFoundError</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?replication"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration><Role>duplicate-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>duplicate-destination</Bucket></Destination></Rule></ReplicationConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?replication"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ReplicationConfiguration>                                                                </ReplicationConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?replication"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 64
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    }
+  }
+}

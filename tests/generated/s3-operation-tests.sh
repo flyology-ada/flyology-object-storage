@@ -67,3 +67,7 @@ run_s3_operation_corpora() {
   ./bin/s3_create_session_tls_corpus
   ./bin/s3_transfer_many_corpus
 }
+
+run_s3_socket_qualifiers() {
+  uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketReplication
+}

@@ -7,6 +7,10 @@ ownership, implementation family, public provider package and operation name,
 response codec,
 absence and error classification, mutation certainty and reconciliation,
 intentional exclusions, current coverage, provenance, and executable evidence.
+For signed qualification it also records reviewed operation input values,
+typed call lanes, response fixtures, non-success statuses, expected outcomes,
+and caller-selected limits. It does not copy model-owned HTTP methods, success
+statuses, URI templates, member locations, or wire header names.
 
 Every one of the 116 pinned operations has a registry entry. The initial
 backfill is deliberately inventory-only: it preserves the committed coverage
@@ -59,6 +63,10 @@ must not be edited directly:
 - `coverage/s3-operation-counts.json` — exact coverage/provider/family counts;
 - `tests/generated/s3-operation-tests.sh` — maintained verifier and corpus
   registration used by the full test gate;
+- `tests/generated/s3-negative-xml.json` — routine malformed XML cases derived
+  from a reviewed valid document and the pinned reachable shape closure;
+- `tests/generated/s3-signed-socket.json` — exact request method, target, query,
+  and signed headers derived from reviewed inputs and the pinned operation;
 - `docs/generated/s3-operation-registry.md` — complete documentation list.
 
 CI runs `generate --check` before accepting coverage. Existing executable
@@ -94,6 +102,21 @@ and rejection, duplicate request identifiers, response bounds, composition,
 typed `Finish`, and restart of the same operation object. The registry marks
 its client implementation `shared_family` only because those executable gates
 also pass through the family instance; its tests remain handwritten.
+
+The canary's signed-socket manifest records only reviewed values that the
+service model cannot supply: typed call lane, operation input values,
+non-success response status, response headers and bytes, expected provider
+result, and any caller-selected XML limits. The generator derives the request
+method, success status, URI and query placement, header names, and
+signed-header expectations from Botocore.
+The shared loopback runner validates those requests and fragments every
+response through a small typed Ada adapter. Six reviewed lanes cover low-level,
+synchronous, composable, restart, duplicate singleton-header, and bounded-sink
+behavior. Seventeen generated malformed XML cases cover missing required
+members, duplicate singletons, unknown members, invalid enums, namespace and
+attribute violations, an empty required flattened list, and each XML resource
+limit. All 23 cases execute the real signer, socket transport, family state
+machine, decoder, classifier, and typed provider result.
 
 Generated files are unchanged by the Ada family itself. The human-owned files
 are the generic specification/body, each provider's private instantiation and

@@ -65,6 +65,9 @@ fi
 echo "changed lines: whitespace-clean"
 
 "$PROJECT_DIR/tools/ci/check-markdown-links.py"
+if [ -n "$MODEL" ]; then
+  export FLYOLOGY_S3_SERVICE_MODEL=$MODEL
+fi
 "$PROJECT_DIR/tools/verify-coverage.sh"
 "$PROJECT_DIR/tools/test-coverage-verifier.sh"
 

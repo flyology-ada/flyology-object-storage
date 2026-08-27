@@ -1,0 +1,138 @@
+{
+  "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
+  "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
+  "operations": {
+    "GetBucketReplication": {
+      "cases": [
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-role",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-rules-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-rules-1-destination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-rules-1-status",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role></ns0:ReplicationConfiguration>",
+          "category": "empty-required-flattened-list",
+          "expected_http_result": "response_invalid",
+          "id": "empty-required-flattened-list-rules",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>__INVALID_MODEL_ENUM__</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-rules-1-status-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 3
+          }
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 227
+          }
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 5
+          }
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 39
+          }
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-role",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-rules-1-destination",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination /></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-rules-1-destination-1-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-rules-1-status",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Role>reviewed-role</ns1:Role><ns1:Rule><ns1:Status>Enabled</ns1:Status><ns1:Destination><ns1:Bucket>reviewed-destination</ns1:Bucket></ns1:Destination></ns1:Rule></ns0:ReplicationConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-replicationconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule></ns0:ReplicationConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-replicationconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ReplicationConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Role>reviewed-role</ns0:Role><ns0:Rule><ns0:Status>Enabled</ns0:Status><ns0:Destination><ns0:Bucket>reviewed-destination</ns0:Bucket></ns0:Destination></ns0:Rule><UnknownModelMember /></ns0:ReplicationConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-replicationconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ReplicationConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Role>reviewed-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>reviewed-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+    }
+  }
+}

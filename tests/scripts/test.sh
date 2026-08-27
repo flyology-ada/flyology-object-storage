@@ -153,3 +153,4 @@ do
   run_s3_operation_corpora
   run=$((run + 1))
 done
+run_s3_socket_qualifiers
