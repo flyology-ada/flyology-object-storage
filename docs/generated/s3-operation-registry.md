@@ -81,7 +81,7 @@ remain inventory-only until their audits gain executable evidence.
 | ListBuckets | legacy_preserved | buckets | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListDirectoryBuckets | legacy_preserved | buckets | paginated_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | ListMultipartUploads | legacy_preserved | transfers | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListObjectAnnotations | legacy_preserved | objects | paginated_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListObjectVersions | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjects | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjectsV2 | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

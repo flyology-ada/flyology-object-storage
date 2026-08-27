@@ -2371,6 +2371,251 @@
         }
       ],
       "negative_template": "synchronous-success"
+    },
+    "ListObjectAnnotations": {
+      "adapter": "./bin/s3_list_object_annotations_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations><AnnotationEntry><AnnotationName>low-level-annotation</AnnotationName><LastModified>2026-08-27T12:34:56Z</LastModified><Size>1</Size></AnnotationEntry></Annotations><ContinuationToken>low level% cursor</ContinuationToken></ListObjectAnnotationsOutput>",
+              "headers": [
+                [
+                  "x-amz-object-version-id",
+                  "v-low"
+                ],
+                [
+                  "x-amz-request-charged",
+                  "requester"
+                ],
+                [
+                  "x-amz-request-id",
+                  "low-request"
+                ]
+              ],
+              "input_values": {
+                "AnnotationPrefix": "low/",
+                "Bucket": "qualified-low-level",
+                "ContinuationToken": "low level% cursor",
+                "ExpectedBucketOwner": "123456789012",
+                "Key": "object/key",
+                "MaxAnnotationResults": "1",
+                "RequestPayer": "requester",
+                "VersionId": "v-low"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-request-payer": "requester"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level/object/key?annotation&annotation-prefix=low%2F&continuation-token=low%20level%25%20cursor&max-annotation-results=1&versionId=v-low"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-annotation",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations><AnnotationEntry><AnnotationName>first-annotation</AnnotationName><LastModified>2026-08-27T12:34:56Z</LastModified><ETag>&quot;etag-one&quot;</ETag><ChecksumAlgorithm>CRC32C</ChecksumAlgorithm><ChecksumAlgorithm>SHA512</ChecksumAlgorithm><Size>42</Size><ReplicationStatus>COMPLETE</ReplicationStatus></AnnotationEntry><AnnotationEntry><AnnotationName>second-annotation</AnnotationName><LastModified>2026-08-27T12:35:56+00:00</LastModified><Size>0</Size><ReplicationStatus>COMPLETED</ReplicationStatus></AnnotationEntry></Annotations><Bucket>qualified-sync</Bucket><Key>object/key</Key><AnnotationPrefix>reviewed/</AnnotationPrefix><MaxAnnotationResults>2</MaxAnnotationResults><AnnotationCount>2</AnnotationCount><ContinuationToken>current</ContinuationToken><NextContinuationToken>next</NextContinuationToken></ListObjectAnnotationsOutput>",
+              "headers": [
+                [
+                  "x-amz-object-version-id",
+                  "v-sync"
+                ],
+                [
+                  "x-amz-request-charged",
+                  "requester"
+                ],
+                [
+                  "x-amz-id-2",
+                  "sync-host"
+                ]
+              ],
+              "input_values": {
+                "AnnotationPrefix": "reviewed/",
+                "Bucket": "qualified-sync",
+                "ContinuationToken": "current",
+                "ExpectedBucketOwner": "123456789012",
+                "Key": "object/key",
+                "MaxAnnotationResults": "2",
+                "RequestPayer": "requester",
+                "VersionId": "v-sync"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-request-payer": "requester"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync/object/key?annotation&annotation-prefix=reviewed%2F&continuation-token=current&max-annotation-results=2&versionId=v-sync"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "first-annotation",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations></Annotations><AnnotationCount>0</AnnotationCount></ListObjectAnnotationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/qualified-empty/object/key?annotation"
+            }
+          ],
+          "expected": "success",
+          "id": "empty-annotations",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations><AnnotationEntry><AnnotationName>composable-annotation</AnnotationName><LastModified>2026-08-27T12:34:56.123Z</LastModified><Size>3</Size><ReplicationStatus>PENDING</ReplicationStatus></AnnotationEntry></Annotations></ListObjectAnnotationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "composable-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/qualified-composable/object/key?annotation"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-annotation",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations><AnnotationEntry><AnnotationName>restart-annotation</AnnotationName><LastModified>2026-08-27T12:34:56Z</LastModified><Size>4</Size></AnnotationEntry></Annotations></ListObjectAnnotationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/qualified-restart/object/key?annotation"
+            },
+            {
+              "body": "<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "Key": "object/key-second"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "404 Not Found",
+              "target": "/qualified-restart/object/key-second?annotation"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidPrefix</Code><Message>invalid</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "invalid-prefix"
+                ]
+              ],
+              "input_values": {
+                "AnnotationPrefix": "invalid",
+                "Bucket": "qualified-invalid-prefix",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "400 Bad Request",
+              "target": "/qualified-invalid-prefix/object/key?annotation&annotation-prefix=invalid"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "invalid-prefix",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations></Annotations></ListObjectAnnotationsOutput>",
+              "headers": [
+                [
+                  "x-amz-object-version-id",
+                  "one"
+                ],
+                [
+                  "x-amz-object-version-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/qualified-duplicate/object/key?annotation"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListObjectAnnotationsOutput><Annotations></Annotations>                                                                                                </ListObjectAnnotationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "Key": "object/key"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/qualified-bounded/object/key?annotation"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
     }
   }
 }

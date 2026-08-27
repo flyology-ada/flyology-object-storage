@@ -74,6 +74,7 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.Get_Object_Retention_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
+   use type Low_Level.List_Object_Annotations_Outcome_Kind;
    use type Low_Level.Put_Object_Legal_Hold_Outcome_Kind;
    use type Low_Level.Put_Object_Retention_Outcome_Kind;
 
@@ -7979,6 +7980,224 @@ package body Flyology.Object_Storage.Client.Objects is
         (Operation, Client, Origin, Bucket, Key, Value, Parameters, Identity,
          Deadline, Region, Style, Token);
    end Put_Retention;
+
+   function Empty_List_Object_Annotations_Outcome
+      return Low_Level.List_Object_Annotations_Outcome is
+     ((Kind   => Low_Level.List_Object_Annotations_Rejected,
+       Status => 500,
+       Error  => (others => <>)));
+
+   function Normalize_List_Object_Annotations_Response
+     (Value     : Low_Level.List_Object_Annotations_Outcome;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase)
+      return List_Object_Annotations_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.List_Object_Annotations_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Object_Annotations_Listed
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidPrefix" | "InvalidBucketName" |
+             "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => List_Object_Annotations_Response_Available,
+         Failure     => Failure,
+         Admission   => Admission,
+         Response    => Value,
+         HTTP_Result => HTTP_Client.Response_Complete,
+         HTTP_Phase  => Phase,
+         Detail      => US.Null_Unbounded_String);
+   end Normalize_List_Object_Annotations_Response;
+
+   function Decode_List_Object_Annotations_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return List_Object_Annotations_Result is
+      pragma Unreferenced (Status, Request_ID, Host_ID);
+   begin
+      return Normalize_List_Object_Annotations_Response
+        (Low.Decode_List_Object_Annotations_Complete_Response
+           (Response, Payload, Limits), Admission, Phase);
+   exception
+      when Error : Low.Invalid_Response =>
+         return Normalize_List_Object_Annotations_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase,
+            Ada.Exceptions.Exception_Message (Error));
+   end Decode_List_Object_Annotations_Response;
+
+   function Normalize_List_Object_Annotations_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return List_Object_Annotations_Result is
+   begin
+      return
+        (Kind        => List_Object_Annotations_Exchange_Failed,
+         Failure     =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                       HTTP_Client.Response_Body_Too_Large |
+                       HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         Response    => Empty_List_Object_Annotations_Outcome,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_List_Object_Annotations_Failure;
+
+   overriding procedure Write
+     (Item : in out List_Object_Annotations_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      List_Object_Annotation_Reads.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item : in out List_Object_Annotations_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      List_Object_Annotation_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out List_Object_Annotations_Operation) is
+   begin
+      List_Object_Annotation_Reads.Request_Cancellation (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out List_Object_Annotations_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      List_Object_Annotation_Reads.Finalize (Item.State);
+   end Finalize;
+
+   procedure List_Annotations
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out List_Object_Annotations_Operation) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "ListObjectAnnotations restart changed owner";
+      end if;
+      List_Object_Annotation_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_List_Object_Annotations
+           (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+            Timestamp), Deadline, Limits);
+   end List_Annotations;
+
+   function List_Annotations
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return List_Object_Annotations_Operation is
+   begin
+      return Result :
+        List_Object_Annotations_Operation (Set, Client, Token)
+      do
+         List_Annotations
+           (Client, Origin, Bucket, Key, Parameters, Identity, Deadline,
+            Region, Style, Limits, Token, Result);
+      end return;
+   end List_Annotations;
+
+   procedure Finish
+     (Operation : in out List_Object_Annotations_Operation;
+      Result    : out List_Object_Annotations_Result) is
+   begin
+      List_Object_Annotation_Reads.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function List_Annotations
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return List_Object_Annotations_Result
+   is
+      --  Derived owner stack: provider parent, HTTP exchange, and HTTP's one
+      --  active transport child. This is not a caller resource default.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : List_Object_Annotations_Operation :=
+           List_Annotations
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : List_Object_Annotations_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Annotations;
 
    procedure Put_Tags
      (Client     : not null access Flyology.HTTP.Client.Client;

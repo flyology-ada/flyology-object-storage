@@ -305,6 +305,7 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
         if case.get("expected") not in {
             "success",
             "not_found",
+            "invalid_request",
             "response_invalid",
             "response_sink_failed",
         }:
@@ -1049,14 +1050,21 @@ def signed_socket_exchange(
         value = values[member_name]
         location = spec.get("location")
         location_name = spec.get("locationName", member_name)
-        encoded = urllib.parse.quote(value, safe="-_.~")
         if location == "uri":
             marker = "{" + location_name + "}"
-            if marker not in target:
+            greedy_marker = "{" + location_name + "+}"
+            if greedy_marker in target:
+                #  Smithy greedy labels preserve path separators while each
+                #  key byte remains URI encoded. Ordinary labels encode '/'.
+                encoded = urllib.parse.quote(value, safe="/-_.~")
+                target = target.replace(greedy_marker, encoded)
+            elif marker in target:
+                encoded = urllib.parse.quote(value, safe="-_.~")
+                target = target.replace(marker, encoded)
+            else:
                 raise Audit_Error(
                     f"model URI omits {operation_name}.{member_name} marker"
                 )
-            target = target.replace(marker, encoded)
         elif location == "querystring":
             marker = "{" + location_name + "}"
             if marker in target:

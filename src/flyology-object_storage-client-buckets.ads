@@ -10292,6 +10292,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Replication_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10330,6 +10331,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10383,6 +10385,7 @@ private
    --  @exclude
    function Decode_List_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10436,6 +10439,7 @@ private
    --  @exclude
    function Decode_List_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10489,6 +10493,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10541,6 +10546,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10595,6 +10601,7 @@ private
    --  @exclude
    function Decode_List_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10652,6 +10659,7 @@ private
    --  @exclude
    function Decode_List_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10706,6 +10714,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10760,6 +10769,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Logging_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10813,6 +10823,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Metadata_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -10866,6 +10877,7 @@ private
    --  @exclude
    function Decode_Get_Bucket_Website_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;

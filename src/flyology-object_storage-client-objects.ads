@@ -9,6 +9,7 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.IO;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Bounded_REST_XML_Reads;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
@@ -3552,6 +3553,136 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Attributes_Outcome;
 
+   --  Shape of a terminal ListObjectAnnotations read.
+   --  @enum List_Object_Annotations_Response_Available Modeled response exists
+   --  @enum List_Object_Annotations_Exchange_Failed No complete response
+   type List_Object_Annotations_Result_Kind is
+     (List_Object_Annotations_Response_Available,
+      List_Object_Annotations_Exchange_Failed);
+
+   --  Typed annotation page response or bounded composable HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Object_Annotations_Result is record
+      Kind        : List_Object_Annotations_Result_Kind;
+      Failure     : Failure_Reason;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty;
+      Response    : Low_Level.List_Object_Annotations_Outcome;
+      HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+      HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+      Detail      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  One bounded ListObjectAnnotations read with one hidden HTTP child. It
+   --  owns its signed request and response through typed Finish.
+   type List_Object_Annotations_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one object-annotation page read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the annotated object
+   --  @param Key Complete object key
+   --  @param Parameters Complete modeled pagination and owner preconditions
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established annotation read
+   procedure List_Annotations
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out List_Object_Annotations_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one owner-driven object-annotation page read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the annotated object
+   --  @param Key Complete object key
+   --  @param Parameters Complete modeled pagination and owner preconditions
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven annotation read
+   function List_Annotations
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return List_Object_Annotations_Operation;
+
+   --  Consume one terminal object-annotation page read.
+   --  @param Operation Terminal annotation read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Object_Annotations_Operation;
+      Result    : out List_Object_Annotations_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one object-annotation page by waiting on the same owner-driven
+   --  state machine exposed to composable callers.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the annotated object
+   --  @param Key Complete object key
+   --  @param Parameters Complete modeled pagination and owner preconditions
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or bounded exchange failure
+   function List_Annotations
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.List_Object_Annotations_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return List_Object_Annotations_Result;
+
 private
 
    --  @exclude
@@ -4285,6 +4416,61 @@ private
      (Item : in out Get_Object_Attributes_Operation);
    overriding procedure Finalize
      (Item : in out Get_Object_Attributes_Operation);
+
+   --  @exclude
+   function Decode_List_Object_Annotations_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return List_Object_Annotations_Result;
+
+   --  @exclude
+   function Normalize_List_Object_Annotations_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return List_Object_Annotations_Result;
+
+   --  @exclude
+   package List_Object_Annotation_Reads is new
+     Flyology.Object_Storage.Client.Bounded_REST_XML_Reads
+       (Result_Type       => List_Object_Annotations_Result,
+        Operation_Name    => "ListObjectAnnotations",
+        Start_Exchange    => Low_Level.List_Object_Annotations,
+        Decode_Response   => Decode_List_Object_Annotations_Response,
+        Normalize_Failure => Normalize_List_Object_Annotations_Failure);
+
+   --  @exclude
+   type List_Object_Annotations_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : List_Object_Annotation_Reads.State (Set);
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out List_Object_Annotations_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out List_Object_Annotations_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out List_Object_Annotations_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out List_Object_Annotations_Operation);
+
    function Normalize_List_Objects_Response
      (Value     : Low_Level.List_Objects_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

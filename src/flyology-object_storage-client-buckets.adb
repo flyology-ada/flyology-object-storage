@@ -5987,6 +5987,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Replication_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -5994,6 +5995,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Replication_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Replication_Response
         (Low.Decode_Get_Bucket_Replication_Response
@@ -6189,6 +6191,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -6196,6 +6199,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Metrics_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Metrics_Response
         (Low.Decode_Get_Bucket_Metrics_Configuration_Response
@@ -6416,6 +6420,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_List_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -6423,6 +6428,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return List_Bucket_Metrics_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_List_Bucket_Metrics_Response
         (Low.Decode_List_Bucket_Metrics_Configurations_Response
@@ -6643,6 +6649,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_List_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -6650,6 +6657,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return List_Bucket_Analytics_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_List_Bucket_Analytics_Response
         (Low.Decode_List_Bucket_Analytics_Configurations_Response
@@ -6886,6 +6894,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -6893,6 +6902,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Analytics_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Analytics_Response
         (Low.Decode_Get_Bucket_Analytics_Configuration_Response
@@ -7115,6 +7125,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -7122,6 +7133,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Intelligent_Tiering_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Intelligent_Tiering_Response
         (Low.Decode_Get_Bucket_Intelligent_Tiering_Configuration_Response
@@ -7348,6 +7360,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_List_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -7355,6 +7368,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return List_Bucket_Intelligent_Tiering_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_List_Bucket_Intelligent_Tiering_Response
         (Low.Decode_List_Bucket_Intelligent_Tiering_Configurations_Response
@@ -7575,6 +7589,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_List_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -7582,6 +7597,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return List_Bucket_Inventory_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_List_Bucket_Inventory_Response
         (Low.Decode_List_Bucket_Inventory_Configurations_Response
@@ -7806,6 +7822,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -7813,6 +7830,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Inventory_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Inventory_Response
         (Low.Decode_Get_Bucket_Inventory_Configuration_Response
@@ -8036,6 +8054,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Logging_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -8043,6 +8062,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Logging_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Logging_Response
         (Low.Decode_Get_Bucket_Logging_Response
@@ -8250,6 +8270,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Metadata_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -8257,6 +8278,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Metadata_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Metadata_Response
         (Low.Decode_Get_Bucket_Metadata_Configuration_Response
@@ -8479,6 +8501,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    function Decode_Get_Bucket_Website_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
@@ -8486,6 +8509,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Admission  : HTTP_Client.Admission_Certainty;
       Phase      : HTTP_Client.Exchange_Phase)
       return Get_Bucket_Website_Result is
+      pragma Unreferenced (Response);
    begin
       return Normalize_Get_Bucket_Website_Response
         (Low.Decode_Get_Bucket_Website_Response

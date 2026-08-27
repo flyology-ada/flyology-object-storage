@@ -9,7 +9,7 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
      (Namespace_Not_Selected, Unqualified, S3_Qualified);
    type Scalar_Kind is
      (No_Scalar, Is_Truncated_Scalar, Continuation_Token_Scalar,
-      Next_Continuation_Token_Scalar);
+      Next_Continuation_Token_Scalar, Extra_Scalar);
 
    type Page_Handler is new XML.Event_Handler with record
       Depth                        : Natural := 0;
@@ -17,11 +17,14 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
       Is_Truncated_Seen            : Boolean := False;
       Continuation_Token_Seen      : Boolean := False;
       Next_Continuation_Token_Seen : Boolean := False;
+      Item_Container_Seen          : Boolean := False;
       Namespace                    : Namespace_Style := Namespace_Not_Selected;
       Pending_Namespace            : US.Unbounded_String;
       Pending_Attribute_Count      : Natural := 0;
       Scalar                       : Scalar_Kind := No_Scalar;
+      Scalar_Name                  : US.Unbounded_String;
       Text_Value                   : US.Unbounded_String;
+      In_Item_Container            : Boolean := False;
       In_Item                      : Boolean := False;
       Item                         : Item_Handler_Type;
       Value                        : Result_Type := Empty_Result;
@@ -82,12 +85,11 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
       Namespace_URI   : String;
       Attribute_Count : Natural) is
    begin
+      Validate_Envelope_Details (Item, Namespace_URI, Attribute_Count);
       if Item.In_Item then
          Start_Element_Details
            (Item.Item, Namespace_URI, Attribute_Count);
       else
-         Validate_Envelope_Details
-           (Item, Namespace_URI, Attribute_Count);
          Item.Pending_Namespace := US.To_Unbounded_String (Namespace_URI);
          Item.Pending_Attribute_Count := Attribute_Count;
       end if;
@@ -110,9 +112,12 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
    end Element_Attribute;
 
    procedure Begin_Scalar
-     (Item : in out Page_Handler; Kind : Scalar_Kind) is
+     (Item : in out Page_Handler;
+      Kind : Scalar_Kind;
+      Name : String := "") is
    begin
       Item.Scalar := Kind;
+      Item.Scalar_Name := US.To_Unbounded_String (Name);
       Item.Text_Value := US.Null_Unbounded_String;
    end Begin_Scalar;
 
@@ -130,7 +135,28 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
             raise Malformed_Page with "invalid configuration-list root";
          end if;
          Item.Root_Seen := True;
-      elsif Item.Depth = 2 and then Local_Name = Item_Name then
+      elsif Item.Depth = 2
+        and then Item_Container_Name'Length /= 0
+        and then Local_Name = Item_Container_Name
+        and then not Item.Item_Container_Seen
+      then
+         Item.Item_Container_Seen := True;
+         Item.In_Item_Container := True;
+         Set_Item_Container_Present (Item.Value);
+      elsif Item.Depth = 2
+        and then Item_Container_Name'Length = 0
+        and then Local_Name = Item_Name
+      then
+         Item.In_Item := True;
+         Start_Element_Details
+           (Item.Item,
+            US.To_String (Item.Pending_Namespace),
+            Item.Pending_Attribute_Count);
+         Start_Element (Item.Item, Local_Name);
+      elsif Item.Depth = 3
+        and then Item.In_Item_Container
+        and then Local_Name = Item_Name
+      then
          Item.In_Item := True;
          Start_Element_Details
            (Item.Item,
@@ -139,22 +165,27 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
          Start_Element (Item.Item, Local_Name);
       elsif Item.Depth = 2
         and then Local_Name = "IsTruncated"
+        and then Allow_Is_Truncated
         and then not Item.Is_Truncated_Seen
       then
          Item.Is_Truncated_Seen := True;
          Begin_Scalar (Item, Is_Truncated_Scalar);
       elsif Item.Depth = 2
         and then Local_Name = "ContinuationToken"
+        and then Allow_Continuation_Token
         and then not Item.Continuation_Token_Seen
       then
          Item.Continuation_Token_Seen := True;
          Begin_Scalar (Item, Continuation_Token_Scalar);
       elsif Item.Depth = 2
         and then Local_Name = "NextContinuationToken"
+        and then Allow_Next_Continuation_Token
         and then not Item.Next_Continuation_Token_Seen
       then
          Item.Next_Continuation_Token_Seen := True;
          Begin_Scalar (Item, Next_Continuation_Token_Scalar);
+      elsif Item.Depth = 2 then
+         Begin_Scalar (Item, Extra_Scalar, Local_Name);
       else
          raise Malformed_Page with
            "unknown or duplicate configuration-list member";
@@ -170,7 +201,9 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
          Text (Item.Item, Value);
       elsif Item.Scalar /= No_Scalar then
          US.Append (Item.Text_Value, Value);
-      elsif Item.Depth = 1 then
+      elsif Item.Depth = 1
+        or else (Item.In_Item_Container and then Item.Depth = 2)
+      then
          Require_Whitespace (Value);
       else
          raise Malformed_Page with
@@ -198,11 +231,16 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
          when Next_Continuation_Token_Scalar =>
             Set_Next_Continuation_Token
               (Item.Value, US.To_String (Item.Text_Value));
+         when Extra_Scalar =>
+            Set_Extra_Scalar
+              (Item.Value, US.To_String (Item.Scalar_Name),
+               US.To_String (Item.Text_Value));
          when No_Scalar =>
             raise Malformed_Page with
               "configuration-list close without scalar";
       end case;
       Item.Scalar := No_Scalar;
+      Item.Scalar_Name := US.Null_Unbounded_String;
       Item.Text_Value := US.Null_Unbounded_String;
    end Store_Scalar;
 
@@ -211,7 +249,9 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
    begin
       if Item.In_Item then
          End_Element (Item.Item, Local_Name);
-         if Item.Depth = 2 then
+         if (Item_Container_Name'Length = 0 and then Item.Depth = 2)
+           or else (Item_Container_Name'Length /= 0 and then Item.Depth = 3)
+         then
             if Local_Name /= Item_Name then
                raise Malformed_Page with
                  "mismatched configuration-list item close";
@@ -220,6 +260,12 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
             Reset_Item (Item.Item);
             Item.In_Item := False;
          end if;
+      elsif Item.In_Item_Container and then Item.Depth = 2 then
+         if Local_Name /= Item_Container_Name then
+            raise Malformed_Page with
+              "mismatched configuration-list item container close";
+         end if;
+         Item.In_Item_Container := False;
       elsif Item.Depth = 2 then
          if (Item.Scalar = Is_Truncated_Scalar
              and then Local_Name /= "IsTruncated")
@@ -227,6 +273,8 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
                     and then Local_Name /= "ContinuationToken")
            or else (Item.Scalar = Next_Continuation_Token_Scalar
                     and then Local_Name /= "NextContinuationToken")
+           or else (Item.Scalar = Extra_Scalar
+                    and then Local_Name /= US.To_String (Item.Scalar_Name))
          then
             raise Malformed_Page with
               "mismatched configuration-list scalar close";
@@ -252,6 +300,7 @@ package body Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is
       XML.Parse (Document, Handler, Limits);
       if Handler.Depth /= 0
         or else Handler.In_Item
+        or else Handler.In_Item_Container
         or else not Handler.Root_Seen
       then
          raise Malformed_Page with "incomplete configuration-list document";

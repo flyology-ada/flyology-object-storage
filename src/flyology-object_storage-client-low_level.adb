@@ -33,6 +33,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
    package Analytics renames Flyology.Object_Storage.S3.Analytics;
+   package Annotations renames Flyology.Object_Storage.S3.Annotations;
    package Intelligent_Tiering renames
      Flyology.Object_Storage.S3.Intelligent_Tiering;
    package Inventory renames Flyology.Object_Storage.S3.Inventory;
@@ -11158,6 +11159,200 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "DeleteObjectAnnotation response exceeds configured limit";
    end Execute_Delete_Object_Annotation;
 
+   function Prepare_List_Object_Annotations
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : List_Object_Annotations_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Parameters.Has_Version_ID) +
+        Boolean'Pos (Parameters.Has_Max_Annotation_Results) +
+        Boolean'Pos (Parameters.Has_Annotation_Prefix) +
+        Boolean'Pos (Parameters.Has_Continuation_Token) +
+        Boolean'Pos (US.Length (Parameters.Request_Payer) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+
+      function Limit_Image return String is
+        (Ada.Strings.Fixed.Trim
+           (Annotations.Annotation_Result_Limit'Image
+              (Parameters.Max_Annotation_Results),
+            Ada.Strings.Both));
+   begin
+      if not Valid_Bucket_Name (Bucket) then
+         raise Invalid_Request with
+           "invalid ListObjectAnnotations bucket";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      if Parameters.Has_Version_ID then
+         Add ("VersionId", US.To_String (Parameters.Version_ID));
+      end if;
+      if Parameters.Has_Max_Annotation_Results then
+         Add ("MaxAnnotationResults", Limit_Image);
+      end if;
+      if Parameters.Has_Annotation_Prefix then
+         Add
+           ("AnnotationPrefix",
+            US.To_String (Parameters.Annotation_Prefix));
+      end if;
+      if Parameters.Has_Continuation_Token then
+         Add
+           ("ContinuationToken",
+            US.To_String (Parameters.Continuation_Token));
+      end if;
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      return Prepare_Model_Request
+        (Model.List_Object_Annotations_Operation, Origin, Style, Values,
+         "", False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp);
+   end Prepare_List_Object_Annotations;
+
+   function Decode_List_Object_Annotations_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits)
+      return List_Object_Annotations_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid ListObjectAnnotations response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0 then
+               raise Invalid_Response with
+                 "empty ListObjectAnnotations response header";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+      Object_Version_ID : constant String :=
+        Singleton_Header ("x-amz-object-version-id");
+      Request_Charged : constant String :=
+        Singleton_Header ("x-amz-request-charged");
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.List_Object_Annotations_Operation));
+      Object_Version_Shape : constant Model.Shape_Index :=
+        Model.Member_Shape
+          (Output, Find_Model_Member (Output, "ObjectVersionId"));
+      Request_Charged_Shape : constant Model.Shape_Index :=
+        Model.Member_Shape
+          (Output, Find_Model_Member (Output, "RequestCharged"));
+   begin
+      if not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+        or else not Valid_List_Response_Header_Text (Object_Version_ID)
+        or else not Valid_List_Response_Header_Text (Request_Charged)
+        or else (Object_Version_ID'Length > 0
+                 and then not Valid_Model_Scalar
+                   (Object_Version_Shape, Object_Version_ID))
+        or else (Request_Charged'Length > 0
+                 and then not Valid_Model_Scalar
+                   (Request_Charged_Shape, Request_Charged))
+      then
+         raise Invalid_Response with
+           "invalid ListObjectAnnotations response header";
+      elsif Status = 200 then
+         return
+           (Kind   => Object_Annotations_Listed,
+            Status => Status,
+            Result =>
+              (Page => Annotations.Parse_List (Payload, Limits),
+               Object_Version_ID =>
+                 US.To_Unbounded_String (Object_Version_ID),
+               Request_Charged =>
+                 US.To_Unbounded_String (Request_Charged)));
+      end if;
+      declare
+         Value : S3.Errors.Error_Response := S3.Errors.Parse (Payload, Limits);
+      begin
+         if US.Length (Value.Request_ID) = 0 then
+            Value.Request_ID := US.To_Unbounded_String (Request_ID);
+         end if;
+         if US.Length (Value.Host_ID) = 0 then
+            Value.Host_ID := US.To_Unbounded_String (Host_ID);
+         end if;
+         return
+           (Kind => List_Object_Annotations_Rejected,
+            Status => Status,
+            Error => Value);
+      end;
+   exception
+      when Annotations.Malformed_Annotations | S3.Errors.Malformed_Error |
+           Constraint_Error =>
+         raise Invalid_Response with
+           "malformed ListObjectAnnotations response";
+   end Decode_List_Object_Annotations_Complete_Response;
+
+   function Execute_List_Object_Annotations
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token;
+      Limits   : S3.XML.Parse_Limits)
+      return List_Object_Annotations_Outcome is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.List_Object_Annotations_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Object_Annotations_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "ListObjectAnnotations response exceeds configured limit";
+   end Execute_List_Object_Annotations;
+
    function Content_MD5 (Value : String) return String is
       Digest : constant GNAT.MD5.Binary_Message_Digest :=
         GNAT.MD5.Digest (Value);
@@ -15762,6 +15957,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (S3.Model.Delete_Object_Annotation_Operation, Client, Prepared, Source,
          Sink, Deadline, Token, Operation);
    end Delete_Object_Annotation;
+
+   procedure List_Object_Annotations
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Model_Sink
+        (S3.Model.List_Object_Annotations_Operation, Client, Prepared, Sink,
+         Deadline, Token, Operation);
+   end List_Object_Annotations;
 
    procedure Get_Object_ACL
      (Client    : not null access Flyology.HTTP.Client.Client;

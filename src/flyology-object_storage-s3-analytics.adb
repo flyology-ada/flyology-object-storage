@@ -552,12 +552,33 @@ package body Flyology.Object_Storage.S3.Analytics is
       Result.Configurations.Append (Value);
    end Append_Page_Item;
 
+   procedure Reject_Page_Extra_Scalar
+     (Result : in out Analytics_Configuration_Page;
+      Name   : String;
+      Value  : String) is
+      pragma Unreferenced (Result, Name, Value);
+   begin
+      raise Malformed_Analytics with
+        "unknown analytics page member";
+   end Reject_Page_Extra_Scalar;
+
+   procedure Ignore_Item_Container_Presence
+     (Result : in out Analytics_Configuration_Page) is
+      pragma Unreferenced (Result);
+   begin
+      null;
+   end Ignore_Item_Container_Presence;
+
    --  Both element names are fixed by the pinned Botocore operation/output
    --  model. Changing either changes accepted S3 wire documents.
    package Page_Decoder is new Paginated_REST_XML_Reads
      (Root_Name                   =>
         "ListBucketAnalyticsConfigurationsOutput",
+      Item_Container_Name         => "",
       Item_Name                   => "AnalyticsConfiguration",
+      Allow_Is_Truncated          => True,
+      Allow_Continuation_Token    => True,
+      Allow_Next_Continuation_Token => True,
       Item_Type                   => Analytics_Configuration,
       Item_Handler_Type           => Analytics_Handler,
       Reset_Item                  => Reset_Handler,
@@ -567,6 +588,8 @@ package body Flyology.Object_Storage.S3.Analytics is
       Set_Is_Truncated            => Set_Page_Is_Truncated,
       Set_Continuation_Token      => Set_Page_Continuation_Token,
       Set_Next_Continuation_Token => Set_Page_Next_Continuation_Token,
+      Set_Extra_Scalar            => Reject_Page_Extra_Scalar,
+      Set_Item_Container_Present  => Ignore_Item_Container_Presence,
       Append_Item                 => Append_Page_Item);
 
    function Parse

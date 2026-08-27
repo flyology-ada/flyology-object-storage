@@ -96,6 +96,7 @@ package body Flyology.Object_Storage.Client.Bounded_REST_XML_Reads is
             Item.Final_Result :=
               Decode_Response
                 (HTTP_Client.Status (Response),
+                 Response,
                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
                  Singleton_Header ("x-amz-request-id"),
                  Singleton_Header ("x-amz-id-2"), Item.Limits,

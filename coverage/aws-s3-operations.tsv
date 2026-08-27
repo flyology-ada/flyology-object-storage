@@ -71,7 +71,7 @@ ListBucketMetricsConfigurations	extended	missing	covered	missing	covered
 ListBuckets	core	covered	covered	covered	covered
 ListDirectoryBuckets	extended	missing	partial	missing	missing
 ListMultipartUploads	core	covered	covered	covered	covered
-ListObjectAnnotations	extended	missing	partial	missing	missing
+ListObjectAnnotations	extended	missing	covered	missing	covered
 ListObjectVersions	core	covered	covered	covered	covered
 ListObjects	core	covered	covered	covered	covered
 ListObjectsV2	core	covered	covered	covered	covered

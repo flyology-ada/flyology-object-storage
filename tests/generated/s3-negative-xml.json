@@ -2558,6 +2558,194 @@
         }
       ],
       "valid_document": "<ListBucketMetricsConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><MetricsConfiguration><Id>reviewed-metrics</Id><Filter><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></Filter></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>"
+    },
+    "ListObjectAnnotations": {
+      "cases": [
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotationcount",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotationprefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotations-1-annotationentry-1-annotationname",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotations-1-annotationentry-1-etag",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotations-1-annotationentry-1-lastmodified",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotations-1-annotationentry-1-replicationstatus",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-annotations-1-annotationentry-1-size",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-bucket",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-continuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-maxannotationresults",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-nextcontinuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>__INVALID_MODEL_ENUM__</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-annotations-1-annotationentry-1-checksumalgorithm-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>__INVALID_MODEL_ENUM__</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-annotations-1-annotationentry-1-checksumalgorithm-2",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>__INVALID_MODEL_ENUM__</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-annotations-1-annotationentry-1-replicationstatus-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 3
+          }
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 757
+          }
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 16
+          }
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 142
+          }
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-annotations-1-annotationentry-1-annotationname",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-annotations-1-annotationentry-1-lastmodified",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-annotations-1-annotationentry-1-size",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Annotations><ns1:AnnotationEntry><ns1:AnnotationName>reviewed-annotation</ns1:AnnotationName><ns1:LastModified>2026-08-27T12:34:56Z</ns1:LastModified><ns1:ETag>\"reviewed-etag\"</ns1:ETag><ns1:ChecksumAlgorithm>CRC32C</ns1:ChecksumAlgorithm><ns1:ChecksumAlgorithm>SHA512</ns1:ChecksumAlgorithm><ns1:Size>42</ns1:Size><ns1:ReplicationStatus>COMPLETE</ns1:ReplicationStatus></ns1:AnnotationEntry></ns1:Annotations><ns1:Bucket>reviewed-bucket</ns1:Bucket><ns1:Key>reviewed/key</ns1:Key><ns1:AnnotationPrefix>reviewed/</ns1:AnnotationPrefix><ns1:MaxAnnotationResults>2</ns1:MaxAnnotationResults><ns1:AnnotationCount>1</ns1:AnnotationCount><ns1:ContinuationToken>reviewed-current</ns1:ContinuationToken><ns1:NextContinuationToken>reviewed-next</ns1:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-listobjectannotationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-listobjectannotationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-08-27T12:34:56Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><UnknownModelMember /></ns0:ListObjectAnnotationsOutput>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-listobjectannotationsoutput",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ListObjectAnnotationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Annotations><AnnotationEntry><AnnotationName>reviewed-annotation</AnnotationName><LastModified>2026-08-27T12:34:56Z</LastModified><ETag>&quot;reviewed-etag&quot;</ETag><ChecksumAlgorithm>CRC32C</ChecksumAlgorithm><ChecksumAlgorithm>SHA512</ChecksumAlgorithm><Size>42</Size><ReplicationStatus>COMPLETE</ReplicationStatus></AnnotationEntry></Annotations><Bucket>reviewed-bucket</Bucket><Key>reviewed/key</Key><AnnotationPrefix>reviewed/</AnnotationPrefix><MaxAnnotationResults>2</MaxAnnotationResults><AnnotationCount>1</AnnotationCount><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken></ListObjectAnnotationsOutput>"
     }
   }
 }

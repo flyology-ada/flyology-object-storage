@@ -4,7 +4,11 @@ with Flyology.Object_Storage.S3.XML;
 private
 generic
    Root_Name : String;
+   Item_Container_Name : String;
    Item_Name : String;
+   Allow_Is_Truncated : Boolean;
+   Allow_Continuation_Token : Boolean;
+   Allow_Next_Continuation_Token : Boolean;
 
    type Item_Type is private;
    type Item_Handler_Type is new XML.Event_Handler with private;
@@ -19,6 +23,10 @@ generic
      (Result : in out Result_Type; Value : String);
    with procedure Set_Next_Continuation_Token
      (Result : in out Result_Type; Value : String);
+   with procedure Set_Extra_Scalar
+     (Result : in out Result_Type; Name : String; Value : String);
+   with procedure Set_Item_Container_Present
+     (Result : in out Result_Type);
    with procedure Append_Item
      (Result : in out Result_Type; Value : Item_Type);
 package Flyology.Object_Storage.S3.Paginated_REST_XML_Reads is

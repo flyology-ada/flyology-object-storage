@@ -11,6 +11,7 @@ with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Analytics;
+with Flyology.Object_Storage.S3.Annotations;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Logging;
@@ -4266,6 +4267,110 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Annotation_Outcome;
 
+   --  Every non-resource member in the pinned ListObjectAnnotations input.
+   --  Presence flags preserve explicitly empty optional query values. The
+   --  caller selects every page-size value; this record defines no default.
+   --  @field Version_ID Exact optional object version text
+   --  @field Has_Version_ID Whether to send Version_ID, including empty text
+   --  @field Max_Annotation_Results Caller-selected modeled page size
+   --  @field Has_Max_Annotation_Results Whether to send the page size
+   --  @field Annotation_Prefix Exact optional annotation-name prefix
+   --  @field Has_Annotation_Prefix Whether to send the prefix, including empty
+   --  @field Continuation_Token Exact optional next-page cursor
+   --  @field Has_Continuation_Token Whether to send cursor, including empty
+   --  @field Request_Payer Empty or requester for Requester Pays buckets
+   --  @field Expected_Bucket_Owner Empty or exact owner precondition
+   type List_Object_Annotations_Parameters is record
+      Version_ID                 : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Version_ID             : Boolean;
+      Max_Annotation_Results     : S3.Annotations.Annotation_Result_Limit;
+      Has_Max_Annotation_Results : Boolean;
+      Annotation_Prefix          : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Annotation_Prefix      : Boolean;
+      Continuation_Token         : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token     : Boolean;
+      Request_Payer              : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Build and sign one exact ListObjectAnnotations request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Key Complete object key; slashes remain path separators
+   --  @param Parameters Complete modeled optional request values
+   --  @param Identity Signing credentials borrowed during construction
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to ListObjectAnnotations
+   function Prepare_List_Object_Annotations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Parameters : List_Object_Annotations_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Complete modeled ListObjectAnnotations success representation.
+   --  @field Page Strict same-response REST/XML annotation page
+   --  @field Object_Version_ID Optional exact selected object generation
+   --  @field Request_Charged Optional exact requester-pays result
+   type List_Object_Annotations_Result is record
+      Page              : S3.Annotations.Annotation_Page;
+      Object_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal ListObjectAnnotations response classification.
+   --  @enum Object_Annotations_Listed Exact 200 response decoded successfully
+   --  @enum List_Object_Annotations_Rejected Bounded non-200 S3 rejection
+   type List_Object_Annotations_Outcome_Kind is
+     (Object_Annotations_Listed, List_Object_Annotations_Rejected);
+
+   --  Terminal exact listing success or bounded S3 rejection. The rejected
+   --  kind and status 500 are deterministic scratch values required by the
+   --  shared owner-driven state before terminal decoding; they are not an
+   --  operational default or a provider compatibility claim.
+   --  @field Status Exact physical HTTP status
+   --  @field Result Complete success graph when Kind is listed
+   --  @field Error Structured bounded S3 error when Kind is rejected
+   type List_Object_Annotations_Outcome
+     (Kind : List_Object_Annotations_Outcome_Kind :=
+       List_Object_Annotations_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Annotations_Listed =>
+            Result : List_Object_Annotations_Result;
+         when List_Object_Annotations_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one complete bounded ListObjectAnnotations response. Singleton
+   --  modeled headers are validated from the same HTTP response snapshot.
+   --  @param Response Complete same-response status and header snapshot
+   --  @param Payload Complete bounded same-response body
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed exact listing or structured S3 rejection
+   function Decode_List_Object_Annotations_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Object_Annotations_Outcome;
+
+   --  Execute one exact prepared read using the synchronous HTTP adapter.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Exact ListObjectAnnotations prepared request
+   --  @param Timeout Whole synchronous exchange budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed exact listing or structured S3 rejection
+   function Execute_List_Object_Annotations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Object_Annotations_Outcome;
+
    --  Complete modeled inputs for the three object-tagging operations.
    type Put_Object_Tagging_Parameters is record
       Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
@@ -6752,6 +6857,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access
         Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared ListObjectAnnotations exchange into a bounded
+   --  response sink. Another modeled operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Exact prepared request retained through terminal drain
+   --  @param Sink Caller-owned bounded response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure List_Object_Annotations
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
       Sink      : not null access
         Flyology.HTTP.Client.Response_Body_Sink'Class;
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;

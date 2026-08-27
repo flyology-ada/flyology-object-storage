@@ -508,12 +508,33 @@ package body Flyology.Object_Storage.S3.Intelligent_Tiering is
       Result.Configurations.Append (Value);
    end Append_Page_Item;
 
+   procedure Reject_Page_Extra_Scalar
+     (Result : in out Intelligent_Tiering_Configuration_Page;
+      Name   : String;
+      Value  : String) is
+      pragma Unreferenced (Result, Name, Value);
+   begin
+      raise Malformed_Intelligent_Tiering with
+        "unknown intelligent-tiering page member";
+   end Reject_Page_Extra_Scalar;
+
+   procedure Ignore_Item_Container_Presence
+     (Result : in out Intelligent_Tiering_Configuration_Page) is
+      pragma Unreferenced (Result);
+   begin
+      null;
+   end Ignore_Item_Container_Presence;
+
    --  Both element names are fixed by the pinned Botocore operation/output
    --  model. Changing either changes accepted S3 wire documents.
    package Page_Decoder is new Paginated_REST_XML_Reads
      (Root_Name                   =>
         "ListBucketIntelligentTieringConfigurationsOutput",
+      Item_Container_Name         => "",
       Item_Name                   => "IntelligentTieringConfiguration",
+      Allow_Is_Truncated          => True,
+      Allow_Continuation_Token    => True,
+      Allow_Next_Continuation_Token => True,
       Item_Type                   => Intelligent_Tiering_Configuration,
       Item_Handler_Type           => Intelligent_Tiering_Handler,
       Reset_Item                  => Reset_Handler,
@@ -523,6 +544,8 @@ package body Flyology.Object_Storage.S3.Intelligent_Tiering is
       Set_Is_Truncated            => Set_Page_Is_Truncated,
       Set_Continuation_Token      => Set_Page_Continuation_Token,
       Set_Next_Continuation_Token => Set_Page_Next_Continuation_Token,
+      Set_Extra_Scalar            => Reject_Page_Extra_Scalar,
+      Set_Item_Container_Present  => Ignore_Item_Container_Presence,
       Append_Item                 => Append_Page_Item);
 
    function Parse

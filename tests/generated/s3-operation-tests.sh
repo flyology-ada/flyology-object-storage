@@ -81,4 +81,5 @@ run_s3_socket_qualifiers() {
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketLogging
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketWebsite
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketMetadataConfiguration
+  uv run --python 3.13 -- ../tools/s3-signed-socket.py ListObjectAnnotations
 }

@@ -217,7 +217,10 @@ def main() -> int:
     cases = list(socket_config["cases"])
     cases.extend(generated_negative_cases(socket_config, operation_name))
     for case in cases:
-        run_case(operation_name, socket_config["adapter"], case)
+        try:
+            run_case(operation_name, socket_config["adapter"], case)
+        except Exception as error:
+            fail(f"{operation_name}/{case['id']}: {error}")
     print(
         f"S3 signed socket qualification: {operation_name} "
         f"{len(cases)} cases OK"

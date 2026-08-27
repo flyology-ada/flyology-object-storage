@@ -23,6 +23,7 @@ generic
 
    with function Decode_Response
      (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
       Payload    : String;
       Request_ID : String;
       Host_ID    : String;
