@@ -1631,6 +1631,73 @@ def evidence_findings(
     return findings
 
 
+def validate_operation_names(operations: list[str]) -> None:
+    """Reject ambiguous repeated operation input before any command runs."""
+    if not operations:
+        raise Audit_Error("at least one operation is required")
+    duplicates = sorted(
+        name for name in set(operations) if operations.count(name) > 1
+    )
+    if duplicates:
+        raise Audit_Error(
+            "operation appears more than once: " + ", ".join(duplicates)
+        )
+
+
+def qualification_plan(
+    registry: Registry, operations: list[str]
+) -> tuple[str, list[list[str]]]:
+    """Return one coherent reviewed command lane for an operation batch."""
+    validate_operation_names(operations)
+    missing = sorted(set(operations) - set(registry.operations))
+    if missing:
+        raise Audit_Error(
+            "operation is absent from registry: " + ", ".join(missing)
+        )
+    entries = [registry.operations[name] for name in operations]
+    lanes = {entry.get("qualification") for entry in entries}
+    if any(not isinstance(lane, str) or not lane for lane in lanes):
+        absent = [
+            entry["name"]
+            for entry in entries
+            if not entry.get("qualification")
+        ]
+        raise Audit_Error(
+            "operation has no focused qualification lane: "
+            + ", ".join(absent)
+        )
+    if len(lanes) != 1:
+        raise Audit_Error(
+            "batch operations do not share one qualification lane"
+        )
+    providers = {entry["provider"] for entry in entries}
+    families = {entry["family"] for entry in entries}
+    if len(providers) != 1 or len(families) != 1:
+        raise Audit_Error(
+            "batch operations do not share one provider and family"
+        )
+    qualification = next(iter(lanes))
+    if not isinstance(qualification, str):
+        raise Audit_Error("qualification lane name is not text")
+    commands = registry.qualification.get(qualification)
+    if commands is None:
+        raise Audit_Error(f"unknown qualification lane: {qualification}")
+    if len(operations) > 1:
+        lane_operations = {
+            name
+            for name, entry in registry.operations.items()
+            if entry.get("qualification") == qualification
+        }
+        if set(operations) != lane_operations:
+            omitted = sorted(lane_operations - set(operations))
+            extra = sorted(set(operations) - lane_operations)
+            raise Audit_Error(
+                "batch must name the complete reviewed qualification lane; "
+                f"omitted={omitted}, extra={extra}"
+            )
+    return qualification, commands
+
+
 def camel_to_ada(name: str) -> str:
     result = []
     for index, character in enumerate(name):

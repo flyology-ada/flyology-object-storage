@@ -20,7 +20,10 @@ def parser() -> argparse.ArgumentParser:
     actions = value.add_subparsers(dest="action", required=True)
     for name in ("audit", "scaffold", "qualify"):
         child = actions.add_parser(name)
-        child.add_argument("operation")
+        child.add_argument(
+            "operation",
+            nargs="+" if name in {"audit", "qualify"} else None,
+        )
         if name == "scaffold":
             child.add_argument(
                 "--output-dir",
@@ -37,15 +40,17 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
-def audit(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
-    entry = registry.operations.get(args.operation)
+def audit_operation(
+    registry: s3_operation.Registry,
+    model: dict[str, object],
+    operation: str,
+) -> tuple[dict[str, object], bool]:
+    entry = registry.operations.get(operation)
     if entry is None:
         raise s3_operation.Audit_Error(
-            f"operation is absent from registry: {args.operation}"
+            f"operation is absent from registry: {operation}"
         )
-    model = s3_operation.load_model(s3_operation.model_path(args.model))
-    s3_operation.verify_registry_model_inventory(registry, model)
-    result = s3_operation.operation_audit(model, args.operation)
+    result = s3_operation.operation_audit(model, operation)
     unresolved = s3_operation.unresolved_decisions(entry)
     findings = s3_operation.evidence_findings(entry)
     result["registry"] = entry
@@ -61,16 +66,16 @@ def audit(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
         "paginated_rest_xml_read",
     }:
         result["generated_codec_plan"] = s3_codegen.codec_plan(
-            model, args.operation, entry
+            model, operation, entry
         )
     if "negative_xml" in entry:
         result["generated_negative_xml"] = s3_operation.negative_xml_cases(
-            model, args.operation, entry["negative_xml"]
+            model, operation, entry["negative_xml"]
         )
     if "signed_socket" in entry:
         generated_socket = json.loads(
             s3_operation.signed_socket_text(registry, model)
-        )["operations"][args.operation]
+        )["operations"][operation]
         result["signed_socket_cases"] = [
             {
                 "id": case["id"],
@@ -79,8 +84,29 @@ def audit(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
             }
             for case in generated_socket["cases"]
         ]
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 1 if unresolved or findings else 0
+    return result, bool(unresolved or findings)
+
+
+def audit(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
+    operations = list(args.operation)
+    s3_operation.validate_operation_names(operations)
+    model = s3_operation.load_model(s3_operation.model_path(args.model))
+    s3_operation.verify_registry_model_inventory(registry, model)
+    results = [
+        audit_operation(registry, model, operation)
+        for operation in operations
+    ]
+    output: object = results[0][0]
+    if len(results) > 1:
+        output = {
+            "batch": {
+                "operation_count": len(operations),
+                "operations": operations,
+            },
+            "operations": [result for result, _ in results],
+        }
+    print(json.dumps(output, indent=2, sort_keys=True))
+    return 1 if any(failed for _, failed in results) else 0
 
 
 def scaffold(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
@@ -188,16 +214,22 @@ def qualify(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
     audit_result = audit(args, registry)
     if audit_result != 0:
         return audit_result
-    qualification = registry.operations[args.operation].get("qualification")
-    if not qualification:
-        raise s3_operation.Audit_Error(
-            "operation has no focused qualification lane"
-        )
-    commands = registry.qualification.get(qualification)
-    if commands is None:
-        raise s3_operation.Audit_Error(
-            f"unknown qualification lane: {qualification}"
-        )
+    operations = list(args.operation)
+    qualification, commands = s3_operation.qualification_plan(
+        registry, operations
+    )
+    print(
+        json.dumps(
+            {
+                "qualification": qualification,
+                "operations": operations,
+                "command_count": len(commands),
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     s3_operation.run_commands(commands, s3_operation.model_path(args.model))
     return 0
 

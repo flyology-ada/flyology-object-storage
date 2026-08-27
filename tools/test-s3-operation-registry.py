@@ -61,6 +61,40 @@ def main() -> None:
     ).replace("updated", "generated") == replacement
 
     registry = s3_operation.load_registry()
+    batch_operations = [
+        "PutBucketInventoryConfiguration",
+        "PutBucketLogging",
+        "PutBucketWebsite",
+    ]
+    qualification, commands = s3_operation.qualification_plan(
+        registry, batch_operations
+    )
+    assert qualification == "generated_bucket_configuration_mutation_batch"
+    assert len(commands) == 8
+    try:
+        s3_operation.qualification_plan(registry, batch_operations[:-1])
+    except s3_operation.Audit_Error as error:
+        assert "complete reviewed qualification lane" in str(error)
+    else:
+        raise AssertionError("incomplete reviewed qualification lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketLogging", "PutBucketLogging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate batch operation was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketLogging", "PutBucketAcl"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed qualification lanes were accepted")
     assert Counter(
         entry["implementation_mode"]
         for entry in registry.operations.values()

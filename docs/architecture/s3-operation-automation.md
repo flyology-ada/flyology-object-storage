@@ -36,6 +36,10 @@ export FLYOLOGY_S3_SERVICE_MODEL=/path/to/pinned/service-2.json
 uv run --python 3.13 -- tools/s3-operation.py audit GetBucketReplication
 uv run --python 3.13 -- tools/s3-operation.py scaffold GetBucketReplication
 uv run --python 3.13 -- tools/s3-operation.py qualify GetBucketReplication
+uv run --python 3.13 -- tools/s3-operation.py audit \
+  PutBucketInventoryConfiguration PutBucketLogging PutBucketWebsite
+uv run --python 3.13 -- tools/s3-operation.py qualify \
+  PutBucketInventoryConfiguration PutBucketLogging PutBucketWebsite
 uv run --python 3.13 -- tools/s3-operation.py generate --check
 ```
 
@@ -55,6 +59,16 @@ replace an authoritative handwritten or shared-family implementation.
 outside the tracked tree. `qualify` first performs the same audit and then runs
 the operation's reviewed focused command lane. GetBucketReplication is the
 retrospective canary.
+
+`audit` also accepts a related operation batch and reports every unresolved
+decision before any qualification command can run. `qualify` accepts multiple
+operations only when they share one provider, one family, and one reviewed
+qualification lane. A batch invocation must name every operation assigned to
+that lane; omitting a member fails closed. After all operation audits pass, the
+tool runs the shared lane exactly once, so its build, documentation, coverage,
+repository, and diff gates are not repeated per operation. The single-operation
+form remains available for existing workflows; when it names an operation in a
+shared lane, that lane retains its complete reviewed command scope.
 
 The current families are bounded and paginated REST/XML reads, bounded binary
 and document reads, response-head and event-stream reads, streaming reads,
