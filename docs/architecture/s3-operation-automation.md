@@ -228,12 +228,22 @@ manifest adds no new timeout, page-size, retry, or automatic-pagination
 policy; the model-derived closure and negative corpus are regenerated from the
 pinned service model.
 
+ListBucketIntelligentTieringConfigurations is the second follow-on rollout.
+It reuses the same page envelope, prepared-list projection, bounded state
+machine, and provider-owned call shapes while delegating every repeated item
+to the already qualified GetBucketIntelligentTieringConfiguration decoder.
+The pinned model supplies the `GET` method, `/{Bucket}?intelligent-tiering`
+target, optional continuation query, expected-owner header, 200 status,
+complete 22-shape closure, flattened configuration, Tiering, and And/Tag
+lists, and exact status and access-tier domains. Seven reviewed lanes plus 21
+generated XML negatives execute 28 signed socket cases. Its reviewed manifest
+adds no timeout, page-size, retry, or automatic-pagination policy.
+
 Human-owned files are the generic Ada specification and body, provider and
 low-level declarations/callbacks, the domain page projections, typed test
 adapters, and reviewed TOML decisions. Coverage ledgers, operation counts, test
 registration, signed socket fixtures, routine negative XML cases, and the
 registry page remain generated. The same envelope is intended next for
-ListBucketIntelligentTieringConfigurations, and
-ListBucketInventoryConfigurations; each still requires a reviewed manifest,
+ListBucketInventoryConfigurations; it still requires a reviewed manifest,
 domain result adapter, and executable equivalence evidence before coverage is
 promoted.

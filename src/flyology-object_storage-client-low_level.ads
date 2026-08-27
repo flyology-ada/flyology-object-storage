@@ -2732,6 +2732,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound ListBucketIntelligentTieringConfigurations
+   --  request.
+   function Prepare_List_Bucket_Intelligent_Tiering_Configurations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : List_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketInventoryConfiguration request.
    function Prepare_Get_Bucket_Inventory_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -3063,6 +3070,27 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Shape of one strict ListBucketIntelligentTieringConfigurations response.
+   --  @enum Bucket_Intelligent_Tiering_Configurations_Listed Complete page
+   --  @enum List_Bucket_Intelligent_Tiering_Configurations_Rejected Rejected
+   type List_Bucket_Intelligent_Tiering_Configurations_Outcome_Kind is
+     (Bucket_Intelligent_Tiering_Configurations_Listed,
+      List_Bucket_Intelligent_Tiering_Configurations_Rejected);
+
+   --  Strict Intelligent-Tiering page or structured S3 rejection. Kind
+   --  determines which payload is meaningful; no public sentinel is chosen.
+   --  @field Kind Whether a complete page or rejection exists
+   --  @field Status Exact physical HTTP status
+   --  @field Result Complete presence-preserving page
+   --  @field Error Structured bounded S3 rejection
+   type List_Bucket_Intelligent_Tiering_Configurations_Outcome is record
+      Kind   : List_Bucket_Intelligent_Tiering_Configurations_Outcome_Kind;
+      Status : Flyology.HTTP.Status_Code;
+      Result :
+        S3.Intelligent_Tiering.Intelligent_Tiering_Configuration_Page;
+      Error  : S3.Errors.Error_Response;
+   end record;
+
    --  Strict GetBucketInventoryConfiguration outcome with physical status.
    --  @field Kind Whether configuration or a strict S3 error was returned
    --  @field Status Exact physical HTTP status
@@ -3274,6 +3302,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Intelligent_Tiering_Configuration_Outcome;
+   --  Decode one complete bounded
+   --  ListBucketIntelligentTieringConfigurations response.
+   function Decode_List_Bucket_Intelligent_Tiering_Configurations_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Intelligent_Tiering_Configurations_Outcome;
    --  Decode one complete bounded GetBucketInventoryConfiguration response.
    function Decode_Get_Bucket_Inventory_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -3469,6 +3504,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Intelligent_Tiering_Configuration_Outcome;
+   --  Execute one exact prepared
+   --  ListBucketIntelligentTieringConfigurations exchange.
+   function Execute_List_Bucket_Intelligent_Tiering_Configurations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Intelligent_Tiering_Configurations_Outcome;
    --  Execute one exact prepared GetBucketInventoryConfiguration exchange.
    function Execute_Get_Bucket_Inventory_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -5789,6 +5832,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  exchange into a bounded sink. Another prepared operation is rejected
    --  pre-admission.
    procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+   --  Start an exact prepared ListBucketIntelligentTieringConfigurations
+   --  exchange into a bounded sink. Another operation is rejected
+   --  pre-admission.
+   procedure List_Bucket_Intelligent_Tiering_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

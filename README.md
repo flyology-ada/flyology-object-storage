@@ -68,7 +68,8 @@ The core crate includes:
   GetBucketAnalyticsConfiguration,
   GetBucketIntelligentTieringConfiguration,
   GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
-  ListBucketMetricsConfigurations, ListBucketAnalyticsConfigurations, and
+  ListBucketMetricsConfigurations, ListBucketAnalyticsConfigurations,
+  ListBucketIntelligentTieringConfigurations, and
   PutBucketReplication (see
   [read qualification](docs/qualification/get-bucket-replication.md) and
   [write qualification](docs/qualification/put-bucket-replication.md)),
@@ -100,7 +101,8 @@ The core crate includes:
   GetBucketIntelligentTieringConfiguration,
   GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
   caller-driven paginated ListBucketMetricsConfigurations and
-  ListBucketAnalyticsConfigurations,
+  ListBucketAnalyticsConfigurations and
+  ListBucketIntelligentTieringConfigurations,
   non-replaying PutBucketReplication, and
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
@@ -337,7 +339,8 @@ bounded GetBucketReplication, GetBucketMetricsConfiguration,
 GetBucketAnalyticsConfiguration, GetBucketIntelligentTieringConfiguration,
 GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
 caller-driven paginated ListBucketMetricsConfigurations and
-ListBucketAnalyticsConfigurations,
+ListBucketAnalyticsConfigurations and
+ListBucketIntelligentTieringConfigurations,
 non-replaying
 PutBucketReplication,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,

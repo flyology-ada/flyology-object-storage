@@ -95,6 +95,29 @@ package Flyology.Object_Storage.S3.Intelligent_Tiering is
       Tierings : Tiering_Vectors.Vector;
    end record;
 
+   --  XML document and element limits bound one decoded page; this vector does
+   --  not introduce a separate client-side page-size policy.
+   package Configuration_Vectors is new Ada.Containers.Vectors
+     (Index_Type   => Positive,
+      Element_Type => Intelligent_Tiering_Configuration);
+
+   --  Complete ListBucketIntelligentTieringConfigurations response payload.
+   --  Optional scalars preserve absence independently from empty or false
+   --  values, and no cross-field relationship is inferred beyond the pinned
+   --  model.
+   --  @field Has_Is_Truncated Whether IsTruncated was present
+   --  @field Is_Truncated Exact modeled value when present
+   --  @field Continuation_Token Optional echoed request cursor
+   --  @field Next_Continuation_Token Optional next-page cursor
+   --  @field Configurations Configuration values in wire order
+   type Intelligent_Tiering_Configuration_Page is record
+      Has_Is_Truncated        : Boolean;
+      Is_Truncated            : Boolean;
+      Continuation_Token      : Optional_String;
+      Next_Continuation_Token : Optional_String;
+      Configurations          : Configuration_Vectors.Vector;
+   end record;
+
    --  Parse one exact nonempty GetBucketIntelligentTieringConfiguration
    --  payload.
    --  @param Document Complete same-response XML document
@@ -104,5 +127,16 @@ package Flyology.Object_Storage.S3.Intelligent_Tiering is
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Intelligent_Tiering_Configuration;
+
+   --  Parse one exact ListBucketIntelligentTieringConfigurations payload
+   --  through the shared paginated REST/XML envelope and the same reviewed
+   --  item decoder.
+   --  @param Document Complete same-response XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Presence-preserving Intelligent-Tiering page
+   --  @exception Malformed_Intelligent_Tiering Document violates the model
+   function Parse_List
+     (Document : String; Limits : XML.Parse_Limits)
+      return Intelligent_Tiering_Configuration_Page;
 
 end Flyology.Object_Storage.S3.Intelligent_Tiering;

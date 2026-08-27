@@ -7273,6 +7273,240 @@ package body Flyology.Object_Storage.Client.Buckets is
          return Result;
       end;
    end Get_Intelligent_Tiering_Configuration;
+
+   --  Status 500 is the established private aggregate sentinel for an HTTP
+   --  failure with no observed physical response. Kind and HTTP_Result remain
+   --  the authority; this value is not exposed as a caller default.
+   function Empty_List_Bucket_Intelligent_Tiering_Outcome
+      return
+        Low_Level.List_Bucket_Intelligent_Tiering_Configurations_Outcome is
+     ((Kind   =>
+         Low_Level.List_Bucket_Intelligent_Tiering_Configurations_Rejected,
+       Status => 500,
+       Result =>
+         (Has_Is_Truncated        => False,
+          Is_Truncated            => False,
+          Continuation_Token      =>
+            (Is_Set => False, Value => US.Null_Unbounded_String),
+          Next_Continuation_Token =>
+            (Is_Set => False, Value => US.Null_Unbounded_String),
+          Configurations          =>
+            Intelligent_Tiering.Configuration_Vectors.Empty_Vector),
+       Error  => (others => <>)));
+
+   function Normalize_List_Bucket_Intelligent_Tiering_Response
+     (Value :
+        Low_Level.List_Bucket_Intelligent_Tiering_Configurations_Outcome;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase : HTTP_Client.Exchange_Phase)
+      return List_Bucket_Intelligent_Tiering_Result
+   is
+      use type
+        Low_Level.List_Bucket_Intelligent_Tiering_Configurations_Outcome_Kind;
+
+      Code : constant String :=
+        (if Value.Kind =
+              Low_Level.List_Bucket_Intelligent_Tiering_Configurations_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind =
+           Low_Level.Bucket_Intelligent_Tiering_Configurations_Listed
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404 and then Code = "NoSuchBucket"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidBucketName" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        =>
+           List_Bucket_Intelligent_Tiering_Response_Available,
+         Failure     => Failure,
+         Admission   => Admission,
+         Response    => Value,
+         HTTP_Result => HTTP_Client.Response_Complete,
+         HTTP_Phase  => Phase,
+         Detail      => US.Null_Unbounded_String);
+   end Normalize_List_Bucket_Intelligent_Tiering_Response;
+
+   function Decode_List_Bucket_Intelligent_Tiering_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return List_Bucket_Intelligent_Tiering_Result is
+   begin
+      return Normalize_List_Bucket_Intelligent_Tiering_Response
+        (Low.Decode_List_Bucket_Intelligent_Tiering_Configurations_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission, Phase);
+   exception
+      when Low.Invalid_Response =>
+         return Normalize_List_Bucket_Intelligent_Tiering_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase, "");
+   end Decode_List_Bucket_Intelligent_Tiering_Response;
+
+   function Normalize_List_Bucket_Intelligent_Tiering_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return List_Bucket_Intelligent_Tiering_Result is
+   begin
+      return
+        (Kind        => List_Bucket_Intelligent_Tiering_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         Response    => Empty_List_Bucket_Intelligent_Tiering_Outcome,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_List_Bucket_Intelligent_Tiering_Failure;
+
+   overriding procedure Write
+     (Item : in out List_Bucket_Intelligent_Tiering_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      List_Bucket_Intelligent_Tiering_Reads.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item  : in out List_Bucket_Intelligent_Tiering_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      List_Bucket_Intelligent_Tiering_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out List_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      List_Bucket_Intelligent_Tiering_Reads.Request_Cancellation (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out List_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      List_Bucket_Intelligent_Tiering_Reads.Finalize (Item.State);
+   end Finalize;
+
+   procedure List_Intelligent_Tiering_Configurations
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out List_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "ListBucketIntelligentTieringConfigurations restart changed owner";
+      end if;
+      List_Bucket_Intelligent_Tiering_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_List_Bucket_Intelligent_Tiering_Configurations
+           (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp),
+         Deadline, Limits);
+   end List_Intelligent_Tiering_Configurations;
+
+   function List_Intelligent_Tiering_Configurations
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return List_Bucket_Intelligent_Tiering_Operation is
+   begin
+      return Result :
+        List_Bucket_Intelligent_Tiering_Operation (Set, Client, Token)
+      do
+         List_Intelligent_Tiering_Configurations
+           (Client, Origin, Bucket, Parameters, Identity, Deadline, Region,
+            Style, Limits, Token, Result);
+      end return;
+   end List_Intelligent_Tiering_Configurations;
+
+   procedure Finish
+     (Operation : in out List_Bucket_Intelligent_Tiering_Operation;
+      Result    : out List_Bucket_Intelligent_Tiering_Result) is
+   begin
+      List_Bucket_Intelligent_Tiering_Reads.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function List_Intelligent_Tiering_Configurations
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return List_Bucket_Intelligent_Tiering_Result
+   is
+      --  Derived owner stack: provider parent, HTTP exchange, and HTTP's one
+      --  active transport child. This is not a caller resource default.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : List_Bucket_Intelligent_Tiering_Operation :=
+           List_Intelligent_Tiering_Configurations
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style, Limits,
+              Token);
+         Result : List_Bucket_Intelligent_Tiering_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Intelligent_Tiering_Configurations;
+
    function Empty_Get_Bucket_Inventory_Outcome
       return Low_Level.Get_Bucket_Inventory_Configuration_Outcome is
      ((Kind          => Low_Level.Get_Bucket_Control_Rejected,

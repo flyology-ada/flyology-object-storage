@@ -1593,6 +1593,207 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "ListBucketIntelligentTieringConfigurations": {
+      "adapter": "./bin/s3_list_bucket_intelligent_tiering_configurations_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken>low level% cursor</ContinuationToken><IntelligentTieringConfiguration><Id>low-level-tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ContinuationToken": "low level% cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?continuation-token=low%20level%25%20cursor&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-tiering",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>true</IsTruncated><ContinuationToken>sync cursor</ContinuationToken><NextContinuationToken>next cursor</NextContinuationToken><IntelligentTieringConfiguration><Id>synchronous-tiering</Id><Filter><And><Prefix>logs/</Prefix><Tag><Key>team</Key><Value>storage</Value></Tag></And></Filter><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering><Tiering><Days>180</Days><AccessTier>DEEP_ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration><IntelligentTieringConfiguration><Id>second-tiering</Id><Status>Disabled</Status><Tiering><Days>30</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ContinuationToken": "sync cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?continuation-token=sync%20cursor&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-tiering",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken></ContinuationToken></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty",
+                "ContinuationToken": "",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty?continuation-token&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "",
+          "id": "empty-cursor-empty-page",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated><IntelligentTieringConfiguration><Id>composable-tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-tiering",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated><IntelligentTieringConfiguration><Id>restart-tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?intelligent-tiering"
+            },
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?intelligent-tiering"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated></ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?intelligent-tiering"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketIntelligentTieringConfigurationsOutput><IsTruncated>false</IsTruncated>                                                                                                </ListBucketIntelligentTieringConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?intelligent-tiering"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "ListBucketMetricsConfigurations": {
       "adapter": "./bin/s3_list_bucket_metrics_configurations_qualification",
       "cases": [
