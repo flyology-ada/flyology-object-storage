@@ -1,6 +1,6 @@
 # Human-reviewed decisions and executable evidence for every pinned S3 operation.
 # Generated artifacts name this file as their source; edit this file, not them.
-schema_version = 1
+schema_version = 2
 model_revision = "36c34f15391da01cd717c73c0fffa747c9889768"
 model_sha256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
 default_decision_status = "inventory_only"
@@ -248,6 +248,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -264,6 +267,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -280,6 +286,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -296,6 +305,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh"] }
 
 [[operation]]
@@ -312,6 +324,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -328,6 +343,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -344,6 +362,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -360,6 +381,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_create_session_tls_corpus.adb"], server = [], corpus = ["tests/src/s3_create_session_tls_corpus.adb"] }
 
 [[operation]]
@@ -376,6 +400,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -392,6 +419,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -408,6 +438,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -424,6 +457,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -440,6 +476,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -456,6 +495,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -472,6 +514,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -488,6 +533,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -504,6 +552,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -520,6 +571,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -536,6 +590,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -552,6 +609,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -568,6 +628,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -584,6 +647,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -600,6 +666,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -616,6 +685,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -632,6 +704,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -648,6 +723,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -664,6 +742,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh"] }
 
 [[operation]]
@@ -681,6 +762,9 @@ exclusions = []
 evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -697,6 +781,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -713,6 +800,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -729,6 +819,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -746,6 +839,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-analytics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_analytics_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_analytics_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_analytics_configuration"
@@ -858,6 +954,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -874,6 +973,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -891,6 +993,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_intelligent_tiering_configuration"
@@ -1004,6 +1109,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express control-endpoint selection; caller-supplied Origin remains authoritative", "cross-field one-of rules absent from the structural service model", "external-provider compatibility"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-inventory.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_inventory_configuration"
@@ -1116,6 +1224,10 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = true
+human_decisions_resolved = false
+generation = { public_result = "unresolved_public_result", response_representation = "unresolved_response_representation", replay = "not_applicable_read_only", ownership = "unresolved_ownership", retained_borrows = "unresolved_retained_borrows", cross_field_validation = "unresolved_cross_field_validation", intentional_exclusions = [] }
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -1132,6 +1244,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1148,6 +1263,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1165,6 +1283,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express control-endpoint selection; caller-supplied Origin remains authoritative", "TargetObjectKeyFormat one-of rule described in prose but absent from the structural service model", "external-provider compatibility"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-logging.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_logging_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_logging_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_logging"
@@ -1278,6 +1399,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express regional endpoint selection"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-metadata_configurations.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_metadata_configuration"
@@ -1358,6 +1482,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1375,6 +1502,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-metrics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_metrics_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_metrics_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_metrics_configuration"
@@ -1487,6 +1617,10 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = true
+human_decisions_resolved = false
+generation = { public_result = "unresolved_public_result", response_representation = "unresolved_response_representation", replay = "not_applicable_read_only", ownership = "unresolved_ownership", retained_borrows = "unresolved_retained_borrows", cross_field_validation = "unresolved_cross_field_validation", intentional_exclusions = [] }
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -1503,6 +1637,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1519,6 +1656,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1535,6 +1675,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1551,6 +1694,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1568,6 +1714,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "handwritten" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-client-bounded_rest_xml_reads.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_replication"
@@ -1668,6 +1817,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -1684,6 +1836,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1700,6 +1855,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1717,6 +1875,9 @@ reconciliation = "not_applicable"
 exclusions = ["directory buckets, as specified by the pinned operation documentation", "automatic S3 Express control-endpoint selection; caller-supplied Origin remains authoritative", "website top-level exclusivity documented in prose but absent from the structural service model", "external-provider compatibility"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-website.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_website_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_website_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_website"
@@ -1829,6 +1990,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -1845,6 +2009,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1861,6 +2028,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -1877,6 +2047,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -1893,6 +2066,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"] }
 
 [[operation]]
@@ -1909,6 +2085,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"] }
 
 [[operation]]
@@ -1925,6 +2104,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
 
 [[operation]]
@@ -1941,6 +2123,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1957,6 +2142,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"] }
 
 [[operation]]
@@ -1974,6 +2162,9 @@ exclusions = []
 evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -1990,6 +2181,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -2006,6 +2200,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -2023,6 +2220,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express regional endpoint selection"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-analytics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_list_bucket_analytics_configurations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_bucket_analytics_configurations_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "list_bucket_analytics_configurations"
@@ -2113,6 +2313,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express regional endpoint selection"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_list_bucket_intelligent_tiering_configurations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_bucket_intelligent_tiering_configurations_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "list_bucket_intelligent_tiering_configurations"
@@ -2203,6 +2406,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express regional endpoint selection"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-inventory.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "list_bucket_inventory_configurations"
@@ -2293,6 +2499,9 @@ reconciliation = "not_applicable"
 exclusions = ["automatic S3 Express regional endpoint selection"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-metrics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_list_bucket_metrics_configurations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_bucket_metrics_configurations_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "list_bucket_metrics_configurations"
@@ -2382,6 +2591,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-server-slice.sh"] }
 
 [[operation]]
@@ -2398,6 +2610,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -2414,6 +2629,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -2431,6 +2649,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_list_object_annotations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_object_annotations_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "list_object_annotations"
@@ -2527,6 +2748,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -2543,6 +2767,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -2559,6 +2786,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -2575,6 +2805,9 @@ reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -2591,6 +2824,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"] }
 
 [[operation]]
@@ -2607,6 +2843,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"] }
 
 [[operation]]
@@ -2623,6 +2862,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -2640,6 +2882,9 @@ reconciliation = "caller-selected Get_Analytics_Configuration or List_Analytics_
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-analytics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_analytics_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_analytics_configuration_corpus.adb", "tests/src/s3_put_bucket_analytics_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "put_bucket_analytics_configuration"
@@ -2790,6 +3035,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -2806,6 +3054,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -2823,6 +3074,9 @@ reconciliation = "caller-selected Get_Intelligent_Tiering_Configuration or List_
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_intelligent_tiering_configuration_corpus.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "put_bucket_intelligent_tiering_configuration"
@@ -2975,6 +3229,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -2991,6 +3248,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3007,6 +3267,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"] }
 
 [[operation]]
@@ -3023,6 +3286,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3040,6 +3306,9 @@ reconciliation = "caller-selected Get_Metrics_Configuration or List_Metrics_Conf
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = true
 evidence = { backend = [], client = ["src/flyology-object_storage-s3-metrics.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_metrics_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_metrics_configuration_corpus.adb", "tests/src/s3_put_bucket_metrics_configuration_qualification.adb"] }
 decision_status = "reviewed"
 qualification = "put_bucket_metrics_configuration"
@@ -3178,6 +3447,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3194,6 +3466,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 
 [[operation]]
@@ -3210,6 +3485,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"] }
 
 [[operation]]
@@ -3226,6 +3504,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3242,6 +3523,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "handwritten" }
+implementation_mode = "shared-family"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_replication_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_replication_corpus.adb"] }
 
 [[operation]]
@@ -3258,6 +3542,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"] }
 
 [[operation]]
@@ -3274,6 +3561,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3290,6 +3580,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3306,6 +3599,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3322,6 +3618,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
 
 [[operation]]
@@ -3338,6 +3637,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3354,6 +3656,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3370,6 +3675,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"] }
 
 [[operation]]
@@ -3386,6 +3694,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"] }
 
 [[operation]]
@@ -3402,6 +3713,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
 
 [[operation]]
@@ -3418,6 +3732,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3435,6 +3752,9 @@ exclusions = []
 evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3451,6 +3771,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3467,6 +3790,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3483,6 +3809,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3499,6 +3828,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3515,6 +3847,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3531,6 +3866,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3547,6 +3885,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }
 
 [[operation]]
@@ -3563,6 +3904,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3579,6 +3923,9 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+implementation_mode = "handwritten"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
@@ -3595,4 +3942,7 @@ reconciliation = "legacy_preserved"
 exclusions = []
 coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
 provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+implementation_mode = "generated"
+generator_eligible = false
+human_decisions_resolved = false
 evidence = { backend = [], client = [], server = [], corpus = [] }

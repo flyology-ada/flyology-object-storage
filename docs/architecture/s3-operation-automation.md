@@ -7,6 +7,11 @@ ownership, implementation family, public provider package and operation name,
 response codec,
 absence and error classification, mutation certainty and reconciliation,
 intentional exclusions, current coverage, provenance, and executable evidence.
+Schema version 2 also records one operation-level implementation mode
+(`handwritten`, `generated`, or `shared-family`), whether a not-yet-complete
+operation is structurally eligible for generation, and whether its human
+decisions are resolved. Layer-specific provenance remains alongside that
+summary so the backfill loses no backend, client, server, or test history.
 For signed qualification it also records reviewed operation input values,
 typed call lanes, response fixtures, non-success statuses, expected outcomes,
 and caller-selected limits. It does not copy model-owned HTTP methods, success
@@ -42,10 +47,12 @@ flattening, enum domain, namespace and attribute traits, streaming traits, and
 modeled bounds. The audit separately verifies expected Ada symbols and cited
 evidence, and lists unresolved human decisions.
 
-`scaffold` currently emits deterministic reviewed input as JSON and writes no
-source. It refuses any unresolved decision rather than inventing policy.
-Family-specific source generation is added only after the corresponding shared
-Ada family is reviewed. `qualify` first performs the same audit and then runs
+`scaffold` emits deterministic reviewed input as JSON. For a reviewed,
+generator-eligible REST/XML read it can also write an operation-specific Ada
+wire descriptor. It refuses unresolved decisions and refuses to overwrite or
+replace an authoritative handwritten or shared-family implementation.
+`--prospective --output-dir` exists only for non-destructive equivalence output
+outside the tracked tree. `qualify` first performs the same audit and then runs
 the operation's reviewed focused command lane. GetBucketReplication is the
 retrospective canary.
 
@@ -61,6 +68,8 @@ must not be edited directly:
 
 - `coverage/aws-s3-operations.tsv` — compatibility coverage ledger;
 - `coverage/s3-operation-counts.json` — exact coverage/provider/family counts;
+- `coverage/s3-operation-inventory.json` — all 116 implementation modes,
+  generator eligibility states, layer provenance, and executable evidence;
 - `tests/generated/s3-operation-tests.sh` — maintained verifier and corpus
   registration used by the full test gate;
 - `tests/generated/s3-negative-xml.json` — routine malformed XML cases derived
@@ -73,8 +82,43 @@ CI runs `generate --check` before accepting coverage. Existing executable
 evidence checks remain authoritative for every `covered` cell, so a
 declaration or registry edit alone cannot promote coverage. Historical
 `partial` client cells remain losslessly inventoried; auditing one reports the
-missing executable evidence and it cannot be scaffolded until that gap is
-reviewed.
+missing executable evidence. Scaffolding may create the missing implementation
+after every human decision is resolved, but qualification and coverage
+promotion still refuse the operation until executable evidence is present.
+
+## Generated strict XML wire codecs
+
+`tools/s3_codegen.py` expands the complete reachable response-payload shape
+into occurrence-specific XML nodes and deterministically emits an Ada
+descriptor package. The generated package records exact element and attribute
+names, parentage, singleton or repeated cardinality, requiredness, scalar
+kind, and exact enum domains. Generated files carry their generator, operation,
+Botocore revision, and model digest and are never hand-edited.
+
+`Flyology.Object_Storage.S3.Strict_XML_Codecs` is the shared handwritten
+runtime for those descriptors. It rejects unknown members, duplicate
+singletons, missing required members, inconsistent or foreign namespaces,
+unexpected or wrongly namespaced attributes, invalid booleans and integers,
+and values outside exact modeled enum domains. It delegates document, depth,
+element, and text ceilings to the existing caller-supplied `S3.XML` limits.
+Repeated members additionally require an explicit caller-supplied collection
+limit; the runtime deliberately has no default and therefore introduces no
+resource policy.
+
+The generated wire codec emits typed element identifiers and scalar events to
+a small human-owned result adapter. That adapter remains responsible for the
+public result type, cross-field rules absent from Botocore, and any intentional
+normalization. Because callbacks can observe a prefix before a later malformed
+member is rejected, adapters build a call-local scratch result and publish it
+only after `Parse` returns successfully. Provider result classification,
+ownership, cancellation,
+replay, certainty, reconciliation, compatibility exclusions, and public
+limits remain outside generation.
+
+Existing handwritten codecs and provider implementations are not inputs to a
+rewrite. A prospective descriptor may be generated in a temporary directory
+to compare model-derived structure, but adopting a generated implementation
+for an existing operation requires separate user authorization.
 
 ## Bounded REST/XML read family
 

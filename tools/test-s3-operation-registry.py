@@ -16,6 +16,19 @@ import s3_operation
 
 def main() -> None:
     registry = s3_operation.load_registry()
+    assert Counter(
+        entry["implementation_mode"]
+        for entry in registry.operations.values()
+    ) == {
+        "handwritten": 78,
+        "generated": 21,
+        "shared-family": 17,
+    }
+    assert {
+        name
+        for name, entry in registry.operations.items()
+        if entry["generator_eligible"]
+    } == {"GetBucketLifecycle", "GetBucketNotification"}
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(
         canary, include_partial=False

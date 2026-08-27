@@ -1,0 +1,3878 @@
+{
+  "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
+  "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
+  "operation_count": 116,
+  "operations": {
+    "AbortMultipartUpload": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "CompleteMultipartUpload": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "CopyObject": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "CreateBucket": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/run-s3-implementation.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "CreateBucketMetadataConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "CreateBucketMetadataTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "CreateMultipartUpload": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "CreateSession": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_create_session_tls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_create_session_tls_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucket": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketAnalyticsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketCors": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketEncryption": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketIntelligentTieringConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketInventoryConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketLifecycle": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketMetadataConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketMetadataTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketMetricsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketOwnershipControls": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketPolicy": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketReplication": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteBucketWebsite": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "DeleteObject": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/run-s3-implementation.sh",
+          "tests/scripts/run-s3-server-slice.sh",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "DeleteObjectAnnotation": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "DeleteObjectTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "DeleteObjects": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/run-s3-implementation.sh",
+          "tests/scripts/run-s3-server-slice.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "DeletePublicAccessBlock": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bodyless_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketAbac": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_get_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_get_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketAccelerateConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketAcl": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_acl_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_acl_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketAnalyticsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-analytics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_analytics_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_analytics_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketCors": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketEncryption": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_acl_corpus.adb",
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_acl_corpus.adb",
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketIntelligentTieringConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-intelligent_tiering.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketInventoryConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-inventory.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketLifecycle": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": true,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketLifecycleConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketLocation": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketLogging": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-logging.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_logging_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_logging_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketMetadataConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-metadata_configurations.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketMetadataTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketMetricsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-metrics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_metrics_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_metrics_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketNotification": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": true,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketNotificationConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_bucket_notification_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_bucket_notification_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketOwnershipControls": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketPolicy": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_document_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketPolicyStatus": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketReplication": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-client-bounded_rest_xml_reads.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_replication_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_replication_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketRequestPayment": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketVersioning": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetBucketWebsite": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-website.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_get_bucket_website_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_get_bucket_website_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "GetObject": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_get_object_torrent_corpus.adb",
+          "tests/src/s3_get_object_torrent_socket_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_get_object_torrent_corpus.adb",
+          "tests/src/s3_get_object_torrent_socket_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "streaming_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectAcl": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectAnnotation": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "streaming_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "GetObjectAttributes": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectLegalHold": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_acl_corpus.adb",
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectLockConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "GetObjectRetention": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_lock_configuration_corpus.adb",
+          "tests/src/s3_get_object_retention_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetObjectTorrent": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_torrent_corpus.adb",
+          "tests/src/s3_get_object_torrent_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tests/src/s3_get_object_torrent_corpus.adb",
+          "tests/src/s3_get_object_torrent_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "bounded_binary_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "GetPublicAccessBlock": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "bounded_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "HeadBucket": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "response_head_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "HeadObject": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "response_head_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "ListBucketAnalyticsConfigurations": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
+          "src/flyology-object_storage-s3-analytics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_list_bucket_analytics_configurations_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_list_bucket_analytics_configurations_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "ListBucketIntelligentTieringConfigurations": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
+          "src/flyology-object_storage-s3-intelligent_tiering.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_list_bucket_intelligent_tiering_configurations_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_list_bucket_intelligent_tiering_configurations_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "ListBucketInventoryConfigurations": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
+          "src/flyology-object_storage-s3-inventory.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "ListBucketMetricsConfigurations": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
+          "src/flyology-object_storage-s3-metrics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_list_bucket_metrics_configurations_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_list_bucket_metrics_configurations_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "ListBuckets": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_create_session_tls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_create_session_tls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/run-s3-server-slice.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "ListDirectoryBuckets": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "ListMultipartUploads": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "ListObjectAnnotations": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
+          "src/flyology-object_storage-s3-annotations.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.adb",
+          "tests/src/s3_list_object_annotations_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-negative-xml.json",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_list_object_annotations_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "objects"
+    },
+    "ListObjectVersions": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_list_object_versions_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_list_object_versions_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "ListObjects": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "ListObjectsV2": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "ListParts": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "paginated_rest_xml_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "PutBucketAbac": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketAccelerateConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketAcl": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketAnalyticsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-analytics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-rest_xml_mutations.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_put_bucket_analytics_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_put_bucket_analytics_configuration_corpus.adb",
+          "tests/src/s3_put_bucket_analytics_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketCors": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_cors_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketEncryption": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_get_bucket_encryption_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketIntelligentTieringConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-intelligent_tiering.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-rest_xml_mutations.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_put_bucket_intelligent_tiering_configuration_corpus.adb",
+          "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketInventoryConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketLifecycle": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketLifecycleConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketLogging": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketMetricsConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-s3-metrics.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-rest_xml_mutations.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_put_bucket_metrics_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_put_bucket_metrics_configuration_corpus.adb",
+          "tests/src/s3_put_bucket_metrics_configuration_qualification.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": true,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "shared_family"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketNotification": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketNotificationConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_bucket_notification_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_bucket_notification_configuration_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketOwnershipControls": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketPolicy": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketReplication": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "src/flyology-object_storage-client-rest_xml_mutations.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_replication_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_replication_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "shared-family",
+      "provenance": {
+        "backend": "absent",
+        "client": "shared_family",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketRequestPayment": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketVersioning": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutBucketWebsite": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "PutObject": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "streaming_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "PutObjectAcl": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "PutObjectAnnotation": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "streaming_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "PutObjectLegalHold": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_legal_hold_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "PutObjectLockConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_lock_configuration_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "PutObjectRetention": {
+      "coverage": {
+        "backend": "missing",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_object_retention_corpus.adb"
+        ],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "absent",
+        "client": "handwritten",
+        "server": "absent",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "PutObjectTagging": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "objects"
+    },
+    "PutPublicAccessBlock": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
+        "client": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_delete_bucket_configurations_corpus.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "buckets"
+    },
+    "RenameObject": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "RestoreObject": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "SelectObjectContent": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "event_stream_read",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "UpdateBucketMetadataAnnotationTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "UpdateBucketMetadataInventoryTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "UpdateBucketMetadataJournalTableConfiguration": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "buckets"
+    },
+    "UpdateObjectEncryption": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    },
+    "UploadPart": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "streaming_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "UploadPartCopy": {
+      "coverage": {
+        "backend": "covered",
+        "client": "covered",
+        "corpus": "covered",
+        "server": "covered"
+      },
+      "evidence": {
+        "backend": [
+          "tests/src/object_storage_test_cases.adb"
+        ],
+        "client": [
+          "tests/src/s3_http_socket_corpus.adb"
+        ],
+        "corpus": [
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
+        "server": [
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
+        ]
+      },
+      "family": "rest_xml_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "handwritten",
+      "provenance": {
+        "backend": "handwritten",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten"
+      },
+      "provider": "transfers"
+    },
+    "WriteGetObjectResponse": {
+      "coverage": {
+        "backend": "missing",
+        "client": "partial",
+        "corpus": "missing",
+        "server": "missing"
+      },
+      "evidence": {
+        "backend": [],
+        "client": [],
+        "corpus": [],
+        "server": []
+      },
+      "family": "streaming_mutation",
+      "generator_eligible": false,
+      "human_decisions_resolved": false,
+      "implementation_mode": "generated",
+      "provenance": {
+        "backend": "absent",
+        "client": "generated",
+        "server": "absent",
+        "tests": "absent"
+      },
+      "provider": "objects"
+    }
+  }
+}
