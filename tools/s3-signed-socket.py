@@ -78,7 +78,10 @@ def validate_request(
     for name, expected in exchange["request_headers"].items():
         lower = name.casefold()
         if headers.get(lower) != [expected]:
-            fail(f"signed request header mismatch: {name}")
+            fail(
+                f"signed request header mismatch: {name}: "
+                f"{headers.get(lower)!r} != {[expected]!r}"
+            )
         if lower not in signed:
             fail(f"expected request header is not signed: {name}")
     expected_body = exchange.get("request_body", "").encode("utf-8")

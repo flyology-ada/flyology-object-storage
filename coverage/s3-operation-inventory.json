@@ -2763,25 +2763,36 @@
     "PutBucketAcl": {
       "coverage": {
         "backend": "missing",
-        "client": "partial",
-        "corpus": "missing",
+        "client": "covered",
+        "corpus": "covered",
         "server": "missing"
       },
       "evidence": {
         "backend": [],
-        "client": [],
-        "corpus": [],
+        "client": [
+          "src/flyology-object_storage-s3-generated_put_bucket_acl_xml.ads",
+          "src/flyology-object_storage-s3-generated_put_bucket_acl_xml.adb",
+          "src/flyology-object_storage-s3-xml_writers.adb",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-rest_xml_mutations.adb",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_put_bucket_acl_qualification.adb"
+        ],
+        "corpus": [
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_put_bucket_acl_qualification.adb"
+        ],
         "server": []
       },
       "family": "rest_xml_mutation",
-      "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "generator_eligible": true,
+      "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
         "backend": "absent",
         "client": "generated",
         "server": "absent",
-        "tests": "absent"
+        "tests": "generated"
       },
       "provider": "buckets"
     },

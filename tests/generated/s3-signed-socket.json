@@ -2791,6 +2791,335 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "PutBucketAcl": {
+      "adapter": "./bin/s3_put_bucket_acl_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?acl"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?acl"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?acl"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?acl"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?acl"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?acl"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?acl"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?acl"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?acl"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?acl"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 338
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "ACL": "private",
+                "Bucket": "qualified-canned-acl",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "",
+              "request_headers": {
+                "content-md5": "1B2M2Y8AsgTpgAmY7PhCfg==",
+                "x-amz-acl": "private",
+                "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-canned-acl?acl"
+            }
+          ],
+          "expected": "success",
+          "id": "canned-acl-header-mode",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-grant-header",
+                "ExpectedBucketOwner": "123456789012",
+                "GrantRead": "id=\"qualified-grantee\""
+              },
+              "method": "PUT",
+              "request_body": "",
+              "request_headers": {
+                "content-md5": "1B2M2Y8AsgTpgAmY7PhCfg==",
+                "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-grant-read": "id=\"qualified-grantee\""
+              },
+              "status": "200 OK",
+              "target": "/qualified-grant-header?acl"
+            }
+          ],
+          "expected": "success",
+          "id": "explicit-grant-header-mode",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-checksum",
+                "ChecksumAlgorithm": "SHA256",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Owner><ID>qualified-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>qualified-grantee</ID></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>",
+              "request_headers": {
+                "content-md5": "FZiHlVpqSdZUzoWjryMirQ==",
+                "x-amz-checksum-sha256": "+NEyQv/ib7LM+QM2HorIFInOKkCi0SyCi/VB1H5wpCo=",
+                "x-amz-content-sha256": "f8d13242ffe26fb2ccf903361e8ac81489ce2a40a2d12c828bf541d47e70a42a",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-checksum?acl"
+            }
+          ],
+          "expected": "success",
+          "id": "modeled-sha256-checksum",
+          "lane": "synchronous"
+        }
+      ]
+    },
     "PutBucketAnalyticsConfiguration": {
       "adapter": "./bin/s3_put_bucket_analytics_configuration_qualification",
       "cases": [

@@ -7284,6 +7284,33 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Complete modeled non-resource inputs for PutBucketAcl.
+   --  Empty strings preserve member absence. Access_Control_Policy.Is_Set
+   --  selects the body mode; otherwise exactly one canned-ACL or explicit
+   --  grant-header group is required by the reviewed S3 cross-field rule.
+   --  Empty Content_MD5 derives the externally required digest from the
+   --  exact generated body; it does not select a retry or resource policy.
+   --  @field ACL Optional exact canned ACL header
+   --  @field Content_MD5 Optional exact base64 MD5 override
+   --  @field Checksum_Algorithm Optional exact modeled checksum algorithm
+   --  @field Grant_Full_Control Optional exact grant header
+   --  @field Grant_Read Optional exact grant header
+   --  @field Grant_Read_ACP Optional exact grant header
+   --  @field Grant_Write Optional exact grant header
+   --  @field Grant_Write_ACP Optional exact grant header
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_ACL_Parameters is record
+      ACL                       : Ada.Strings.Unbounded.Unbounded_String;
+      Content_MD5               : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Full_Control        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read                : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read_ACP            : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write               : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write_ACP           : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Complete non-body inputs for generated named configuration
    --  replacements. The query identifier and body identifier remain
    --  independent because the pinned model encodes no equality constraint.
@@ -7293,6 +7320,38 @@ package Flyology.Object_Storage.Client.Low_Level is
       ID                    : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
+
+   --  Prepare one exact PutBucketAcl request. The returned
+   --  request owns its exact serialized and signed one-shot XML body.
+   function Prepare_Put_Bucket_ACL
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.ACL.Access_Control_Policy;
+      Parameters : Put_Bucket_ACL_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared PutBucketAcl request without replay.
+   function Execute_Put_Bucket_ACL
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Start one exact prepared PutBucketAcl exchange. A differently bound
+   --  request is rejected before HTTP admission.
+   procedure Put_Bucket_ACL
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Prepare one exact PutBucketInventoryConfiguration request. The returned
    --  request owns its exact serialized and signed one-shot XML body.

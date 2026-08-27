@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import http
 import json
@@ -1380,11 +1381,25 @@ def generated_mutation_signed_socket(
         status: str,
         body: str,
         headers: list[list[str]] | None = None,
+        input_overrides: dict[str, str] | None = None,
+        request_body_override: str | None = None,
+        expected_header_overrides: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         return {
-            "input_values": {"Bucket": bucket, **values},
-            "request_body": request_body,
-            "expected_request_headers": expected_headers,
+            "input_values": {
+                "Bucket": bucket,
+                **values,
+                **(input_overrides or {}),
+            },
+            "request_body": (
+                request_body
+                if request_body_override is None
+                else request_body_override
+            ),
+            "expected_request_headers": {
+                **expected_headers,
+                **(expected_header_overrides or {}),
+            },
             "status": status,
             "headers": headers or [],
             "body": body,
@@ -1476,6 +1491,55 @@ def generated_mutation_signed_socket(
             )],
         },
     ]
+    if operation_name == "PutBucketAcl":
+        empty_md5 = base64.b64encode(hashlib.md5(b"").digest()).decode()
+        body_sha256 = base64.b64encode(
+            hashlib.sha256(request_body.encode("utf-8")).digest()
+        ).decode()
+        cases.extend(
+            [
+                {
+                    "id": "canned-acl-header-mode",
+                    "lane": "synchronous",
+                    "expected": "success",
+                    "exchange": [exchange(
+                        "qualified-canned-acl", "modeled_success", "",
+                        input_overrides={"ACL": "private"},
+                        request_body_override="",
+                        expected_header_overrides={
+                            "content-md5": empty_md5,
+                        },
+                    )],
+                },
+                {
+                    "id": "explicit-grant-header-mode",
+                    "lane": "composable",
+                    "expected": "success",
+                    "exchange": [exchange(
+                        "qualified-grant-header", "modeled_success", "",
+                        input_overrides={
+                            "GrantRead": 'id="qualified-grantee"',
+                        },
+                        request_body_override="",
+                        expected_header_overrides={
+                            "content-md5": empty_md5,
+                        },
+                    )],
+                },
+                {
+                    "id": "modeled-sha256-checksum",
+                    "lane": "synchronous",
+                    "expected": "success",
+                    "exchange": [exchange(
+                        "qualified-checksum", "modeled_success", "",
+                        input_overrides={"ChecksumAlgorithm": "SHA256"},
+                        expected_header_overrides={
+                            "x-amz-checksum-sha256": body_sha256,
+                        },
+                    )],
+                },
+            ]
+        )
     return {"adapter": adapter, "case": cases}
 
 

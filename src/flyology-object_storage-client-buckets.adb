@@ -26417,21 +26417,22 @@ package body Flyology.Object_Storage.Client.Buckets is
       end;
    end List_Directory_Buckets;
 
-   --  Reviewed conservative classifier shared only by this generated
-   --  bucket-configuration mutation family. Unrecognized responses remain
+   --  Reviewed conservative classifier shared only by generated
+   --  REST/XML mutations. Unrecognized responses remain
    --  ambiguous and no mutation is replayed.
-   function Conclusive_Generated_Configuration_Rejection
+   function Conclusive_Generated_Mutation_Rejection
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 400
        and then Code in
-         "InvalidArgument" | "InvalidBucketName" | "InvalidRequest" |
-         "MalformedXML")
+         "AccessControlListNotSupported" | "InvalidArgument" |
+         "InvalidBucketName" | "InvalidRequest" | "MalformedXML")
       or else (Status = 401 and then Code = "InvalidAccessKeyId")
       or else (Status = 403 and then Code = "AccessDenied")
-      or else (Status = 404 and then Code = "NoSuchBucket")
+      or else (Status = 404 and then Code in "NoSuchBucket" | "NoSuchKey")
+      or else (Status = 405 and then Code = "MethodNotAllowed")
       or else (Status = 501 and then Code = "NotImplemented"));
 
-   function Retryable_Generated_Configuration_Response
+   function Retryable_Generated_Mutation_Response
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 409 and then Code = "OperationAborted")
       or else (Status = 429 and then Code = "SlowDown")
@@ -26440,7 +26441,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       or else (Status = 503 and then Code = "SlowDown")
       or else (Status = 504 and then Code = "RequestTimeout"));
 
-   function Generated_Configuration_Response_Failure
+   function Generated_Mutation_Response_Failure
      (Status : Flyology.HTTP.Status_Code; Code : String)
       return Failure_Reason is
      (if Status = 401 and then Code = "InvalidAccessKeyId"
@@ -26449,11 +26450,269 @@ package body Flyology.Object_Storage.Client.Buckets is
       then Authorization_Failed
       elsif Status = 404 and then Code = "NoSuchBucket"
       then Not_Found
-      elsif Conclusive_Generated_Configuration_Rejection (Status, Code)
+      elsif Conclusive_Generated_Mutation_Rejection (Status, Code)
       then Invalid_Request
-      elsif Retryable_Generated_Configuration_Response (Status, Code)
+      elsif Retryable_Generated_Mutation_Response (Status, Code)
       then Unavailable_Or_Retryable
       else Corrupt_Or_Invalid_Response);
+
+   function Failed_Put_Bucket_ACL_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Bucket_ACL_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then Bucket_ACL_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then Bucket_ACL_Mutation_Definitely_Not_Applied
+      else Bucket_ACL_Mutation_Outcome_Unknown);
+
+   function Normalize_Put_Bucket_ACL_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Put_Bucket_ACL_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
+   begin
+      return
+        (Kind        => Put_Bucket_ACL_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Bucket_ACL_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then Bucket_ACL_Mutation_Completed
+            elsif Conclusive
+            then Bucket_ACL_Mutation_Definitely_Not_Applied
+            else Bucket_ACL_Mutation_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then No_Failure
+            else Generated_Mutation_Response_Failure
+              (Value.Status, Code)),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Put_Bucket_ACL_Response;
+
+   function Normalize_Put_Bucket_ACL_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_ACL_Result is
+   begin
+      return
+        (Kind        => Put_Bucket_ACL_Exchange_Failed,
+         Disposition =>
+           Failed_Put_Bucket_ACL_Disposition
+             (Kind, Admission),
+         Failure     =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Put_Bucket_ACL_Failure;
+
+   function Decode_Put_Bucket_ACL_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Put_Bucket_ACL_Result is
+   begin
+      pragma Unreferenced (Response, Phase);
+      return Normalize_Put_Bucket_ACL_Response
+        (Low_Level.Decode_Put_Bucket_Control_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission);
+   end Decode_Put_Bucket_ACL_Family_Response;
+
+   overriding function Declared_Length
+     (Item : Put_Bucket_ACL_Operation)
+      return HTTP_Client.Body_Length is
+     (Put_Bucket_ACL_Mutations.Declared_Length
+        (Item.State));
+
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_ACL_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      Put_Bucket_ACL_Mutations.Read_Now
+        (Item.State, Data, Last, Result);
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_ACL_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      Put_Bucket_ACL_Mutations.Source_Wait_Source
+        (Item.State, Required, Descriptor, Ready_Now);
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_ACL_Operation) is
+   begin
+      Put_Bucket_ACL_Mutations.Release_Source (Item.State);
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Put_Bucket_ACL_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Put_Bucket_ACL_Mutations.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item : in out Put_Bucket_ACL_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Put_Bucket_ACL_Mutations.Drive
+        (Item.State, Item'Access, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_ACL_Operation) is
+   begin
+      Put_Bucket_ACL_Mutations.Request_Cancellation
+        (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_ACL_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Put_Bucket_ACL_Mutations.Finalize (Item.State);
+   end Finalize;
+
+   procedure Start_Put_Bucket_ACL
+     (Operation  : in out Put_Bucket_ACL_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.ACL.Access_Control_Policy;
+      Parameters : Low_Level.Put_Bucket_ACL_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "PutBucketAcl restart changed retained owner";
+      end if;
+      Put_Bucket_ACL_Mutations.Start
+        (Operation.State, Operation'Access,
+         Low_Level.Prepare_Put_Bucket_ACL
+           (Origin, Style, Bucket, Value, Parameters, Identity, Region,
+            Timestamp, Limits),
+         Deadline, Limits);
+   end Start_Put_Bucket_ACL;
+
+   procedure Set_ACL
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.ACL.Access_Control_Policy;
+      Parameters : Low_Level.Put_Bucket_ACL_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Put_Bucket_ACL_Operation) is
+   begin
+      Start_Put_Bucket_ACL
+        (Operation, Client, Origin, Bucket, Value, Parameters, Identity,
+         Deadline, Region, Style, Limits, Token);
+   end Set_ACL;
+
+   function Set_ACL
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.ACL.Access_Control_Policy;
+      Parameters : Low_Level.Put_Bucket_ACL_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Put_Bucket_ACL_Operation is
+   begin
+      return Result :
+        Put_Bucket_ACL_Operation (Set, Client, Token)
+      do
+         Start_Put_Bucket_ACL
+           (Result, Client, Origin, Bucket, Value, Parameters, Identity,
+            Deadline, Region, Style, Limits, Token);
+      end return;
+   end Set_ACL;
+
+   procedure Finish
+     (Operation : in out Put_Bucket_ACL_Operation;
+      Result    : out Put_Bucket_ACL_Result) is
+   begin
+      Put_Bucket_ACL_Mutations.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Set_ACL
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.ACL.Access_Control_Policy;
+      Parameters : Low_Level.Put_Bucket_ACL_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Put_Bucket_ACL_Result
+   is
+      --  Derived owner stack: mutation parent, HTTP exchange, and transport.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Put_Bucket_ACL_Operation :=
+           Set_ACL
+             (Set'Access, Client'Access, Origin, Bucket, Value, Parameters,
+              Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : Put_Bucket_ACL_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Set_ACL;
 
    function Failed_Put_Bucket_Inventory_Configuration_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
@@ -26475,7 +26734,7 @@ package body Flyology.Object_Storage.Client.Buckets is
         (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Generated_Configuration_Rejection (Value.Status, Code);
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
    begin
       return
         (Kind        => Put_Bucket_Inventory_Configuration_Response_Available,
@@ -26492,7 +26751,7 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            else Generated_Configuration_Response_Failure
+            else Generated_Mutation_Response_Failure
               (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -26610,7 +26869,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Inventory.Inventory_Configuration;
+      Value      : S3.Inventory.Inventory_Configuration;
       Parameters : Low_Level.Put_Bucket_Inventory_Configuration_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26635,7 +26894,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Inventory.Inventory_Configuration;
+      Value      : S3.Inventory.Inventory_Configuration;
       Parameters : Low_Level.Put_Bucket_Inventory_Configuration_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26655,7 +26914,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Inventory.Inventory_Configuration;
+      Value      : S3.Inventory.Inventory_Configuration;
       Parameters : Low_Level.Put_Bucket_Inventory_Configuration_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26686,7 +26945,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : aliased in out HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Inventory.Inventory_Configuration;
+      Value      : S3.Inventory.Inventory_Configuration;
       Parameters : Low_Level.Put_Bucket_Inventory_Configuration_Parameters;
       Identity   : Low_Level.Credentials;
       Region     : String;
@@ -26733,7 +26992,7 @@ package body Flyology.Object_Storage.Client.Buckets is
         (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Generated_Configuration_Rejection (Value.Status, Code);
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
    begin
       return
         (Kind        => Put_Bucket_Logging_Response_Available,
@@ -26750,7 +27009,7 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            else Generated_Configuration_Response_Failure
+            else Generated_Mutation_Response_Failure
               (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -26868,7 +27127,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Logging.Logging_Status;
+      Value      : S3.Logging.Logging_Status;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26893,7 +27152,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Logging.Logging_Status;
+      Value      : S3.Logging.Logging_Status;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26913,7 +27172,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Logging.Logging_Status;
+      Value      : S3.Logging.Logging_Status;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -26944,7 +27203,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : aliased in out HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Logging.Logging_Status;
+      Value      : S3.Logging.Logging_Status;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Region     : String;
@@ -26991,7 +27250,7 @@ package body Flyology.Object_Storage.Client.Buckets is
         (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Generated_Configuration_Rejection (Value.Status, Code);
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
    begin
       return
         (Kind        => Put_Bucket_Website_Response_Available,
@@ -27008,7 +27267,7 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            else Generated_Configuration_Response_Failure
+            else Generated_Mutation_Response_Failure
               (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -27126,7 +27385,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Website.Website_Configuration;
+      Value      : S3.Website.Website_Configuration;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -27151,7 +27410,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Website.Website_Configuration;
+      Value      : S3.Website.Website_Configuration;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -27171,7 +27430,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Website.Website_Configuration;
+      Value      : S3.Website.Website_Configuration;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -27202,7 +27461,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client     : aliased in out HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : Website.Website_Configuration;
+      Value      : S3.Website.Website_Configuration;
       Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
       Identity   : Low_Level.Credentials;
       Region     : String;

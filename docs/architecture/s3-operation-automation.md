@@ -157,6 +157,17 @@ and requires `Invalid_Request` before any socket admission. Thus the shared
 matrix executes the exact-operation binding rather than treating its generated
 comparison as sufficient evidence.
 
+PutBucketAcl is the first generated ACL mutation. It keeps the public
+`Client.Buckets.Set_ACL` vocabulary while extending the common matrix with
+model-derived canned-ACL, explicit-grant, and selected SHA-256 checksum lanes.
+The emitted wire evidence verifies that header mode has no request body and
+that the checksum value covers the exact serialized body. The generated typed
+adapter also exercises five pre-admission refusals without opening a socket:
+body plus canned ACL, canned ACL plus explicit grants, neither ACL mode,
+an invalid canned-ACL enum, and an invalid checksum enum. These checks enforce
+the reviewed manifest's mode exclusivity while leaving certainty, no-replay,
+and Get_ACL reconciliation policy human-owned.
+
 The generated mutation provider surface retains operation-specific public
 result and disposition types while instantiating the existing human-owned
 `Client.REST_XML_Mutations` state machine. The generator emits the exact

@@ -75,6 +75,7 @@ def main() -> None:
         if entry["generator_eligible"]
     } == {
         "ListDirectoryBuckets",
+        "PutBucketAcl",
         "PutBucketInventoryConfiguration",
         "PutBucketLogging",
         "PutBucketWebsite",

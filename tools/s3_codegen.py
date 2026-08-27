@@ -1383,6 +1383,7 @@ def codec_descriptor_text(
 
 @dataclass(frozen=True)
 class Mutation_Serializer:
+    ada_stem: str
     payload_shape: str
     value_unit: str
     value_type: str
@@ -1391,7 +1392,98 @@ class Mutation_Serializer:
 
 
 MUTATION_SERIALIZERS = {
+    "PutBucketAcl": Mutation_Serializer(
+        ada_stem="Put_Bucket_ACL",
+        payload_shape="AccessControlPolicy",
+        value_unit="ACL",
+        value_type="Access_Control_Policy",
+        closure_sha256=(
+            "f61cc3f5d7e8574ea9c1c3fde6b0cb7bfdd9b1218ec7474299408babd905a2fe"
+        ),
+        body="""   function Grantee_Type_Image
+     (Value : ACL.Grantee_Type) return String is
+     (case Value is
+         when ACL.Canonical_User => "CanonicalUser",
+         when ACL.Amazon_Customer_By_Email => "AmazonCustomerByEmail",
+         when ACL.Group_Grantee => "Group");
+
+   function Permission_Image
+     (Value : ACL.Permission) return String is
+     (case Value is
+         when ACL.Full_Control => "FULL_CONTROL",
+         when ACL.Write        => "WRITE",
+         when ACL.Write_ACP    => "WRITE_ACP",
+         when ACL.Read         => "READ",
+         when ACL.Read_ACP     => "READ_ACP");
+
+   procedure Write_Optional_String
+     (Item  : in out XML_Writers.Writer;
+      Name  : String;
+      Value : ACL.Optional_String) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Text_Element (Item, Name, US.To_String (Value.Value));
+      end if;
+   end Write_Optional_String;
+
+   procedure Write_Grantee
+     (Item  : in out XML_Writers.Writer;
+      Value : ACL.Grantee) is
+   begin
+      if not Value.Is_Set then
+         return;
+      end if;
+      XML_Writers.Start_Element (Item, "Grantee");
+      XML_Writers.Attribute
+        (Item, "type", Grantee_Type_Image (Value.Kind),
+         "http://www.w3.org/2001/XMLSchema-instance", "xsi");
+      Write_Optional_String (Item, "DisplayName", Value.Display_Name);
+      Write_Optional_String (Item, "EmailAddress", Value.Email_Address);
+      Write_Optional_String (Item, "ID", Value.ID);
+      Write_Optional_String (Item, "URI", Value.URI);
+      XML_Writers.End_Element (Item, "Grantee");
+   end Write_Grantee;
+
+   function Serialize
+     (Value  : ACL.Access_Control_Policy;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      if not Value.Is_Set then
+         return "";
+      end if;
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document (Item, Root_Name, Namespace_URI);
+      if Value.Policy_Owner.Is_Set then
+         XML_Writers.Start_Element (Item, "Owner");
+         Write_Optional_String
+           (Item, "DisplayName", Value.Policy_Owner.Display_Name);
+         Write_Optional_String (Item, "ID", Value.Policy_Owner.ID);
+         XML_Writers.End_Element (Item, "Owner");
+      end if;
+      if Value.ACL.Is_Set then
+         XML_Writers.Start_Element (Item, "AccessControlList");
+         for Grant of Value.ACL.Grants loop
+            XML_Writers.Start_Element (Item, "Grant");
+            Write_Grantee (Item, Grant.Principal);
+            if Grant.Allowed.Is_Set then
+               XML_Writers.Text_Element
+                 (Item, "Permission", Permission_Image (Grant.Allowed.Value));
+            end if;
+            XML_Writers.End_Element (Item, "Grant");
+         end loop;
+         XML_Writers.End_Element (Item, "AccessControlList");
+      end if;
+      return XML_Writers.Finish (Item, Root_Name);
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise ACL.Malformed_ACL with
+           "ACL serialization violates caller limits";
+   end Serialize;""",
+    ),
     "PutBucketInventoryConfiguration": Mutation_Serializer(
+        ada_stem="Put_Bucket_Inventory_Configuration",
         payload_shape="InventoryConfiguration",
         value_unit="Inventory",
         value_type="Inventory_Configuration",
@@ -1513,6 +1605,7 @@ MUTATION_SERIALIZERS = {
    end Serialize;""",
     ),
     "PutBucketLogging": Mutation_Serializer(
+        ada_stem="Put_Bucket_Logging",
         payload_shape="BucketLoggingStatus",
         value_unit="Logging",
         value_type="Logging_Status",
@@ -1621,6 +1714,7 @@ MUTATION_SERIALIZERS = {
    end Serialize;""",
     ),
     "PutBucketWebsite": Mutation_Serializer(
+        ada_stem="Put_Bucket_Website",
         payload_shape="WebsiteConfiguration",
         value_unit="Website",
         value_type="Website_Configuration",
@@ -1749,6 +1843,18 @@ def mutation_serializer_text(
         or payload.get("shape") != descriptor.payload_shape
         or namespace != "http://s3.amazonaws.com/doc/2006-03-01/"
         or closure_sha256 != descriptor.closure_sha256
+        or (
+            operation_name == "PutBucketAcl"
+            and (
+                not operation.get("httpChecksum", {}).get(
+                    "requestChecksumRequired", False
+                )
+                or operation.get("httpChecksum", {}).get(
+                    "requestAlgorithmMember"
+                )
+                != "ChecksumAlgorithm"
+            )
+        )
     ):
         raise s3_operation.Audit_Error(
             f"generated mutation serializer contract changed: {operation_name}"
@@ -1756,12 +1862,10 @@ def mutation_serializer_text(
     root_name = payload.get("locationName", descriptor.payload_shape)
     unit = (
         "flyology-object_storage-s3-generated_"
-        + re.sub(r"(?<!^)(?=[A-Z])", "_", operation_name).lower()
+        + descriptor.ada_stem.lower()
         + "_xml"
     )
-    child = "Generated_" + re.sub(
-        r"(?<!^)(?=[A-Z])", "_", operation_name
-    ) + "_XML"
+    child = "Generated_" + descriptor.ada_stem + "_XML"
     package = "Flyology.Object_Storage.S3." + child
     value_package = "Flyology.Object_Storage.S3." + descriptor.value_unit
     spec = f'''with {value_package};
@@ -1820,6 +1924,7 @@ end
 class Generated_Mutation:
     operation: str
     ada_stem: str
+    model_stem: str
     public_name: str
     label: str
     value_unit: str
@@ -1888,8 +1993,26 @@ class Generated_Mutation:
 
 GENERATED_MUTATIONS = (
     Generated_Mutation(
+        operation="PutBucketAcl",
+        ada_stem="Put_Bucket_ACL",
+        model_stem="Put_Bucket_Acl",
+        public_name="Set_ACL",
+        label="bucket access-control policy",
+        value_unit="ACL",
+        value_type="Access_Control_Policy",
+        parameters_type="Put_Bucket_ACL_Parameters",
+        disposition_stem="Bucket_ACL_Mutation",
+        declares_disposition=True,
+        subresource="acl",
+        has_identifier=False,
+        has_content_md5=True,
+        requires_checksum=False,
+        reconciliation="Get_ACL",
+    ),
+    Generated_Mutation(
         operation="PutBucketInventoryConfiguration",
         ada_stem="Put_Bucket_Inventory_Configuration",
+        model_stem="Put_Bucket_Inventory_Configuration",
         public_name="Set_Inventory_Configuration",
         label="inventory configuration",
         value_unit="Inventory",
@@ -1906,6 +2029,7 @@ GENERATED_MUTATIONS = (
     Generated_Mutation(
         operation="PutBucketLogging",
         ada_stem="Put_Bucket_Logging",
+        model_stem="Put_Bucket_Logging",
         public_name="Set_Logging",
         label="bucket logging configuration",
         value_unit="Logging",
@@ -1922,6 +2046,7 @@ GENERATED_MUTATIONS = (
     Generated_Mutation(
         operation="PutBucketWebsite",
         ada_stem="Put_Bucket_Website",
+        model_stem="Put_Bucket_Website",
         public_name="Set_Website",
         label="bucket website configuration",
         value_unit="Website",
@@ -1942,6 +2067,35 @@ def _generated_mutation_low_level_spec(
     mutations: tuple[Generated_Mutation, ...]
 ) -> str:
     parts: list[str] = []
+    if any(item.operation == "PutBucketAcl" for item in mutations):
+        parts.append(
+            """   --  Complete modeled non-resource inputs for PutBucketAcl.
+   --  Empty strings preserve member absence. Access_Control_Policy.Is_Set
+   --  selects the body mode; otherwise exactly one canned-ACL or explicit
+   --  grant-header group is required by the reviewed S3 cross-field rule.
+   --  Empty Content_MD5 derives the externally required digest from the
+   --  exact generated body; it does not select a retry or resource policy.
+   --  @field ACL Optional exact canned ACL header
+   --  @field Content_MD5 Optional exact base64 MD5 override
+   --  @field Checksum_Algorithm Optional exact modeled checksum algorithm
+   --  @field Grant_Full_Control Optional exact grant header
+   --  @field Grant_Read Optional exact grant header
+   --  @field Grant_Read_ACP Optional exact grant header
+   --  @field Grant_Write Optional exact grant header
+   --  @field Grant_Write_ACP Optional exact grant header
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_ACL_Parameters is record
+      ACL                       : Ada.Strings.Unbounded.Unbounded_String;
+      Content_MD5               : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Full_Control        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read                : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read_ACP            : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write               : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write_ACP           : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;"""
+        )
     if any(item.has_identifier for item in mutations):
         parts.append(
             """   --  Complete non-body inputs for generated named configuration
@@ -2004,6 +2158,127 @@ def _generated_mutation_low_level_body(
 ) -> str:
     parts: list[str] = []
     for item in mutations:
+        if item.operation == "PutBucketAcl":
+            parts.append(
+                f"""   function {item.low_prepare}
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.ACL.Access_Control_Policy;
+      Parameters : Put_Bucket_ACL_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Payload : constant String :=
+        S3.Generated_Put_Bucket_ACL_XML.Serialize (Value, Limits);
+      Has_Canned_ACL : constant Boolean :=
+        US.Length (Parameters.ACL) > 0;
+      Grant_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write_ACP) > 0);
+      Header_Mode : constant Boolean := Has_Canned_ACL or else Grant_Count > 0;
+      Body_Mode : constant Boolean := Value.Is_Set;
+      MD5 : constant String :=
+        (if US.Length (Parameters.Content_MD5) = 0
+         then Content_MD5 (Payload)
+         else US.To_String (Parameters.Content_MD5));
+      Count : constant Positive :=
+        2 + Boolean'Pos (Has_Canned_ACL) +
+        Boolean'Pos (US.Length (Parameters.Checksum_Algorithm) > 0) +
+        Grant_Count +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 2;
+
+      procedure Add
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) := Model_Value_Of (Name, US.To_String (Value));
+         end if;
+      end Add;
+
+      function Valid_Optional_Header
+        (Value : US.Unbounded_String) return Boolean is
+        (US.Length (Value) = 0
+         or else Valid_List_Response_Header_Text (US.To_String (Value)));
+   begin
+      if Body_Mode = Header_Mode
+        or else (Has_Canned_ACL and then Grant_Count > 0)
+        or else not Wire_Core.Valid_Base64 (MD5, 16)
+        or else not Valid_Optional_Header (Parameters.ACL)
+        or else not Valid_Optional_Header (Parameters.Grant_Full_Control)
+        or else not Valid_Optional_Header (Parameters.Grant_Read)
+        or else not Valid_Optional_Header (Parameters.Grant_Read_ACP)
+        or else not Valid_Optional_Header (Parameters.Grant_Write)
+        or else not Valid_Optional_Header (Parameters.Grant_Write_ACP)
+        or else not Valid_Optional_Header (Parameters.Expected_Bucket_Owner)
+      then
+         raise Invalid_Request with
+           "invalid PutBucketAcl mode or header parameters";
+      end if;
+      Values (1) := Model_Value_Of ("Bucket", Bucket);
+      Values (2) := Model_Value_Of ("ContentMD5", MD5);
+      Add ("ACL", Parameters.ACL);
+      Add ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add ("GrantFullControl", Parameters.Grant_Full_Control);
+      Add ("GrantRead", Parameters.Grant_Read);
+      Add ("GrantReadACP", Parameters.Grant_Read_ACP);
+      Add ("GrantWrite", Parameters.Grant_Write);
+      Add ("GrantWriteACP", Parameters.Grant_Write_ACP);
+      Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      return Result : Prepared_Request := Prepare_Model_Request_Internal
+        (Model.{item.model_stem}_Operation, Origin, Style, Values, Payload,
+         Body_Mode, "", Identity, Region, Timestamp,
+         Generate_Request_Checksum => True)
+      do
+         Result.Operation := Bucket_Control_Mutation_Operation;
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         --  The one-shot source owns the signed ACL bytes. Retaining them in
+         --  Request would select HTTP's replayable-body form.
+         Flyology.HTTP.Client.Set_Body (Result.Message, "");
+      end return;
+   exception
+      when S3.ACL.Malformed_ACL =>
+         raise Invalid_Request with "invalid PutBucketAcl payload";
+   end {item.low_prepare};
+
+   function {item.low_execute}
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared, Model.{item.model_stem}_Operation,
+         Timeout, Token, Limits));
+
+   procedure {item.ada_stem}
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /= Model.{item.model_stem}_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end {item.ada_stem};"""
+            )
+            continue
         if item.has_identifier:
             common = """      Common : constant Bucket_Control_Mutation_Parameters :=
         (Content_MD5           => US.Null_Unbounded_String,
@@ -2348,21 +2623,22 @@ def _generated_mutation_provider_body(
     mutations: tuple[Generated_Mutation, ...]
 ) -> str:
     parts = [
-        """   --  Reviewed conservative classifier shared only by this generated
-   --  bucket-configuration mutation family. Unrecognized responses remain
+        """   --  Reviewed conservative classifier shared only by generated
+   --  REST/XML mutations. Unrecognized responses remain
    --  ambiguous and no mutation is replayed.
-   function Conclusive_Generated_Configuration_Rejection
+   function Conclusive_Generated_Mutation_Rejection
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 400
        and then Code in
-         "InvalidArgument" | "InvalidBucketName" | "InvalidRequest" |
-         "MalformedXML")
+         "AccessControlListNotSupported" | "InvalidArgument" |
+         "InvalidBucketName" | "InvalidRequest" | "MalformedXML")
       or else (Status = 401 and then Code = "InvalidAccessKeyId")
       or else (Status = 403 and then Code = "AccessDenied")
-      or else (Status = 404 and then Code = "NoSuchBucket")
+      or else (Status = 404 and then Code in "NoSuchBucket" | "NoSuchKey")
+      or else (Status = 405 and then Code = "MethodNotAllowed")
       or else (Status = 501 and then Code = "NotImplemented"));
 
-   function Retryable_Generated_Configuration_Response
+   function Retryable_Generated_Mutation_Response
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 409 and then Code = "OperationAborted")
       or else (Status = 429 and then Code = "SlowDown")
@@ -2371,7 +2647,7 @@ def _generated_mutation_provider_body(
       or else (Status = 503 and then Code = "SlowDown")
       or else (Status = 504 and then Code = "RequestTimeout"));
 
-   function Generated_Configuration_Response_Failure
+   function Generated_Mutation_Response_Failure
      (Status : Flyology.HTTP.Status_Code; Code : String)
       return Failure_Reason is
      (if Status = 401 and then Code = "InvalidAccessKeyId"
@@ -2380,9 +2656,9 @@ def _generated_mutation_provider_body(
       then Authorization_Failed
       elsif Status = 404 and then Code = "NoSuchBucket"
       then Not_Found
-      elsif Conclusive_Generated_Configuration_Rejection (Status, Code)
+      elsif Conclusive_Generated_Mutation_Rejection (Status, Code)
       then Invalid_Request
-      elsif Retryable_Generated_Configuration_Response (Status, Code)
+      elsif Retryable_Generated_Mutation_Response (Status, Code)
       then Unavailable_Or_Retryable
       else Corrupt_Or_Invalid_Response);"""
     ]
@@ -2409,7 +2685,7 @@ def _generated_mutation_provider_body(
         (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Generated_Configuration_Rejection (Value.Status, Code);
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
    begin
       return
         (Kind        => {item.response_available},
@@ -2426,7 +2702,7 @@ def _generated_mutation_provider_body(
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            else Generated_Configuration_Response_Failure
+            else Generated_Mutation_Response_Failure
               (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -2544,7 +2820,7 @@ def _generated_mutation_provider_body(
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : {item.value_unit}.{item.value_type};
+      Value      : S3.{item.value_unit}.{item.value_type};
       Parameters : Low_Level.{item.parameters_type};
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -2569,7 +2845,7 @@ def _generated_mutation_provider_body(
      (Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : {item.value_unit}.{item.value_type};
+      Value      : S3.{item.value_unit}.{item.value_type};
       Parameters : Low_Level.{item.parameters_type};
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -2589,7 +2865,7 @@ def _generated_mutation_provider_body(
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : {item.value_unit}.{item.value_type};
+      Value      : S3.{item.value_unit}.{item.value_type};
       Parameters : Low_Level.{item.parameters_type};
       Identity   : Low_Level.Credentials;
       Deadline   : HTTP_Client.Monotonic_Deadline;
@@ -2620,7 +2896,7 @@ def _generated_mutation_provider_body(
      (Client     : aliased in out HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
-      Value      : {item.value_unit}.{item.value_type};
+      Value      : S3.{item.value_unit}.{item.value_type};
       Parameters : Low_Level.{item.parameters_type};
       Identity   : Low_Level.Credentials;
       Region     : String;
@@ -2658,6 +2934,11 @@ def _generated_mutation_qualification_text(
     unit = main.lower()
     value_package = "Flyology.Object_Storage.S3." + item.value_unit
     value_type = item.value_unit + "." + item.value_type
+    value_declarations = f'''   Value : constant {value_type} :=
+     {item.value_unit}.Parse (Document, Limits);'''
+    optional_input_declaration = ""
+    pre_admission_checks = ""
+    pre_admission_call = ""
     if item.operation == "PutBucketInventoryConfiguration":
         identifier_declaration = '''   Identifier : constant String :=
      Input ("ID");'''
@@ -2674,6 +2955,125 @@ def _generated_mutation_qualification_text(
      (ID                    => US.To_Unbounded_String (Identifier),
       Expected_Bucket_Owner =>
         US.To_Unbounded_String (Expected_Bucket_Owner));'''
+    elif item.operation == "PutBucketAcl":
+        optional_input_declaration = '''
+   function Optional_Input (Name : String) return String is
+      Variable : constant String := "FLYOLOGY_S3_QUALIFICATION_INPUT_" & Name;
+   begin
+      return
+        (if Environment.Exists (Variable)
+         then Environment.Value (Variable)
+         else "");
+   end Optional_Input;
+'''
+        identifier_declaration = ""
+        value_document = '''     "<AccessControlPolicy xmlns=\"\"http://s3.amazonaws.com/doc/" &
+     "2006-03-01/\"\"><Owner><ID>qualified-owner</ID></Owner>" &
+     "<AccessControlList><Grant><Grantee xmlns:xsi=\"\"http://www.w3.org/" &
+     "2001/XMLSchema-instance\"\" xsi:type=\"\"CanonicalUser\"\">" &
+     "<ID>qualified-grantee</ID></Grantee><Permission>READ</Permission>" &
+     "</Grant></AccessControlList></AccessControlPolicy>"'''
+        parameters = f'''   Canned_ACL : constant String := Optional_Input ("A_C_L");
+   Checksum_Algorithm : constant String :=
+     Optional_Input ("CHECKSUM_ALGORITHM");
+   Grant_Full_Control : constant String :=
+     Optional_Input ("GRANT_FULL_CONTROL");
+   Grant_Read : constant String := Optional_Input ("GRANT_READ");
+   Grant_Read_ACP : constant String := Optional_Input ("GRANT_READ_A_C_P");
+   Grant_Write : constant String := Optional_Input ("GRANT_WRITE");
+   Grant_Write_ACP : constant String := Optional_Input ("GRANT_WRITE_A_C_P");
+   Header_Mode : constant Boolean :=
+     Canned_ACL'Length > 0
+     or else Grant_Full_Control'Length > 0
+     or else Grant_Read'Length > 0
+     or else Grant_Read_ACP'Length > 0
+     or else Grant_Write'Length > 0
+     or else Grant_Write_ACP'Length > 0;
+   Parameters : constant Low_Level.{item.parameters_type} :=
+     (ACL                   => US.To_Unbounded_String (Canned_ACL),
+      Content_MD5           => US.Null_Unbounded_String,
+      Checksum_Algorithm    => US.To_Unbounded_String (Checksum_Algorithm),
+      Grant_Full_Control    => US.To_Unbounded_String (Grant_Full_Control),
+      Grant_Read            => US.To_Unbounded_String (Grant_Read),
+      Grant_Read_ACP        => US.To_Unbounded_String (Grant_Read_ACP),
+      Grant_Write           => US.To_Unbounded_String (Grant_Write),
+      Grant_Write_ACP       => US.To_Unbounded_String (Grant_Write_ACP),
+      Expected_Bucket_Owner =>
+        US.To_Unbounded_String (Expected_Bucket_Owner));'''
+        value_declarations = f'''   Parsed_Value : constant {value_type} :=
+     ACL.Parse (Document, Limits);
+   Value : constant {value_type} :=
+     (if Header_Mode then (others => <>) else Parsed_Value);'''
+        pre_admission_checks = f'''   procedure Check_ACL_Pre_Admission_Rejections is
+      Absent : constant ACL.Access_Control_Policy := (others => <>);
+
+      procedure Expect_Invalid
+        (Candidate : ACL.Access_Control_Policy;
+         Options   : Low_Level.{item.parameters_type};
+         Label     : String) is
+      begin
+         declare
+            Unexpected : constant Low_Level.Prepared_Request :=
+              Low_Level.{item.low_prepare}
+                (Origin, Low_Level.Path_Style, Bucket, Candidate, Options,
+                 Identity, "us-east-1", "20130524T000000Z", Limits);
+         begin
+            raise Program_Error with
+              Label & ": invalid ACL request was prepared: " &
+              Low_Level.Target (Unexpected);
+         end;
+      exception
+         when Low_Level.Invalid_Request =>
+            null;
+      end Expect_Invalid;
+   begin
+      Expect_Invalid
+        (Parsed_Value,
+         (Parameters with delta
+            ACL => US.To_Unbounded_String ("private")),
+         "body plus canned ACL");
+      Expect_Invalid
+        (Absent,
+         (Parameters with delta
+            ACL => US.To_Unbounded_String ("private"),
+            Grant_Read => US.To_Unbounded_String ("id=""qualified""")),
+         "canned ACL plus explicit grant");
+      Expect_Invalid
+        (Absent,
+         (Parameters with delta
+            ACL => US.Null_Unbounded_String,
+            Grant_Full_Control => US.Null_Unbounded_String,
+            Grant_Read => US.Null_Unbounded_String,
+            Grant_Read_ACP => US.Null_Unbounded_String,
+            Grant_Write => US.Null_Unbounded_String,
+            Grant_Write_ACP => US.Null_Unbounded_String),
+         "missing body and ACL headers");
+      Expect_Invalid
+        (Absent,
+         (Parameters with delta
+            ACL => US.To_Unbounded_String ("not-a-modeled-canned-acl"),
+            Grant_Full_Control => US.Null_Unbounded_String,
+            Grant_Read => US.Null_Unbounded_String,
+            Grant_Read_ACP => US.Null_Unbounded_String,
+            Grant_Write => US.Null_Unbounded_String,
+            Grant_Write_ACP => US.Null_Unbounded_String),
+         "invalid canned ACL enum");
+      Expect_Invalid
+        (Parsed_Value,
+         (Parameters with delta
+            ACL => US.Null_Unbounded_String,
+            Grant_Full_Control => US.Null_Unbounded_String,
+            Grant_Read => US.Null_Unbounded_String,
+            Grant_Read_ACP => US.Null_Unbounded_String,
+            Grant_Write => US.Null_Unbounded_String,
+            Grant_Write_ACP => US.Null_Unbounded_String,
+            Checksum_Algorithm =>
+              US.To_Unbounded_String ("not-a-modeled-checksum")),
+         "invalid checksum enum");
+   end Check_ACL_Pre_Admission_Rejections;
+
+'''
+        pre_admission_call = "   Check_ACL_Pre_Admission_Rejections;\n"
     elif item.operation == "PutBucketLogging":
         identifier_declaration = ""
         value_document = '''     "<BucketLoggingStatus xmlns=\"\"http://s3.amazonaws.com/doc/" &
@@ -2758,7 +3158,7 @@ procedure {main} is
 
    function Input (Name : String) return String is
      (Environment.Value ("FLYOLOGY_S3_QUALIFICATION_INPUT_" & Name));
-
+{optional_input_declaration}
 {identifier_block}   Expected_Bucket_Owner : constant String :=
      Input ("EXPECTED_BUCKET_OWNER");
    Origin : constant Flyology.HTTP.Origin :=
@@ -2796,8 +3196,7 @@ procedure {main} is
                XML.Default_Limits.Maximum_Text_Bytes));
    Document : constant String :=
 {value_document};
-   Value : constant {value_type} :=
-     {item.value_unit}.Parse (Document, Limits);
+{value_declarations}
 
    --  Every case is serial. One HTTP slot is the derived minimum and makes a
    --  leaked exchange observable; it is not production policy.
@@ -2878,9 +3277,9 @@ procedure {main} is
          null;
    end Check_Exact_Operation_Rejection;
 
-begin
+{pre_admission_checks}begin
    HTTP_Client.Configure (HTTP, Origin);
-   if Lane = "low_level" then
+{pre_admission_call}   if Lane = "low_level" then
       Check_Exact_Operation_Rejection;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
@@ -3071,7 +3470,7 @@ def generated_ada_outputs(
         "Model.Put_Bucket_Metrics_Configuration_Operation",
     ]
     configuration_id_operations.extend(
-        "Model." + item.ada_stem + "_Operation"
+        "Model." + item.model_stem + "_Operation"
         for item in mutations
         if item.has_identifier
     )

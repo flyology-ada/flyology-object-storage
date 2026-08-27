@@ -20,6 +20,8 @@ with GNAT.MD5;
 
 with Flyology.Object_Storage.S3.Generated_List_Directory_Buckets_XML;
 with
+  Flyology.Object_Storage.S3.Generated_Put_Bucket_ACL_XML;
+with
   Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
 with
   Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
@@ -994,7 +996,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end case;
    end Valid_Model_Scalar;
 
-   function Prepare_Model_Request
+   function Prepare_Model_Request_Internal
      (Operation      : Model.Operation_Id;
       Origin         : Flyology.HTTP.Origin;
       Style          : Addressing_Style;
@@ -1004,7 +1006,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Payload_SHA256 : String;
       Identity       : Credentials;
       Region         : String;
-      Timestamp      : String) return Prepared_Request
+      Timestamp      : String;
+      Generate_Request_Checksum : Boolean)
+      return Prepared_Request
    is
       Input_Reference : constant Model.Shape_Reference :=
         Model.Input_Shape (Operation);
@@ -1022,6 +1026,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Header_Count : Natural := 0;
       Has_Body_Member : Boolean := False;
       Bucket_Value : US.Unbounded_String;
+      Requested_Checksum_Algorithm : US.Unbounded_String;
    begin
       if Payload'Length > 0 and then not Payload_Is_Set then
          raise Invalid_Request with "modeled payload value is not present";
@@ -1048,6 +1053,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
                raise Invalid_Request with "invalid modeled request member";
             end if;
             Value_Members (Value_Index) := Member;
+            if Generate_Request_Checksum
+              and then Name =
+                Model.Request_Checksum_Algorithm_Member (Operation)
+            then
+               Requested_Checksum_Algorithm :=
+                 Values (Value_Index).Value;
+            end if;
             declare
                Location : constant Model.Member_Location :=
                  Model.Location (Input_Shape, Member);
@@ -1162,8 +1174,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Query_Last : Natural := 0;
          Token_Value : constant String := Session_Token (Identity);
          Token_Header : constant String := Session_Token_Header (Identity);
+         Checksum_Text : constant String :=
+           US.To_String (Requested_Checksum_Algorithm);
+         Checksum : constant Checksum_Policy.Algorithm_Parse_Result :=
+           Checksum_Policy.Parse_Algorithm (Checksum_Text);
+         Has_Generated_Checksum : constant Boolean :=
+           Generate_Request_Checksum and then Checksum_Text'Length > 0;
          Headers : SigV4.Name_Value_Array
-           (1 .. 3 + Boolean'Pos (Token_Value'Length > 0) + Header_Count);
+           (1 .. 3 + Boolean'Pos (Token_Value'Length > 0) + Header_Count +
+              Boolean'Pos (Has_Generated_Checksum));
          Header_Last : Natural := 3;
          Hash : constant String :=
            (if Payload_SHA256'Length > 0 then Payload_SHA256
@@ -1178,6 +1197,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          if (Payload_SHA256'Length > 0
              and then Payload_SHA256 /= SigV4.Unsigned_Payload
              and then not Encoding.Valid_SHA256_Hex (Payload_SHA256))
+           or else (Has_Generated_Checksum and then not Checksum.Valid)
            or else (Hash = SigV4.Unsigned_Payload
                     and then Flyology.HTTP.Scheme (Origin) /=
                       Flyology.HTTP.Secure_HTTPS)
@@ -1235,6 +1255,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
                end if;
             end;
          end loop;
+         if Has_Generated_Checksum then
+            declare
+               --  Botocore's httpChecksum trait owns this derived header.
+               --  It is signed with the exact serialized bytes and does not
+               --  select a retry, resource, or application checksum policy.
+               Digest : constant Checksums.Digest_Value :=
+                 Checksums.Compute
+                   (Checksum.Value,
+                    Flyology.Bytes.To_Array
+                      (Flyology.Bytes.From_Byte_String (Payload)));
+               Header_Name : constant String :=
+                 (case Checksum.Value is
+                     when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                     when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                     when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+                     when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                     when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                     when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                     when S3.Core.MD5 => "x-amz-checksum-md5",
+                     when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                     when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                     when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+            begin
+               Header_Last := Header_Last + 1;
+               Headers (Header_Last) :=
+                 SigV4.Pair (Header_Name, Checksums.Encode_Base64 (Digest));
+            end;
+         end if;
          declare
             Canonical_Query : constant String := SigV4.Canonical_Query (Query);
             Target_Query : constant String := Wire_Query (Canonical_Query);
@@ -1287,7 +1335,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Headers.Headers_Too_Large |
            Constraint_Error =>
          raise Invalid_Request with "invalid modeled S3 request";
-   end Prepare_Model_Request;
+   end Prepare_Model_Request_Internal;
+
+   function Prepare_Model_Request
+     (Operation      : Model.Operation_Id;
+      Origin         : Flyology.HTTP.Origin;
+      Style          : Addressing_Style;
+      Values         : Model_Value_Array;
+      Payload        : String;
+      Payload_Is_Set : Boolean;
+      Payload_SHA256 : String;
+      Identity       : Credentials;
+      Region         : String;
+      Timestamp      : String) return Prepared_Request is
+     (Prepare_Model_Request_Internal
+        (Operation, Origin, Style, Values, Payload, Payload_Is_Set,
+         Payload_SHA256, Identity, Region, Timestamp,
+         Generate_Request_Checksum => False));
 
    function Prepare_Model_Streaming_Request
      (Operation      : Model.Operation_Id;
@@ -16431,6 +16495,124 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (S3.Model.List_Directory_Buckets_Operation, Client, Prepared, Sink,
          Deadline, Token, Operation);
    end List_Directory_Buckets;
+
+   function Prepare_Put_Bucket_ACL
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.ACL.Access_Control_Policy;
+      Parameters : Put_Bucket_ACL_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Payload : constant String :=
+        S3.Generated_Put_Bucket_ACL_XML.Serialize (Value, Limits);
+      Has_Canned_ACL : constant Boolean :=
+        US.Length (Parameters.ACL) > 0;
+      Grant_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write_ACP) > 0);
+      Header_Mode : constant Boolean := Has_Canned_ACL or else Grant_Count > 0;
+      Body_Mode : constant Boolean := Value.Is_Set;
+      MD5 : constant String :=
+        (if US.Length (Parameters.Content_MD5) = 0
+         then Content_MD5 (Payload)
+         else US.To_String (Parameters.Content_MD5));
+      Count : constant Positive :=
+        2 + Boolean'Pos (Has_Canned_ACL) +
+        Boolean'Pos (US.Length (Parameters.Checksum_Algorithm) > 0) +
+        Grant_Count +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 2;
+
+      procedure Add
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) := Model_Value_Of (Name, US.To_String (Value));
+         end if;
+      end Add;
+
+      function Valid_Optional_Header
+        (Value : US.Unbounded_String) return Boolean is
+        (US.Length (Value) = 0
+         or else Valid_List_Response_Header_Text (US.To_String (Value)));
+   begin
+      if Body_Mode = Header_Mode
+        or else (Has_Canned_ACL and then Grant_Count > 0)
+        or else not Wire_Core.Valid_Base64 (MD5, 16)
+        or else not Valid_Optional_Header (Parameters.ACL)
+        or else not Valid_Optional_Header (Parameters.Grant_Full_Control)
+        or else not Valid_Optional_Header (Parameters.Grant_Read)
+        or else not Valid_Optional_Header (Parameters.Grant_Read_ACP)
+        or else not Valid_Optional_Header (Parameters.Grant_Write)
+        or else not Valid_Optional_Header (Parameters.Grant_Write_ACP)
+        or else not Valid_Optional_Header (Parameters.Expected_Bucket_Owner)
+      then
+         raise Invalid_Request with
+           "invalid PutBucketAcl mode or header parameters";
+      end if;
+      Values (1) := Model_Value_Of ("Bucket", Bucket);
+      Values (2) := Model_Value_Of ("ContentMD5", MD5);
+      Add ("ACL", Parameters.ACL);
+      Add ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add ("GrantFullControl", Parameters.Grant_Full_Control);
+      Add ("GrantRead", Parameters.Grant_Read);
+      Add ("GrantReadACP", Parameters.Grant_Read_ACP);
+      Add ("GrantWrite", Parameters.Grant_Write);
+      Add ("GrantWriteACP", Parameters.Grant_Write_ACP);
+      Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      return Result : Prepared_Request := Prepare_Model_Request_Internal
+        (Model.Put_Bucket_Acl_Operation, Origin, Style, Values, Payload,
+         Body_Mode, "", Identity, Region, Timestamp,
+         Generate_Request_Checksum => True)
+      do
+         Result.Operation := Bucket_Control_Mutation_Operation;
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         --  The one-shot source owns the signed ACL bytes. Retaining them in
+         --  Request would select HTTP's replayable-body form.
+         Flyology.HTTP.Client.Set_Body (Result.Message, "");
+      end return;
+   exception
+      when S3.ACL.Malformed_ACL =>
+         raise Invalid_Request with "invalid PutBucketAcl payload";
+   end Prepare_Put_Bucket_ACL;
+
+   function Execute_Put_Bucket_ACL
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared, Model.Put_Bucket_Acl_Operation,
+         Timeout, Token, Limits));
+
+   procedure Put_Bucket_ACL
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /= Model.Put_Bucket_Acl_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_ACL;
 
    function Prepare_Put_Bucket_Inventory_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;

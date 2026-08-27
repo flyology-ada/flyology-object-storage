@@ -2,10 +2,10 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Flyology.Object_Storage.S3.XML;
 
---  Strict REST/XML codec for S3 bucket access-control policy reads.
+--  Strict REST/XML model for S3 bucket access-control policy documents.
 package Flyology.Object_Storage.S3.ACL is
 
-   --  Raised when a response violates the pinned GetBucketAcl model.
+   --  Raised when an ACL document violates the pinned model or caller limits.
    Malformed_ACL : exception;
 
    --  Exact pinned grantee xsi:type wire domain.
