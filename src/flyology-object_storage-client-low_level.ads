@@ -17,6 +17,7 @@ with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
+with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
@@ -2543,6 +2544,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Complete request parameters for a named bucket-control read.
+   --  @field ID Required modeled Id query value
+   --  @field Expected_Bucket_Owner Optional owner precondition header
+   type Get_Bucket_Control_With_ID_Parameters is record
+      ID                    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Complete GetBucketAccelerateConfiguration request parameters.
    --  @field Expected_Bucket_Owner Optional exact owner precondition
    --  @field Request_Payer Optional exact requester-pays admission value
@@ -2661,6 +2670,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    function Prepare_Get_Bucket_Replication
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Prepare one exactly bound GetBucketMetricsConfiguration request.
+   function Prepare_Get_Bucket_Metrics_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketAcl request.
@@ -2912,6 +2927,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Strict GetBucketMetricsConfiguration outcome with physical status.
+   --  @field Kind Whether configuration or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Complete current metrics configuration
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Metrics_Configuration_Outcome is record
+      Kind          : Get_Bucket_Control_Outcome_Kind;
+      Status        : Flyology.HTTP.Status_Code;
+      Configuration : S3.Metrics.Metrics_Configuration;
+      Error         : S3.Errors.Error_Response;
+   end record;
+
    --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
    --  established deterministic aggregate sentinel only.
    --  @field Kind Whether policy or a strict S3 error was returned
@@ -3056,6 +3083,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Replication_Outcome;
+   --  Decode one complete bounded GetBucketMetricsConfiguration response.
+   function Decode_Get_Bucket_Metrics_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metrics_Configuration_Outcome;
    --  Decode one complete bounded GetBucketAcl response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -3197,6 +3230,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Replication_Outcome;
+   --  Execute one exact prepared GetBucketMetricsConfiguration exchange.
+   function Execute_Get_Bucket_Metrics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metrics_Configuration_Outcome;
    --  Execute one exact prepared GetBucketAcl request.
    --  The 30-second default is the established low-level synchronous-client
    --  compatibility budget; callers may select a different absolute budget.
@@ -5441,6 +5481,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Caller-selected cancellation source or null
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Replication
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetBucketMetricsConfiguration exchange into a
+   --  bounded sink. Another prepared operation is rejected before admission.
+   procedure Get_Bucket_Metrics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

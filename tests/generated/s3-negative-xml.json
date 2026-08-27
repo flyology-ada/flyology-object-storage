@@ -2,6 +2,138 @@
   "model_revision": "36c34f15391da01cd717c73c0fffa747c9889768",
   "model_sha256": "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9",
   "operations": {
+    "GetBucketMetricsConfiguration": {
+      "cases": [
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-accesspointarn",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-prefix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 4
+          }
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 294
+          }
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 8
+          }
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 77
+          }
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-filter-1-and-1-tags-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:Id>reviewed-metrics</ns1:Id><ns1:Filter><ns1:And><ns1:Prefix>reviewed-prefix</ns1:Prefix><ns1:Tag><ns1:Key>reviewed-key</ns1:Key><ns1:Value>reviewed-value</ns1:Value></ns1:Tag><ns1:AccessPointArn>reviewed-access-point</ns1:AccessPointArn></ns1:And></ns1:Filter></ns0:MetricsConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-metricsconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter></ns0:MetricsConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-metricsconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:MetricsConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:And><ns0:Prefix>reviewed-prefix</ns0:Prefix><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:AccessPointArn>reviewed-access-point</ns0:AccessPointArn></ns0:And></ns0:Filter><UnknownModelMember /></ns0:MetricsConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-metricsconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>reviewed-metrics</Id><Filter><And><Prefix>reviewed-prefix</Prefix><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag><AccessPointArn>reviewed-access-point</AccessPointArn></And></Filter></MetricsConfiguration>"
+    },
     "GetBucketReplication": {
       "cases": [
         {

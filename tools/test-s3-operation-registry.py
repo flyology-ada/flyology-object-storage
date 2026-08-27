@@ -53,6 +53,18 @@ def main() -> None:
         "unexpected-attribute": 1,
         "unknown-member": 1,
     }
+    metrics_cases = negative["operations"][
+        "GetBucketMetricsConfiguration"
+    ]["cases"]
+    assert len(metrics_cases) == 17
+    assert Counter(case["category"] for case in metrics_cases) == {
+        "duplicate-singleton": 7,
+        "limit-failure": 4,
+        "missing-required-member": 3,
+        "namespace-violation": 1,
+        "unexpected-attribute": 1,
+        "unknown-member": 1,
+    }
 
     stale = copy.deepcopy(negative)
     stale["model_sha256"] = "0" * 64
@@ -77,6 +89,21 @@ def main() -> None:
     assert request["request_headers"] == {
         "x-amz-expected-bucket-owner": "123456789012"
     }
+    metrics_socket_operation = socket_plan["operations"][
+        "GetBucketMetricsConfiguration"
+    ]
+    assert len(metrics_socket_operation["cases"]) == 7
+    metrics_request = metrics_socket_operation["cases"][0]["exchange"][0]
+    assert metrics_request["target"] == (
+        "/qualified-low-level?id=low-level%25%20metrics&metrics"
+    )
+    assert metrics_request["request_headers"] == {
+        "x-amz-expected-bucket-owner": "123456789012"
+    }
+    empty_id_request = metrics_socket_operation["cases"][2]["exchange"][0]
+    assert empty_id_request["target"] == (
+        "/qualified-empty-id?id&metrics"
+    )
     stale_socket = copy.deepcopy(socket_plan)
     stale_socket["model_sha256"] = "0" * 64
     with tempfile.TemporaryDirectory(prefix="s3-operation-registry-") as directory:

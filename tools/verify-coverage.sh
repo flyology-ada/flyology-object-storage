@@ -71,82 +71,22 @@ do
   pattern=$(evidence_pattern "$operation_name")
   if [ "$backend_state" = covered ]; then
     require_evidence "$operation_name" backend "$pattern" \
-      "$PROJECT_DIR/tests/src/object_storage_test_cases.adb" \
-      "$PROJECT_DIR/sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+      "$PROJECT_DIR/tests/src" \
+      "$PROJECT_DIR/sqlite/tests/src"
   fi
   if [ "$client_state" = covered ]; then
     require_evidence "$operation_name" client "$pattern" \
-      "$PROJECT_DIR/tests/src/object_storage_test_cases.adb" \
-      "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_list_object_versions_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_bucket_cors_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_bucket_notification_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_object_annotation_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_legal_hold_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_retention_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_lock_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_replication_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_replication_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_acl_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_acl_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_create_session_tls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_transfer_many_corpus.adb"
+      "$PROJECT_DIR/tests/src"
   fi
   if [ "$server_state" = covered ]; then
     require_evidence "$operation_name" server "$pattern" \
-      "$PROJECT_DIR/tests/src/s3_server_application_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb"
+      "$PROJECT_DIR/tests/src"
   fi
   if [ "$corpus_state" = covered ]; then
     require_evidence "$operation_name" corpus "$pattern" \
-      "$PROJECT_DIR/tests/src/s3_implementation_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_list_object_versions_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_bucket_cors_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_ownership_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_bucket_notification_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_delete_object_annotation_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_legal_hold_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_retention_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_object_lock_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_replication_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_replication_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_bucket_acl_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_acl_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_create_session_tls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_transfer_many_corpus.adb" \
-      "$PROJECT_DIR/tests/scripts"
+      "$PROJECT_DIR/tests/src" \
+      "$PROJECT_DIR/tests/scripts" \
+      "$PROJECT_DIR/tests/generated"
   fi
 done
 

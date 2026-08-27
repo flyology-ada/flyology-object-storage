@@ -583,7 +583,10 @@ def xml_member_specs(
         member_shape = model["shapes"][member_shape_name]
         flattened = (
             member_shape["type"] == "list"
-            and bool(member_shape.get("flattened", False))
+            and bool(
+                member.get("flattened", False)
+                or member_shape.get("flattened", False)
+            )
         )
         target_shape = (
             member_shape["member"]["shape"] if flattened else member_shape_name
@@ -962,9 +965,13 @@ def signed_socket_exchange(
     )
     if query_values:
         query_components.extend(
-            urllib.parse.quote(name, safe="-_.~")
-            + "="
-            + urllib.parse.quote(value, safe="-_.~")
+            (
+                urllib.parse.quote(name, safe="-_.~")
+                if value == ""
+                else urllib.parse.quote(name, safe="-_.~")
+                + "="
+                + urllib.parse.quote(value, safe="-_.~")
+            )
             for name, value in query_values
         )
     target = path

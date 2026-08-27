@@ -158,6 +158,18 @@ entities. Bucket policy and public-access block have independently qualified
 backend and authenticated-server implementations; the other four controls
 remain client-only, and external-provider interoperability is not claimed.
 
+`Client.Buckets.Get_Metrics_Configuration` reads one caller-selected metrics
+identifier through the shared bounded REST/XML state machine. The low-level
+preparer binds the required `id` query and optional expected-owner header to
+GetBucketMetricsConfiguration, while the typed result preserves the required
+identifier and every modeled optional Prefix, Tag, AccessPointArn, and And
+member. And/Tag is an ordered flattened list bounded by the caller's XML
+limits. The pinned structural model does not encode the prose-only filter
+cardinality rules, so the decoder preserves the graph without inventing them.
+The limited constructor, operation-last restart, typed `Finish`, and
+synchronous wait share one state machine; no backend, server, or external
+provider support is claimed.
+
 The scalar write companion covers ABAC, acceleration, raw bucket policy,
 requester payment, and public-access block. The four structured operations
 serialize exact AWS-namespaced XML; policy preserves the caller's bytes

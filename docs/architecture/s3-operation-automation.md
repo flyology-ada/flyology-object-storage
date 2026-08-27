@@ -123,3 +123,16 @@ are the generic specification/body, each provider's private instantiation and
 decoder/classifier callbacks, and the operation-specific manifest decisions.
 Future bounded reads should add those small typed adapters instead of copying
 the transport and operation-lifetime state machine.
+
+GetBucketMetricsConfiguration is the first new operation built through this
+workflow. Its human-owned surface is limited to the strict typed metrics codec,
+provider and low-level callbacks, reviewed TOML decisions and socket fixtures,
+and the small typed result adapter. The model tool derives its `GET` method,
+`/{Bucket}?metrics` target, required `Id` query, owner header, 200 response,
+14-shape closure, flattened `And/Tag` list, and routine malformed documents.
+Seven reviewed lanes plus 17 generated XML negatives execute 24 signed socket
+cases, including operation-last restart and an empty modeled identifier. The
+coverage oracle now discovers registered test sources by test tree rather than
+requiring another operation-specific filename in a maintained shell list; the
+registry still requires explicit executable evidence before a coverage cell
+can become `covered`.

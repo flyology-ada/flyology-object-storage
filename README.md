@@ -64,7 +64,8 @@ The core crate includes:
   PutBucketCors, GetBucketCors, DeleteBucketCors,
   GetBucketLifecycleConfiguration, PutBucketLifecycleConfiguration,
   GetBucketNotificationConfiguration, PutBucketNotificationConfiguration,
-  GetBucketReplication and PutBucketReplication (see
+  GetBucketReplication, GetBucketMetricsConfiguration, and
+  PutBucketReplication (see
   [read qualification](docs/qualification/get-bucket-replication.md) and
   [write qualification](docs/qualification/put-bucket-replication.md)),
   all thirteen remaining
@@ -90,7 +91,8 @@ The core crate includes:
   PutBucketLifecycleConfiguration, and
   bounded GetBucketNotificationConfiguration, non-replaying
   PutBucketNotificationConfiguration, and
-  bounded GetBucketReplication and non-replaying PutBucketReplication, and
+  bounded GetBucketReplication, GetBucketMetricsConfiguration, and
+  non-replaying PutBucketReplication, and
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,
@@ -322,7 +324,8 @@ bounded GetBucketLifecycleConfiguration and non-replaying
 PutBucketLifecycleConfiguration,
 bounded GetBucketNotificationConfiguration and non-replaying
 PutBucketNotificationConfiguration,
-bounded GetBucketReplication and non-replaying PutBucketReplication,
+bounded GetBucketReplication, GetBucketMetricsConfiguration, and
+non-replaying PutBucketReplication,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
 DeleteBucketMetricsConfiguration, DeleteBucketIntelligentTieringConfiguration,
 DeleteBucketMetadataConfiguration, DeleteBucketMetadataTableConfiguration,

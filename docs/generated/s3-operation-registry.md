@@ -51,7 +51,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketLogging | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketMetadataConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketMetadataTableConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketMetricsConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketNotificationConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
