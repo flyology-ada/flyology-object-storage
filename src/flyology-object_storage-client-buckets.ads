@@ -9,12 +9,14 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Bounded_REST_XML_Reads;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.REST_XML_Mutations;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
+with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.Replication;
@@ -2513,6 +2515,157 @@ package Flyology.Object_Storage.Client.Buckets is
       Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied,
       Bucket_Metrics_Configuration_Mutation_Outcome_Unknown,
       Bucket_Metrics_Configuration_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutBucketMetricsConfiguration mutation.
+   --  @enum Put_Bucket_Metrics_Response_Available Modeled response exists
+   --  @enum Put_Bucket_Metrics_Exchange_Failed No complete response exists
+   type Put_Bucket_Metrics_Result_Kind is
+     (Put_Bucket_Metrics_Response_Available,
+      Put_Bucket_Metrics_Exchange_Failed);
+
+   --  Typed metrics replacement response and application certainty.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Bucket_Metrics_Result
+     (Kind : Put_Bucket_Metrics_Result_Kind :=
+        Put_Bucket_Metrics_Exchange_Failed)
+   is record
+      Disposition : Bucket_Metrics_Configuration_Mutation_Disposition :=
+        Bucket_Metrics_Configuration_Mutation_Outcome_Unknown;
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Bucket_Metrics_Response_Available =>
+            Response : Low_Level.Put_Bucket_Control_Outcome;
+         when Put_Bucket_Metrics_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot metrics replacement with one hidden HTTP child. The operation
+   --  owns the exact serialized body through Finish and never rewinds or
+   --  automatically replays a possibly admitted mutation.
+   type Put_Bucket_Metrics_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying metrics replacement. The caller keeps
+   --  the established operation and its completion set alive through typed
+   --  Finish; restart requires the same retained HTTP client and token.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose one metrics configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 signing region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established metrics mutation
+   procedure Set_Metrics_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metrics.Metrics_Configuration;
+      Parameters : Low_Level.Put_Bucket_Metrics_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Bucket_Metrics_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying metrics replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose one metrics configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 signing region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven metrics mutation
+   function Set_Metrics_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metrics.Metrics_Configuration;
+      Parameters : Low_Level.Put_Bucket_Metrics_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Bucket_Metrics_Operation;
+
+   --  Consume one terminal PutBucketMetricsConfiguration operation.
+   --  @param Operation Terminal operation whose owned state is consumed
+   --  @param Result Typed response and application certainty
+   procedure Finish
+     (Operation : in out Put_Bucket_Metrics_Operation;
+      Result    : out Put_Bucket_Metrics_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace one metrics configuration by waiting on the same owner-driven
+   --  state machine used by composable callers. This function does not replay
+   --  a possibly admitted request; unknown outcomes require read-only caller
+   --  reconciliation through Get or List before any later mutation.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose one metrics configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Region SigV4 signing region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected request and error XML limits
+   --  @return Typed response and application certainty
+   function Set_Metrics_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metrics.Metrics_Configuration;
+      Parameters : Low_Level.Put_Bucket_Metrics_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Put_Bucket_Metrics_Result;
 
    --  Shape of a terminal DeleteBucketMetricsConfiguration
    --  mutation.
@@ -10929,7 +11082,75 @@ private
      (Item : in out Get_Bucket_Website_Operation);
 
    --  @exclude
+   function Decode_Put_Bucket_Replication_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Put_Bucket_Replication_Result;
+
+   --  @exclude
+   function Normalize_Put_Bucket_Replication_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_Replication_Result;
+
+   --  @exclude
+   package Put_Bucket_Replication_Mutations is new
+     Flyology.Object_Storage.Client.REST_XML_Mutations
+       (Result_Type       => Put_Bucket_Replication_Result,
+        Operation_Name    => "PutBucketReplication",
+        Start_Exchange    => Low_Level.Put_Bucket_Replication,
+        Decode_Response   => Decode_Put_Bucket_Replication_Family_Response,
+        Normalize_Failure => Normalize_Put_Bucket_Replication_Failure);
+
+   --  @exclude
    type Put_Bucket_Replication_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+   and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : Put_Bucket_Replication_Mutations.State (Set);
+   end record;
+
+   --  @exclude
+   function Decode_Put_Bucket_Metrics_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Put_Bucket_Metrics_Result;
+
+   --  @exclude
+   function Normalize_Put_Bucket_Metrics_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_Metrics_Result;
+
+   --  @exclude
+   package Put_Bucket_Metrics_Mutations is new
+     Flyology.Object_Storage.Client.REST_XML_Mutations
+       (Result_Type       => Put_Bucket_Metrics_Result,
+        Operation_Name    => "PutBucketMetricsConfiguration",
+        Start_Exchange    => Low_Level.Put_Bucket_Metrics_Configuration,
+        Decode_Response   => Decode_Put_Bucket_Metrics_Family_Response,
+        Normalize_Failure => Normalize_Put_Bucket_Metrics_Failure);
+
+   --  @exclude
+   type Put_Bucket_Metrics_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
       Cancellation : access Flyology.Cancellation.Token) is
@@ -10937,17 +11158,7 @@ private
      and Flyology.HTTP.Client.Operation_Request_Body_Source
      and Flyology.HTTP.Client.Response_Body_Sink
    with record
-      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
-      Prepared         : aliased Low_Level.Prepared_Request;
-      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
-      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
-      Source_Position  : Natural;
-      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
-      Response_Limit   : Natural;
-      Final_Result     : Put_Bucket_Replication_Result;
-      Has_Final_Result : Boolean;
-      Has_Saved_Error  : Boolean;
-      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+      State : Put_Bucket_Metrics_Mutations.State (Set);
    end record;
 
    --  @exclude
@@ -12268,6 +12479,39 @@ private
    overriding procedure Finalize
      (Item : in out Put_Bucket_Replication_Operation);
    --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Bucket_Metrics_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_Metrics_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_Metrics_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_Metrics_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Bucket_Metrics_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Bucket_Metrics_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_Metrics_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_Metrics_Operation);
+   --  @exclude
    overriding procedure Write
      (Item : in out Get_Bucket_Notification_Operation;
       Data : Ada.Streams.Stream_Element_Array);
@@ -13317,12 +13561,6 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase : Flyology.HTTP.Client.Exchange_Phase)
       return Put_Bucket_Replication_Result;
-   --  @exclude
-   function Normalize_Put_Bucket_Replication_Failure
-     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
-      Admission : Flyology.HTTP.Client.Admission_Certainty;
-      Phase     : Flyology.HTTP.Client.Exchange_Phase;
-      Detail    : String) return Put_Bucket_Replication_Result;
    --  @exclude
    function Normalize_Get_Bucket_Notification_Response
      (Value : Low_Level.Get_Bucket_Notification_Configuration_Outcome;

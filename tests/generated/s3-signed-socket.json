@@ -2616,6 +2616,194 @@
         }
       ],
       "negative_template": "synchronous-success"
+    },
+    "PutBucketMetricsConfiguration": {
+      "adapter": "./bin/s3_put_bucket_metrics_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "low-level metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>low-level metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "53319fbbe599b25e61213177277bae9f000ce58dfa0316909c7bd321054e3234",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?id=low-level%20metrics&metrics"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "synchronous metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>synchronous metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "1e8b044688d60e5a1e5c003348ce9a950260a6ec66e93cc5014985e254455cc9",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?id=synchronous%20metrics&metrics"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>TooManyConfigurations</Code><Message>full</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "too-many-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "composable metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>composable metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "b96891d5d47758ff04b7b2ef6fccccfbc4bb0475f0810b6d1e2a37de2b4651e4",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?id=composable%20metrics&metrics"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-too-many",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "1c32428dd0226b1502b475779846be19d65d57f735ea404633f419a28dfff945",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?id=restart%20metrics&metrics"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>rejected</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "1c32428dd0226b1502b475779846be19d65d57f735ea404633f419a28dfff945",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?id=restart%20metrics&metrics"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "duplicate metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>duplicate metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "7abdd7dcb43edd98f0592f4815841cd98349ded01ea5307235d0634c29fb98bb",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?id=duplicate%20metrics&metrics"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "bounded metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>bounded metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "666d1a7768a956b3db1fbf1e482028db1f4c5288007ec4cf8517be95dd3da5b6",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?id=bounded%20metrics&metrics"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 192
+          }
+        }
+      ]
     }
   }
 }

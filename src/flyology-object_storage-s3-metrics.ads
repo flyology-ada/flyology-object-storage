@@ -113,4 +113,15 @@ package Flyology.Object_Storage.S3.Metrics is
      (Document : String; Limits : XML.Parse_Limits)
       return Metrics_Configuration_Page;
 
+   --  Serialize one complete PutBucketMetricsConfiguration payload. The
+   --  caller-selected XML limits bound the exact signed document; no new
+   --  client-side policy or cross-field constraint is introduced.
+   --  @param Value Complete presence-preserving metrics graph
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Exact S3 REST/XML request document
+   --  @exception Malformed_Metrics Value or document violates the model
+   function Serialize
+     (Value : Metrics_Configuration; Limits : XML.Parse_Limits)
+      return String;
+
 end Flyology.Object_Storage.S3.Metrics;

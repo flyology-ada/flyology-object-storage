@@ -97,12 +97,12 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketLifecycle | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutBucketLifecycleConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketLogging | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketMetricsConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | PutBucketNotification | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutBucketNotificationConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketOwnershipControls | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketPolicy | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketReplication | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketReplication | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
 | PutBucketRequestPayment | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketTagging | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketVersioning | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

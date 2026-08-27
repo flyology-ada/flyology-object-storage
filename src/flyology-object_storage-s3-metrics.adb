@@ -511,4 +511,166 @@ package body Flyology.Object_Storage.S3.Metrics is
          raise Malformed_Metrics with "malformed metrics-list XML";
    end Parse_List;
 
+   function Serialize
+     (Value : Metrics_Configuration; Limits : XML.Parse_Limits)
+      return String
+   is
+      Result     : US.Unbounded_String;
+      Elements   : Natural := 1;
+      Text_Bytes : Natural := 0;
+      Depth      : Positive := 1;
+
+      --  Pinned PutBucketMetricsConfiguration REST/XML root and namespace.
+      --  Changing either changes the provider wire contract and signature.
+      Prefix : constant String :=
+        "<MetricsConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</MetricsConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Metrics with
+              "metrics document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Start_Element (Name : String; At_Depth : Positive) is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Metrics with
+              "metrics elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+         Depth := Positive'Max (Depth, At_Depth);
+         Append_Bounded ("<" & Name & ">");
+      end Start_Element;
+
+      procedure End_Element (Name : String) is
+      begin
+         Append_Bounded ("</" & Name & ">");
+      end End_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Metrics with
+              "metrics text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      exception
+         when XML.XML_Error =>
+            raise Malformed_Metrics with "invalid metrics XML text";
+      end Add_Text;
+
+      procedure Add_Scalar
+        (Name : String; Text : String; At_Depth : Positive) is
+      begin
+         Start_Element (Name, At_Depth);
+         Add_Text (Text);
+         End_Element (Name);
+      end Add_Scalar;
+
+      procedure Add_Optional
+        (Name : String; Item : Optional_String; At_Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar (Name, US.To_String (Item.Value), At_Depth);
+         elsif US.Length (Item.Value) /= 0 then
+            raise Malformed_Metrics with
+              "absent metrics member contains text";
+         end if;
+      end Add_Optional;
+
+      procedure Add_Tag (Item : Metrics_Tag; At_Depth : Positive) is
+      begin
+         if US.Length (Item.Key) = 0 then
+            raise Malformed_Metrics with "empty metrics tag key";
+         end if;
+         Start_Element ("Tag", At_Depth);
+         Add_Scalar ("Key", US.To_String (Item.Key), At_Depth + 1);
+         Add_Scalar ("Value", US.To_String (Item.Value), At_Depth + 1);
+         End_Element ("Tag");
+      end Add_Tag;
+
+      function Has_Filter_Content (Item : Metrics_Filter) return Boolean is
+        (Item.Prefix.Is_Set
+         or else US.Length (Item.Prefix.Value) /= 0
+         or else Item.Tag.Is_Set
+         or else US.Length (Item.Tag.Value.Key) /= 0
+         or else US.Length (Item.Tag.Value.Value) /= 0
+         or else Item.Access_Point_ARN.Is_Set
+         or else US.Length (Item.Access_Point_ARN.Value) /= 0
+         or else Item.And_Predicates.Is_Set
+         or else Item.And_Predicates.Prefix.Is_Set
+         or else US.Length (Item.And_Predicates.Prefix.Value) /= 0
+         or else not Item.And_Predicates.Tags.Is_Empty
+         or else Item.And_Predicates.Access_Point_ARN.Is_Set
+         or else
+           US.Length (Item.And_Predicates.Access_Point_ARN.Value) /= 0);
+   begin
+      Append_Bounded (Prefix);
+      Add_Scalar ("Id", US.To_String (Value.ID), 2);
+
+      if Value.Filter.Is_Set then
+         Start_Element ("Filter", 2);
+         Add_Optional ("Prefix", Value.Filter.Prefix, 3);
+         if Value.Filter.Tag.Is_Set then
+            Add_Tag (Value.Filter.Tag.Value, 3);
+         elsif US.Length (Value.Filter.Tag.Value.Key) /= 0
+           or else US.Length (Value.Filter.Tag.Value.Value) /= 0
+         then
+            raise Malformed_Metrics with
+              "absent metrics tag contains text";
+         end if;
+         Add_Optional
+           ("AccessPointArn", Value.Filter.Access_Point_ARN, 3);
+         if Value.Filter.And_Predicates.Is_Set then
+            Start_Element ("And", 3);
+            Add_Optional
+              ("Prefix", Value.Filter.And_Predicates.Prefix, 4);
+            for Tag of Value.Filter.And_Predicates.Tags loop
+               Add_Tag (Tag, 4);
+            end loop;
+            Add_Optional
+              ("AccessPointArn",
+               Value.Filter.And_Predicates.Access_Point_ARN, 4);
+            End_Element ("And");
+         elsif Value.Filter.And_Predicates.Prefix.Is_Set
+           or else US.Length (Value.Filter.And_Predicates.Prefix.Value) /= 0
+           or else not Value.Filter.And_Predicates.Tags.Is_Empty
+           or else Value.Filter.And_Predicates.Access_Point_ARN.Is_Set
+           or else
+             US.Length
+               (Value.Filter.And_Predicates.Access_Point_ARN.Value) /= 0
+         then
+            raise Malformed_Metrics with
+              "absent metrics And contains members";
+         end if;
+         End_Element ("Filter");
+      elsif Has_Filter_Content (Value.Filter) then
+         raise Malformed_Metrics with
+           "absent metrics filter contains members";
+      end if;
+
+      Append_Bounded (Suffix);
+      if Depth > Limits.Maximum_Depth then
+         raise Malformed_Metrics with
+           "metrics depth exceeds caller limit";
+      end if;
+      declare
+         Document : constant String := US.To_String (Result);
+         Verified : constant Metrics_Configuration := Parse (Document, Limits);
+         pragma Unreferenced (Verified);
+      begin
+         return Document;
+      end;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Metrics with "invalid metrics XML text";
+   end Serialize;
+
 end Flyology.Object_Storage.S3.Metrics;
