@@ -209,6 +209,8 @@ def generate(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
         s3_operation.verify_registry_model_inventory(registry, model)
     if args.check:
         s3_operation.check_generated_outputs(registry, model)
+        if model is not None:
+            s3_codegen.check_generated_ada_outputs(registry, model)
         print("S3 operation generated outputs: current")
         return 0
     if any(
@@ -218,7 +220,14 @@ def generate(args: argparse.Namespace, registry: s3_operation.Registry) -> int:
         raise s3_operation.Audit_Error(
             "generating model-derived qualification requires the pinned model"
         )
-    for path, expected in s3_operation.generated_outputs(registry, model).items():
+    ada_outputs: dict[Path, str] = {}
+    if model is not None:
+        ada_outputs = s3_codegen.generated_ada_outputs(registry, model)
+    outputs = s3_operation.generated_outputs(
+        registry, model, source_overrides=ada_outputs
+    )
+    outputs.update(ada_outputs)
+    for path, expected in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(expected, encoding="utf-8")
         print(f"generated {path.relative_to(s3_operation.ROOT)}")

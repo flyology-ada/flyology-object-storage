@@ -8,6 +8,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import s3_operation
@@ -31,6 +32,7 @@ class XML_Node:
     required: bool
     boolean: bool
     integer: bool
+    timestamp: bool
     minimum_length: int
     maximum_length: int | None
     pattern: str
@@ -56,11 +58,12 @@ def materialize_generated_region(
             f"duplicate generated source region: {region}"
         )
     rendered_body = content.rstrip()
-    rendered = "\n".join(
-        line
-        for line in (begin, notice, rendered_body, end)
-        if line
-    )
+    rendered = begin + "\n" + notice
+    if rendered_body:
+        #  Keep region ownership metadata out of leading GNATdoc prose for
+        #  the first generated declaration.
+        rendered += "\n\n" + rendered_body
+    rendered += "\n" + end
     if begin in source:
         start = source.index(begin)
         finish = source.index(end, start) + len(end)
@@ -74,6 +77,599 @@ def materialize_generated_region(
         rendered + "\n\n" + insertion_anchor,
         1,
     )
+
+
+def _list_directory_low_level_spec() -> str:
+    return """   --  Complete model-derived ListDirectoryBuckets inputs. Presence
+   --  remains independent from an empty cursor or numeric zero. The caller
+   --  selects the page size; this record supplies no default.
+   type List_Directory_Buckets_Parameters is record
+      Continuation_Token        : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token    : Boolean;
+      Max_Directory_Buckets     : Natural;
+      Has_Max_Directory_Buckets : Boolean;
+   end record;
+
+   --  Build and sign one exact ListDirectoryBuckets request. Origin must be
+   --  the caller-selected S3 Express control endpoint.
+   function Prepare_List_Directory_Buckets
+     (Origin     : Flyology.HTTP.Origin;
+      Parameters : List_Directory_Buckets_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type List_Directory_Buckets_Outcome_Kind is
+     (Directory_Buckets_Listed, List_Directory_Buckets_Rejected);
+
+   --  Kind selects the meaningful payload. All fields remain explicit so the
+   --  low-level result is definite without inventing a status or discriminant
+   --  default for an exchange that has not occurred.
+   type List_Directory_Buckets_Outcome is record
+      Kind   : List_Directory_Buckets_Outcome_Kind;
+      Status : Flyology.HTTP.Status_Code;
+      Result : S3.Buckets.List_Buckets_Result;
+      Error  : S3.Errors.Error_Response;
+   end record;
+
+   function Decode_List_Directory_Buckets_Complete_Response
+     (Response         : Flyology.HTTP.Client.Response;
+      Payload          : String;
+      Limits           : S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Outcome;
+
+   function Execute_List_Directory_Buckets
+     (Client           : aliased in out Flyology.HTTP.Client.Client;
+      Prepared         : Prepared_Request;
+      Timeout          : Duration;
+      Token            : access Flyology.Cancellation.Token;
+      Limits           : S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Outcome;
+
+   procedure List_Directory_Buckets
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);"""
+
+
+def _list_directory_low_level_body() -> str:
+    return """   function Prepare_List_Directory_Buckets
+     (Origin     : Flyology.HTTP.Origin;
+      Parameters : List_Directory_Buckets_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Parameters.Has_Continuation_Token) +
+        Boolean'Pos (Parameters.Has_Max_Directory_Buckets);
+      Values : Model_Value_Array (1 .. Optional_Count);
+      Last   : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+   begin
+      if Parameters.Has_Continuation_Token then
+         Add
+           ("ContinuationToken",
+            US.To_String (Parameters.Continuation_Token));
+      end if;
+      if Parameters.Has_Max_Directory_Buckets then
+         Add
+           ("MaxDirectoryBuckets",
+            Ada.Strings.Fixed.Trim
+              (Natural'Image (Parameters.Max_Directory_Buckets),
+               Ada.Strings.Both));
+      end if;
+      return Prepare_Model_Request
+        (Model.List_Directory_Buckets_Operation, Origin, Path_Style, Values,
+         "", False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp);
+   end Prepare_List_Directory_Buckets;
+
+   function Decode_List_Directory_Buckets_Complete_Response
+     (Response         : Flyology.HTTP.Client.Response;
+      Payload          : String;
+      Limits           : S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid ListDirectoryBuckets response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid ListDirectoryBuckets response header";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Status     : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID    : constant String := Singleton_Header ("x-amz-id-2");
+   begin
+      if Status = 200 then
+         return
+           (Kind   => Directory_Buckets_Listed,
+            Status => Status,
+            Result =>
+              S3.Generated_List_Directory_Buckets_XML.Parse
+                (Payload, Limits, Collection_Limit),
+            Error  => (others => <>));
+      end if;
+      return
+        (Kind   => List_Directory_Buckets_Rejected,
+         Status => Status,
+         Result => (others => <>),
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Generated_List_Directory_Buckets_XML.Malformed_Document |
+           S3.Errors.Malformed_Error | Constraint_Error =>
+         raise Invalid_Response with
+           "malformed ListDirectoryBuckets response";
+   end Decode_List_Directory_Buckets_Complete_Response;
+
+   function Execute_List_Directory_Buckets
+     (Client           : aliased in out Flyology.HTTP.Client.Client;
+      Prepared         : Prepared_Request;
+      Timeout          : Duration;
+      Token            : access Flyology.Cancellation.Token;
+      Limits           : S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Outcome is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.List_Directory_Buckets_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Directory_Buckets_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits,
+            Collection_Limit);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "ListDirectoryBuckets response exceeds configured limit";
+   end Execute_List_Directory_Buckets;
+
+   procedure List_Directory_Buckets
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Model_Sink
+        (S3.Model.List_Directory_Buckets_Operation, Client, Prepared, Sink,
+         Deadline, Token, Operation);
+   end List_Directory_Buckets;"""
+
+
+def _list_directory_provider_spec() -> str:
+    return """   --  Shape of a terminal ListDirectoryBuckets read.
+   --  @enum List_Directory_Buckets_Response_Available Modeled page exists
+   --  @enum List_Directory_Buckets_Exchange_Failed No complete response exists
+   type List_Directory_Buckets_Result_Kind is
+     (List_Directory_Buckets_Response_Available,
+      List_Directory_Buckets_Exchange_Failed);
+
+   --  Typed bounded directory-bucket page or composable HTTP failure.
+   --  This is a read-only operation; it has no mutation disposition or retry
+   --  authority. The caller supplies the S3 Express control endpoint and all
+   --  resource limits.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Directory_Buckets_Result
+     (Kind : List_Directory_Buckets_Result_Kind :=
+       List_Directory_Buckets_Exchange_Failed)
+   is record
+      --  Public initialization contract: an unassigned result denotes no
+      --  admitted exchange and no valid response. These defaults are scratch
+      --  state only; they do not classify an observed S3 response.
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when List_Directory_Buckets_Response_Available =>
+            Response : Low_Level.List_Directory_Buckets_Outcome;
+         when List_Directory_Buckets_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListDirectoryBuckets parent with one hidden HTTP child.
+   --  The operation owns its prepared request and bounded response bytes
+   --  through typed Finish and retains only its selected client and optional
+   --  cancellation token through terminal drain.
+   type List_Directory_Buckets_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one directory-bucket page read.
+   --  @param Client Configured control-endpoint client retained through drain
+   --  @param Origin Caller-selected S3 Express control endpoint
+   --  @param Parameters Complete modeled cursor and page-size presence
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Collection_Limit Caller-selected maximum decoded bucket count
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established directory listing
+   procedure List_Directory_Buckets
+     (Client           : not null access Flyology.HTTP.Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region           : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Token            : access Flyology.Cancellation.Token;
+      Operation        : in out List_Directory_Buckets_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one owner-driven directory-bucket page read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured control-endpoint client retained through drain
+   --  @param Origin Caller-selected S3 Express control endpoint
+   --  @param Parameters Complete modeled cursor and page-size presence
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Collection_Limit Caller-selected maximum decoded bucket count
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven directory-bucket listing
+   function List_Directory_Buckets
+     (Set              : not null access
+        Flyology.Operations.Completion_Set'Class;
+      Client           : not null access Flyology.HTTP.Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region           : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Token            : access Flyology.Cancellation.Token)
+      return List_Directory_Buckets_Operation;
+
+   --  Consume one terminal ListDirectoryBuckets operation.
+   --  @param Operation Terminal directory-bucket listing
+   --  @param Result Typed modeled page or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Directory_Buckets_Operation;
+      Result    : out List_Directory_Buckets_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one directory-bucket page by waiting on the same owner-driven
+   --  state machine used by composable callers. The wrapper does not start a
+   --  hidden continuation request.
+   function List_Directory_Buckets
+     (Client           : aliased in out Flyology.HTTP.Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Region           : String;
+      Timeout          : Duration;
+      Token            : access Flyology.Cancellation.Token;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Result;"""
+
+
+def _list_directory_provider_private_spec() -> str:
+    return """   --  @exclude
+   function Decode_List_Directory_Buckets_Response
+     (Status           : Flyology.HTTP.Status_Code;
+      Response         : Flyology.HTTP.Client.Response;
+      Payload          : String;
+      Request_ID       : String;
+      Host_ID          : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Admission        : Flyology.HTTP.Client.Admission_Certainty;
+      Phase            : Flyology.HTTP.Client.Exchange_Phase)
+      return List_Directory_Buckets_Result;
+
+   --  @exclude
+   function Normalize_List_Directory_Buckets_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return List_Directory_Buckets_Result;
+
+   --  @exclude
+   package List_Directory_Buckets_Reads is new
+     Flyology.Object_Storage.Client.Paginated_REST_XML_Reads
+       (Result_Type       => List_Directory_Buckets_Result,
+        Operation_Name    => "ListDirectoryBuckets",
+        Start_Exchange    => Low_Level.List_Directory_Buckets,
+        Decode_Response   => Decode_List_Directory_Buckets_Response,
+        Normalize_Failure => Normalize_List_Directory_Buckets_Failure);
+
+   --  @exclude
+   --  Legal private completion of the visible limited operation type above.
+   type List_Directory_Buckets_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : List_Directory_Buckets_Reads.State (Set);
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out List_Directory_Buckets_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item  : in out List_Directory_Buckets_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out List_Directory_Buckets_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out List_Directory_Buckets_Operation);"""
+
+
+def _list_directory_provider_body() -> str:
+    return """   function Normalize_List_Directory_Buckets_Response
+     (Value     : Low_Level.List_Directory_Buckets_Outcome;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase)
+      return List_Directory_Buckets_Result
+   is
+      use type Low_Level.List_Directory_Buckets_Outcome_Kind;
+
+      Code : constant String :=
+        (if Value.Kind = Low_Level.List_Directory_Buckets_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Directory_Buckets_Listed
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 400
+           and then Code in "InvalidArgument" | "InvalidRequest"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+      pragma Unreferenced (Phase);
+   begin
+      return
+        (Kind      => List_Directory_Buckets_Response_Available,
+         Failure   => Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_List_Directory_Buckets_Response;
+
+   function Decode_List_Directory_Buckets_Response
+     (Status           : Flyology.HTTP.Status_Code;
+      Response         : HTTP_Client.Response;
+      Payload          : String;
+      Request_ID       : String;
+      Host_ID          : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Admission        : HTTP_Client.Admission_Certainty;
+      Phase            : HTTP_Client.Exchange_Phase)
+      return List_Directory_Buckets_Result is
+      pragma Unreferenced (Status, Request_ID, Host_ID);
+   begin
+      return Normalize_List_Directory_Buckets_Response
+        (Low.Decode_List_Directory_Buckets_Complete_Response
+           (Response, Payload, Limits, Collection_Limit),
+         Admission, Phase);
+   exception
+      when Error : Low.Invalid_Response =>
+         return Normalize_List_Directory_Buckets_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase,
+            Ada.Exceptions.Exception_Message (Error));
+   end Decode_List_Directory_Buckets_Response;
+
+   function Normalize_List_Directory_Buckets_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return List_Directory_Buckets_Result is
+   begin
+      return
+        (Kind        => List_Directory_Buckets_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_List_Directory_Buckets_Failure;
+
+   overriding procedure Write
+     (Item : in out List_Directory_Buckets_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      List_Directory_Buckets_Reads.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item  : in out List_Directory_Buckets_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      List_Directory_Buckets_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out List_Directory_Buckets_Operation) is
+   begin
+      List_Directory_Buckets_Reads.Request_Cancellation (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out List_Directory_Buckets_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      List_Directory_Buckets_Reads.Finalize (Item.State);
+   end Finalize;
+
+   procedure List_Directory_Buckets
+     (Client           : not null access HTTP_Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Deadline         : HTTP_Client.Monotonic_Deadline;
+      Region           : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Token            : access Flyology.Cancellation.Token;
+      Operation        : in out List_Directory_Buckets_Operation) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "ListDirectoryBuckets restart changed owner";
+      end if;
+      List_Directory_Buckets_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_List_Directory_Buckets
+           (Origin, Parameters, Identity, Region, Timestamp),
+         Deadline, Limits, Collection_Limit);
+   end List_Directory_Buckets;
+
+   function List_Directory_Buckets
+     (Set              : not null access Operations.Completion_Set'Class;
+      Client           : not null access HTTP_Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Deadline         : HTTP_Client.Monotonic_Deadline;
+      Region           : String;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive;
+      Token            : access Flyology.Cancellation.Token)
+      return List_Directory_Buckets_Operation is
+   begin
+      return Result : List_Directory_Buckets_Operation (Set, Client, Token) do
+         List_Directory_Buckets
+           (Client, Origin, Parameters, Identity, Deadline, Region, Limits,
+            Collection_Limit, Token, Result);
+      end return;
+   end List_Directory_Buckets;
+
+   procedure Finish
+     (Operation : in out List_Directory_Buckets_Operation;
+      Result    : out List_Directory_Buckets_Result) is
+   begin
+      List_Directory_Buckets_Reads.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function List_Directory_Buckets
+     (Client           : aliased in out HTTP_Client.Client;
+      Origin           : Flyology.HTTP.Origin;
+      Parameters       : Low_Level.List_Directory_Buckets_Parameters;
+      Identity         : Low_Level.Credentials;
+      Region           : String;
+      Timeout          : Duration;
+      Token            : access Flyology.Cancellation.Token;
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return List_Directory_Buckets_Result
+   is
+      --  Derived owner stack: provider parent, HTTP exchange, and HTTP's one
+      --  active transport child. This is not a caller resource default.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : List_Directory_Buckets_Operation :=
+           List_Directory_Buckets
+             (Set'Access, Client'Access, Origin, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Limits,
+              Collection_Limit, Token);
+         Result : List_Directory_Buckets_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Directory_Buckets;"""
 
 
 def ada_identifier(value: str) -> str:
@@ -148,6 +744,7 @@ def xml_nodes(
                 required=required,
                 boolean=kind == "boolean",
                 integer=kind in {"integer", "long"},
+                timestamp=kind == "timestamp",
                 minimum_length=(
                     int(shape.get("min", 0)) if kind == "string" else 0
                 ),
@@ -349,16 +946,35 @@ def codec_descriptor_text(
         + ada_identifier(operation)
         + "_XML"
     )
+    typed_bucket_list = entry.get("generation", {}).get(
+        "response_representation"
+    ) == "Flyology.Object_Storage.S3.Buckets.List_Buckets_Result"
     unit = package.lower().replace(".", "-")
     identifiers = ["No_Element", *(node.identifier for node in nodes)]
+    spec_withs = ["with Flyology.Object_Storage.S3.XML;"]
+    if typed_bucket_list:
+        spec_withs.append("with Flyology.Object_Storage.S3.Buckets;")
+    typed_spec = []
+    if typed_bucket_list:
+        typed_spec = [
+            "",
+            "   Malformed_Document : exception;",
+            "",
+            "   function Parse",
+            "     (Document         : String;",
+            "      Limits           : XML.Parse_Limits;",
+            "      Collection_Limit : Positive)",
+            "      return Flyology.Object_Storage.S3.Buckets.List_Buckets_Result;",
+        ]
     spec = "\n".join(
         [
-            "with Flyology.Object_Storage.S3.XML;",
+            *spec_withs,
             "",
             "--  Generated by tools/s3-operation.py; do not edit.",
             f"--  Operation: {operation}",
             f"--  Botocore revision: {s3_operation.EXPECTED_MODEL_REVISION}",
-            f"--  Model SHA-256: {s3_operation.EXPECTED_MODEL_SHA256}",
+            "--  Model SHA-256:",
+            f"--    {s3_operation.EXPECTED_MODEL_SHA256}",
             "pragma Style_Checks (Off);",
             f"package {package} is",
             "",
@@ -377,6 +993,7 @@ def codec_descriptor_text(
             "   function Is_Required (Element : Element_Id) return Boolean;",
             "   function Is_Boolean (Element : Element_Id) return Boolean;",
             "   function Is_Integer (Element : Element_Id) return Boolean;",
+            "   function Is_Timestamp (Element : Element_Id) return Boolean;",
             "   function Minimum_Length (Element : Element_Id) return Natural;",
             "   function Has_Maximum_Length",
             "     (Element : Element_Id) return Boolean;",
@@ -404,6 +1021,7 @@ def codec_descriptor_text(
             "         Collection_Limit : Positive;",
             "         Result           : aliased in out Result_Type);",
             "   end Decoder;",
+            *typed_spec,
             "",
             f"end {package};",
             "",
@@ -422,9 +1040,13 @@ def codec_descriptor_text(
                       "      end case;", f"   end {name};", ""))
         return "\n".join(lines)
 
+    body_withs = "with Flyology.Object_Storage.S3.Strict_XML_Codecs;\n"
+    if typed_bucket_list:
+        body_withs += "with Ada.Strings.Unbounded;\n"
     body_parts = [
-        "with Flyology.Object_Storage.S3.Strict_XML_Codecs;\n\n"
+        body_withs + "\n"
         "--  Generated by tools/s3-operation.py; do not edit.\n"
+        f"--  Operation: {operation}\n"
         "pragma Style_Checks (Off);\n"
         f"package body {package} is\n",
         case_function(
@@ -448,6 +1070,7 @@ def codec_descriptor_text(
         ("Is_Required", "required"),
         ("Is_Boolean", "boolean"),
         ("Is_Integer", "integer"),
+        ("Is_Timestamp", "timestamp"),
         ("Has_Maximum_Length", "maximum_length"),
     ):
         body_parts.append(_boolean_function(function_name, nodes, field))
@@ -611,6 +1234,7 @@ def codec_descriptor_text(
                 "         Is_Required        => Is_Required,",
                 "         Is_Boolean         => Is_Boolean,",
                 "         Is_Integer         => Is_Integer,",
+                "         Is_Timestamp       => Is_Timestamp,",
                 "         Minimum_Length     => Minimum_Length,",
                 "         Has_Maximum_Length => Has_Maximum_Length,",
                 "         Maximum_Length     => Maximum_Length,",
@@ -636,16 +1260,194 @@ def codec_descriptor_text(
                 "      end Parse;",
                 "   end Decoder;",
                 "",
-                f"end {package};",
-                "",
             )
         )
     )
+    if typed_bucket_list:
+        body_parts.append(
+            """   package US renames Ada.Strings.Unbounded;
+
+   type Parse_State is record
+      Value   : Flyology.Object_Storage.S3.Buckets.List_Buckets_Result;
+      Current : Flyology.Object_Storage.S3.Buckets.Bucket_Entry;
+   end record;
+
+   procedure Start_Node
+     (Result : in out Parse_State; Element : Element_Id) is
+   begin
+      if Element = Root_Buckets_Item then
+         Result.Current := (others => <>);
+      end if;
+   end Start_Node;
+
+   procedure Set_Scalar
+     (Result  : in out Parse_State;
+      Element : Element_Id;
+      Value   : String) is
+   begin
+      case Element is
+         when Root_Buckets_Item_Name =>
+            Result.Current.Name := US.To_Unbounded_String (Value);
+         when Root_Buckets_Item_Creation_Date =>
+            Result.Current.Creation_Date := US.To_Unbounded_String (Value);
+         when Root_Buckets_Item_Bucket_Region =>
+            Result.Current.Bucket_Region := US.To_Unbounded_String (Value);
+         when Root_Buckets_Item_Bucket_Arn =>
+            Result.Current.Bucket_ARN := US.To_Unbounded_String (Value);
+         when Root_Continuation_Token =>
+            Result.Value.Continuation_Token := US.To_Unbounded_String (Value);
+            Result.Value.Has_Continuation_Token := True;
+         when others =>
+            null;
+      end case;
+   end Set_Scalar;
+
+   procedure End_Node
+     (Result : in out Parse_State; Element : Element_Id) is
+   begin
+      if Element = Root_Buckets_Item then
+         Result.Value.Buckets.Append (Result.Current);
+      end if;
+   end End_Node;
+
+   package Typed_Decoder is new Decoder
+     (Result_Type => Parse_State,
+      Start_Node  => Start_Node,
+      Set_Scalar  => Set_Scalar,
+      End_Node    => End_Node);
+
+   function Parse
+     (Document         : String;
+      Limits           : XML.Parse_Limits;
+      Collection_Limit : Positive)
+      return Flyology.Object_Storage.S3.Buckets.List_Buckets_Result
+   is
+      State : aliased Parse_State;
+   begin
+      Typed_Decoder.Parse (Document, Limits, Collection_Limit, State);
+      return State.Value;
+   exception
+      when Typed_Decoder.Malformed_Document =>
+         raise Malformed_Document;
+   end Parse;
+"""
+        )
+    body_parts.append(f"end {package};\n")
     return unit, spec, "\n".join(body_parts)
 
 
+def generated_ada_outputs(
+    registry: s3_operation.Registry,
+    model: dict[str, Any],
+) -> dict[Path, str]:
+    """Materialize new-operation Ada while preserving handwritten peers."""
+    eligible = [
+        name
+        for name, entry in sorted(registry.operations.items())
+        if entry["generator_eligible"]
+    ]
+    unsupported = [name for name in eligible if name != "ListDirectoryBuckets"]
+    if unsupported:
+        raise s3_operation.Audit_Error(
+            "Ada family generation is not implemented for: "
+            + ", ".join(unsupported)
+        )
+    outputs: dict[Path, str] = {}
+    if not eligible:
+        return outputs
+
+    entry = registry.operations["ListDirectoryBuckets"]
+    unit, spec, body = codec_descriptor_text(
+        model, "ListDirectoryBuckets", entry
+    )
+    outputs[s3_operation.ROOT / "src" / f"{unit}.ads"] = spec
+    outputs[s3_operation.ROOT / "src" / f"{unit}.adb"] = body
+
+    low_spec_path = (
+        s3_operation.ROOT
+        / "src/flyology-object_storage-client-low_level.ads"
+    )
+    low_spec = low_spec_path.read_text(encoding="utf-8")
+    outputs[low_spec_path] = materialize_generated_region(
+        low_spec,
+        "LOW_LEVEL_VISIBLE",
+        _list_directory_low_level_spec(),
+        "private\n",
+    )
+
+    low_body_path = (
+        s3_operation.ROOT
+        / "src/flyology-object_storage-client-low_level.adb"
+    )
+    low_body = low_body_path.read_text(encoding="utf-8")
+    low_body = materialize_generated_region(
+        low_body,
+        "LOW_LEVEL_CONTEXT",
+        "with Flyology.Object_Storage.S3."
+        "Generated_List_Directory_Buckets_XML;",
+        "package body Flyology.Object_Storage.Client.Low_Level is\n",
+    )
+    outputs[low_body_path] = materialize_generated_region(
+        low_body,
+        "LOW_LEVEL_BODY",
+        _list_directory_low_level_body(),
+        "end Flyology.Object_Storage.Client.Low_Level;\n",
+    )
+
+    provider_spec_path = (
+        s3_operation.ROOT
+        / "src/flyology-object_storage-client-buckets.ads"
+    )
+    provider_spec = provider_spec_path.read_text(encoding="utf-8")
+    provider_spec = materialize_generated_region(
+        provider_spec,
+        "BUCKETS_CONTEXT",
+        "with Flyology.Object_Storage.Client.Paginated_REST_XML_Reads;",
+        "--  High-level bucket operations over a configured Flyology HTTP client.\n",
+    )
+    provider_spec = materialize_generated_region(
+        provider_spec,
+        "BUCKETS_VISIBLE",
+        _list_directory_provider_spec(),
+        "private\n",
+    )
+    outputs[provider_spec_path] = materialize_generated_region(
+        provider_spec,
+        "BUCKETS_PRIVATE",
+        _list_directory_provider_private_spec(),
+        "   --  @exclude\n   type Create_Session_Operation",
+    )
+
+    provider_body_path = (
+        s3_operation.ROOT
+        / "src/flyology-object_storage-client-buckets.adb"
+    )
+    provider_body = provider_body_path.read_text(encoding="utf-8")
+    outputs[provider_body_path] = materialize_generated_region(
+        provider_body,
+        "BUCKETS_BODY",
+        _list_directory_provider_body(),
+        "end Flyology.Object_Storage.Client.Buckets;\n",
+    )
+    return outputs
+
+
+def check_generated_ada_outputs(
+    registry: s3_operation.Registry,
+    model: dict[str, Any],
+) -> None:
+    for path, expected in generated_ada_outputs(registry, model).items():
+        if not path.is_file() or path.read_text(encoding="utf-8") != expected:
+            raise s3_operation.Audit_Error(
+                "generated Ada differs: "
+                + str(path.relative_to(s3_operation.ROOT))
+            )
+
+
 def get_bucket_website_canary(
-    registry: s3_operation.Registry, model: dict[str, Any]
+    registry: s3_operation.Registry,
+    model: dict[str, Any],
+    source_overrides: dict[Path, str] | None = None,
 ) -> dict[str, Any]:
     """Verify prospective generation against the authoritative handwritten API."""
     operation = "GetBucketWebsite"
@@ -708,7 +1510,11 @@ def get_bucket_website_canary(
     findings: list[str] = []
     for path_text, tokens in source_tokens.items():
         path = s3_operation.ROOT / path_text
-        value = path.read_bytes()
+        value = (
+            source_overrides[path].encode("utf-8")
+            if source_overrides is not None and path in source_overrides
+            else path.read_bytes()
+        )
         source_hashes[path_text] = hashlib.sha256(value).hexdigest()
         text = value.decode("utf-8")
         for token in tokens:

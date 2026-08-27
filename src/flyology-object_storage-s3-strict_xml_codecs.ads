@@ -16,6 +16,7 @@ generic
    with function Is_Required (Element : Element_Id) return Boolean;
    with function Is_Boolean (Element : Element_Id) return Boolean;
    with function Is_Integer (Element : Element_Id) return Boolean;
+   with function Is_Timestamp (Element : Element_Id) return Boolean;
    with function Minimum_Length (Element : Element_Id) return Natural;
    with function Has_Maximum_Length (Element : Element_Id) return Boolean;
    with function Maximum_Length (Element : Element_Id) return Natural;

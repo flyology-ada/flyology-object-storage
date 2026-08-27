@@ -85,6 +85,14 @@ list_bucket_inventory_configurations = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+list_directory_buckets = [
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListDirectoryBuckets"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-directory-buckets-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_analytics_configuration = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketAnalyticsConfiguration"],
@@ -147,7 +155,7 @@ list_object_annotations = [
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 33
-socket_qualifier_count = 16
+socket_qualifier_count = 17
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -232,6 +240,7 @@ socket_qualifiers = [
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketWebsite"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetadataConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListObjectAnnotations"],
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListDirectoryBuckets"],
 ]
 
 [[operation]]
@@ -2600,18 +2609,87 @@ tier = "extended"
 provider = "buckets"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_paginated_rest_xml_and_singleton_headers"
+public_name = "List_Directory_Buckets"
+absence = "no modeled absence; non-200 responses remain structured rejections"
+errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+exclusions = ["caller supplies the S3 Express control endpoint origin; no endpoint discovery or rewriting", "client qualification does not claim backend or server support"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "shared_family" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_list_directory_buckets_xml.ads", "src/flyology-object_storage-s3-generated_list_directory_buckets_xml.adb", "src/flyology-object_storage-s3-strict_xml_codecs.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-paginated_rest_xml_reads.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb"] }
+decision_status = "reviewed"
+ada_symbols = ["List_Directory_Buckets_Parameters", "List_Directory_Buckets_Result", "List_Directory_Buckets_Operation", "List_Directory_Buckets", "Finish"]
+generation = { public_result = "List_Directory_Buckets_Result wrapping the exact low-level outcome", response_representation = "Flyology.Object_Storage.S3.Buckets.List_Buckets_Result", replay = "read-only request; provider operation performs one modeled exchange and adds no operation-level retry", ownership = "operation owns its prepared request and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain", cross_field_validation = "no additional response cross-field rule beyond the pinned model", intentional_exclusions = ["no automatic S3 Express control endpoint selection", "no backend or server compatibility claim"] }
+negative_xml = { valid_document = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>", xml_namespace = "" }
+qualification = "list_directory_buckets"
+
+[operation.signed_socket]
+adapter = "./bin/s3_list_directory_buckets_qualification"
+negative_template = "synchronous-success"
+
+[[operation.signed_socket.case]]
+id = "low-level-success"
+lane = "low_level"
+expected = "success"
+expected_value = "directory--use1-az4--x-s3"
+limits = { collection_limit = 2 }
+exchange = [
+  { input_values = { ContinuationToken = "low level% cursor", MaxDirectoryBuckets = "2" }, status = "modeled_success", headers = [["x-amz-request-id", "low-level-request"]], body = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>low level% cursor</ContinuationToken></ListDirectoryBucketsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "synchronous-success"
+lane = "synchronous"
+expected = "success"
+expected_value = "first--use1-az4--x-s3"
+limits = { collection_limit = 2 }
+exchange = [
+  { input_values = { ContinuationToken = "sync cursor", MaxDirectoryBuckets = "2" }, status = "modeled_success", headers = [], body = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>first--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/first--use1-az4--x-s3</BucketArn></Bucket><Bucket><Name>second--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:01Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/second--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next cursor</ContinuationToken></ListDirectoryBucketsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "composable-success"
+lane = "composable"
+expected = "success"
+expected_value = "composable--use1-az4--x-s3"
+limits = { collection_limit = 1 }
+exchange = [
+  { input_values = { MaxDirectoryBuckets = "1" }, status = "modeled_success", headers = [["x-amz-id-2", "composable-host"]], body = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>composable--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/composable--use1-az4--x-s3</BucketArn></Bucket></Buckets></ListDirectoryBucketsOutput>" },
+]
+
+[[operation.signed_socket.case]]
+id = "restart-ownership"
+lane = "restart"
+expected = "invalid_request"
+expected_value = "restart--use1-az4--x-s3"
+limits = { collection_limit = 1 }
+exchange = [
+  { input_values = { MaxDirectoryBuckets = "1" }, status = "modeled_success", headers = [], body = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>restart--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/restart--use1-az4--x-s3</BucketArn></Bucket></Buckets></ListDirectoryBucketsOutput>" },
+  { input_values = { MaxDirectoryBuckets = "1" }, status = "400 Bad Request", headers = [["x-amz-request-id", "restart-invalid"]], body = "<Error><Code>InvalidRequest</Code><Message>invalid</Message></Error>" },
+]
+
+[[operation.signed_socket.case]]
+id = "duplicate-singleton-header"
+lane = "invalid_xml"
+expected = "response_invalid"
+limits = { collection_limit = 1 }
+exchange = [
+  { input_values = { MaxDirectoryBuckets = "1" }, status = "modeled_success", headers = [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]], body = "<ListDirectoryBucketsOutput/>" },
+]
+
+[[operation.signed_socket.case]]
+id = "bounded-response"
+lane = "invalid_xml"
+expected = "response_sink_failed"
+limits = { maximum_document_bytes = 96, collection_limit = 1 }
+exchange = [
+  { input_values = { MaxDirectoryBuckets = "1" }, status = "modeled_success", headers = [], body = "<ListDirectoryBucketsOutput>                                                                                                </ListDirectoryBucketsOutput>" },
+]
 
 [[operation]]
 name = "ListMultipartUploads"
