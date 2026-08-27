@@ -81,8 +81,9 @@ def validate_request(
             fail(f"signed request header mismatch: {name}")
         if lower not in signed:
             fail(f"expected request header is not signed: {name}")
-    if body:
-        fail("bounded REST/XML read unexpectedly sent a request body")
+    expected_body = exchange.get("request_body", "").encode("utf-8")
+    if body != expected_body:
+        fail("signed request body mismatch")
 
 
 def response_bytes(exchange: dict[str, Any]) -> bytes:
@@ -170,6 +171,8 @@ def run_case(
 def generated_negative_cases(
     socket_operation: dict[str, Any], operation_name: str
 ) -> list[dict[str, Any]]:
+    if "negative_template" not in socket_operation:
+        return []
     value = json.loads(
         s3_operation.NEGATIVE_XML_PATH.read_text(encoding="utf-8")
     )

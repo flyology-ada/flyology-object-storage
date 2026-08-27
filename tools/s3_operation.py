@@ -264,8 +264,19 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
     if socket is None:
         return
     adapter = socket.get("adapter")
-    if set(socket) != {"adapter", "negative_template", "case"}:
+    required_socket_fields = {"adapter", "case"}
+    if not required_socket_fields.issubset(socket) or not set(socket).issubset(
+        required_socket_fields | {"negative_template"}
+    ):
         raise Audit_Error(f"invalid signed socket decisions: {name}")
+    if negative is None and "negative_template" in socket:
+        raise Audit_Error(
+            f"signed socket negative template lacks negative XML: {name}"
+        )
+    if negative is not None and "negative_template" not in socket:
+        raise Audit_Error(
+            f"signed socket negative template is required: {name}"
+        )
     if not isinstance(adapter, str) or not adapter.startswith("./bin/"):
         raise Audit_Error(f"invalid signed socket adapter: {name}")
     adapter_source = ROOT / "tests/src" / (Path(adapter).name + ".adb")
@@ -338,7 +349,10 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
             )
         for exchange in exchanges:
             required = {"input_values", "status", "headers", "body"}
-            if set(exchange) != required:
+            optional = {"request_body", "expected_request_headers"}
+            if not required.issubset(exchange) or not set(exchange).issubset(
+                required | optional
+            ):
                 raise Audit_Error(
                     f"invalid signed socket exchange fields: {name}/{identifier}"
                 )
@@ -363,6 +377,25 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
                 raise Audit_Error(
                     f"invalid signed response body: {name}/{identifier}"
                 )
+            if "request_body" in exchange and not isinstance(
+                exchange["request_body"], str
+            ):
+                raise Audit_Error(
+                    f"invalid signed request body: {name}/{identifier}"
+                )
+            expected_request_headers = exchange.get(
+                "expected_request_headers", {}
+            )
+            if not isinstance(expected_request_headers, dict) or any(
+                not isinstance(header_name, str)
+                or not header_name
+                or not isinstance(header_value, str)
+                for header_name, header_value in expected_request_headers.items()
+            ):
+                raise Audit_Error(
+                    f"invalid expected signed request headers: "
+                    f"{name}/{identifier}"
+                )
             if not isinstance(headers, list) or any(
                 not isinstance(item, list)
                 or len(item) != 2
@@ -372,7 +405,7 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
                 raise Audit_Error(
                     f"invalid signed response headers: {name}/{identifier}"
                 )
-    if socket.get("negative_template") not in identifiers:
+    if negative is not None and socket.get("negative_template") not in identifiers:
         raise Audit_Error(f"unknown signed socket negative template: {name}")
 
 
@@ -1027,6 +1060,7 @@ def signed_socket_exchange(
     input_shape = model["shapes"][operation["input"]["shape"]]
     members = input_shape.get("members", {})
     required = set(input_shape.get("required", []))
+    payload_member = input_shape.get("payload")
     values = exchange["input_values"]
     unknown = set(values) - set(members)
     if unknown:
@@ -1034,11 +1068,27 @@ def signed_socket_exchange(
             f"signed socket inputs are absent from {operation_name}: "
             + ", ".join(sorted(unknown))
         )
-    missing = required - set(values)
+    required_inputs = required - ({payload_member} if payload_member else set())
+    missing = required_inputs - set(values)
     if missing:
         raise Audit_Error(
             f"signed socket inputs omit required {operation_name} members: "
             + ", ".join(sorted(missing))
+        )
+
+    if payload_member and payload_member in values:
+        raise Audit_Error(
+            f"signed socket payload must use request_body for "
+            f"{operation_name}.{payload_member}"
+        )
+    if payload_member in required and "request_body" not in exchange:
+        raise Audit_Error(
+            f"signed socket omits required {operation_name}.{payload_member} "
+            "request body"
+        )
+    if not payload_member and "request_body" in exchange:
+        raise Audit_Error(
+            f"signed socket request body is not modeled for {operation_name}"
         )
 
     target = operation["http"]["requestUri"]
@@ -1073,6 +1123,8 @@ def signed_socket_exchange(
                 query_values.append((location_name, value))
         elif location == "header":
             request_headers[location_name] = value
+        elif member_name == payload_member and location is None:
+            continue
         else:
             raise Audit_Error(
                 f"signed socket cannot derive {operation_name}.{member_name} "
@@ -1117,7 +1169,21 @@ def signed_socket_exchange(
         raise Audit_Error(
             f"reviewed signed socket status is invalid: {operation_name}/{status}"
         )
-    return {
+    if "request_body" in exchange:
+        request_headers["x-amz-content-sha256"] = hashlib.sha256(
+            exchange["request_body"].encode("utf-8")
+        ).hexdigest()
+    expected_request_headers = exchange.get("expected_request_headers", {})
+    duplicate_headers = {
+        name.casefold() for name in request_headers
+    } & {name.casefold() for name in expected_request_headers}
+    if duplicate_headers:
+        raise Audit_Error(
+            f"signed socket repeats derived request headers for "
+            f"{operation_name}: {', '.join(sorted(duplicate_headers))}"
+        )
+    request_headers.update(expected_request_headers)
+    result = {
         "body": exchange["body"],
         "headers": exchange["headers"],
         "input_values": values,
@@ -1126,6 +1192,9 @@ def signed_socket_exchange(
         "status": status,
         "target": target,
     }
+    if "request_body" in exchange:
+        result["request_body"] = exchange["request_body"]
+    return result
 
 
 def signed_socket_text(registry: Registry, model: dict[str, Any]) -> str:
@@ -1144,11 +1213,13 @@ def signed_socket_text(registry: Registry, model: dict[str, Any]) -> str:
                 for exchange in case["exchange"]
             ]
             cases.append(generated)
-        operations[name] = {
+        operation = {
             "adapter": source["adapter"],
             "cases": cases,
-            "negative_template": source["negative_template"],
         }
+        if "negative_template" in source:
+            operation["negative_template"] = source["negative_template"]
+        operations[name] = operation
     return json.dumps(
         {
             "model_revision": EXPECTED_MODEL_REVISION,
@@ -1421,8 +1492,15 @@ def validate_committed_signed_socket(
         identifiers = [case.get("id") for case in cases]
         if len(set(identifiers)) != len(identifiers):
             raise Audit_Error(f"duplicate signed socket case: {name}")
-        if operation.get("negative_template") not in identifiers:
+        source = registry.operations[name]
+        if "negative_xml" in source and operation.get(
+            "negative_template"
+        ) not in identifiers:
             raise Audit_Error(f"signed socket negative template is absent: {name}")
+        if "negative_xml" not in source and "negative_template" in operation:
+            raise Audit_Error(
+                f"signed socket has unexpected negative template: {name}"
+            )
 
 
 def check_generated_outputs(

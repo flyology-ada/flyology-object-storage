@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import tempfile
@@ -198,6 +199,78 @@ def main() -> None:
             "/model-bucket?id=qualified%20metric%2Fid&metrics"
         )
         assert query_request["status"] == "200 OK"
+        mutation_request = s3_operation.signed_socket_exchange(
+            model,
+            "PutBucketMetricsConfiguration",
+            {
+                "input_values": {
+                    "Bucket": "model-bucket",
+                    "Id": "qualified metric/id",
+                    "ExpectedBucketOwner": "123456789012",
+                },
+                "request_body": "<MetricsConfiguration/>",
+                "expected_request_headers": {
+                    "content-type": "application/xml"
+                },
+                "status": "modeled_success",
+                "headers": [],
+                "body": "",
+            },
+        )
+        assert mutation_request["method"] == "PUT"
+        assert mutation_request["target"] == (
+            "/model-bucket?id=qualified%20metric%2Fid&metrics"
+        )
+        assert mutation_request["request_body"] == (
+            "<MetricsConfiguration/>"
+        )
+        assert mutation_request["request_headers"] == {
+            "x-amz-expected-bucket-owner": "123456789012",
+            "content-type": "application/xml",
+            "x-amz-content-sha256": hashlib.sha256(
+                b"<MetricsConfiguration/>"
+            ).hexdigest(),
+        }
+        try:
+            s3_operation.signed_socket_exchange(
+                model,
+                "PutBucketMetricsConfiguration",
+                {
+                    "input_values": {
+                        "Bucket": "model-bucket",
+                        "Id": "missing-body",
+                    },
+                    "status": "modeled_success",
+                    "headers": [],
+                    "body": "",
+                },
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError("required mutation request body was omitted")
+        try:
+            s3_operation.signed_socket_exchange(
+                model,
+                "PutBucketMetricsConfiguration",
+                {
+                    "input_values": {
+                        "Bucket": "model-bucket",
+                        "Id": "duplicate-hash",
+                    },
+                    "request_body": "<MetricsConfiguration/>",
+                    "expected_request_headers": {
+                        "X-Amz-Content-SHA256": "reviewed-but-derived"
+                    },
+                    "status": "modeled_success",
+                    "headers": [],
+                    "body": "",
+                },
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError("derived request header was duplicated")
         invalid_seed = copy.deepcopy(canary["negative_xml"])
         invalid_seed["valid_document"] = (
             "<ReplicationConfiguration "
