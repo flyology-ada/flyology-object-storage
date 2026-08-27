@@ -1392,6 +1392,207 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "ListBucketAnalyticsConfigurations": {
+      "adapter": "./bin/s3_list_bucket_analytics_configurations_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken>low level% cursor</ContinuationToken><AnalyticsConfiguration><Id>low-level-analytics</Id><StorageClassAnalysis/></AnalyticsConfiguration></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ContinuationToken": "low level% cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?analytics&continuation-token=low%20level%25%20cursor"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-analytics",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>true</IsTruncated><ContinuationToken>sync cursor</ContinuationToken><NextContinuationToken>next cursor</NextContinuationToken><AnalyticsConfiguration><Id>synchronous-analytics</Id><Filter><And><Prefix>logs/</Prefix><Tag><Key>team</Key><Value>storage</Value></Tag></And></Filter><StorageClassAnalysis/></AnalyticsConfiguration><AnalyticsConfiguration><Id>second-analytics</Id><StorageClassAnalysis/></AnalyticsConfiguration></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ContinuationToken": "sync cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?analytics&continuation-token=sync%20cursor"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-analytics",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken></ContinuationToken></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty",
+                "ContinuationToken": "",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty?analytics&continuation-token"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "",
+          "id": "empty-cursor-empty-page",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated><AnalyticsConfiguration><Id>composable-analytics</Id><StorageClassAnalysis/></AnalyticsConfiguration></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?analytics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-analytics",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated><AnalyticsConfiguration><Id>restart-analytics</Id><StorageClassAnalysis/></AnalyticsConfiguration></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?analytics"
+            },
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?analytics"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated></ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?analytics"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketAnalyticsConfigurationsOutput><IsTruncated>false</IsTruncated>                                                                                                </ListBucketAnalyticsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?analytics"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "ListBucketMetricsConfigurations": {
       "adapter": "./bin/s3_list_bucket_metrics_configurations_qualification",
       "cases": [

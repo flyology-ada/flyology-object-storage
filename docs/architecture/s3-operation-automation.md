@@ -220,12 +220,19 @@ negative cases. Seven reviewed lanes plus 18 generated cases execute 25 signed
 socket exchanges through low-level, synchronous, composable, restart,
 singleton-header, and bounded-sink paths.
 
+ListBucketAnalyticsConfigurations is the first follow-on rollout. It reuses
+the same page envelope, low-level request projection, bounded state machine,
+and provider-owned call shapes while delegating each repeated item to the
+already qualified GetBucketAnalyticsConfiguration decoder. Its reviewed
+manifest adds no new timeout, page-size, retry, or automatic-pagination
+policy; the model-derived closure and negative corpus are regenerated from the
+pinned service model.
+
 Human-owned files are the generic Ada specification and body, provider and
-low-level declarations/callbacks, the metrics page projection, the typed test
-adapter, and reviewed TOML decisions. Coverage ledgers, operation counts, test
+low-level declarations/callbacks, the domain page projections, typed test
+adapters, and reviewed TOML decisions. Coverage ledgers, operation counts, test
 registration, signed socket fixtures, routine negative XML cases, and the
-registry page remain generated. The same envelope is intended for
-ListBucketAnalyticsConfigurations,
+registry page remain generated. The same envelope is intended next for
 ListBucketIntelligentTieringConfigurations, and
 ListBucketInventoryConfigurations; each still requires a reviewed manifest,
 domain result adapter, and executable equivalence evidence before coverage is

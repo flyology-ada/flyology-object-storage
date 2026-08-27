@@ -8472,6 +8472,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.List_Bucket_Metrics_Configurations_Operation,
          Origin, Style, Bucket, Parameters, Identity, Region, Timestamp));
 
+   function Prepare_List_Bucket_Analytics_Configurations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : List_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_List
+        (Model.List_Bucket_Analytics_Configurations_Operation,
+         Origin, Style, Bucket, Parameters, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_Analytics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -8984,6 +8993,48 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with
            "malformed ListBucketMetricsConfigurations response";
    end Decode_List_Bucket_Metrics_Configurations_Response;
+
+   function Empty_Analytics_Configuration_Page
+      return Analytics.Analytics_Configuration_Page is
+     ((Has_Is_Truncated        => False,
+       Is_Truncated            => False,
+       Continuation_Token      =>
+         (Is_Set => False, Value => US.Null_Unbounded_String),
+       Next_Continuation_Token =>
+         (Is_Set => False, Value => US.Null_Unbounded_String),
+       Configurations          =>
+         Analytics.Configuration_Vectors.Empty_Vector));
+
+   function Decode_List_Bucket_Analytics_Configurations_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Analytics_Configurations_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with
+              "empty ListBucketAnalyticsConfigurations response";
+         end if;
+         return
+           (Kind   => Bucket_Analytics_Configurations_Listed,
+            Status => Status,
+            Result => Analytics.Parse_List (Payload, Limits),
+            Error  => (others => <>));
+      end if;
+      return
+        (Kind   => List_Bucket_Analytics_Configurations_Rejected,
+         Status => Status,
+         Result => Empty_Analytics_Configuration_Page,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Analytics.Malformed_Analytics | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed ListBucketAnalyticsConfigurations response";
+   end Decode_List_Bucket_Analytics_Configurations_Response;
 
    function Empty_Analytics_Configuration
       return Analytics.Analytics_Configuration is
@@ -9639,6 +9690,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_List_Bucket_Metrics_Configurations;
+
+   function Execute_List_Bucket_Analytics_Configurations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Analytics_Configurations_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.List_Bucket_Analytics_Configurations_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_List_Bucket_Analytics_Configurations_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_List_Bucket_Analytics_Configurations;
 
    function Execute_Get_Bucket_Analytics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -14472,6 +14541,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.List_Bucket_Metrics_Configurations_Operation, Client,
          Prepared, Sink, Deadline, Token, Operation);
    end List_Bucket_Metrics_Configurations;
+
+   procedure List_Bucket_Analytics_Configurations
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Exact_Bucket_Control_Get
+        (Model.List_Bucket_Analytics_Configurations_Operation, Client,
+         Prepared, Sink, Deadline, Token, Operation);
+   end List_Bucket_Analytics_Configurations;
 
    procedure Get_Bucket_Analytics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

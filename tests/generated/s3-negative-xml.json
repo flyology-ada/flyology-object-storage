@@ -1549,6 +1549,117 @@
       ],
       "valid_document": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RedirectAllRequestsTo><HostName>all.example</HostName><Protocol>https</Protocol></RedirectAllRequestsTo><IndexDocument><Suffix>index.html</Suffix></IndexDocument><ErrorDocument><Key>error.html</Key></ErrorDocument><RoutingRules><RoutingRule><Condition><HttpErrorCodeReturnedEquals>404</HttpErrorCodeReturnedEquals></Condition><Redirect><HostName>errors.example</HostName><Protocol>http</Protocol><ReplaceKeyWith>missing.html</ReplaceKeyWith></Redirect></RoutingRule><RoutingRule><Condition><KeyPrefixEquals>docs/</KeyPrefixEquals></Condition><Redirect><HttpRedirectCode>302</HttpRedirectCode><ReplaceKeyPrefixWith>archive/</ReplaceKeyPrefixWith></Redirect></RoutingRule></RoutingRules></WebsiteConfiguration>"
     },
+    "ListBucketAnalyticsConfigurations": {
+      "cases": [
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-analyticsconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-analyticsconfigurationlist-1-storageclassanalysis",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-continuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-istruncated",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-nextcontinuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 2
+          }
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 375
+          }
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 6
+          }
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 50
+          }
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-analyticsconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-analyticsconfigurationlist-1-storageclassanalysis",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:IsTruncated>true</ns1:IsTruncated><ns1:ContinuationToken>reviewed-current</ns1:ContinuationToken><ns1:NextContinuationToken>reviewed-next</ns1:NextContinuationToken><ns1:AnalyticsConfiguration><ns1:Id>reviewed-analytics</ns1:Id><ns1:StorageClassAnalysis /></ns1:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-listbucketanalyticsconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-listbucketanalyticsconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketAnalyticsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:AnalyticsConfiguration><ns0:Id>reviewed-analytics</ns0:Id><ns0:StorageClassAnalysis /></ns0:AnalyticsConfiguration><UnknownModelMember /></ns0:ListBucketAnalyticsConfigurationsOutput>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-listbucketanalyticsconfigurationsoutput",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ListBucketAnalyticsConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><AnalyticsConfiguration><Id>reviewed-analytics</Id><StorageClassAnalysis/></AnalyticsConfiguration></ListBucketAnalyticsConfigurationsOutput>"
+    },
     "ListBucketMetricsConfigurations": {
       "cases": [
         {

@@ -72,6 +72,7 @@ run_s3_socket_qualifiers() {
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketReplication
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketMetricsConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py ListBucketMetricsConfigurations
+  uv run --python 3.13 -- ../tools/s3-signed-socket.py ListBucketAnalyticsConfigurations
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketAnalyticsConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketIntelligentTieringConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketInventoryConfiguration
