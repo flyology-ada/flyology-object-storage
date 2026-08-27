@@ -206,8 +206,10 @@ def generated_negative_cases(
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        fail("usage: s3-signed-socket.py OPERATION")
+    if len(sys.argv) not in {2, 4} or (
+        len(sys.argv) == 4 and sys.argv[2] != "--adapter"
+    ):
+        fail("usage: s3-signed-socket.py OPERATION [--adapter PATH]")
     operation_name = sys.argv[1]
     registry = s3_operation.load_registry()
     s3_operation.validate_committed_negative_xml(registry)
@@ -220,11 +222,12 @@ def main() -> int:
     socket_config = value.get("operations", {}).get(operation_name)
     if socket_config is None:
         fail(f"operation has no signed socket qualification: {operation_name}")
+    adapter = sys.argv[3] if len(sys.argv) == 4 else socket_config["adapter"]
     cases = list(socket_config["cases"])
     cases.extend(generated_negative_cases(socket_config, operation_name))
     for case in cases:
         try:
-            run_case(operation_name, socket_config["adapter"], case)
+            run_case(operation_name, adapter, case)
         except Exception as error:
             fail(f"{operation_name}/{case['id']}: {error}")
     print(
