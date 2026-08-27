@@ -200,6 +200,15 @@ Generation refuses an unsupported multi-query route, a differently located
 member. The descriptor remains responsible only for reviewed Ada projection
 and human policy that the model cannot establish.
 
+The S3 Metadata V2 mutation audit additionally freezes the four modeled
+operation routes and payload roots, every reachable request structure's exact
+required/member shape mapping, and the annotation, inventory, expiration, and
+encryption enum domains. It verifies that the create and update annotation and
+inventory structures remain equivalent before one reviewed public Ada value
+type may represent each pair. This audit does not select that public type or
+infer the KMS-key, expiration-retention, certainty, replay, or reconciliation
+policies.
+
 ### GetBucketWebsite non-destructive canary
 
 `GetBucketWebsite` remains the authoritative shared-family handwritten

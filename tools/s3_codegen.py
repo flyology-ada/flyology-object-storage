@@ -2060,7 +2060,14 @@ def mutation_http_contract(
     model: dict[str, Any], item: Generated_Mutation
 ) -> Mutation_HTTP_Contract:
     """Derive model-owned request routing and checksum mechanics."""
-    operation = model["operations"][item.operation]
+    return mutation_http_contract_for_operation(model, item.operation)
+
+
+def mutation_http_contract_for_operation(
+    model: dict[str, Any], operation_name: str
+) -> Mutation_HTTP_Contract:
+    """Derive one model-owned mutation HTTP contract by operation name."""
+    operation = model["operations"][operation_name]
     method = operation["http"]["method"]
     request_uri = operation["http"]["requestUri"]
     prefix = "/{Bucket}?"
@@ -2071,7 +2078,7 @@ def mutation_http_contract(
         or any(character in request_uri[len(prefix) :] for character in "&=")
     ):
         raise s3_operation.Audit_Error(
-            f"unsupported generated mutation HTTP binding: {item.operation}"
+            f"unsupported generated mutation HTTP binding: {operation_name}"
         )
     input_shape_name = operation.get("input", {}).get("shape")
     input_shape = model["shapes"].get(input_shape_name, {})
@@ -2083,13 +2090,13 @@ def mutation_http_contract(
         or content_md5.get("locationName", "").casefold() != "content-md5"
     ):
         raise s3_operation.Audit_Error(
-            f"unexpected ContentMD5 binding: {item.operation}"
+            f"unexpected ContentMD5 binding: {operation_name}"
         )
     checksum = operation.get("httpChecksum", {})
     required_trait = checksum.get("requestChecksumRequired", False)
     if not isinstance(required_trait, bool):
         raise s3_operation.Audit_Error(
-            f"invalid required checksum trait: {item.operation}"
+            f"invalid required checksum trait: {operation_name}"
         )
     requires_checksum = required_trait
     algorithm_member = checksum.get("requestAlgorithmMember")
@@ -2103,7 +2110,7 @@ def mutation_http_contract(
         requires_checksum and algorithm_member is None
     ):
         raise s3_operation.Audit_Error(
-            f"required checksum lacks modeled algorithm member: {item.operation}"
+            f"required checksum lacks modeled algorithm member: {operation_name}"
         )
     return Mutation_HTTP_Contract(
         method=method,
@@ -2111,6 +2118,362 @@ def mutation_http_contract(
         has_content_md5=has_content_md5,
         requires_checksum=requires_checksum,
     )
+
+
+METADATA_MUTATION_OPERATIONS = {
+    "CreateBucketMetadataConfiguration": (
+        "POST",
+        "metadataConfiguration",
+        "CreateBucketMetadataConfigurationRequest",
+        "MetadataConfiguration",
+        "MetadataConfiguration",
+    ),
+    "UpdateBucketMetadataAnnotationTableConfiguration": (
+        "PUT",
+        "metadataAnnotationTable",
+        "UpdateBucketMetadataAnnotationTableConfigurationRequest",
+        "AnnotationTableConfiguration",
+        "AnnotationTableConfigurationUpdates",
+    ),
+    "UpdateBucketMetadataInventoryTableConfiguration": (
+        "PUT",
+        "metadataInventoryTable",
+        "UpdateBucketMetadataInventoryTableConfigurationRequest",
+        "InventoryTableConfiguration",
+        "InventoryTableConfigurationUpdates",
+    ),
+    "UpdateBucketMetadataJournalTableConfiguration": (
+        "PUT",
+        "metadataJournalTable",
+        "UpdateBucketMetadataJournalTableConfigurationRequest",
+        "JournalTableConfiguration",
+        "JournalTableConfigurationUpdates",
+    ),
+}
+
+
+METADATA_MUTATION_STRUCTURES = {
+    "MetadataConfiguration": (
+        ("JournalTableConfiguration",),
+        {
+            "JournalTableConfiguration": "JournalTableConfiguration",
+            "InventoryTableConfiguration": "InventoryTableConfiguration",
+            "AnnotationTableConfiguration": "AnnotationTableConfiguration",
+        },
+    ),
+    "JournalTableConfiguration": (
+        ("RecordExpiration",),
+        {
+            "RecordExpiration": "RecordExpiration",
+            "EncryptionConfiguration": (
+                "MetadataTableEncryptionConfiguration"
+            ),
+        },
+    ),
+    "InventoryTableConfiguration": (
+        ("ConfigurationState",),
+        {
+            "ConfigurationState": "InventoryConfigurationState",
+            "EncryptionConfiguration": (
+                "MetadataTableEncryptionConfiguration"
+            ),
+        },
+    ),
+    "AnnotationTableConfiguration": (
+        ("ConfigurationState",),
+        {
+            "ConfigurationState": "AnnotationConfigurationState",
+            "EncryptionConfiguration": (
+                "MetadataTableEncryptionConfiguration"
+            ),
+            "Role": "Role",
+        },
+    ),
+    "AnnotationTableConfigurationUpdates": (
+        ("ConfigurationState",),
+        {
+            "ConfigurationState": "AnnotationConfigurationState",
+            "EncryptionConfiguration": (
+                "MetadataTableEncryptionConfiguration"
+            ),
+            "Role": "Role",
+        },
+    ),
+    "InventoryTableConfigurationUpdates": (
+        ("ConfigurationState",),
+        {
+            "ConfigurationState": "InventoryConfigurationState",
+            "EncryptionConfiguration": (
+                "MetadataTableEncryptionConfiguration"
+            ),
+        },
+    ),
+    "JournalTableConfigurationUpdates": (
+        ("RecordExpiration",),
+        {"RecordExpiration": "RecordExpiration"},
+    ),
+    "MetadataTableEncryptionConfiguration": (
+        ("SseAlgorithm",),
+        {"SseAlgorithm": "TableSseAlgorithm", "KmsKeyArn": "KmsKeyArn"},
+    ),
+    "RecordExpiration": (
+        ("Expiration",),
+        {"Expiration": "ExpirationState", "Days": "RecordExpirationDays"},
+    ),
+}
+
+
+METADATA_MUTATION_ENUMS = {
+    "AnnotationConfigurationState": ("ENABLED", "DISABLED"),
+    "InventoryConfigurationState": ("ENABLED", "DISABLED"),
+    "ExpirationState": ("ENABLED", "DISABLED"),
+    "TableSseAlgorithm": ("aws:kms", "AES256"),
+    "ChecksumAlgorithm": (
+        "CRC32",
+        "CRC32C",
+        "SHA1",
+        "SHA256",
+        "CRC64NVME",
+        "SHA512",
+        "MD5",
+        "XXHASH64",
+        "XXHASH3",
+        "XXHASH128",
+    ),
+}
+
+
+METADATA_MUTATION_LEAF_TYPES = {
+    "AccountId": "string",
+    "BucketName": "string",
+    "ContentMD5": "string",
+    "KmsKeyArn": "string",
+    "RecordExpirationDays": "integer",
+    "Role": "string",
+}
+
+
+def _metadata_member_contract(
+    name: str,
+    shape: str,
+    required: bool,
+    location: str = "body",
+    location_name: str | None = None,
+    xml_namespace: dict[str, str] | None = None,
+    traits: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize one exact expected member like operation_audit does."""
+    result: dict[str, Any] = {
+        "name": name,
+        "shape": shape,
+        "required": required,
+        "location": location,
+        "location_name": location_name or name,
+        "flattened": False,
+        "xml_attribute": False,
+        "xml_namespace": xml_namespace or {},
+        "streaming": False,
+    }
+    if traits:
+        result["traits"] = traits
+    return result
+
+
+def _metadata_expected_closure(
+    input_name: str, input_members: dict[str, dict[str, Any]]
+) -> set[str]:
+    """Derive the complete reviewed shape closure from one shape graph."""
+    pending = [member["shape"] for member in input_members.values()]
+    result = {input_name}
+    while pending:
+        shape_name = pending.pop()
+        if shape_name in result:
+            continue
+        result.add(shape_name)
+        structure = METADATA_MUTATION_STRUCTURES.get(shape_name)
+        if structure is not None:
+            pending.extend(structure[1].values())
+        elif (
+            shape_name not in METADATA_MUTATION_ENUMS
+            and shape_name not in METADATA_MUTATION_LEAF_TYPES
+        ):
+            raise s3_operation.Audit_Error(
+                "unclassified metadata mutation shape: " + shape_name
+            )
+    return result
+
+
+def metadata_mutation_model_contract(model: dict[str, Any]) -> dict[str, Any]:
+    """Verify the complete model-owned S3 Metadata V2 mutation contract."""
+    operation_contracts: dict[str, dict[str, Any]] = {}
+    for operation_name, expected in METADATA_MUTATION_OPERATIONS.items():
+        method, subresource, input_name, payload_member, payload_shape = (
+            expected
+        )
+        operation = model["operations"][operation_name]
+        http = mutation_http_contract_for_operation(model, operation_name)
+        actual_input_name = operation["input"]["shape"]
+        input_shape = model["shapes"][actual_input_name]
+        actual_payload_member = input_shape.get("payload")
+        payload = input_shape.get("members", {}).get(
+            actual_payload_member, {}
+        )
+        input_members = {
+            name: s3_operation.member_record(input_shape, name, member)
+            for name, member in input_shape.get("members", {}).items()
+        }
+        expected_input_members = {
+            "Bucket": _metadata_member_contract(
+                "Bucket",
+                "BucketName",
+                True,
+                "uri",
+                traits={"contextParam": {"name": "Bucket"}},
+            ),
+            "ContentMD5": _metadata_member_contract(
+                "ContentMD5", "ContentMD5", False, "header", "Content-MD5"
+            ),
+            "ChecksumAlgorithm": _metadata_member_contract(
+                "ChecksumAlgorithm",
+                "ChecksumAlgorithm",
+                False,
+                "header",
+                "x-amz-sdk-checksum-algorithm",
+            ),
+            payload_member: _metadata_member_contract(
+                payload_member,
+                payload_shape,
+                True,
+                xml_namespace={
+                    "uri": "http://s3.amazonaws.com/doc/2006-03-01/"
+                },
+            ),
+            "ExpectedBucketOwner": _metadata_member_contract(
+                "ExpectedBucketOwner",
+                "AccountId",
+                False,
+                "header",
+                "x-amz-expected-bucket-owner",
+            ),
+        }
+        actual = (
+            http.method,
+            http.subresource,
+            actual_input_name,
+            actual_payload_member,
+            payload.get("shape"),
+        )
+        if (
+            actual != expected
+            or input_shape.get("type") != "structure"
+            or set(input_shape)
+            - {"type", "required", "members", "payload", "documentation"}
+            or tuple(input_shape.get("required", ()))
+            != ("Bucket", payload_member)
+            or input_members != expected_input_members
+            or not http.has_content_md5
+            or not http.requires_checksum
+            or operation.get("output") is not None
+            or operation.get("staticContextParams")
+            != {"UseS3ExpressControlEndpoint": {"value": True}}
+            or s3_operation.operation_audit(model, operation_name)[
+                "response_status"
+            ] != 200
+            or payload.get("xmlNamespace", {}).get("uri")
+            != "http://s3.amazonaws.com/doc/2006-03-01/"
+            or set(s3_operation.reachable_shapes(model, operation_name))
+            != _metadata_expected_closure(input_name, expected_input_members)
+        ):
+            raise s3_operation.Audit_Error(
+                "metadata mutation operation contract changed: "
+                + operation_name
+            )
+        operation_contracts[operation_name] = {
+            "method": method,
+            "subresource": subresource,
+            "input_shape": input_name,
+            "payload_member": payload_member,
+            "payload_shape": payload_shape,
+            "content_md5": http.has_content_md5,
+            "required_checksum": http.requires_checksum,
+        }
+
+    shape_contracts: dict[str, dict[str, Any]] = {}
+    for shape_name, (required, members) in (
+        METADATA_MUTATION_STRUCTURES.items()
+    ):
+        shape = model["shapes"].get(shape_name, {})
+        actual_members = {
+            name: s3_operation.member_record(shape, name, member)
+            for name, member in shape.get("members", {}).items()
+        }
+        expected_members = {
+            member_name: _metadata_member_contract(
+                member_name,
+                member_shape,
+                member_name in required,
+                traits=(
+                    {"box": True}
+                    if shape_name == "RecordExpiration"
+                    and member_name == "Days"
+                    else None
+                ),
+            )
+            for member_name, member_shape in members.items()
+        }
+        if (
+            shape.get("type") != "structure"
+            or set(shape) - {"type", "required", "members", "documentation"}
+            or tuple(shape.get("required", ())) != required
+            or actual_members != expected_members
+        ):
+            raise s3_operation.Audit_Error(
+                "metadata mutation structure changed: " + shape_name
+            )
+        shape_contracts[shape_name] = {
+            "required": list(required),
+            "members": actual_members,
+        }
+
+    enum_contracts: dict[str, list[str]] = {}
+    for shape_name, expected in METADATA_MUTATION_ENUMS.items():
+        shape = model["shapes"].get(shape_name, {})
+        if (
+            shape.get("type") != "string"
+            or set(shape) - {"type", "enum", "documentation"}
+            or tuple(shape.get("enum", ())) != expected
+        ):
+            raise s3_operation.Audit_Error(
+                "metadata mutation enum changed: " + shape_name
+            )
+        enum_contracts[shape_name] = list(expected)
+
+    leaf_contracts: dict[str, str] = {}
+    for shape_name, expected_type in METADATA_MUTATION_LEAF_TYPES.items():
+        shape = model["shapes"].get(shape_name, {})
+        if set(shape) - {"type", "documentation"} or shape.get(
+            "type"
+        ) != expected_type:
+            raise s3_operation.Audit_Error(
+                "metadata mutation leaf shape changed: " + shape_name
+            )
+        leaf_contracts[shape_name] = expected_type
+
+    if (
+        shape_contracts["AnnotationTableConfiguration"]
+        != shape_contracts["AnnotationTableConfigurationUpdates"]
+        or shape_contracts["InventoryTableConfiguration"]
+        != shape_contracts["InventoryTableConfigurationUpdates"]
+    ):
+        raise s3_operation.Audit_Error(
+            "metadata create/update table structures diverged"
+        )
+    return {
+        "operations": operation_contracts,
+        "structures": shape_contracts,
+        "enums": enum_contracts,
+        "leaves": leaf_contracts,
+    }
 
 
 def _generated_mutation_low_level_spec(

@@ -350,6 +350,43 @@ def main() -> None:
             "POST",
             "metadataConfiguration",
         )
+        metadata_contract = s3_codegen.metadata_mutation_model_contract(model)
+        assert set(metadata_contract["operations"]) == {
+            "CreateBucketMetadataConfiguration",
+            "UpdateBucketMetadataAnnotationTableConfiguration",
+            "UpdateBucketMetadataInventoryTableConfiguration",
+            "UpdateBucketMetadataJournalTableConfiguration",
+        }
+        assert metadata_contract["enums"]["TableSseAlgorithm"] == [
+            "aws:kms",
+            "AES256",
+        ]
+        invalid_metadata_required = copy.deepcopy(model)
+        invalid_metadata_required["shapes"]["MetadataConfiguration"][
+            "required"
+        ] = []
+        try:
+            s3_codegen.metadata_mutation_model_contract(
+                invalid_metadata_required
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError(
+                "metadata mutation missing required member was accepted"
+            )
+        invalid_metadata_enum = copy.deepcopy(model)
+        invalid_metadata_enum["shapes"]["TableSseAlgorithm"]["enum"].append(
+            "provider-default"
+        )
+        try:
+            s3_codegen.metadata_mutation_model_contract(invalid_metadata_enum)
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError(
+                "metadata mutation expanded enum was accepted"
+            )
         website_canary = s3_codegen.get_bucket_website_canary(registry, model)
         assert website_canary["status"] == "equivalent"
         assert website_canary["findings"] == []
