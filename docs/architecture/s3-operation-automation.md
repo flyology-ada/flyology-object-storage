@@ -126,6 +126,15 @@ rewrite. A prospective descriptor may be generated in a temporary directory
 to compare model-derived structure, but adopting a generated implementation
 for an existing operation requires separate user authorization.
 
+Generated request serializers use the internal, human-owned
+`S3.XML_Writers` boundary for escaping and caller-selected document, depth,
+element, and text accounting. The writer supplies no defaults. Each generated
+typed projection is bound to a digest of the operation's complete reachable
+shape closure, so a later model update cannot silently retain a stale field,
+requiredness, list, or enum mapping. Operation-specific Ada field projection
+remains reviewed generator input because Botocore cannot establish how an
+existing public Ada record represents presence or names its components.
+
 New provider and low-level declarations may be materialized only inside
 explicitly delimited generator-owned regions. The materializer replaces the
 complete marked region, refuses unbalanced or duplicate markers, and leaves

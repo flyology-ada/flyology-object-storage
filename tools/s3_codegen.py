@@ -1336,6 +1336,434 @@ def codec_descriptor_text(
     return unit, spec, "\n".join(body_parts)
 
 
+@dataclass(frozen=True)
+class Mutation_Serializer:
+    payload_shape: str
+    value_unit: str
+    value_type: str
+    closure_sha256: str
+    body: str
+
+
+MUTATION_SERIALIZERS = {
+    "PutBucketInventoryConfiguration": Mutation_Serializer(
+        payload_shape="InventoryConfiguration",
+        value_unit="Inventory",
+        value_type="Inventory_Configuration",
+        closure_sha256=(
+            "daf86b2bb14d64c87ee951bed9157fea6eafd9304487f43b6f4ee857059ed9b8"
+        ),
+        body="""   function Inventory_Format_Image
+     (Value : Inventory.Inventory_Format) return String is
+     (case Value is
+         when Inventory.CSV     => "CSV",
+         when Inventory.ORC     => "ORC",
+         when Inventory.Parquet => "Parquet");
+
+   function Frequency_Image
+     (Value : Inventory.Inventory_Frequency) return String is
+     (case Value is
+         when Inventory.Daily  => "Daily",
+         when Inventory.Weekly => "Weekly");
+
+   function Versions_Image
+     (Value : Inventory.Included_Object_Versions) return String is
+     (case Value is
+         when Inventory.All_Versions     => "All",
+         when Inventory.Current_Versions => "Current");
+
+   function Optional_Field_Image
+     (Value : Inventory.Optional_Field_Kind) return String is
+     (case Value is
+         when Inventory.Size => "Size",
+         when Inventory.Last_Modified_Date => "LastModifiedDate",
+         when Inventory.Storage_Class => "StorageClass",
+         when Inventory.ETag => "ETag",
+         when Inventory.Is_Multipart_Uploaded => "IsMultipartUploaded",
+         when Inventory.Replication_Status => "ReplicationStatus",
+         when Inventory.Encryption_Status => "EncryptionStatus",
+         when Inventory.Object_Lock_Retain_Until_Date =>
+           "ObjectLockRetainUntilDate",
+         when Inventory.Object_Lock_Mode => "ObjectLockMode",
+         when Inventory.Object_Lock_Legal_Hold_Status =>
+           "ObjectLockLegalHoldStatus",
+         when Inventory.Intelligent_Tiering_Access_Tier =>
+           "IntelligentTieringAccessTier",
+         when Inventory.Bucket_Key_Status => "BucketKeyStatus",
+         when Inventory.Checksum_Algorithm => "ChecksumAlgorithm",
+         when Inventory.Object_Access_Control_List =>
+           "ObjectAccessControlList",
+         when Inventory.Object_Owner => "ObjectOwner",
+         when Inventory.Lifecycle_Expiration_Date =>
+           "LifecycleExpirationDate");
+
+   function Serialize
+     (Value  : Inventory.Inventory_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+      S3_Destination : Inventory.S3_Bucket_Destination renames
+        Value.Destination.S3_Bucket;
+   begin
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document (Item, Root_Name, Namespace_URI);
+      XML_Writers.Start_Element (Item, "Destination");
+      XML_Writers.Start_Element (Item, "S3BucketDestination");
+      if S3_Destination.Account_ID.Is_Set then
+         XML_Writers.Text_Element
+           (Item, "AccountId", US.To_String (S3_Destination.Account_ID.Value));
+      end if;
+      XML_Writers.Text_Element
+        (Item, "Bucket", US.To_String (S3_Destination.Bucket));
+      XML_Writers.Text_Element
+        (Item, "Format", Inventory_Format_Image (S3_Destination.Format));
+      if S3_Destination.Prefix.Is_Set then
+         XML_Writers.Text_Element
+           (Item, "Prefix", US.To_String (S3_Destination.Prefix.Value));
+      end if;
+      if S3_Destination.Encryption.Is_Set then
+         XML_Writers.Start_Element (Item, "Encryption");
+         if S3_Destination.Encryption.SSE_S3 then
+            XML_Writers.Empty_Element (Item, "SSE-S3");
+         end if;
+         if S3_Destination.Encryption.SSE_KMS_Key_ID.Is_Set then
+            XML_Writers.Start_Element (Item, "SSE-KMS");
+            XML_Writers.Text_Element
+              (Item, "KeyId",
+               US.To_String (S3_Destination.Encryption.SSE_KMS_Key_ID.Value));
+            XML_Writers.End_Element (Item, "SSE-KMS");
+         end if;
+         XML_Writers.End_Element (Item, "Encryption");
+      end if;
+      XML_Writers.End_Element (Item, "S3BucketDestination");
+      XML_Writers.End_Element (Item, "Destination");
+      XML_Writers.Text_Element
+        (Item, "IsEnabled", (if Value.Is_Enabled then "true" else "false"));
+      if Value.Filter.Is_Set then
+         XML_Writers.Start_Element (Item, "Filter");
+         XML_Writers.Text_Element
+           (Item, "Prefix", US.To_String (Value.Filter.Prefix));
+         XML_Writers.End_Element (Item, "Filter");
+      end if;
+      XML_Writers.Text_Element (Item, "Id", US.To_String (Value.ID));
+      XML_Writers.Text_Element
+        (Item, "IncludedObjectVersions", Versions_Image (Value.Versions));
+      if not Value.Optional_Fields.Is_Empty then
+         XML_Writers.Start_Element (Item, "OptionalFields");
+         for Field of Value.Optional_Fields loop
+            XML_Writers.Text_Element
+              (Item, "Field", Optional_Field_Image (Field));
+         end loop;
+         XML_Writers.End_Element (Item, "OptionalFields");
+      end if;
+      XML_Writers.Start_Element (Item, "Schedule");
+      XML_Writers.Text_Element
+        (Item, "Frequency", Frequency_Image (Value.Schedule.Frequency));
+      XML_Writers.End_Element (Item, "Schedule");
+      return XML_Writers.Finish (Item, Root_Name);
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Inventory.Malformed_Inventory with
+           "inventory serialization violates caller limits";
+   end Serialize;""",
+    ),
+    "PutBucketLogging": Mutation_Serializer(
+        payload_shape="BucketLoggingStatus",
+        value_unit="Logging",
+        value_type="Logging_Status",
+        closure_sha256=(
+            "fbfafa4aedc36468b290b7b3172f04448e91a474c8c10b475f444e32b109fa8d"
+        ),
+        body="""   function Grantee_Type_Image
+     (Value : ACL.Grantee_Type) return String is
+     (case Value is
+         when ACL.Canonical_User => "CanonicalUser",
+         when ACL.Amazon_Customer_By_Email => "AmazonCustomerByEmail",
+         when ACL.Group_Grantee => "Group");
+
+   function Permission_Image
+     (Value : Logging.Logging_Permission) return String is
+     (case Value is
+         when Logging.Full_Control => "FULL_CONTROL",
+         when Logging.Read         => "READ",
+         when Logging.Write        => "WRITE");
+
+   function Date_Source_Image
+     (Value : Logging.Partition_Date_Source) return String is
+     (case Value is
+         when Logging.Event_Time    => "EventTime",
+         when Logging.Delivery_Time => "DeliveryTime");
+
+   procedure Write_Optional_String
+     (Item  : in out XML_Writers.Writer;
+      Name  : String;
+      Value : ACL.Optional_String) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Text_Element (Item, Name, US.To_String (Value.Value));
+      end if;
+   end Write_Optional_String;
+
+   procedure Write_Grantee
+     (Item  : in out XML_Writers.Writer;
+      Value : ACL.Grantee) is
+   begin
+      if not Value.Is_Set then
+         return;
+      end if;
+      XML_Writers.Start_Element (Item, "Grantee");
+      XML_Writers.Attribute
+        (Item, "type", Grantee_Type_Image (Value.Kind),
+         "http://www.w3.org/2001/XMLSchema-instance", "xsi");
+      Write_Optional_String (Item, "DisplayName", Value.Display_Name);
+      Write_Optional_String (Item, "EmailAddress", Value.Email_Address);
+      Write_Optional_String (Item, "ID", Value.ID);
+      Write_Optional_String (Item, "URI", Value.URI);
+      XML_Writers.End_Element (Item, "Grantee");
+   end Write_Grantee;
+
+   function Serialize
+     (Value  : Logging.Logging_Status;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document (Item, Root_Name, Namespace_URI);
+      if Value.Is_Enabled then
+         XML_Writers.Start_Element (Item, "LoggingEnabled");
+         XML_Writers.Text_Element
+           (Item, "TargetBucket", US.To_String (Value.Target_Bucket));
+         if Value.Grants.Is_Set then
+            XML_Writers.Start_Element (Item, "TargetGrants");
+            for Grant of Value.Grants.Grants loop
+               XML_Writers.Start_Element (Item, "Grant");
+               Write_Grantee (Item, Grant.Principal);
+               if Grant.Permission.Is_Set then
+                  XML_Writers.Text_Element
+                    (Item, "Permission",
+                     Permission_Image (Grant.Permission.Value));
+               end if;
+               XML_Writers.End_Element (Item, "Grant");
+            end loop;
+            XML_Writers.End_Element (Item, "TargetGrants");
+         end if;
+         XML_Writers.Text_Element
+           (Item, "TargetPrefix", US.To_String (Value.Target_Prefix));
+         if Value.Key_Format.Is_Set then
+            XML_Writers.Start_Element (Item, "TargetObjectKeyFormat");
+            if Value.Key_Format.Simple_Prefix then
+               XML_Writers.Empty_Element (Item, "SimplePrefix");
+            end if;
+            if Value.Key_Format.Partitioned_Prefix then
+               XML_Writers.Start_Element (Item, "PartitionedPrefix");
+               if Value.Key_Format.Date_Source.Is_Set then
+                  XML_Writers.Text_Element
+                    (Item, "PartitionDateSource",
+                     Date_Source_Image (Value.Key_Format.Date_Source.Value));
+               end if;
+               XML_Writers.End_Element (Item, "PartitionedPrefix");
+            end if;
+            XML_Writers.End_Element (Item, "TargetObjectKeyFormat");
+         end if;
+         XML_Writers.End_Element (Item, "LoggingEnabled");
+      end if;
+      return XML_Writers.Finish (Item, Root_Name);
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Logging.Malformed_Logging with
+           "logging serialization violates caller limits";
+   end Serialize;""",
+    ),
+    "PutBucketWebsite": Mutation_Serializer(
+        payload_shape="WebsiteConfiguration",
+        value_unit="Website",
+        value_type="Website_Configuration",
+        closure_sha256=(
+            "b1fa4a9883e1c3f4d4d8b059a5a681b4784903a9c754758ac1dc2c8f010e1fa3"
+        ),
+        body="""   function Protocol_Image
+     (Value : Website.Protocol) return String is
+     (case Value is
+         when Website.HTTP  => "http",
+         when Website.HTTPS => "https");
+
+   procedure Write_Optional_String
+     (Item  : in out XML_Writers.Writer;
+      Name  : String;
+      Value : Website.Optional_String) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Text_Element (Item, Name, US.To_String (Value.Value));
+      end if;
+   end Write_Optional_String;
+
+   procedure Write_Optional_Protocol
+     (Item  : in out XML_Writers.Writer;
+      Name  : String;
+      Value : Website.Optional_Protocol) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Text_Element (Item, Name, Protocol_Image (Value.Value));
+      end if;
+   end Write_Optional_Protocol;
+
+   function Serialize
+     (Value  : Website.Website_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      if Value.Error.Is_Set and then US.Length (Value.Error.Key) = 0 then
+         raise Website.Malformed_Website with
+           "website ErrorDocument Key is required and nonempty";
+      end if;
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document (Item, Root_Name, Namespace_URI);
+      if Value.Error.Is_Set then
+         XML_Writers.Start_Element (Item, "ErrorDocument");
+         XML_Writers.Text_Element
+           (Item, "Key", US.To_String (Value.Error.Key));
+         XML_Writers.End_Element (Item, "ErrorDocument");
+      end if;
+      if Value.Index.Is_Set then
+         XML_Writers.Start_Element (Item, "IndexDocument");
+         XML_Writers.Text_Element
+           (Item, "Suffix", US.To_String (Value.Index.Suffix));
+         XML_Writers.End_Element (Item, "IndexDocument");
+      end if;
+      if Value.Redirect_All.Is_Set then
+         XML_Writers.Start_Element (Item, "RedirectAllRequestsTo");
+         XML_Writers.Text_Element
+           (Item, "HostName", US.To_String (Value.Redirect_All.Host_Name));
+         Write_Optional_Protocol
+           (Item, "Protocol", Value.Redirect_All.Scheme);
+         XML_Writers.End_Element (Item, "RedirectAllRequestsTo");
+      end if;
+      if Value.Routes.Is_Set then
+         XML_Writers.Start_Element (Item, "RoutingRules");
+         for Rule of Value.Routes.Rules loop
+            XML_Writers.Start_Element (Item, "RoutingRule");
+            if Rule.Condition.Is_Set then
+               XML_Writers.Start_Element (Item, "Condition");
+               Write_Optional_String
+                 (Item, "HttpErrorCodeReturnedEquals",
+                  Rule.Condition.HTTP_Error_Code);
+               Write_Optional_String
+                 (Item, "KeyPrefixEquals", Rule.Condition.Key_Prefix);
+               XML_Writers.End_Element (Item, "Condition");
+            end if;
+            XML_Writers.Start_Element (Item, "Redirect");
+            Write_Optional_String
+              (Item, "HostName", Rule.Redirect.Host_Name);
+            Write_Optional_String
+              (Item, "HttpRedirectCode",
+               Rule.Redirect.HTTP_Redirect_Code);
+            Write_Optional_Protocol
+              (Item, "Protocol", Rule.Redirect.Scheme);
+            Write_Optional_String
+              (Item, "ReplaceKeyPrefixWith",
+               Rule.Redirect.Replace_Key_Prefix);
+            Write_Optional_String
+              (Item, "ReplaceKeyWith", Rule.Redirect.Replace_Key);
+            XML_Writers.End_Element (Item, "Redirect");
+            XML_Writers.End_Element (Item, "RoutingRule");
+         end loop;
+         XML_Writers.End_Element (Item, "RoutingRules");
+      end if;
+      return XML_Writers.Finish (Item, Root_Name);
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Website.Malformed_Website with
+           "website serialization violates caller limits";
+   end Serialize;""",
+    ),
+}
+
+
+def mutation_serializer_text(
+    model: dict[str, Any], operation_name: str
+) -> tuple[str, str, str]:
+    """Generate a bounded request serializer after exact model verification."""
+    descriptor = MUTATION_SERIALIZERS[operation_name]
+    operation = model["operations"][operation_name]
+    input_shape = model["shapes"][operation["input"]["shape"]]
+    payload_member = input_shape.get("payload")
+    payload = input_shape.get("members", {}).get(payload_member, {})
+    namespace = payload.get("xmlNamespace", {}).get("uri", "")
+    audit = s3_operation.operation_audit(model, operation_name)
+    closure_sha256 = hashlib.sha256(
+        json.dumps(
+            audit["shapes"], sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        operation.get("http", {}).get("method") != "PUT"
+        or audit["response_status"] != 200
+        or payload_member is None
+        or payload.get("shape") != descriptor.payload_shape
+        or namespace != "http://s3.amazonaws.com/doc/2006-03-01/"
+        or closure_sha256 != descriptor.closure_sha256
+    ):
+        raise s3_operation.Audit_Error(
+            f"generated mutation serializer contract changed: {operation_name}"
+        )
+    root_name = payload.get("locationName", descriptor.payload_shape)
+    unit = (
+        "flyology-object_storage-s3-generated_"
+        + re.sub(r"(?<!^)(?=[A-Z])", "_", operation_name).lower()
+        + "_xml"
+    )
+    child = "Generated_" + re.sub(
+        r"(?<!^)(?=[A-Z])", "_", operation_name
+    ) + "_XML"
+    package = "Flyology.Object_Storage.S3." + child
+    value_package = "Flyology.Object_Storage.S3." + descriptor.value_unit
+    spec = f'''with {value_package};
+with Flyology.Object_Storage.S3.XML;
+
+--  Generated by tools/s3-operation.py; do not edit.
+--  Exact bounded request serializer for {operation_name}.
+package {package} is
+
+   function Serialize
+     (Value  : {value_package}.{descriptor.value_type};
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits) return String;
+
+end {package};
+'''
+    extra_context = (
+        "with Flyology.Object_Storage.S3.ACL;\n"
+        if operation_name == "PutBucketLogging"
+        else ""
+    )
+    aliases = f'''   package US renames Ada.Strings.Unbounded;
+   package XML renames Flyology.Object_Storage.S3.XML;
+   package XML_Writers renames Flyology.Object_Storage.S3.XML_Writers;
+   package {descriptor.value_unit} renames {value_package};
+'''
+    if operation_name == "PutBucketLogging":
+        aliases += (
+            "   package ACL renames Flyology.Object_Storage.S3.ACL;\n"
+        )
+    body = f'''with Ada.Strings.Unbounded;
+{extra_context}with Flyology.Object_Storage.S3.XML_Writers;
+
+package body {package} is
+
+{aliases}
+   --  These values are owned by the pinned Botocore payload declaration;
+   --  changing either changes the serialized and signed request contract.
+   Root_Name : constant String := "{root_name}";
+   Namespace_URI : constant String := "{namespace}";
+
+{descriptor.body}
+
+end {package};
+'''
+    return unit, spec, body
+
+
 def generated_ada_outputs(
     registry: s3_operation.Registry,
     model: dict[str, Any],
