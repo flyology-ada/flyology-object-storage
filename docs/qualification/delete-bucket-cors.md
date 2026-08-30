@@ -1,10 +1,9 @@
 # DeleteBucketCors client qualification
 
-This record qualifies the strict bounded provider-owned composable, typed
-synchronous, and convenience clients and corpus for `DeleteBucketCors`. It
-does not claim CORS configuration storage in any
-Flyology backend, an authenticated Flyology server route, or external-server
-interoperability.
+This record defines the conditional qualification boundary for the strict
+bounded provider-owned composable, typed synchronous, convenience, backend,
+and authenticated server paths for `DeleteBucketCors`. It does not claim
+external-server interoperability or directory-bucket endpoint behavior.
 
 ## Pinned authority and inventory
 
@@ -51,6 +50,8 @@ rejection without retry, detached work, or retained caller input. A response-
 observed modeled rejection proves non-application only for the maintained
 conclusive status/code set; every ambiguous admitted failure remains outcome
 unknown and requires caller-selected read reconciliation before retry.
+Put-only checksum and request-body errors never classify a DeleteBucketCors
+rejection as conclusive or as an invalid Delete request.
 
 ## Corpus and coverage boundary
 
@@ -70,10 +71,11 @@ response-sink failure with outcome-unknown disposition. The same sequence runs
 under native and Flyology lightweight task owners, and the root gate repeats it
 three times.
 
-The machine ledger records `DeleteBucketCors` as `missing / covered / missing /
-covered`. Client and corpus evidence do not manufacture backend persistence or
-a server route. Promoting either remaining cell requires independent storage,
-reopen/crash/concurrency, authenticated routing, and black-box tests.
+The machine ledger records `DeleteBucketCors` as `covered / covered / covered /
+covered`. Memory, pure-files, and SQLite backend evidence covers idempotent
+deletion and missing-bucket behavior; authenticated server and socket evidence
+covers exact routing and status. These maintained paths do not establish
+external-provider compatibility.
 
 ## Gate evidence
 
@@ -92,3 +94,11 @@ The provider-owned scheduling path requires a fresh serialized exact-tree
 outside the nine SPARK manifest units. Proof evidence is recorded only after
 the shared formal lane is granted and the maintained wrapper and post-run host
 audit both complete cleanly.
+
+The focused generated-model documentation slice has a green maintained full
+test wrapper and fresh region-scoped GNATdoc measurement. That measurement
+removed exactly the one candidate-owned `Delete_Bucket_Cors_Operation` warning
+and added none, without changing any Ada declaration token. Repository-wide
+and selected-operation GNATdoc qualification remain blocked by pre-existing
+warnings outside this declaration region. Every command in the maintained
+`delete_bucket_cors` lane must still succeed before a qualification claim.

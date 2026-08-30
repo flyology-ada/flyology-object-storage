@@ -19,7 +19,7 @@ remain inventory-only until their audits gain executable evidence.
 | CreateSession | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucket | Delete | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketAnalyticsConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketCors | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteBucketCors | Delete_CORS | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketEncryption | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketIntelligentTieringConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketInventoryConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
