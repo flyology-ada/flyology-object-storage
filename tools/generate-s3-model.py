@@ -36,6 +36,7 @@ OPERATION_DOCUMENTATION = {
         "Delete metadata-table configuration"
     ),
     "DeleteBucketMetricsConfiguration": "Delete metrics configuration",
+    "DeleteBucketOwnershipControls": "Delete bucket ownership controls",
     "DeleteBucketReplication": "Delete bucket replication",
     "DeleteBucketWebsite": "Delete bucket website",
     "DeleteBucketTagging": "Delete bucket tagging operation",

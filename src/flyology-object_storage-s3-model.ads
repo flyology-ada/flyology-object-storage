@@ -28,6 +28,8 @@ is
    --    Delete metadata-table configuration
    --  @enum Delete_Bucket_Metrics_Configuration_Operation
    --    Delete metrics configuration
+   --  @enum Delete_Bucket_Ownership_Controls_Operation Delete bucket ownership
+   --    controls
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Delete_Bucket_Website_Operation Delete bucket website
