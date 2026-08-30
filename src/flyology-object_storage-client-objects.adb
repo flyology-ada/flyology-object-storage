@@ -65,6 +65,7 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.Get_Object_ACL_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
+   use type Low_Level.Head_Object_Outcome_Kind;
    use type Core.Range_Parse_Status;
 
    use type Low_Level.Delete_Object_Outcome_Kind;
@@ -133,6 +134,24 @@ package body Flyology.Object_Storage.Client.Objects is
           (Returned_Payer /= "requester"
            or else Requested_Payer = "requester");
    end Get_Object_Response_Bound;
+
+   function Head_Object_Response_Bound
+     (Result        : Low_Level.Head_Object_Result;
+      Version_ID    : US.Unbounded_String;
+      Request_Payer : US.Unbounded_String) return Boolean
+   is
+      Requested_Version : constant String := US.To_String (Version_ID);
+      Requested_Payer : constant String := US.To_String (Request_Payer);
+      Returned_Payer : constant String :=
+        US.To_String (Result.Request_Charged);
+   begin
+      return
+        (Requested_Version'Length = 0
+         or else US.To_String (Result.Version_ID) = Requested_Version)
+        and then
+          (Returned_Payer /= "requester"
+           or else Requested_Payer = "requester");
+   end Head_Object_Response_Bound;
 
    procedure Raise_List_Objects_Exchange_Failure
      (Result : List_Objects_Result) is
@@ -2900,11 +2919,29 @@ package body Flyology.Object_Storage.Client.Objects is
          Item.Final_Result := Head_Exchange_Failure (HTTP_Result);
       else
          begin
-            Item.Final_Result :=
-              (Kind     => Head_Response_Available,
-               Failure  => No_Failure,
-               Response => Low_Level.Decode_Head_Object_Complete_Response
-                 (Response, ""));
+            declare
+               Head : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Decode_Head_Object_Complete_Response
+                   (Response, "");
+            begin
+               if Head.Kind = Low_Level.Object_Found
+                 and then not Head_Object_Response_Bound
+                   (Head.Result, Item.Requested_Version_ID,
+                    Item.Requested_Request_Payer)
+               then
+                  Item.Final_Result :=
+                    (Kind        => Head_Exchange_Failed,
+                     Failure     => Corrupt_Or_Invalid_Response,
+                     HTTP_Result => HTTP_Client.Response_Invalid,
+                     HTTP_Phase  => HTTP_Client.Waiting_Response_Head,
+                     Detail      => US.Null_Unbounded_String);
+               else
+                  Item.Final_Result :=
+                    (Kind     => Head_Response_Available,
+                     Failure  => No_Failure,
+                     Response => Head);
+               end if;
+            end;
          exception
             when Low_Level.Invalid_Response =>
                Item.Final_Result :=
@@ -2987,6 +3024,8 @@ package body Flyology.Object_Storage.Client.Objects is
       end if;
       Operation.Prepared := Low_Level.Prepare_Head_Object
         (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Requested_Version_ID := Parameters.Version_ID;
+      Operation.Requested_Request_Payer := Parameters.Request_Payer;
       Operation.Deadline := Deadline;
       Operation.Has_Final_Result := False;
       Operation.Has_Saved_Error := False;

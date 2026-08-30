@@ -947,6 +947,25 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Head_Bucket_Outcome;
 
    --  Every input member in the pinned HeadObject request shape.
+   --  @field If_Match Optional exact entity-tag precondition
+   --  @field If_Modified_Since Optional modified-since precondition
+   --  @field If_None_Match Optional negative entity-tag precondition
+   --  @field If_Unmodified_Since Optional unmodified-since precondition
+   --  @field Byte_Range_Header Optional exact byte-range request
+   --  @field Response_Cache_Control Optional cache-control override
+   --  @field Response_Content_Disposition Optional disposition override
+   --  @field Response_Content_Encoding Optional encoding override
+   --  @field Response_Content_Language Optional language override
+   --  @field Response_Content_Type Optional media-type override
+   --  @field Response_Expires Optional expiry override
+   --  @field Version_ID Optional exact object-version selector
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key Optional base64 customer key
+   --  @field SSE_Customer_Key_MD5 Optional base64 customer-key digest
+   --  @field Request_Payer Optional requester-pays admission value
+   --  @field Part_Number Optional retained multipart part selector
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Checksum_Mode Whether modeled checksum headers are requested
    type Head_Object_Parameters is record
       If_Match                 : Ada.Strings.Unbounded.Unbounded_String;
       If_Modified_Since        : Ada.Strings.Unbounded.Unbounded_String;
@@ -970,6 +989,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Checksum_Mode            : Boolean := False;
    end record;
 
+   --  Prepare one modeled HeadObject request.
+   --  @param Origin Exact HTTP origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used only during signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request with retained response-binding values
    function Prepare_Head_Object
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -980,15 +1009,62 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  One modeled object metadata name and value.
+   --  @field Name Metadata name without the x-amz-meta prefix
+   --  @field Value Exact metadata value
    type Metadata_Entry is record
       Name  : Ada.Strings.Unbounded.Unbounded_String;
       Value : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Ordered collection of modeled object metadata entries.
    package Metadata_Entry_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Metadata_Entry);
 
    --  Every output member in the pinned HeadObject response shape.
+   --  @field Delete_Marker Optional delete-marker response value
+   --  @field Accept_Ranges Optional accepted range unit
+   --  @field Expiration Optional object-expiration metadata
+   --  @field Restore Optional archive-restore metadata
+   --  @field Archive_Status Optional archive access state
+   --  @field Last_Modified Exact last-modified response value
+   --  @field Content_Length Exact selected representation length
+   --  @field Checksum_CRC32 Optional CRC32 checksum
+   --  @field Checksum_CRC32C Optional CRC32C checksum
+   --  @field Checksum_CRC64NVME Optional CRC64NVME checksum
+   --  @field Checksum_SHA1 Optional SHA1 checksum
+   --  @field Checksum_SHA256 Optional SHA256 checksum
+   --  @field Checksum_SHA512 Optional SHA512 checksum
+   --  @field Checksum_MD5 Optional MD5 checksum
+   --  @field Checksum_XXHASH64 Optional XXHASH64 checksum
+   --  @field Checksum_XXHASH3 Optional XXHASH3 checksum
+   --  @field Checksum_XXHASH128 Optional XXHASH128 checksum
+   --  @field Checksum_Type Optional full-object or composite checksum kind
+   --  @field Entity_Tag Exact opaque entity tag
+   --  @field Missing_Meta Optional omitted metadata count
+   --  @field Version_ID Optional selected object-version response value
+   --  @field Cache_Control Optional cache-control metadata
+   --  @field Content_Disposition Optional content disposition
+   --  @field Content_Encoding Optional content encoding
+   --  @field Content_Language Optional content language
+   --  @field Content_Type Optional media type
+   --  @field Content_Range Optional resolved byte range
+   --  @field Expires Optional expiry metadata
+   --  @field Website_Redirect_Location Optional website redirect target
+   --  @field Server_Side_Encryption Optional server encryption algorithm
+   --  @field Metadata Complete modeled user metadata
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key_MD5 Optional customer-key digest
+   --  @field SSE_KMS_Key_ID Optional KMS key identifier
+   --  @field Bucket_Key_Enabled Optional bucket-key state
+   --  @field Storage_Class Optional exact storage class
+   --  @field Request_Charged Optional requester-pays response value
+   --  @field Replication_Status Optional replication state
+   --  @field Parts_Count Optional retained multipart part count
+   --  @field Tag_Count Optional object tag count
+   --  @field Object_Lock_Mode Optional retention mode
+   --  @field Object_Lock_Retain_Until_Date Optional retention deadline
+   --  @field Object_Lock_Legal_Hold_Status Optional legal-hold state
    type Head_Object_Result is record
       Delete_Marker             : Optional_Boolean;
       Accept_Ranges             : Ada.Strings.Unbounded.Unbounded_String;
@@ -1037,9 +1113,17 @@ package Flyology.Object_Storage.Client.Low_Level is
         Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of a completed HeadObject response.
+   --  @enum Object_Found Complete modeled metadata is available
+   --  @enum Head_Object_Rejected The service rejected the read
    type Head_Object_Outcome_Kind is
      (Object_Found, Head_Object_Rejected);
 
+   --  Complete modeled HeadObject metadata or structured S3 rejection.
+   --  @field Kind Selects the success or rejection variant
+   --  @field Status Exact HTTP response status
+   --  @field Result Complete validated object metadata
+   --  @field Error Structured S3 rejection
    type Head_Object_Outcome
      (Kind : Head_Object_Outcome_Kind := Head_Object_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -1055,6 +1139,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Content_Length is narrowed and Content_Range remains absent. The decoder
    --  also accepts a coherent 206 plus Content_Range from pinned compatible
    --  implementations whose wire behavior diverges from AWS.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete response body, which must be empty
+   --  @param Headers Complete modeled response metadata
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @return Modeled HeadObject success or rejection
    function Decode_Head_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -1072,6 +1162,12 @@ package Flyology.Object_Storage.Client.Low_Level is
      (Response : Flyology.HTTP.Client.Response;
       Payload  : String) return Head_Object_Outcome;
 
+   --  Execute one prepared HeadObject request and bind its response.
+   --  @param Client Configured HTTP client
+   --  @param Prepared Exact signed HeadObject request
+   --  @param Timeout Complete exchange timeout
+   --  @param Token Optional cancellation source
+   --  @return Modeled response bound to the prepared request
    function Execute_Head_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -7794,6 +7890,13 @@ private
       Requested_Get_Object_Version_ID :
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Get_Object_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived HeadObject response binding: an explicit version selector
+      --  must be echoed by a successful response, and a charged response is
+      --  valid only when the exact request admitted requester pays.
+      Requested_Head_Object_Version_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Head_Object_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       --  A successful explicit-version tagging response must echo this exact
       --  selector. Empty means the request selected the current version, so

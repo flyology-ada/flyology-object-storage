@@ -14407,6 +14407,28 @@ package body Object_Storage_Test_Cases is
          end;
          Assert
            (Raised, "GetObject accepted an unsafe version identifier");
+         Parameters.Version_ID :=
+           US.To_Unbounded_String
+             ("invalid" & Character'Val (1) & "version");
+         Raised := False;
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "HeadObject accepted an unsafe version identifier");
       end;
 
       declare
@@ -14945,6 +14967,16 @@ package body Object_Storage_Test_Cases is
          Headers.Entity_Tag := US.To_Unbounded_String ("bare-etag");
          Expect_Invalid
            (200, Headers, "HeadObject accepted an unquoted ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Version_ID :=
+           US.To_Unbounded_String
+             ("invalid" & Character'Val (16#7F#) & "version");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted an unsafe version ID");
+         Headers.Version_ID := US.Null_Unbounded_String;
+         Headers.Request_Charged := US.To_Unbounded_String ("owner");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted invalid request charging");
       end;
 
       declare

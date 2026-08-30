@@ -4328,6 +4328,8 @@ private
    with record
       Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
       Prepared   : aliased Low_Level.Prepared_Request;
+      Requested_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Request_Payer : Ada.Strings.Unbounded.Unbounded_String;
       Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
       Final_Result : Head_Result;
       Has_Final_Result : Boolean := False;

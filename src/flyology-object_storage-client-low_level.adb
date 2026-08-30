@@ -5134,11 +5134,27 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters : Head_Object_Parameters;
       Identity   : Credentials;
       Region     : String;
-      Timestamp  : String) return Prepared_Request is
-     (Prepare_Object_Read
+      Timestamp  : String) return Prepared_Request
+   is
+      Version_ID : constant String := US.To_String (Parameters.Version_ID);
+   begin
+      if Version_ID'Length > 0
+        and then
+          (not S3.Deletions.Valid_Version_ID (Version_ID)
+           or else not Valid_List_Response_Header_Text (Version_ID))
+      then
+         raise Invalid_Request with "invalid HeadObject version identifier";
+      end if;
+      return Result : Prepared_Request := Prepare_Object_Read
         (Model.Head_Object_Operation, Head_Object_Operation, "HeadObject",
          Origin, Style, Bucket, Key, Parameters, Identity, Region,
-         Timestamp));
+         Timestamp)
+      do
+         Result.Requested_Head_Object_Version_ID := Parameters.Version_ID;
+         Result.Requested_Head_Object_Request_Payer :=
+           Parameters.Request_Payer;
+      end return;
+   end Prepare_Head_Object;
 
    function Prepare_Get_Object
      (Origin     : Flyology.HTTP.Origin;
@@ -5509,6 +5525,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
                    "AES256")
         or else not Valid_Head_Object_Enum (Value.Storage_Class, 36)
         or else not Valid_Head_Object_Enum (Value.Request_Charged, 37)
+        or else
+          (US.Length (Value.Version_ID) > 0
+           and then
+             (not S3.Deletions.Valid_Version_ID
+                (US.To_String (Value.Version_ID))
+              or else not Valid_List_Response_Header_Text
+                (US.To_String (Value.Version_ID))))
         or else not Valid_Head_Object_Enum (Value.Replication_Status, 38)
         or else not Valid_Head_Object_Enum (Value.Object_Lock_Mode, 41)
         or else not Valid_Head_Object_Enum
@@ -5520,6 +5543,25 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "invalid HeadObject response headers";
       end if;
    end Validate_Head_Object_Headers;
+
+   function Head_Object_Response_Bound
+     (Value    : Head_Object_Result;
+      Prepared : Prepared_Request) return Boolean
+   is
+      Requested_Version : constant String := US.To_String
+        (Prepared.Requested_Head_Object_Version_ID);
+      Requested_Payer : constant String := US.To_String
+        (Prepared.Requested_Head_Object_Request_Payer);
+      Returned_Payer : constant String := US.To_String
+        (Value.Request_Charged);
+   begin
+      return
+        (Requested_Version'Length = 0
+         or else US.To_String (Value.Version_ID) = Requested_Version)
+        and then
+          (Returned_Payer /= "requester"
+           or else Requested_Payer = "requester");
+   end Head_Object_Response_Bound;
 
    function Decode_Head_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
@@ -5736,8 +5778,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All (Response, 1, Token);
       begin
-         return Decode_Head_Object_Complete_Response
-           (Response, Flyology.Bytes.To_Byte_String (Payload));
+         declare
+            Result : constant Head_Object_Outcome :=
+              Decode_Head_Object_Complete_Response
+                (Response, Flyology.Bytes.To_Byte_String (Payload));
+         begin
+            if Result.Kind = Object_Found
+              and then not Head_Object_Response_Bound
+                (Result.Result, Prepared)
+            then
+               raise Invalid_Response with
+                 "HeadObject response does not match prepared request";
+            end if;
+            return Result;
+         end;
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

@@ -744,6 +744,10 @@ procedure S3_HTTP_Socket_Corpus is
    Get_Admission_Lightweight     : aliased Flyology.Cancellation.Token;
    Get_Drain_Native              : aliased Flyology.Cancellation.Token;
    Get_Drain_Lightweight         : aliased Flyology.Cancellation.Token;
+   Head_Admission_Native         : aliased Flyology.Cancellation.Token;
+   Head_Admission_Lightweight    : aliased Flyology.Cancellation.Token;
+   Head_Drain_Native             : aliased Flyology.Cancellation.Token;
+   Head_Drain_Lightweight        : aliased Flyology.Cancellation.Token;
    Delete_Admission_Native       : aliased Flyology.Cancellation.Token;
    Delete_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
    Delete_Drain_Native           : aliased Flyology.Cancellation.Token;
@@ -830,6 +834,7 @@ procedure S3_HTTP_Socket_Corpus is
       List_Object_Versions_Cancellation,
       Put_Object_Cancellation,
       Get_Object_Cancellation,
+      Head_Object_Cancellation,
       Delete_Object_Cancellation,
       Delete_Objects_Cancellation,
       Complete_Multipart_Cancellation,
@@ -1624,6 +1629,12 @@ procedure S3_HTTP_Socket_Corpus is
                         else
                            Get_Drain_Lightweight.Request;
                         end if;
+                     when Head_Object_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Head_Drain_Native.Request;
+                        else
+                           Head_Drain_Lightweight.Request;
+                        end if;
                      when Delete_Object_Cancellation =>
                         if Cancellation_Round = 1 then
                            Delete_Drain_Native.Request;
@@ -1764,6 +1775,12 @@ procedure S3_HTTP_Socket_Corpus is
                      else
                         Get_Admission_Lightweight.Request;
                      end if;
+                  when Head_Object_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Head_Admission_Native.Request;
+                     else
+                        Head_Admission_Lightweight.Request;
+                     end if;
                   when Delete_Object_Cancellation =>
                      if Cancellation_Round = 1 then
                         Delete_Admission_Native.Request;
@@ -1889,6 +1906,9 @@ procedure S3_HTTP_Socket_Corpus is
                         when Get_Object_Cancellation =>
                            raise Program_Error with
                              "GetObject cancel peer sent data before drain";
+                        when Head_Object_Cancellation =>
+                           raise Program_Error with
+                             "HeadObject cancel peer sent data before drain";
                         when Delete_Object_Cancellation =>
                            raise Program_Error with
                              "DeleteObject cancel peer sent data before " &
@@ -2651,6 +2671,71 @@ procedure S3_HTTP_Socket_Corpus is
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/scoped-head?versionId=head-version",
             Expected_If_Match => """head-generation""");
+         Serve
+           ("", "HEAD",
+            "/example-bucket/scoped-head-cancel?" &
+              "versionId=head-cancel-version",
+            Await_Cancellation => True,
+            Cancellation_Kind => Head_Object_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-restart""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-version-id: head-cancel-version" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-restart?" &
+              "versionId=head-cancel-version");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-invalid""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-version-missing?" &
+              "versionId=expected-head-version");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-invalid""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-version-id: wrong-head-version" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-version-mismatch?" &
+              "versionId=expected-head-version");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-invalid""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-version-id: bad" & Character'Val (1) & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-version-control?" &
+              "versionId=expected-head-version");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-invalid""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-version-id: bad" & Character'Val (16#7F#) & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-version-del?" &
+              "versionId=expected-head-version");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-invalid""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-request-charged: requester" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-payer-mismatch");
          Serve
            (HTTP_Response
               ("404 Not Found", "",
@@ -4804,7 +4889,7 @@ procedure S3_HTTP_Socket_Corpus is
                "ETag: ""head-etag""" & CRLF &
                "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
                "Content-Type: application/test" & CRLF &
-               "x-amz-version-id: head-version" & CRLF &
+               "x-amz-version-id: version one" & CRLF &
                "x-amz-checksum-sha256: " &
                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3" & CRLF &
                "x-amz-checksum-type: COMPOSITE" & CRLF &
@@ -4891,7 +4976,8 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-object-lock-mode: COMPLIANCE" & CRLF &
                "x-amz-object-lock-legal-hold: OFF" & CRLF,
                Omit_Content_Length => True),
-            "HEAD", "/example-bucket/typed-head");
+            "HEAD", "/example-bucket/typed-head",
+            Expected_Request_Payer => "requester");
          Serve
            (HTTP_Response
               ("206 Partial Content", "getdata",
@@ -9342,6 +9428,175 @@ procedure S3_HTTP_Socket_Corpus is
                        "scoped HeadObject response mismatch";
                   end if;
                end;
+            end;
+
+            declare
+               procedure Run_Head_Object_Cancellation is
+                  Parameters : Low_Level.Head_Object_Parameters :=
+                    (others => <>);
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+               begin
+                  Parameters.Version_ID :=
+                    US.To_Unbounded_String ("head-cancel-version");
+                  if Round = 1 then
+                     Head_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Head_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Head_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Head_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale HeadObject cancellation readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Head_Operation := Head_Object
+                       (Cancel_Set'Access, HTTP'Access, Origin,
+                        "example-bucket", "scoped-head-cancel",
+                        Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Head_Result;
+                     HTTP_Rejected, Token_Rejected : Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "HeadObject did not remain active through " &
+                          "admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Head_Exchange_Failed
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                     then
+                        raise Program_Error with
+                          "admitted HeadObject cancellation mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "HeadObject drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Objects.Head_Object
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           "scoped-head-restart", Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "HeadObject restart changed a retained owner";
+                     end;
+                     begin
+                        Objects.Head_Object
+                          (HTTP'Access, Origin, "example-bucket",
+                           "scoped-head-restart", Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "HeadObject restart changed a retained owner";
+                     end;
+                     if not HTTP_Rejected or else not Token_Rejected then
+                        raise Program_Error with
+                          "HeadObject accepted a changed retained owner";
+                     end if;
+                     Objects.Head_Object
+                       (HTTP'Access, Origin, "example-bucket",
+                        "scoped-head-restart", Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Head_Response_Available
+                       or else Result.Failure /= No_Failure
+                       or else Result.Response.Kind /= Low_Level.Object_Found
+                       or else Result.Response.Status /= 200
+                       or else US.To_String
+                         (Result.Response.Result.Version_ID) /=
+                           "head-cancel-version"
+                     then
+                        raise Program_Error with
+                          "same-object HeadObject restart mismatch";
+                     end if;
+                  end;
+               end Run_Head_Object_Cancellation;
+            begin
+               Run_Head_Object_Cancellation;
+            end;
+
+            declare
+               procedure Require_Invalid_Head
+                 (Key           : String;
+                  Version_ID    : String := "expected-head-version";
+                  Request_Payer : String := "")
+               is
+                  Parameters : Low_Level.Head_Object_Parameters :=
+                    (others => <>);
+               begin
+                  Parameters.Version_ID :=
+                    US.To_Unbounded_String (Version_ID);
+                  Parameters.Request_Payer :=
+                    US.To_Unbounded_String (Request_Payer);
+                  declare
+                     Result : constant Head_Result := Objects.Head_Object
+                       (HTTP, Origin, "example-bucket", Key, Parameters,
+                        Identity, Timeout => 5.0);
+                  begin
+                     if Result.Kind /= Head_Exchange_Failed
+                       or else Result.Failure /=
+                         Corrupt_Or_Invalid_Response
+                       or else Result.HTTP_Result /=
+                         HTTP_Client.Response_Invalid
+                     then
+                        raise Program_Error with
+                          "HeadObject accepted invalid response binding: " &
+                          Key;
+                     end if;
+                  end;
+               end Require_Invalid_Head;
+            begin
+               Require_Invalid_Head ("scoped-head-version-missing");
+               Require_Invalid_Head ("scoped-head-version-mismatch");
+               Require_Invalid_Head ("scoped-head-version-control");
+               Require_Invalid_Head ("scoped-head-version-del");
+               Require_Invalid_Head
+                 ("scoped-head-payer-mismatch", Version_ID => "");
             end;
 
             declare
@@ -16849,7 +17104,7 @@ procedure S3_HTTP_Socket_Corpus is
                 "Fri, 21 Aug 2026 17:00:00 GMT"
               or else US.To_String (Result.Content_Type) /=
                 "application/test"
-              or else US.To_String (Result.Version_ID) /= "head-version"
+              or else US.To_String (Result.Version_ID) /= "version one"
               or else US.To_String (Result.Checksum_SHA256) /=
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3"
               or else US.To_String (Result.Checksum_Type) /= "COMPOSITE"
@@ -16944,32 +17199,38 @@ procedure S3_HTTP_Socket_Corpus is
          end loop;
          declare
             Parameters : Low_Level.Head_Object_Parameters;
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Head_Object
-                (Origin, Low_Level.Path_Style, "example-bucket",
-                 "typed-head", Parameters, Identity, "us-east-1",
-                 "20130524T000000Z");
-            Result : constant Low_Level.Head_Object_Outcome :=
-              Low_Level.Execute_Head_Object
-                (HTTP, Prepared, Timeout => 5.0);
          begin
-            if Result.Kind /= Low_Level.Object_Found
-              or else Result.Status /= 200
-              or else Result.Result.Content_Length /= 7
-              or else US.To_String (Result.Result.Entity_Tag) /=
-                """typed-head"""
-              or else Natural (Result.Result.Metadata.Length) /= 2
-              or else US.To_String
-                (Result.Result.Metadata.First_Element.Name) /= "project"
-              or else not Result.Result.Parts_Count.Is_Set
-              or else Result.Result.Parts_Count.Value /= 3
-              or else US.To_String (Result.Result.Server_Side_Encryption) /=
-                "aws:backup"
-              or else US.To_String (Result.Result.Storage_Class) /=
-                "AWS_BACKUP_WARM"
-            then
-               raise Program_Error with "typed HeadObject result mismatch";
-            end if;
+            Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-head", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Found
+                 or else Result.Status /= 200
+                 or else Result.Result.Content_Length /= 7
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """typed-head"""
+                 or else Natural (Result.Result.Metadata.Length) /= 2
+                 or else US.To_String
+                   (Result.Result.Metadata.First_Element.Name) /= "project"
+                 or else not Result.Result.Parts_Count.Is_Set
+                 or else Result.Result.Parts_Count.Value /= 3
+                 or else US.To_String
+                   (Result.Result.Server_Side_Encryption) /= "aws:backup"
+                 or else US.To_String (Result.Result.Storage_Class) /=
+                   "AWS_BACKUP_WARM"
+               then
+                  raise Program_Error with
+                    "typed HeadObject result mismatch";
+               end if;
+            end;
          end;
          declare
             Parameters : Low_Level.Get_Object_Parameters;
