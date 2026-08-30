@@ -13729,10 +13729,19 @@ package body Object_Storage_Test_Cases is
             Outcome_204 : constant Low_Level.Put_Bucket_Tagging_Outcome :=
               Low_Level.Decode_Put_Bucket_Tagging_Response
                 (204, "", Headers);
+            Outcome_Whitespace : constant
+              Low_Level.Put_Bucket_Tagging_Outcome :=
+                Low_Level.Decode_Put_Bucket_Tagging_Response
+                  (200, ASCII.HT & ASCII.LF, Headers);
          begin
             Assert
               (Outcome_200.Kind = Low_Level.Bucket_Tags_Replaced
-               and then Outcome_204.Kind = Low_Level.Bucket_Tags_Replaced,
+               and then Outcome_200.Status = 200
+               and then Outcome_204.Kind = Low_Level.Bucket_Tags_Replaced
+               and then Outcome_204.Status = 204
+               and then Outcome_Whitespace.Kind =
+                 Low_Level.Bucket_Tags_Replaced
+               and then Outcome_Whitespace.Status = 200,
                "typed PutBucketTagging interoperable success responses");
          end;
       end;

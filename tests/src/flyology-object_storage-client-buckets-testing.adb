@@ -6566,7 +6566,7 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          Failure     : Failure_Reason)
       is
          Value : constant Low_Level.Put_Bucket_Tagging_Outcome :=
-           (if Status = 200
+           (if Status in 200 | 204
             then (Kind   => Low_Level.Bucket_Tags_Replaced,
                   Status => Status,
                   Result => (others => <>))
@@ -6581,6 +6581,7 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
            or else Result.Disposition /= Disposition
            or else Result.Failure /= Failure
            or else Result.Admission /= HTTP_Client.Response_Observed
+           or else Result.Response.Status /= Status
          then
             raise Program_Error with
               "PutBucketTagging response normalization mismatch";
@@ -6693,6 +6694,8 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
 
       Check_Put_Response
         (200, "", Bucket_Tag_Mutation_Completed, No_Failure);
+      Check_Put_Response
+        (204, "", Bucket_Tag_Mutation_Completed, No_Failure);
       Check_Put_Response
         (400, "InvalidTag", Bucket_Tag_Mutation_Definitely_Not_Applied,
          Invalid_Request);

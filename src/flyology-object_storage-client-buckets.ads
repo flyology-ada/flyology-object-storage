@@ -9975,8 +9975,15 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Location_Outcome;
 
+   --  Outcome of one synchronous bucket-tag replacement.
+   --  @enum Tags_Replaced Completed payload-free replacement with status
+   --  @enum Put_Tags_Rejected Exact status and structured S3 error
    type Put_Tags_Outcome_Kind is (Tags_Replaced, Put_Tags_Rejected);
 
+   --  Payload-free completed replacement or structured S3 rejection.
+   --  @field Kind Result shape
+   --  @field Status Exact response status
+   --  @field Error Structured S3 rejection
    type Put_Tags_Outcome
      (Kind : Put_Tags_Outcome_Kind := Put_Tags_Rejected)
    is record
@@ -15562,10 +15569,12 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Versioning_Result;
+   --  @exclude
    function Normalize_Put_Bucket_Tagging_Response
      (Value     : Low_Level.Put_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Tagging_Result;
+   --  @exclude
    function Normalize_Put_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;

@@ -633,6 +633,10 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  algorithm emits both the algorithm and matching checksum headers.
    --  Request_Payer is retained for source compatibility with 0.1.0-dev but
    --  is not modeled by S3 and any nonempty value is rejected.
+   --  @field Content_MD5 Optional exact digest or generated document digest
+   --  @field Checksum_Algorithm Optional modeled SDK checksum algorithm
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Request_Payer Compatibility field rejected when nonempty
    type Put_Bucket_Tagging_Parameters is record
       Content_MD5            : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
@@ -640,6 +644,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Payer          : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one nonreplaying PutBucketTagging request.
+   --  @param Origin Exact request origin
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Bucket Bucket whose complete tag set is replaced
+   --  @param Value Complete validated bucket tag set
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request owning the serialized tag document
    function Prepare_Put_Bucket_Tagging
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -650,15 +664,25 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Modeled PutBucketTagging response metadata.
+   --  @field Request_Charged Compatibility field rejected when nonempty
    type Put_Bucket_Tagging_Result is record
       --  Retained for source compatibility. PutBucketTagging has no modeled
       --  request-charging output and a nonempty response value is rejected.
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of one decoded PutBucketTagging response.
+   --  @enum Bucket_Tags_Replaced Completed replacement and exact status
+   --  @enum Put_Bucket_Tagging_Rejected Exact status and structured S3 error
    type Put_Bucket_Tagging_Outcome_Kind is
      (Bucket_Tags_Replaced, Put_Bucket_Tagging_Rejected);
 
+   --  Completed replacement or structured S3 rejection.
+   --  @field Kind Result shape
+   --  @field Status Exact response status
+   --  @field Result Modeled compatibility response metadata
+   --  @field Error Structured S3 rejection
    type Put_Bucket_Tagging_Outcome
      (Kind : Put_Bucket_Tagging_Outcome_Kind :=
        Put_Bucket_Tagging_Rejected)
@@ -672,6 +696,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode exact HTTP 200 or 204 as a payload-free completed replacement.
+   --  Whitespace-only success payload is tolerated for compatibility.
+   --  @param Status Exact response status
+   --  @param Payload Complete bounded response payload
+   --  @param Headers Modeled response metadata
+   --  @param Request_ID Request identifier fallback for structured errors
+   --  @param Host_ID Host identifier fallback for structured errors
+   --  @param Limits Caller-selected XML parser limits
+   --  @return Completed replacement or structured S3 rejection
+   --  @exception Invalid_Response Response metadata or payload is invalid
    function Decode_Put_Bucket_Tagging_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -681,6 +715,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Tagging_Outcome;
 
+   --  Execute one prepared PutBucketTagging exchange synchronously.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact prepared PutBucketTagging request
+   --  @param Timeout Whole-exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and XML limits
+   --  @return Completed replacement or structured S3 rejection
    function Execute_Put_Bucket_Tagging
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
