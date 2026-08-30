@@ -15,6 +15,8 @@ is
    --  @enum Delete_Bucket_Encryption_Operation Delete bucket encryption
    --  @enum Delete_Bucket_Intelligent_Tiering_Configuration_Operation
    --    Delete intelligent-tiering configuration
+   --  @enum Delete_Bucket_Inventory_Configuration_Operation
+   --    Delete inventory configuration
    --  @enum Delete_Bucket_Lifecycle_Operation Delete bucket lifecycle
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation

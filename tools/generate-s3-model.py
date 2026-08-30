@@ -25,6 +25,7 @@ OPERATION_DOCUMENTATION = {
     "DeleteBucketIntelligentTieringConfiguration": (
         "Delete intelligent-tiering configuration"
     ),
+    "DeleteBucketInventoryConfiguration": "Delete inventory configuration",
     "DeleteBucketLifecycle": "Delete bucket lifecycle",
     "DeleteBucketReplication": "Delete bucket replication",
     "DeleteBucketWebsite": "Delete bucket website",
