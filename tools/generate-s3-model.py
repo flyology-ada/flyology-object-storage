@@ -22,6 +22,7 @@ OPERATION_DOCUMENTATION = {
     "CreateBucketMetadataTableConfiguration": (
         "Create metadata-table configuration"
     ),
+    "CreateSession": "Create directory-bucket session credentials",
     "DeleteBucketAnalyticsConfiguration": "Delete analytics",
     "DeleteBucketCors": "Delete bucket CORS operation",
     "DeleteBucketEncryption": "Delete bucket encryption",

@@ -12,6 +12,8 @@ is
    --  Identifiers for operations in the pinned S3 model.
    --  @enum Create_Bucket_Metadata_Table_Configuration_Operation
    --    Create metadata-table configuration
+   --  @enum Create_Session_Operation Create directory-bucket session
+   --    credentials
    --  @enum Delete_Bucket_Analytics_Configuration_Operation Delete analytics
    --  @enum Delete_Bucket_Cors_Operation Delete bucket CORS operation
    --  @enum Delete_Bucket_Encryption_Operation Delete bucket encryption
