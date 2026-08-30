@@ -2648,6 +2648,127 @@ def main() -> None:
         "--operation",
         "DeleteObject",
     ]
+    delete_objects_public_name = "Delete_Objects"
+
+    def assert_delete_objects_registry(candidate):
+        entry = candidate.operations["DeleteObjects"]
+        assert entry.get("public_name") == delete_objects_public_name
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_objects"
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Objects",
+            "Decode_Delete_Objects_Complete_Response",
+            "Execute_Delete_Objects",
+            "Delete_Objects_Operation",
+            "Delete_Objects",
+            "Finish",
+        ]
+        assert "no automatic replay" in entry["certainty"]
+        assert "duplicate-preserving" in entry["certainty"]
+        assert "do not prove" in entry["reconciliation"]
+        assert (
+            "tests/corpora/composable-client/"
+            "delete-objects-certainty.tsv"
+        ) in entry["evidence"]["corpus"]
+        assert "tools/verify-delete-objects-preparation.py" in (
+            entry["evidence"]["corpus"]
+        )
+
+    def reject_delete_objects_registry(candidate, label):
+        try:
+            assert_delete_objects_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} DeleteObjects registry accepted")
+
+    assert_delete_objects_registry(registry)
+    missing_delete_objects_name = copy.deepcopy(registry)
+    del missing_delete_objects_name.operations["DeleteObjects"][
+        "public_name"
+    ]
+    reject_delete_objects_registry(
+        missing_delete_objects_name,
+        "missing public name",
+    )
+    wrong_delete_objects_name = copy.deepcopy(registry)
+    wrong_delete_objects_name.operations["DeleteObjects"][
+        "public_name"
+    ] = "Delete_Object"
+    reject_delete_objects_registry(
+        wrong_delete_objects_name,
+        "wrong public name",
+    )
+    cross_delete_objects_symbol = copy.deepcopy(registry)
+    cross_delete_objects_symbol.operations["DeleteObjects"][
+        "ada_symbols"
+    ][0] = "Prepare_Delete_Object"
+    reject_delete_objects_registry(
+        cross_delete_objects_symbol,
+        "cross-operation symbol",
+    )
+    delete_objects_qualification, delete_objects_commands = (
+        s3_operation.qualification_plan(registry, ["DeleteObjects"])
+    )
+    assert delete_objects_qualification == "delete_objects"
+    assert delete_objects_commands[:3] == [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-delete-objects-preparation.py",
+        ],
+        ["./tools/verify-composable-client-fixtures.sh"],
+        ["./tools/test-composable-client-fixtures-verifier.sh"],
+    ]
+    assert delete_objects_commands[3:6] == [
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_objects_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-objects-gnatdoc",
+        "--operation",
+        "DeleteObjects",
+    ]
+    assert delete_objects_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_delete_objects_lane = copy.deepcopy(registry)
+    malformed_delete_objects_lane.operations["DeleteObjects"][
+        "qualification"
+    ] = "missing_delete_objects_lane"
+    try:
+        s3_operation.qualification_plan(
+            malformed_delete_objects_lane,
+            ["DeleteObjects"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError("malformed DeleteObjects lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteObjects", "DeleteObjects"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate DeleteObjects lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteObject", "DeleteObjects"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed DeleteObjects lane was accepted")
     copy_qualification, copy_commands = s3_operation.qualification_plan(
         registry, ["CopyObject"]
     )

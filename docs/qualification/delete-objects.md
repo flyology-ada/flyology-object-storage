@@ -1,9 +1,11 @@
 # DeleteObjects qualification and boundaries
 
-This slice qualifies current, null, and exact-generation `DeleteObjects` for
-the memory, pure-files, and SQLite backends, including delete-marker
-publication/removal and MFA Delete enforcement. Directory buckets, Requester
-Pays accounting, and Object Lock governance enforcement are not qualified.
+This document records the maintained `DeleteObjects` qualification boundary
+for current, null, and exact-generation selection across the memory,
+pure-files, and SQLite backends. Qualification remains conditional on the
+complete `delete_objects` lane succeeding, including the repository-wide
+GNATdoc classifier. Directory buckets, Requester Pays accounting, and Object
+Lock governance enforcement are not claimed.
 
 The request boundary accepts at most 1,000 entries and a bounded XML body. It
 requires one canonical Content-MD5 computed over the exact body bytes and can
@@ -57,13 +59,18 @@ The additive composable client owns the exact serialized XML through terminal
 drain and supplies it through a one-shot non-rewindable source. It bounds the
 complete response by the maintained S3 XML parser limit and validates physical
 singleton headers plus Requester Pays binding from the same response snapshot.
-A validated HTTP 200 is `Batch_Processed`; its per-entry Deleted/Error members
-remain authoritative. Exact modeled pre-mutation rejections are
+A validated HTTP 200 is `Batch_Processed` only after every verbose Deleted and
+Error member consumes one exact requested key/version occurrence. Quiet mode
+rejects success members, binds every Error occurrence, and treats only the
+unreported requested entries as suppressed successes. Exact modeled
+pre-mutation rejections are
 `Batch_Definitely_Not_Processed`. Cancellation before admission has its own
 typed result, while any admitted timeout, transport failure, malformed or
 oversized response, or inconclusive service result is `Batch_Outcome_Unknown`.
-No automatic retry or helper task is used. The synchronous typed overload
-waits on the same composable state machine.
+No automatic retry or helper task is used. Generation-bound observations may
+inform a caller-selected retry but do not prove that one lost batch caused the
+current state. The synchronous typed overload waits on the same composable
+state machine.
 
 Executable evidence is provided by:
 
@@ -80,9 +87,12 @@ Executable evidence is provided by:
   admission, conditions, ordering, quiet results, exact VersionId echo,
   marker identity, selected-generation nonmutation, and explicit boundaries;
 - `s3_http_socket_corpus` for a signed, checksummed composable request,
-  pre-admission cancellation, consumed-operation restart, and complete
-  Deleted/Error response over fragmented real sockets from both Flyology task
-  models; and
+  pre-admission and admitted cancellation, terminal drain, retained-owner
+  substitution rejection, same-object restart, quiet and verbose exact
+  response binding, and complete Deleted/Error response over fragmented real
+  sockets from both Flyology task models;
+- `delete-objects-certainty.tsv` plus its verifier negative oracle for the
+  exact response and valid failure/admission tuple inventory; and
 - `s3_implementation_corpus` plus the s5cmd oracle for interoperable batch
   deletion across the pinned external servers and Flyology memory, files, and
   SQLite servers; the files and SQLite lanes additionally delete two exact
@@ -95,8 +105,12 @@ Reproduce the deterministic local qualification with:
 ./tools/verify-coverage.sh
 ./tests/scripts/test.sh
 ./sqlite/tests/scripts/test.sh
+./tools/build-api-docs.sh /private/tmp/fos-delete-objects-gnatdoc \
+  --operation DeleteObjects
 ```
 
-The coverage ledger marks backend, client, server, and corpus covered. The
-directory and policy exclusions above remain explicit capability boundaries;
-they do not weaken the qualified general-purpose bucket operation.
+The coverage ledger marks backend, client, server, and corpus covered. That
+ledger and the region-scoped GNATdoc warning reduction are evidence inputs,
+not a qualification claim by themselves. The operation is qualified only when
+the complete maintained lane exits successfully; unrelated repository GNATdoc
+warnings currently keep that global gate closed.
