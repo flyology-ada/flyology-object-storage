@@ -1,11 +1,13 @@
 # Bucket tagging evidence
 
-This slice qualifies PutBucketTagging, GetBucketTagging, and
-DeleteBucketTagging for the pinned S3 model. The authoritative request shapes
+This page records the evidence boundary for PutBucketTagging,
+GetBucketTagging, and DeleteBucketTagging in the pinned S3 model. The focused
+GetBucketTagging registry slice is reviewed independently; each mutation keeps
+its own promotion and qualification boundary. The authoritative request shapes
 contain ExpectedBucketOwner on all three operations and ContentMD5 plus the
 ten-value ChecksumAlgorithm enum on Put. RequestPayer and RequestCharged are
-not modeled; the unreleased strict high-level API omits them, while retained
-low-level development-compatibility fields reject nonempty values.
+not modeled; the strict high-level API omits them, while retained low-level
+development-compatibility fields reject nonempty values.
 
 The server returns 200 for Put, matching the primary AWS response syntax and
 the pinned model. The AWS documentation also contains a 204 example, so the
@@ -20,6 +22,12 @@ decodes the tag snapshot only after a complete observed response. The
 parameter-record `Client.Buckets` overloads wait on those same operations, so
 the synchronous and composable forms share request ownership, decoding, and
 certainty mapping.
+
+GetBucketTagging bounds a valid response by the lower of the caller XML limit
+and the established 1 MiB bucket-document ceiling. It does not reuse the
+16 KiB object-tagging ceiling. The maintained evidence covers a valid tag set
+larger than 16 KiB, a caller-lowered limit, and the 1 MiB cap in both the
+synchronous and composable source paths.
 
 The deterministic normalization corpus covers exact completed and conclusive
 responses, paired retryable status/code responses, mismatched or absent error
@@ -86,3 +94,11 @@ The exact composable source tree passed the warning-strict maintained proof
 gate with 936/936 checks proved. The required post-run host audit found no
 GNATprove, Why3, SMT, TLC, or TLAPS process before the exclusive lane was
 released.
+
+The GetBucketTagging source slice also has a green maintained full test
+wrapper and fresh region-scoped GNATdoc measurement. That measurement removed
+exactly 39 candidate-owned warnings and added none. Repository-wide and
+selected-operation GNATdoc qualification remain blocked by pre-existing
+warnings outside this declaration region, so this page makes no global
+documentation qualification claim. Every command in the maintained
+GetBucketTagging lane must still succeed before a qualification claim.

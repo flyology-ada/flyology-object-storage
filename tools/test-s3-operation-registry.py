@@ -3448,6 +3448,123 @@ def main() -> None:
         assert "one provider and family" in str(error)
     else:
         raise AssertionError("cross-family object-tagging lane was accepted")
+    get_bucket_tagging_public_name = "Get_Tags"
+
+    def assert_get_bucket_tagging_registry(candidate):
+        entry = candidate.operations["GetBucketTagging"]
+        assert entry.get("public_name") == get_bucket_tagging_public_name
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_tagging"
+        assert entry.get("certainty") == "read_only"
+        assert entry.get("reconciliation") == "not_applicable"
+        assert entry.get("ada_symbols") == [
+            "Prepare_Get_Bucket_Tagging",
+            "Decode_Get_Bucket_Tagging_Response",
+            "Execute_Get_Bucket_Tagging",
+            "Get_Bucket_Tagging_Operation",
+            "Get_Tags",
+            "Finish",
+        ]
+        assert "NoSuchTagSet maps to Not_Found" in entry["absence"]
+        assert "current bucket tag snapshot" in entry["absence"]
+        assert "does not authorize or perform" in entry["exclusions"][3]
+        assert "tools/verify-get-bucket-tagging-preparation.py" in (
+            candidate.qualification["get_bucket_tagging"][0]
+        )
+
+    def reject_get_bucket_tagging_registry(candidate, label):
+        try:
+            assert_get_bucket_tagging_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketTagging registry accepted"
+        )
+
+    assert_get_bucket_tagging_registry(registry)
+    missing_get_bucket_tagging_name = copy.deepcopy(registry)
+    del missing_get_bucket_tagging_name.operations["GetBucketTagging"][
+        "public_name"
+    ]
+    reject_get_bucket_tagging_registry(
+        missing_get_bucket_tagging_name,
+        "missing public name",
+    )
+    wrong_get_bucket_tagging_name = copy.deepcopy(registry)
+    wrong_get_bucket_tagging_name.operations["GetBucketTagging"][
+        "public_name"
+    ] = "Get_Object_Tags"
+    reject_get_bucket_tagging_registry(
+        wrong_get_bucket_tagging_name,
+        "wrong public name",
+    )
+    cross_get_bucket_tagging_symbol = copy.deepcopy(registry)
+    cross_get_bucket_tagging_symbol.operations["GetBucketTagging"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Object_Tagging"
+    reject_get_bucket_tagging_registry(
+        cross_get_bucket_tagging_symbol,
+        "cross-operation symbol",
+    )
+    get_bucket_tagging_qualification, get_bucket_tagging_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketTagging"])
+    )
+    assert get_bucket_tagging_qualification == "get_bucket_tagging"
+    assert get_bucket_tagging_commands[:4] == [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-get-bucket-tagging-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert get_bucket_tagging_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-tagging-gnatdoc",
+        "--operation",
+        "GetBucketTagging",
+    ]
+    assert get_bucket_tagging_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_get_bucket_tagging_lane = copy.deepcopy(registry)
+    malformed_get_bucket_tagging_lane.operations["GetBucketTagging"][
+        "qualification"
+    ] = "missing_get_bucket_tagging_lane"
+    try:
+        s3_operation.qualification_plan(
+            malformed_get_bucket_tagging_lane,
+            ["GetBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError("malformed GetBucketTagging lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetBucketTagging", "GetBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketTagging lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetBucketTagging", "GetBucketVersioning"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetBucketTagging lane was accepted")
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
