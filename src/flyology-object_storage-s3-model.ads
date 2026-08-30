@@ -12,6 +12,7 @@ is
    --  Identifiers for operations in the pinned S3 model.
    --  @enum Delete_Bucket_Cors_Operation Delete bucket CORS operation
    --  @enum Delete_Bucket_Encryption_Operation Delete bucket encryption
+   --  @enum Delete_Bucket_Lifecycle_Operation Delete bucket lifecycle
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
