@@ -5262,6 +5262,19 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
         (400, "InvalidRequest",
          Bucket_CORS_Mutation_Definitely_Not_Applied, Invalid_Request);
       Check_Delete_Response
+        (400, "BadDigest", Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (400, "InvalidDigest", Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (400, "MalformedXML", Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (400, "XAmzContentSHA256Mismatch",
+         Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
         (401, "InvalidAccessKeyId",
          Bucket_CORS_Mutation_Definitely_Not_Applied,
          Authentication_Failed);

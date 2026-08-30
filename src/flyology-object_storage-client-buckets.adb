@@ -17555,15 +17555,21 @@ package body Flyology.Object_Storage.Client.Buckets is
    end Finish;
 
    --  The pinned S3 operation/error model and maintained signed-response
-   --  corpus establish these conclusive PutBucketCors rejections. Unknown
-   --  responses remain outcome-unknown and never authorize replay.
+   --  corpus establish these conclusive CORS mutation rejections. Body and
+   --  checksum codes apply only to PutBucketCors. Unknown responses remain
+   --  outcome-unknown and never authorize replay.
    function Conclusive_Bucket_CORS_Rejection
-     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     (Status      : Flyology.HTTP.Status_Code;
+      Code        : String;
+      Put_Request : Boolean) return Boolean is
      ((Status = 400
-       and then Code in
-         "BadDigest" | "InvalidArgument" | "InvalidBucketName" |
-         "InvalidDigest" | "InvalidRequest" | "MalformedXML" |
-         "XAmzContentSHA256Mismatch")
+       and then
+         (Code in "InvalidArgument" | "InvalidBucketName" | "InvalidRequest"
+          or else
+            (Put_Request
+             and then Code in
+               "BadDigest" | "InvalidDigest" | "MalformedXML" |
+               "XAmzContentSHA256Mismatch")))
       or else (Status = 401 and then Code = "InvalidAccessKeyId")
       or else (Status = 403 and then Code = "AccessDenied")
       or else (Status = 404 and then Code = "NoSuchBucket")
@@ -17590,7 +17596,9 @@ package body Flyology.Object_Storage.Client.Buckets is
       else Bucket_CORS_Mutation_Outcome_Unknown);
 
    function Bucket_CORS_Response_Failure
-     (Status : Flyology.HTTP.Status_Code; Code : String)
+     (Status      : Flyology.HTTP.Status_Code;
+      Code        : String;
+      Put_Request : Boolean)
       return Failure_Reason is
      (if Status = 401 and then Code = "InvalidAccessKeyId"
       then Authentication_Failed
@@ -17598,7 +17606,8 @@ package body Flyology.Object_Storage.Client.Buckets is
       then Authorization_Failed
       elsif Status = 404 and then Code = "NoSuchBucket"
       then Not_Found
-      elsif Conclusive_Bucket_CORS_Rejection (Status, Code)
+      elsif Conclusive_Bucket_CORS_Rejection
+        (Status, Code, Put_Request)
       then Invalid_Request
       elsif Retryable_Bucket_CORS_Response (Status, Code)
       then Unavailable_Or_Retryable
@@ -17614,7 +17623,8 @@ package body Flyology.Object_Storage.Client.Buckets is
          then US.To_String (Value.Error.Code)
          else "");
       Conclusive : constant Boolean :=
-        Conclusive_Bucket_CORS_Rejection (Value.Status, Code);
+        Conclusive_Bucket_CORS_Rejection
+          (Value.Status, Code, Put_Request => False);
    begin
       return
         (Kind        => Delete_Bucket_CORS_Response_Available,
@@ -17631,7 +17641,8 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_CORS_Deleted
             then No_Failure
-            else Bucket_CORS_Response_Failure (Value.Status, Code)),
+            else Bucket_CORS_Response_Failure
+              (Value.Status, Code, Put_Request => False)),
          Admission   => Admission,
          Response    => Value);
    end Normalize_Delete_Bucket_CORS_Response;
@@ -17934,7 +17945,8 @@ package body Flyology.Object_Storage.Client.Buckets is
          then US.To_String (Value.Error.Code)
          else "");
       Conclusive : constant Boolean :=
-        Conclusive_Bucket_CORS_Rejection (Value.Status, Code);
+        Conclusive_Bucket_CORS_Rejection
+          (Value.Status, Code, Put_Request => True);
    begin
       return
         (Kind        => Put_Bucket_CORS_Response_Available,
@@ -17951,7 +17963,8 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            else Bucket_CORS_Response_Failure (Value.Status, Code)),
+            else Bucket_CORS_Response_Failure
+              (Value.Status, Code, Put_Request => True)),
          Admission   => Admission,
          Response    => Value);
    end Normalize_Put_Bucket_CORS_Response;

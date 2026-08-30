@@ -5,7 +5,7 @@
         "generator_eligible": false,
         "mode": "shared-family",
         "source_sha256": {
-          "src/flyology-object_storage-client-buckets.adb": "e987bbe96d85857fd7411add2bc7e4366dee26dc2e04e1b2dd80c8fb5848fd34",
+          "src/flyology-object_storage-client-buckets.adb": "b596b2fed49e6e26a120010bc2e3ed0cb3cf501827803bc263b710a0b071ed55",
           "src/flyology-object_storage-client-buckets.ads": "eb15cc81cf77285e4140110e62049b06c4af0ffc72d944502f1919eb331c5941",
           "src/flyology-object_storage-client-low_level.adb": "d0e60d37f98d5868edea823a68d8cc8cd1af56fadee1377e03a0f9029bfce331",
           "src/flyology-object_storage-s3-website.adb": "27e66369079c2cc7403d3d012fc035cb3e037b3d6ccf6220de4ed35a2ede147e",
