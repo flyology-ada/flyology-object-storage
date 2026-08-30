@@ -3715,6 +3715,164 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed PutBucketTagging lane was accepted")
+    delete_bucket_tagging_certainty = (
+        "only a complete validated 204 response reports "
+        "Bucket_Tag_Mutation_Completed; an exact recognized non-mutating "
+        "rejection or definite non-admission reports "
+        "Bucket_Tag_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Tag_Mutation_Cancelled_Before_Admission; possible or "
+        "incomplete admission, retryable responses, and malformed or "
+        "oversized responses report Bucket_Tag_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    delete_bucket_tagging_reconciliation = (
+        "caller-selected Get_Tags may observe the current NoSuchTagSet "
+        "state before a retry but does not prove that the lost deletion "
+        "caused the observed absence or upgrade mutation certainty; no "
+        "automatic replay"
+    )
+
+    def assert_delete_bucket_tagging_registry(candidate):
+        entry = candidate.operations["DeleteBucketTagging"]
+        assert entry.get("public_name") == "Delete_Tags"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_tagging"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_bucket_tagging_certainty
+        assert entry.get("reconciliation") == (
+            delete_bucket_tagging_reconciliation
+        )
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Tagging",
+            "Decode_Delete_Bucket_Tagging_Response",
+            "Execute_Delete_Bucket_Tagging",
+            "Delete_Bucket_Tagging_Operation",
+            "Delete_Tags",
+            "Finish",
+        ]
+        assert "does not assert prior tag-set presence" in entry["absence"]
+        assert "exact NoSuchBucket" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert "exactly empty response body" in entry["exclusions"][2]
+        assert "previously present" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification["delete_bucket_tagging"][0][-1]
+            == "tools/verify-delete-bucket-tagging-preparation.py"
+        )
+
+    def reject_delete_bucket_tagging_registry(candidate, label):
+        try:
+            assert_delete_bucket_tagging_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketTagging registry accepted"
+        )
+
+    assert_delete_bucket_tagging_registry(registry)
+    missing_delete_bucket_tagging_name = copy.deepcopy(registry)
+    del missing_delete_bucket_tagging_name.operations[
+        "DeleteBucketTagging"
+    ]["public_name"]
+    reject_delete_bucket_tagging_registry(
+        missing_delete_bucket_tagging_name,
+        "missing public name",
+    )
+    wrong_delete_bucket_tagging_name = copy.deepcopy(registry)
+    wrong_delete_bucket_tagging_name.operations["DeleteBucketTagging"][
+        "public_name"
+    ] = "Delete_Object_Tags"
+    reject_delete_bucket_tagging_registry(
+        wrong_delete_bucket_tagging_name,
+        "wrong public name",
+    )
+    broadened_delete_bucket_tagging_success = copy.deepcopy(registry)
+    broadened_delete_bucket_tagging_success.operations[
+        "DeleteBucketTagging"
+    ]["certainty"] = delete_bucket_tagging_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_bucket_tagging_registry(
+        broadened_delete_bucket_tagging_success,
+        "broadened success status",
+    )
+    causal_delete_bucket_tagging_reconciliation = copy.deepcopy(registry)
+    causal_delete_bucket_tagging_reconciliation.operations[
+        "DeleteBucketTagging"
+    ]["reconciliation"] = "Get_Tags proves the deletion completed"
+    reject_delete_bucket_tagging_registry(
+        causal_delete_bucket_tagging_reconciliation,
+        "causal reconciliation",
+    )
+    cross_delete_bucket_tagging_symbol = copy.deepcopy(registry)
+    cross_delete_bucket_tagging_symbol.operations["DeleteBucketTagging"][
+        "ada_symbols"
+    ][0] = "Prepare_Delete_Object_Tagging"
+    reject_delete_bucket_tagging_registry(
+        cross_delete_bucket_tagging_symbol,
+        "cross-operation symbol",
+    )
+    delete_bucket_tagging_qualification, delete_bucket_tagging_commands = (
+        s3_operation.qualification_plan(registry, ["DeleteBucketTagging"])
+    )
+    assert delete_bucket_tagging_qualification == "delete_bucket_tagging"
+    assert delete_bucket_tagging_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-tagging-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_bucket_tagging_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-tagging-gnatdoc",
+        "--operation",
+        "DeleteBucketTagging",
+    ]
+    assert delete_bucket_tagging_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_delete_bucket_tagging_lane = copy.deepcopy(registry)
+    malformed_delete_bucket_tagging_lane.operations[
+        "DeleteBucketTagging"
+    ]["qualification"] = "missing_delete_bucket_tagging_lane"
+    try:
+        s3_operation.qualification_plan(
+            malformed_delete_bucket_tagging_lane,
+            ["DeleteBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "malformed DeleteBucketTagging lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteBucketTagging", "DeleteBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketTagging lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteBucketTagging", "DeleteBucket"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed DeleteBucketTagging lane was accepted")
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )

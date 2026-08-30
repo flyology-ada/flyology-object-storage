@@ -114,3 +114,13 @@ blocked by pre-existing warnings outside this declaration region, so this page
 makes no global documentation qualification claim. Every command in the
 maintained PutBucketTagging lane must still succeed before a qualification
 claim.
+
+The DeleteBucketTagging source slice has a green maintained full test wrapper
+and fresh region-scoped GNATdoc measurement. That measurement removed exactly
+49 candidate-owned warnings and added none. It preserves exact HTTP 204 with
+an empty body, idempotent completion without asserting prior tag-set presence,
+and no automatic replay. Repository-wide and selected-operation GNATdoc
+qualification remain blocked by pre-existing warnings outside this declaration
+region, so this page makes no global documentation qualification claim. Every
+command in the maintained DeleteBucketTagging lane must still succeed before a
+qualification claim.
