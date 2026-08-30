@@ -152,6 +152,16 @@ prove that the lost deletion caused the observation, upgrade mutation
 certainty, or authorize automatic replay. Completion does not assert prior
 presence.
 
+For `DeleteBucketMetricsConfiguration`, the pinned operation removes the
+selected bucket metrics configuration. Only an exact empty 204 proves
+completion. Exact recognized rejections or definite non-admission prove
+non-application, while possible admission, malformed or oversized responses,
+and retryable responses preserve outcome-unknown. A caller-selected
+`Get_Metrics_Configuration` for the same identifier can observe the current
+configuration or exact `NoSuchConfiguration` before a retry, but cannot prove
+that the lost deletion caused the observation, upgrade mutation certainty, or
+authorize automatic replay. Completion does not assert prior presence.
+
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -213,7 +223,8 @@ routes.
 `DeleteBucketIntelligentTieringConfiguration`,
 `DeleteBucketInventoryConfiguration`, and
 `DeleteBucketMetadataConfiguration`, and
-`DeleteBucketMetadataTableConfiguration`
+`DeleteBucketMetadataTableConfiguration`, and
+`DeleteBucketMetricsConfiguration`
 have operation-specific reviewed registry lanes, but their ledger tuples remain
 `missing / covered / missing / covered`. Each lane is conditional on every
 maintained command succeeding and does not convert client evidence into
@@ -320,6 +331,15 @@ selected-operation GNATdoc qualification remain blocked by pre-existing
 warnings outside this declaration region. Every command in the maintained
 `delete_bucket_metadata_table` lane must still succeed before a qualification
 claim.
+
+The metrics generated-model documentation slice also has a green maintained
+full test wrapper and fresh region-scoped GNATdoc measurement. It removed
+exactly the one candidate-owned
+`Delete_Bucket_Metrics_Configuration_Operation` warning and added none,
+without changing any Ada declaration token. Repository-wide and
+selected-operation GNATdoc qualification remain blocked by pre-existing
+warnings outside this declaration region. Every command in the maintained
+`delete_bucket_metrics` lane must still succeed before a qualification claim.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, corpus, coverage, and documentation

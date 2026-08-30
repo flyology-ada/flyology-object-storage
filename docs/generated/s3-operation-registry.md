@@ -26,7 +26,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeleteBucketLifecycle | Delete_Lifecycle | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketMetadataConfiguration | Delete_Metadata_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketMetadataTableConfiguration | Delete_Metadata_Table_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketMetricsConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketMetricsConfiguration | Delete_Metrics_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketOwnershipControls | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketPolicy | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketReplication | Delete_Replication | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |

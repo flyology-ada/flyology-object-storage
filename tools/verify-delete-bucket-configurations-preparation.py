@@ -332,6 +332,40 @@ DELETE_METADATA_TABLE_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_METRICS_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Metrics_Configuration_Mutation_Completed; an exact "
+    "recognized non-mutating rejection or definite non-admission reports "
+    "Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied; "
+    "pre-admission cancellation reports "
+    "Bucket_Metrics_Configuration_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, and malformed "
+    "or oversized responses report "
+    "Bucket_Metrics_Configuration_Mutation_Outcome_Unknown; no automatic "
+    "replay"
+)
+DELETE_METRICS_RECONCILIATION = (
+    "caller-selected Get_Metrics_Configuration for the same identifier may "
+    "observe the current configuration or exact NoSuchConfiguration before "
+    "a retry, but does not prove that the lost deletion caused the observed "
+    "absence or upgrade mutation certainty; no automatic replay"
+)
+DELETE_METRICS_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-metrics-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -1204,6 +1238,91 @@ def verify_metadata_table_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def metrics_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketMetricsConfiguration"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketMetricsConfiguration is not unique")
+    return matches[0]
+
+
+def verify_metrics_registry(data: dict[str, object]) -> None:
+    entry = metrics_entry(data)
+    expected = {
+        "public_name": "Delete_Metrics_Configuration",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_metrics",
+        "codec": "empty_response",
+        "certainty": DELETE_METRICS_CERTAINTY,
+        "reconciliation": DELETE_METRICS_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Metrics_Configuration",
+            "Execute_Delete_Bucket_Metrics_Configuration",
+            "Delete_Bucket_Metrics_Operation",
+            "Delete_Metrics_Configuration",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketMetricsConfiguration changed: {key}")
+    if "removes the selected bucket metrics" not in entry["absence"]:
+        fail("DeleteBucketMetricsConfiguration semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeleteBucketMetricsConfiguration success changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeleteBucketMetricsConfiguration presence changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeleteBucketMetricsConfiguration reconcile changed")
+    if data["qualification"].get(
+        "delete_bucket_metrics"
+    ) != DELETE_METRICS_LANE:
+        fail("DeleteBucketMetricsConfiguration lane changed")
+
+
+def verify_metrics_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Analytics_Configuration"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_METRICS_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Metrics_Configuration proves deletion",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_inventory"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = metrics_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_metrics_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1299,6 +1418,8 @@ def main() -> int:
     verify_metadata_negatives(registry)
     verify_metadata_table_registry(registry)
     verify_metadata_table_negatives(registry)
+    verify_metrics_registry(registry)
+    verify_metrics_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1370,6 +1491,12 @@ def main() -> int:
     )
     if model_spec.count(metadata_table_documentation) != 1:
         fail("DeleteBucketMetadataTableConfiguration docs changed")
+    metrics_documentation = (
+        "@enum Delete_Bucket_Metrics_Configuration_Operation\n"
+        "   --    Delete metrics configuration"
+    )
+    if model_spec.count(metrics_documentation) != 1:
+        fail("DeleteBucketMetricsConfiguration docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -1841,6 +1968,61 @@ def main() -> int:
             "delete_bucket_metadata_table",
         ],
         "DeleteBucketMetadataTableConfiguration qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Delete_Bucket_Metrics_Response",
+            "Bucket_Metrics_Configuration_Mutation_Completed",
+            "Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Metrics_Failure",
+            "procedure Start_Delete_Bucket_Metrics",
+            "DeleteBucketMetricsConfiguration restart changed a",
+            "procedure Finish",
+        ],
+        "DeleteBucketMetricsConfiguration provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Delete_Bucket_Metrics_Certainty_Corpus",
+            "Bucket_Metrics_Configuration_Mutation_Completed",
+            "Check_Response",
+            '(409, "OperationAborted",',
+            "for Admission in",
+            "Normalize_Delete_Bucket_Metrics_Failure",
+        ],
+        "DeleteBucketMetricsConfiguration certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"/typed-delete-metrics?id=config%20id&metrics"',
+            "typed DeleteBucketMetricsConfiguration ",
+            "DeleteBucketMetricsConfiguration accepted ",
+            "an intelligent-tiering ",
+            "composed DeleteBucketMetricsConfiguration ",
+            "restarted DeleteBucketMetricsConfiguration ",
+            "DeleteBucketMetricsConfiguration accepted ",
+            '"duplicate " &',
+            "DeleteBucketMetricsConfiguration accepted ",
+            '"an empty " &',
+            "bounded DeleteBucketMetricsConfiguration ",
+        ],
+        "DeleteBucketMetricsConfiguration socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the selected bucket metrics configuration",
+            "NoSuchConfiguration",
+            "prior presence",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Metrics_Configuration_Operation",
+            "added none",
+            "delete_bucket_metrics",
+        ],
+        "DeleteBucketMetricsConfiguration qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):

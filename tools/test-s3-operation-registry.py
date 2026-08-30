@@ -5464,6 +5464,157 @@ def main() -> None:
         raise AssertionError(
             "mixed DeleteBucketMetadataTableConfiguration lane was accepted"
         )
+    delete_metrics_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Metrics_Configuration_Mutation_Completed; an exact "
+        "recognized non-mutating rejection or definite non-admission reports "
+        "Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied; "
+        "pre-admission cancellation reports "
+        "Bucket_Metrics_Configuration_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report "
+        "Bucket_Metrics_Configuration_Mutation_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    delete_metrics_reconciliation = (
+        "caller-selected Get_Metrics_Configuration for the same identifier "
+        "may observe the current configuration or exact NoSuchConfiguration "
+        "before a retry, but does not prove that the lost deletion caused the "
+        "observed absence or upgrade mutation certainty; no automatic replay"
+    )
+
+    def assert_delete_metrics_registry(candidate):
+        entry = candidate.operations["DeleteBucketMetricsConfiguration"]
+        assert entry.get("public_name") == "Delete_Metrics_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_metrics"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_metrics_certainty
+        assert entry.get("reconciliation") == delete_metrics_reconciliation
+        assert entry.get("coverage") == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Metrics_Configuration",
+            "Execute_Delete_Bucket_Metrics_Configuration",
+            "Delete_Bucket_Metrics_Operation",
+            "Delete_Metrics_Configuration",
+            "Finish",
+        ]
+        assert "removes the selected bucket metrics" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert "previously present" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification["delete_bucket_metrics"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_metrics_registry(candidate, label):
+        try:
+            assert_delete_metrics_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketMetricsConfiguration registry accepted"
+        )
+
+    assert_delete_metrics_registry(registry)
+    missing_delete_metrics_name = copy.deepcopy(registry)
+    del missing_delete_metrics_name.operations[
+        "DeleteBucketMetricsConfiguration"
+    ]["public_name"]
+    reject_delete_metrics_registry(
+        missing_delete_metrics_name, "missing public name"
+    )
+    wrong_delete_metrics_name = copy.deepcopy(registry)
+    wrong_delete_metrics_name.operations[
+        "DeleteBucketMetricsConfiguration"
+    ]["public_name"] = "Delete_Analytics_Configuration"
+    reject_delete_metrics_registry(
+        wrong_delete_metrics_name, "wrong public name"
+    )
+    broadened_delete_metrics_success = copy.deepcopy(registry)
+    broadened_delete_metrics_success.operations[
+        "DeleteBucketMetricsConfiguration"
+    ]["certainty"] = delete_metrics_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_metrics_registry(
+        broadened_delete_metrics_success, "broadened success status"
+    )
+    causal_delete_metrics_reconciliation = copy.deepcopy(registry)
+    causal_delete_metrics_reconciliation.operations[
+        "DeleteBucketMetricsConfiguration"
+    ]["reconciliation"] = "Get_Metrics_Configuration proves deletion"
+    reject_delete_metrics_registry(
+        causal_delete_metrics_reconciliation, "causal reconciliation"
+    )
+    cross_delete_metrics_symbol = copy.deepcopy(registry)
+    cross_delete_metrics_symbol.operations[
+        "DeleteBucketMetricsConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Delete_Bucket_Analytics_Configuration"
+    reject_delete_metrics_registry(
+        cross_delete_metrics_symbol, "cross-operation symbol"
+    )
+    delete_metrics_qualification, delete_metrics_commands = (
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketMetricsConfiguration"]
+        )
+    )
+    assert delete_metrics_qualification == "delete_bucket_metrics"
+    assert delete_metrics_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_metrics_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-metrics-gnatdoc",
+        "--operation",
+        "DeleteBucketMetricsConfiguration",
+    ]
+    assert delete_metrics_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketMetricsConfiguration",
+                "DeleteBucketMetricsConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketMetricsConfiguration lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketMetricsConfiguration",
+                "DeleteBucketAnalyticsConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketMetricsConfiguration lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
