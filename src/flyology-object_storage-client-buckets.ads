@@ -10988,6 +10988,20 @@ package Flyology.Object_Storage.Client.Buckets is
        and then not Flyology.Operations.Is_Terminal (Operation);
 
    --  Construct one owner-driven bucket access-control policy replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket access-control policy value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketAcl controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @return Started owner-driven bucket access-control policy replacement
    function Set_ACL
      (Set        : not null access Flyology.Operations.Completion_Set'Class;
       Client     : not null access Flyology.HTTP.Client.Client;
@@ -11113,6 +11127,20 @@ package Flyology.Object_Storage.Client.Buckets is
        and then not Flyology.Operations.Is_Terminal (Operation);
 
    --  Construct one owner-driven inventory configuration replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Inventory configuration value serialized before admission
+   --  @param Parameters Complete modeled non-resource
+   --  PutBucketInventoryConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @return Started owner-driven inventory configuration replacement
    function Set_Inventory_Configuration
      (Set        : not null access Flyology.Operations.Completion_Set'Class;
       Client     : not null access Flyology.HTTP.Client.Client;
@@ -11254,6 +11282,21 @@ package Flyology.Object_Storage.Client.Buckets is
        and then not Flyology.Operations.Is_Terminal (Operation);
 
    --  Construct one owner-driven bucket logging configuration replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket logging configuration value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketLogging
+   --  controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @return Started owner-driven bucket logging configuration replacement
    function Set_Logging
      (Set        : not null access Flyology.Operations.Completion_Set'Class;
       Client     : not null access Flyology.HTTP.Client.Client;
@@ -11381,6 +11424,21 @@ package Flyology.Object_Storage.Client.Buckets is
        and then not Flyology.Operations.Is_Terminal (Operation);
 
    --  Construct one owner-driven bucket website configuration replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket website configuration value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketWebsite
+   --  controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @return Started owner-driven bucket website configuration replacement
    function Set_Website
      (Set        : not null access Flyology.Operations.Completion_Set'Class;
       Client     : not null access Flyology.HTTP.Client.Client;

@@ -298,6 +298,104 @@ def assert_generated_mutation_start_documentation(source: str) -> None:
         ), f"generated {public_name} restart parameter documentation differs"
 
 
+def generated_constructor_documentation(label: str, operation: str) -> str:
+    return "\n".join(
+        s3_codegen.ada_comment(text)
+        for text in (
+            f"Construct one owner-driven {label} replacement.",
+            "@param Set Caller-owned completion set",
+            "@param Client HTTP client retained through terminal drain",
+            "@param Origin Exact HTTP origin used for routing and signing",
+            "@param Bucket Required exact target bucket",
+            f"@param Value {label.capitalize()} value serialized before "
+            "admission",
+            "@param Parameters Complete modeled non-resource "
+            f"{operation} controls",
+            "@param Identity Credentials borrowed only while signing the "
+            "request",
+            "@param Deadline Absolute admission, exchange, and drain limit",
+            "@param Region Exact SigV4 signing region",
+            "@param Style Caller-selected S3 addressing style",
+            "@param Limits Caller-selected bounded XML limits",
+            "@param Token Optional cancellation source retained to drain",
+            f"@return Started owner-driven {label} replacement",
+        )
+    ) + "\n"
+
+
+def generated_constructor_comment(
+    source: str,
+    public_name: str,
+) -> tuple[str, ...]:
+    lines = source.splitlines()
+    positions = [
+        index
+        for index, line in enumerate(lines[:-1])
+        if line == f"   function {public_name}"
+        and lines[index + 1].startswith("     (Set")
+    ]
+    assert len(positions) == 1, (
+        f"generated constructor declaration count differs: {public_name}"
+    )
+    cursor = positions[0] - 1
+    block = []
+    while cursor >= 0 and lines[cursor].startswith("   --  "):
+        block.append(lines[cursor][7:])
+        cursor -= 1
+    assert block, (
+        f"generated constructor documentation is detached: {public_name}"
+    )
+    return tuple(reversed(block))
+
+
+def assert_generated_mutation_constructor_documentation(source: str) -> None:
+    for public_name, label, operation in GENERATED_MUTATION_START_LABELS:
+        expected_block = generated_constructor_documentation(label, operation)
+        assert source.count(expected_block) == 1, (
+            f"generated {public_name} constructor block count differs"
+        )
+        comment = generated_constructor_comment(source, public_name)
+        assert all(len("   --  " + line) <= 79 for line in comment), (
+            f"generated {public_name} constructor documentation is overwidth"
+        )
+        logical = [comment[0]]
+        for line in comment[1:]:
+            if line.startswith("@param ") or line.startswith("@return "):
+                logical.append(line)
+            else:
+                assert (
+                    logical[-1].startswith("@param ")
+                    or logical[-1].startswith("@return ")
+                ), (
+                    f"generated {public_name} constructor continuation "
+                    "is orphaned"
+                )
+                assert line and not line.startswith("@"), (
+                    f"generated {public_name} constructor continuation "
+                    "is malformed"
+                )
+                logical[-1] += " " + line
+        assert tuple(logical) == (
+            f"Construct one owner-driven {label} replacement.",
+            "@param Set Caller-owned completion set",
+            "@param Client HTTP client retained through terminal drain",
+            "@param Origin Exact HTTP origin used for routing and signing",
+            "@param Bucket Required exact target bucket",
+            f"@param Value {label.capitalize()} value serialized before "
+            "admission",
+            "@param Parameters Complete modeled non-resource "
+            f"{operation} controls",
+            "@param Identity Credentials borrowed only while signing the "
+            "request",
+            "@param Deadline Absolute admission, exchange, and drain limit",
+            "@param Region Exact SigV4 signing region",
+            "@param Style Caller-selected S3 addressing style",
+            "@param Limits Caller-selected bounded XML limits",
+            "@param Token Optional cancellation source retained to drain",
+            f"@return Started owner-driven {label} replacement",
+        ), f"generated {public_name} constructor documentation differs"
+
+
 def bounded_declaration_position(lines: list[str], marker: str) -> int:
     positions = [
         index for index, line in enumerate(lines)
@@ -929,6 +1027,7 @@ def main() -> None:
         s3_codegen.GENERATED_MUTATIONS
     )
     assert_generated_mutation_start_documentation(mutation_provider)
+    assert_generated_mutation_constructor_documentation(mutation_provider)
     for label, invalid_source in {
         "missing operation association": mutation_provider.replace(
             "   --  @param Operation Reusable owner-driven operation "
@@ -975,6 +1074,200 @@ def main() -> None:
         else:
             raise AssertionError(
                 f"generated mutation restart {label} was accepted"
+            )
+
+    constructor_set = (
+        s3_codegen.ada_comment("@param Set Caller-owned completion set")
+        + "\n"
+    )
+    constructor_client = (
+        s3_codegen.ada_comment(
+            "@param Client HTTP client retained through terminal drain"
+        )
+        + "\n"
+    )
+    constructor_value = (
+        s3_codegen.ada_comment(
+            "@param Value Bucket access-control policy value serialized "
+            "before admission"
+        )
+        + "\n"
+    )
+    constructor_value_lines = constructor_value.splitlines(keepends=True)
+    assert len(constructor_value_lines) == 2
+    constructor_value_tag, constructor_value_continuation = (
+        constructor_value_lines
+    )
+    assert constructor_value_tag.startswith("   --  @param Value ")
+    assert constructor_value_continuation.startswith("   --  ")
+    assert not constructor_value_continuation.startswith("   --  @")
+    constructor_value_prefix = (
+        s3_codegen.ada_comment("@param Value") + "\n"
+    )
+    constructor_repeated_value_tag = constructor_value_continuation.replace(
+        "   --  ",
+        "   --  @param Value ",
+        1,
+    )
+    constructor_return = (
+        s3_codegen.ada_comment(
+            "@return Started owner-driven bucket access-control policy "
+            "replacement"
+        )
+        + "\n"
+    )
+    constructor_wrong_return = (
+        s3_codegen.ada_comment(
+            "@return Started owner-driven bucket access-control policy "
+            "inspection"
+        )
+        + "\n"
+    )
+    constructor_overwidth_return = (
+        "   --  @return Started owner-driven bucket access-control policy "
+        "replacement with deliberately overlong explanatory prose\n"
+    )
+    constructor_acl_block = generated_constructor_documentation(
+        "bucket access-control policy",
+        "PutBucketAcl",
+    )
+
+    def replace_constructor_block(mutated_block: str) -> str:
+        assert mutated_block != constructor_acl_block
+        assert mutation_provider.count(constructor_acl_block) == 1
+        return mutation_provider.replace(
+            constructor_acl_block,
+            mutated_block,
+            1,
+        )
+
+    constructor_swapped_facts_block = (
+        constructor_acl_block.replace(
+            "Required exact target bucket",
+            "__SWAPPED_BUCKET_FACT__",
+            1,
+        )
+        .replace(
+            "Complete modeled non-resource PutBucketAcl controls",
+            "Required exact target bucket",
+            1,
+        )
+        .replace(
+            "__SWAPPED_BUCKET_FACT__",
+            "Complete modeled non-resource PutBucketAcl controls",
+            1,
+        )
+    )
+    assert constructor_swapped_facts_block != constructor_acl_block
+    assert all(
+        len(line) <= 79 for line in constructor_return.splitlines()
+    )
+    assert len(constructor_overwidth_return.removesuffix("\n")) > 79
+    for label, invalid_source in {
+        "missing Set association": mutation_provider.replace(
+            constructor_set,
+            "",
+            1,
+        ),
+        "wrong Set association": mutation_provider.replace(
+            constructor_set,
+            constructor_set.replace("@param Set", "@param Completion_Set"),
+            1,
+        ),
+        "reversed parameter order": mutation_provider.replace(
+            constructor_set + constructor_client,
+            constructor_client + constructor_set,
+            1,
+        ),
+        "swapped parameter facts": replace_constructor_block(
+            constructor_swapped_facts_block,
+        ),
+        "wrong Value fact": replace_constructor_block(
+            constructor_acl_block.replace(
+                constructor_value,
+                constructor_value.replace(
+                    "Bucket access-control policy",
+                    "Bucket logging configuration",
+                ),
+                1,
+            ),
+        ),
+        "missing Value continuation": replace_constructor_block(
+            constructor_acl_block.replace(
+                constructor_value,
+                constructor_value_tag,
+                1,
+            ),
+        ),
+        "orphaned Value continuation": replace_constructor_block(
+            constructor_acl_block.replace(
+                constructor_value,
+                constructor_value_tag
+                + "\n"
+                + constructor_value_continuation,
+                1,
+            ),
+        ),
+        "prefix-only Value association": replace_constructor_block(
+            constructor_acl_block.replace(
+                constructor_value,
+                constructor_value_prefix,
+                1,
+            ),
+        ),
+        "repeated Value tag on continuation": replace_constructor_block(
+            constructor_acl_block.replace(
+                constructor_value,
+                constructor_value_tag + constructor_repeated_value_tag,
+                1,
+            ),
+        ),
+        "missing return association": mutation_provider.replace(
+            constructor_return,
+            "",
+            1,
+        ),
+        "wrong return association": mutation_provider.replace(
+            constructor_return,
+            constructor_return.replace("@return", "@param Result"),
+            1,
+        ),
+        "wrong return description": mutation_provider.replace(
+            constructor_return,
+            constructor_wrong_return,
+            1,
+        ),
+        "detached constructor documentation": mutation_provider.replace(
+            constructor_return + "   function Set_ACL\n",
+            constructor_return + "\n   function Set_ACL\n",
+            1,
+        ),
+        "duplicate Set association": mutation_provider.replace(
+            constructor_set,
+            constructor_set * 2,
+            1,
+        ),
+        "detached duplicate constructor block": (
+            constructor_acl_block + mutation_provider
+        ),
+        "overwidth return association": mutation_provider.replace(
+            constructor_return,
+            constructor_overwidth_return,
+            1,
+        ),
+    }.items():
+        assert invalid_source != mutation_provider, (
+            "generated mutation constructor negative did not mutate source"
+        )
+        try:
+            assert_generated_mutation_constructor_documentation(
+                invalid_source
+            )
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(
+                f"generated mutation constructor {label} was accepted"
             )
 
     bounded_spec = BOUNDED_REST_XML_SPEC.read_text(encoding="utf-8")

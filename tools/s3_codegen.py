@@ -2865,6 +2865,29 @@ def _generated_mutation_provider_spec(
                 "@param Operation Reusable owner-driven operation restarted",
             )
         )
+        constructor_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Construct one owner-driven {item.label} replacement.",
+                "@param Set Caller-owned completion set",
+                "@param Client HTTP client retained through terminal drain",
+                "@param Origin Exact HTTP origin used for routing and signing",
+                "@param Bucket Required exact target bucket",
+                f"@param Value {item.label.capitalize()} value serialized "
+                "before admission",
+                "@param Parameters Complete modeled non-resource "
+                f"{item.operation} controls",
+                "@param Identity Credentials borrowed only while signing "
+                "the request",
+                "@param Deadline Absolute admission, exchange, and drain "
+                "limit",
+                "@param Region Exact SigV4 signing region",
+                "@param Style Caller-selected S3 addressing style",
+                "@param Limits Caller-selected bounded XML limits",
+                "@param Token Optional cancellation source retained to drain",
+                f"@return Started owner-driven {item.label} replacement",
+            )
+        )
         sync_comment = ada_comment(
             f"Replace one {item.label} by waiting on the same state machine "
             "used by composable callers. No possibly admitted request is "
@@ -2936,7 +2959,7 @@ def _generated_mutation_provider_spec(
        not Flyology.Operations.Is_Active (Operation)
        and then not Flyology.Operations.Is_Terminal (Operation);
 
-   --  Construct one owner-driven {item.label} replacement.
+{constructor_comment}
    function {item.public_name}
      (Set        : not null access Flyology.Operations.Completion_Set'Class;
       Client     : not null access Flyology.HTTP.Client.Client;
