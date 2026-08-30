@@ -5683,7 +5683,69 @@ def main() -> None:
         canary, include_partial=False
     )
 
-    promoted = copy.deepcopy(registry.operations["CreateSession"])
+    create_session = registry.operations["CreateSession"]
+    assert create_session["public_name"] == "Create_Session"
+    assert create_session["decision_status"] == "reviewed"
+    assert create_session["human_decisions_resolved"] is True
+    assert create_session["certainty"] == "read_only"
+    assert create_session["reconciliation"] == "not_applicable"
+    assert create_session["qualification"] == "create_session"
+    assert create_session["ada_symbols"] == [
+        "Prepare_Create_Session",
+        "Decode_Create_Session_Complete_Response",
+        "Execute_Create_Session",
+        "Create_Session_Operation",
+        "Create_Session",
+        "Finish",
+    ]
+    assert "exact HTTP 200" in create_session["exclusions"][1]
+    assert "zeroizing Credentials" in create_session["exclusions"][2]
+    assert "no refresh task" in create_session["exclusions"][3]
+    for label, key, value in (
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Create_Directory_Session"),
+        ("mutation certainty", "certainty", "outcome_unknown"),
+        ("cross lane", "qualification", "create_multipart_upload"),
+    ):
+        candidate = copy.deepcopy(registry.operations["CreateSession"])
+        if value is None:
+            del candidate[key]
+        else:
+            candidate[key] = value
+        assert candidate != create_session
+        rejected = False
+        try:
+            assert candidate["public_name"] == "Create_Session"
+            assert candidate["certainty"] == "read_only"
+            assert candidate["qualification"] == "create_session"
+        except (AssertionError, KeyError):
+            rejected = True
+        assert rejected, f"{label} CreateSession mutation was accepted"
+    create_session_qualification, create_session_commands = (
+        s3_operation.qualification_plan(registry, ["CreateSession"])
+    )
+    assert create_session_qualification == "create_session"
+    assert create_session_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-create-session-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_create_session_tls_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert create_session_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-create-session-gnatdoc",
+        "--operation",
+        "CreateSession",
+    ]
+    assert create_session_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+
+    promoted = copy.deepcopy(create_session)
     promoted["coverage"]["server"] = "covered"
     promoted["provenance"]["server"] = "handwritten"
     findings = s3_operation.evidence_findings(

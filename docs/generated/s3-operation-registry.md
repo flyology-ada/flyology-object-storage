@@ -16,7 +16,7 @@ remain inventory-only until their audits gain executable evidence.
 | CreateBucketMetadataConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | CreateBucketMetadataTableConfiguration | Create_Metadata_Table_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | CreateMultipartUpload | Create_Multipart_Upload | transfers | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CreateSession | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| CreateSession | Create_Session | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucket | Delete | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketAnalyticsConfiguration | Delete_Analytics_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketCors | Delete_CORS | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

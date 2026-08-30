@@ -88,15 +88,23 @@ implementation matrix do not supply that capability. Their absence is an
 explicit external capability exclusion, not a reason to relax the client or
 to claim server interoperability.
 
+The machine ledger records the reviewed operation as `missing / covered /
+missing / covered` with its exact public name, symbols, exclusions, evidence,
+and isolated qualification lane. This records client and corpus readiness; it
+does not manufacture backend state, a server route, or provider compatibility.
+
 ## Frozen gate evidence
 
 The exact client slice passed the root gate, repository-integrity gate, and
 isolated CreateSession inventory verifier. The root gate includes 41/41 AUnit
 tests and three repetitions of both task kinds through the 20-exchange loopback
-TLS corpus. GNATdoc produced a 44,116-line diagnostic log and 429 HTML pages
-with no error or new public-API warning; the generated model's pre-existing
-undocumented operation-enum warning remains visible. The slice does not change
-SQLite or backend code, so a redundant SQLite gate was not run.
+TLS corpus. Focused GNATdoc measurement produced a nonempty API index and
+removed the generated model's sole CreateSession operation-enum warning: the
+repository count fell from 35,992 to 35,991 with no added diagnostic and an
+unchanged comment-stripped Ada token hash. Repository-wide qualification
+remains blocked by preexisting warnings outside this operation's declaration
+region. The slice does not change SQLite or backend code, so a redundant SQLite
+gate was not run.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, TLS-corpus, verifier, and

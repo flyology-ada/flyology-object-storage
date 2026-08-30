@@ -221,6 +221,15 @@ create_bucket_metadata_table_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+create_session = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_create_session_tls_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-create-session-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_bucket = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -811,17 +820,21 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Create_Session"
+absence = "no dedicated absence variant; exact non-200 responses remain bounded structured S3 rejections and no backend or server-side session state is claimed"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["the caller must supply the secure directory-bucket zonal endpoint and virtual-hosted addressing; automatic endpoint discovery or rewriting is not claimed", "success requires exact HTTP 200, complete bounded CreateSessionResult credentials, and physically singleton response-policy headers consistent with the signed request", "returned access key, secret, and session token are held by the existing limited zeroizing Credentials type, but transient generic HTTP and XML buffers are not claimed to be securely erased", "the client creates no refresh task, retains no session state after completion, and adds no operation-level replay", "backend persistence, authenticated server routing, and external-provider interoperability are not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_create_session_tls_corpus.adb"], server = [], corpus = ["tests/src/s3_create_session_tls_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "create_session"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/object_storage_test_cases.adb", "tests/src/s3_create_session_tls_corpus.adb"], server = [], corpus = ["tools/verify-create-session-preparation.py", "docs/qualification/create-session.md", "tests/corpora/create-session/members.tsv", "tests/corpora/create-session/vectors.tsv", "tests/src/object_storage_test_cases.adb", "tests/src/s3_create_session_tls_corpus.adb"] }
+ada_symbols = ["Prepare_Create_Session", "Decode_Create_Session_Complete_Response", "Execute_Create_Session", "Create_Session_Operation", "Create_Session", "Finish"]
 
 [[operation]]
 name = "DeleteBucket"

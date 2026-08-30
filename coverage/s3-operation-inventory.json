@@ -347,16 +347,26 @@
       "evidence": {
         "backend": [],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/object_storage_test_cases.adb",
           "tests/src/s3_create_session_tls_corpus.adb"
         ],
         "corpus": [
+          "tools/verify-create-session-preparation.py",
+          "docs/qualification/create-session.md",
+          "tests/corpora/create-session/members.tsv",
+          "tests/corpora/create-session/vectors.tsv",
+          "tests/src/object_storage_test_cases.adb",
           "tests/src/s3_create_session_tls_corpus.adb"
         ],
         "server": []
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "absent",

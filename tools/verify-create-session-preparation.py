@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import csv
+import copy
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -17,6 +19,8 @@ LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
 HIGH_SPEC = ROOT / "src" / "flyology-object_storage-client-buckets.ads"
 HIGH_BODY = ROOT / "src" / "flyology-object_storage-client-buckets.adb"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
+REGISTRY = ROOT / "coverage" / "s3-operations.toml"
+QUALIFICATION = ROOT / "docs" / "qualification" / "create-session.md"
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
 EXPECTED = {
@@ -45,10 +49,96 @@ LOCATION = {
     "header": "Header_Location",
     "body": "Body_Location",
 }
+LANE = [
+    ["uv", "run", "--python", "3.13", "--",
+     "tools/verify-create-session-preparation.py"],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_create_session_tls_corpus"],
+    ["./tools/verify-coverage.sh"],
+    ["./tools/build-api-docs.sh", "/private/tmp/fos-create-session-gnatdoc"],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 
 def fail(message: str) -> None:
     raise ValueError(message)
+
+
+def registry_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "CreateSession"
+    ]
+    if len(matches) != 1:
+        fail("CreateSession registry entry is not unique")
+    return matches[0]
+
+
+def verify_registry(data: dict[str, object]) -> None:
+    entry = registry_entry(data)
+    expected = {
+        "public_name": "Create_Session",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "create_session",
+        "codec": "rest_xml_and_headers",
+        "certainty": "read_only",
+        "reconciliation": "not_applicable",
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Create_Session",
+            "Decode_Create_Session_Complete_Response",
+            "Execute_Create_Session",
+            "Create_Session_Operation",
+            "Create_Session",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"CreateSession registry changed: {key}")
+    if "exact HTTP 200" not in entry["exclusions"][1]:
+        fail("CreateSession success boundary changed")
+    if "zeroizing Credentials" not in entry["exclusions"][2]:
+        fail("CreateSession credential ownership changed")
+    if "no refresh task" not in entry["exclusions"][3]:
+        fail("CreateSession lifecycle boundary changed")
+    if data["qualification"].get("create_session") != LANE:
+        fail("CreateSession qualification lane changed")
+
+
+def verify_registry_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Create_Directory_Session"),
+        ("mutation certainty", "certainty", "outcome_unknown"),
+        ("cross-operation lane", "qualification", "create_multipart_upload"),
+        (
+            "cross-operation symbols",
+            "ada_symbols",
+            ["Prepare_Create_Multipart_Upload"],
+        ),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = registry_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
 
 
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
@@ -252,6 +342,20 @@ def main() -> int:
         fail("CreateSession complete decoder binding structure changed")
     if not operation_check < metadata_check < min(session_field_accesses):
         fail("CreateSession decoder reads response/request fields before validation")
+
+    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    verify_registry(registry)
+    verify_registry_negatives(registry)
+    qualification = " ".join(
+        QUALIFICATION.read_text(encoding="utf-8").split()
+    )
+    for fact in (
+        "reviewed operation as `missing / covered / missing / covered`",
+        "No overload creates a refresh task",
+        "Repository-wide qualification remains blocked",
+    ):
+        if fact not in qualification:
+            fail(f"CreateSession qualification record lacks {fact}")
 
     print(
         "CreateSession preparation: 6 request members, 5 top-level response "
