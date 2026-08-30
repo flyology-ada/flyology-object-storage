@@ -95,12 +95,24 @@ class _Page_Parser(HTMLParser):
         return " ".join(" ".join(self.unit_parts).split())
 
 
+def _same_file(left: Path, right: Path) -> bool:
+    """Return whether two existing path spellings identify the same file."""
+    try:
+        return left.samefile(right)
+    except OSError:
+        return False
+
+
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
     except ValueError:
-        return False
-    return True
+        return any(
+            _same_file(candidate, root)
+            for candidate in (path, *path.parents)
+        )
+    else:
+        return True
 
 
 def _source_index(manifest: Path) -> tuple[set[Path], dict[str, set[Path]]]:
@@ -374,8 +386,22 @@ def check_source_manifest(
     repository_sources = {
         source for source in sources if _is_within(source, repository)
     }
-    missing = sorted(expected - repository_sources)
-    extra = sorted(repository_sources - expected)
+    missing = sorted(
+        expected_source
+        for expected_source in expected
+        if not any(
+            _same_file(expected_source, source)
+            for source in repository_sources
+        )
+    )
+    extra = sorted(
+        source
+        for source in repository_sources
+        if not any(
+            _same_file(source, expected_source)
+            for expected_source in expected
+        )
+    )
     if missing:
         raise Diagnostic_Error(
             "public project source manifest is missing: " + str(missing[0])
