@@ -116,6 +116,24 @@ package body Flyology.Object_Storage.Client.Objects is
       return True;
    end Valid_Exact_Entity_Tag;
 
+   function Get_Object_Response_Bound
+     (Result        : Low_Level.Get_Object_Result;
+      Version_ID    : US.Unbounded_String;
+      Request_Payer : US.Unbounded_String) return Boolean
+   is
+      Requested_Version : constant String := US.To_String (Version_ID);
+      Requested_Payer : constant String := US.To_String (Request_Payer);
+      Returned_Payer : constant String :=
+        US.To_String (Result.Request_Charged);
+   begin
+      return
+        (Requested_Version'Length = 0
+         or else US.To_String (Result.Version_ID) = Requested_Version)
+        and then
+          (Returned_Payer /= "requester"
+           or else Requested_Payer = "requester");
+   end Get_Object_Response_Bound;
+
    procedure Raise_List_Objects_Exchange_Failure
      (Result : List_Objects_Result) is
    begin
@@ -910,6 +928,12 @@ package body Flyology.Object_Storage.Client.Objects is
          elsif not Head.Result.Content_Length.Is_Set then
             raise Low_Level.Invalid_Response with
               "GetObject success omits Content-Length";
+         elsif not Get_Object_Response_Bound
+           (Head.Result, US.To_Unbounded_String (Version_ID),
+            US.To_Unbounded_String (Request_Payer))
+         then
+            raise Low_Level.Invalid_Response with
+              "GetObject response does not match prepared request";
          elsif Head.Result.Content_Length.Value > Byte_Count (Maximum) then
             raise Flyology.HTTP.Client.Response_Too_Large with
               "GetObject body exceeds caller maximum";
@@ -2347,6 +2371,9 @@ package body Flyology.Object_Storage.Client.Objects is
                    (US.Length (Item.Expected_Entity_Tag) > 0
                       and then Head.Result.Entity_Tag /=
                         Item.Expected_Entity_Tag)
+                 or else not Get_Object_Response_Bound
+                   (Head.Result, Item.Requested_Version_ID,
+                    Item.Requested_Request_Payer)
                then
                   Clear_Buffer (Item.Destination.all);
                   Item.Final_Result := Invalid_Read_Result;
@@ -2466,6 +2493,9 @@ package body Flyology.Object_Storage.Client.Objects is
                    Byte_Count
                      (Flyology.Buffers.Length (Item.Destination.all))
                  or else Head.Result.Entity_Tag /= Item.Expected_Entity_Tag
+                 or else not Get_Object_Response_Bound
+                   (Head.Result, Item.Requested_Version_ID,
+                    Item.Requested_Request_Payer)
                then
                   Clear_Buffer (Item.Destination.all);
                   Item.Final_Result := Invalid_Range_Read_Result;
@@ -2595,6 +2625,9 @@ package body Flyology.Object_Storage.Client.Objects is
       Item.Deadline := Deadline;
       Item.Expected_Entity_Tag :=
         US.To_Unbounded_String (Expected_Entity_Tag);
+      Item.Requested_Version_ID := US.To_Unbounded_String (Version_ID);
+      Item.Requested_Request_Payer :=
+        US.To_Unbounded_String (Request_Payer);
       Item.Has_Final_Result := False;
       Item.Has_Saved_Error := False;
 
@@ -2713,6 +2746,9 @@ package body Flyology.Object_Storage.Client.Objects is
       Operation.Deadline := Deadline;
       Operation.Expected_Entity_Tag :=
         US.To_Unbounded_String (Expected_Entity_Tag);
+      Operation.Requested_Version_ID := US.To_Unbounded_String (Version_ID);
+      Operation.Requested_Request_Payer :=
+        US.To_Unbounded_String (Request_Payer);
       Operation.Requested_Range := Requested;
       Operation.Has_Final_Result := False;
       Operation.Has_Saved_Error := False;

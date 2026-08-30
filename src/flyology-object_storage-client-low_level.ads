@@ -1082,6 +1082,16 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  GetObject has the same 21 modeled request members as HeadObject.
    subtype Get_Object_Parameters is Head_Object_Parameters;
 
+   --  Prepare one modeled GetObject request.
+   --  @param Origin Exact HTTP origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used only during signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request with retained response-binding values
    function Prepare_Get_Object
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -1094,6 +1104,48 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every modeled GetObject response-head member. Body is represented by
    --  the limited streaming HTTP response returned from Execute_Get_Object.
+   --  @field Delete_Marker Whether the selected version is a delete marker
+   --  @field Accept_Ranges Advertised accepted byte-range unit
+   --  @field Expiration Modeled expiration response value
+   --  @field Restore Modeled archive-restore response value
+   --  @field Last_Modified Modeled last-modified response value
+   --  @field Content_Length Declared response-body length
+   --  @field Entity_Tag Exact opaque entity tag
+   --  @field Checksum_CRC32 Modeled CRC32 checksum value
+   --  @field Checksum_CRC32C Modeled CRC32C checksum value
+   --  @field Checksum_CRC64NVME Modeled CRC64NVME checksum value
+   --  @field Checksum_SHA1 Modeled SHA1 checksum value
+   --  @field Checksum_SHA256 Modeled SHA256 checksum value
+   --  @field Checksum_SHA512 Modeled SHA512 checksum value
+   --  @field Checksum_MD5 Modeled MD5 checksum value
+   --  @field Checksum_XXHASH64 Modeled XXHASH64 checksum value
+   --  @field Checksum_XXHASH3 Modeled XXHASH3 checksum value
+   --  @field Checksum_XXHASH128 Modeled XXHASH128 checksum value
+   --  @field Checksum_Type Empty, FULL_OBJECT, or COMPOSITE
+   --  @field Missing_Meta Count of metadata entries not returned
+   --  @field Version_ID Exact provider version response value
+   --  @field Cache_Control Modeled cache-control response value
+   --  @field Content_Disposition Modeled content-disposition response value
+   --  @field Content_Encoding Modeled content-encoding response value
+   --  @field Content_Language Modeled content-language response value
+   --  @field Content_Range Modeled returned byte interval
+   --  @field Content_Type Modeled content-type response value
+   --  @field Expires Modeled expires response value
+   --  @field Website_Redirect_Location Modeled website redirect value
+   --  @field Server_Side_Encryption Modeled server-side encryption value
+   --  @field Metadata Ordered user metadata entries
+   --  @field SSE_Customer_Algorithm Modeled customer-key algorithm value
+   --  @field SSE_Customer_Key_MD5 Modeled customer-key MD5 value
+   --  @field SSE_KMS_Key_ID Modeled KMS key identifier
+   --  @field Bucket_Key_Enabled Whether an S3 bucket key was used
+   --  @field Storage_Class Modeled storage-class response value
+   --  @field Request_Charged Empty or the sole modeled requester value
+   --  @field Replication_Status Modeled replication-status response value
+   --  @field Parts_Count Number of parts in the selected object
+   --  @field Tag_Count Number of tags on the selected object
+   --  @field Object_Lock_Mode Modeled object-lock mode
+   --  @field Object_Lock_Retain_Until_Date Modeled retention timestamp
+   --  @field Object_Lock_Legal_Hold_Status Modeled legal-hold status
    type Get_Object_Result is record
       Delete_Marker             : Optional_Boolean;
       Accept_Ranges             : Ada.Strings.Unbounded.Unbounded_String;
@@ -1141,9 +1193,17 @@ package Flyology.Object_Storage.Client.Low_Level is
         Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of a decoded GetObject response head.
+   --  @enum Object_Opened Modeled success metadata is available
+   --  @enum Get_Object_Rejected The service returned an S3 rejection
    type Get_Object_Head_Outcome_Kind is
      (Object_Opened, Get_Object_Rejected);
 
+   --  Decoded GetObject response metadata or structured rejection.
+   --  @field Kind Selects the opened or rejected variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Result Complete modeled success metadata
+   --  @field Error Structured S3 rejection
    type Get_Object_Head_Outcome
      (Kind : Get_Object_Head_Outcome_Kind := Get_Object_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -1158,6 +1218,11 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Execute a typed GetObject request and return its unconsumed limited
    --  response. The caller must decode the head and then consume or finalize
    --  the body before reusing the associated exchange lease.
+   --  @param Client Configured origin client
+   --  @param Prepared Exact prepared GetObject request
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Unconsumed limited HTTP response
    function Execute_Get_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -7722,6 +7787,13 @@ private
       Requested_Get_Attributes_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Get_Attributes_Version_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived GetObject response binding: an explicit version selector
+      --  must be echoed by a successful response, and a charged response is
+      --  valid only when the exact request admitted requester pays.
+      Requested_Get_Object_Version_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Get_Object_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       --  A successful explicit-version tagging response must echo this exact
       --  selector. Empty means the request selected the current version, so

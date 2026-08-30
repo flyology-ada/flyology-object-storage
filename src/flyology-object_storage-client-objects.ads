@@ -2967,11 +2967,19 @@ package Flyology.Object_Storage.Client.Objects is
       return Conditional_Put_Result
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
+   --  Shape of a complete synchronous GetObject result.
+   --  @enum Whole_Object_Read Complete object bytes and metadata are available
+   --  @enum Whole_Get_Rejected The service returned an S3 rejection
    type Whole_Get_Outcome_Kind is (Whole_Object_Read, Whole_Get_Rejected);
 
    --  A complete GetObject body and its response metadata from one HTTP
    --  exchange. Result.Entity_Tag and Result.Version_ID remain separate,
    --  opaque provider generation values.
+   --  @field Kind Selects the read or rejected variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Result Complete modeled success metadata
+   --  @field Object_Bytes Exact response-body bytes
+   --  @field Error Structured S3 rejection
    type Whole_Get_Outcome
      (Kind : Whole_Get_Outcome_Kind := Whole_Get_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -2989,6 +2997,22 @@ package Flyology.Object_Storage.Client.Objects is
    --  Version_ID independently selects a provider version when supported.
    --  Maximum bounds retained bytes. A larger or malformed successful body
    --  raises Response_Too_Large or Low_Level.Invalid_Response respectively.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Maximum Maximum retained response-body bytes
+   --  @param Identity Credentials used only during signing
+   --  @param Expected_Entity_Tag Optional exact strong ETag validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Complete object bytes or structured S3 rejection
    function Get_Whole
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
@@ -4265,6 +4289,8 @@ private
       Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
       Prepared   : aliased Low_Level.Prepared_Request;
       Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Request_Payer : Ada.Strings.Unbounded.Unbounded_String;
       Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
       Final_Result : Whole_Get_Result;
       Has_Final_Result : Boolean := False;
@@ -4282,6 +4308,8 @@ private
       Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
       Prepared   : aliased Low_Level.Prepared_Request;
       Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Request_Payer : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Range : Byte_Range := Whole_Object;
       Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
       Final_Result : Range_Get_Result;

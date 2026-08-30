@@ -14384,6 +14384,29 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "GetObject accepted a non-AES256 SSE-C algorithm");
+         Parameters := (others => <>);
+         Parameters.Version_ID :=
+           US.To_Unbounded_String
+             ("invalid" & Character'Val (16#7F#) & "version");
+         Raised := False;
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "GetObject accepted an unsafe version identifier");
       end;
 
       declare

@@ -5148,11 +5148,27 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters : Get_Object_Parameters;
       Identity   : Credentials;
       Region     : String;
-      Timestamp  : String) return Prepared_Request is
-     (Prepare_Object_Read
+      Timestamp  : String) return Prepared_Request
+   is
+      Version_ID : constant String := US.To_String (Parameters.Version_ID);
+   begin
+      if Version_ID'Length > 0
+        and then
+          (not S3.Deletions.Valid_Version_ID (Version_ID)
+           or else not Valid_List_Response_Header_Text (Version_ID))
+      then
+         raise Invalid_Request with "invalid GetObject version identifier";
+      end if;
+      return Result : Prepared_Request := Prepare_Object_Read
         (Model.Get_Object_Operation, Get_Object_Operation, "GetObject",
          Origin, Style, Bucket, Key, Parameters, Identity, Region,
-         Timestamp));
+         Timestamp)
+      do
+         Result.Requested_Get_Object_Version_ID := Parameters.Version_ID;
+         Result.Requested_Get_Object_Request_Payer :=
+           Parameters.Request_Payer;
+      end return;
+   end Prepare_Get_Object;
 
    function Prepare_Get_Object_Attributes
      (Origin     : Flyology.HTTP.Origin;
@@ -5843,6 +5859,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else not Valid_Get_Object_Enum (Value.Object_Lock_Mode, 41)
         or else not Valid_Get_Object_Enum
           (Value.Object_Lock_Legal_Hold_Status, 43)
+        or else
+          (US.Length (Value.Version_ID) > 0
+           and then
+             (not S3.Deletions.Valid_Version_ID
+                (US.To_String (Value.Version_ID))
+              or else not Valid_List_Response_Header_Text
+                (US.To_String (Value.Version_ID))))
         or else (Value.Parts_Count.Is_Set
                  and then Value.Parts_Count.Value not in 1 .. 10_000)
         or else (Value.Tag_Count.Is_Set and then Value.Tag_Count.Value > 10)

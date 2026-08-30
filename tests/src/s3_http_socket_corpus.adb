@@ -740,6 +740,10 @@ procedure S3_HTTP_Socket_Corpus is
    Put_Admission_Lightweight     : aliased Flyology.Cancellation.Token;
    Put_Drain_Native              : aliased Flyology.Cancellation.Token;
    Put_Drain_Lightweight         : aliased Flyology.Cancellation.Token;
+   Get_Admission_Native          : aliased Flyology.Cancellation.Token;
+   Get_Admission_Lightweight     : aliased Flyology.Cancellation.Token;
+   Get_Drain_Native              : aliased Flyology.Cancellation.Token;
+   Get_Drain_Lightweight         : aliased Flyology.Cancellation.Token;
    Delete_Admission_Native       : aliased Flyology.Cancellation.Token;
    Delete_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
    Delete_Drain_Native           : aliased Flyology.Cancellation.Token;
@@ -825,6 +829,7 @@ procedure S3_HTTP_Socket_Corpus is
       List_Objects_V1_Cancellation,
       List_Object_Versions_Cancellation,
       Put_Object_Cancellation,
+      Get_Object_Cancellation,
       Delete_Object_Cancellation,
       Delete_Objects_Cancellation,
       Complete_Multipart_Cancellation,
@@ -1613,6 +1618,12 @@ procedure S3_HTTP_Socket_Corpus is
                         else
                            Put_Drain_Lightweight.Request;
                         end if;
+                     when Get_Object_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Get_Drain_Native.Request;
+                        else
+                           Get_Drain_Lightweight.Request;
+                        end if;
                      when Delete_Object_Cancellation =>
                         if Cancellation_Round = 1 then
                            Delete_Drain_Native.Request;
@@ -1747,6 +1758,12 @@ procedure S3_HTTP_Socket_Corpus is
                      else
                         Put_Admission_Lightweight.Request;
                      end if;
+                  when Get_Object_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Get_Admission_Native.Request;
+                     else
+                        Get_Admission_Lightweight.Request;
+                     end if;
                   when Delete_Object_Cancellation =>
                      if Cancellation_Round = 1 then
                         Delete_Admission_Native.Request;
@@ -1869,6 +1886,9 @@ procedure S3_HTTP_Socket_Corpus is
                         when Put_Object_Cancellation =>
                            raise Program_Error with
                              "PutObject cancel peer sent data before drain";
+                        when Get_Object_Cancellation =>
+                           raise Program_Error with
+                             "GetObject cancel peer sent data before drain";
                         when Delete_Object_Cancellation =>
                            raise Program_Error with
                              "DeleteObject cancel peer sent data before " &
@@ -2485,8 +2505,80 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "scoped-get-body",
                "etag: ""scoped-generation""" & CRLF &
                  "x-amz-version-id: scoped-version" & CRLF),
-            "GET", "/example-bucket/scoped-get",
+            "GET", "/example-bucket/scoped-get?versionId=scoped-version",
             Expected_If_Match => """scoped-generation""");
+         Serve
+           ("", "GET",
+            "/example-bucket/scoped-get-cancel?versionId=cancel-version",
+            Expected_If_Match => """scoped-get-restart""",
+            Await_Cancellation => True,
+            Cancellation_Kind => Get_Object_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "scoped-get-restart-body",
+               "etag: ""scoped-get-restart""" & CRLF &
+                 "x-amz-version-id: cancel-version" & CRLF),
+            "GET",
+            "/example-bucket/scoped-get-restart?versionId=cancel-version",
+            Expected_If_Match => """scoped-get-restart""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-version-body",
+               "etag: ""scoped-get-version""" & CRLF),
+            "GET", "/example-bucket/scoped-get-version-missing?" &
+              "versionId=expected-version",
+            Expected_If_Match => """scoped-get-version""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-version-body",
+               "etag: ""scoped-get-version""" & CRLF &
+                 "x-amz-version-id: wrong-version" & CRLF),
+            "GET", "/example-bucket/scoped-get-version-mismatch?" &
+              "versionId=expected-version",
+            Expected_If_Match => """scoped-get-version""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-version-body",
+               "etag: ""scoped-get-version""" & CRLF &
+                 "x-amz-version-id: expected-version" & CRLF &
+                 "x-amz-version-id: expected-version" & CRLF),
+            "GET", "/example-bucket/scoped-get-version-duplicate?" &
+              "versionId=expected-version",
+            Expected_If_Match => """scoped-get-version""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-version-body",
+               "etag: ""scoped-get-version""" & CRLF &
+                 "x-amz-version-id: bad" & Character'Val (1) & CRLF),
+            "GET", "/example-bucket/scoped-get-version-control?" &
+              "versionId=expected-version",
+            Expected_If_Match => """scoped-get-version""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-version-body",
+               "etag: ""scoped-get-version""" & CRLF &
+                 "x-amz-version-id: bad" & Character'Val (16#7F#) & CRLF),
+            "GET", "/example-bucket/scoped-get-version-del?" &
+              "versionId=expected-version",
+            Expected_If_Match => """scoped-get-version""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "invalid-payer-body",
+               "etag: ""scoped-get-payer""" & CRLF &
+                 "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/scoped-get-payer-mismatch",
+            Expected_If_Match => """scoped-get-payer""");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "2345",
+               "content-range: bytes 2-5/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF &
+                 "x-amz-version-id: wrong-version" & CRLF),
+            "GET", "/example-bucket/scoped-range-version-mismatch?" &
+              "versionId=expected-version",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=2-5");
          Serve
            (HTTP_Response
               ("200 OK", String'(1 .. 112 => 'x'),
@@ -8791,7 +8883,8 @@ procedure S3_HTTP_Socket_Corpus is
                  (Set'Access, HTTP'Access, Origin, "example-bucket",
                   "scoped-get", Destination'Access, Identity,
                   HTTP_Client.Deadline_After (5.0),
-                  Expected_Entity_Tag => """scoped-generation""");
+                  Expected_Entity_Tag => """scoped-generation""",
+                  Version_ID => "scoped-version");
                Result : Whole_Get_Result;
             begin
                if Buffers.Has_Buffer (Destination) then
@@ -8810,6 +8903,227 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "scoped same-response GetObject mismatch";
+               end if;
+            end;
+
+            declare
+               procedure Run_Whole_Get_Cancellation is
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Alternate_Pool : aliased Buffers.Pool
+                    (Block_Size => 96, Capacity => 1);
+                  Alternate_Destination : aliased
+                    Buffers.Unique_Buffer (Alternate_Pool'Access);
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+               begin
+                  if Round = 1 then
+                     Get_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Get_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Get_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Get_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale GetObject cancellation readiness";
+                  end if;
+                  Buffers.Acquire (Alternate_Destination);
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Whole_Get_Operation := Get_Whole
+                       (Cancel_Set'Access, HTTP'Access, Origin,
+                        "example-bucket", "scoped-get-cancel",
+                        Destination'Access, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Expected_Entity_Tag => """scoped-get-restart""",
+                        Version_ID => "cancel-version",
+                        Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Whole_Get_Result;
+                     HTTP_Rejected, Destination_Rejected, Token_Rejected :
+                       Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "GetObject did not remain active through admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Whole_Get_Exchange_Failed
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                       or else not Buffers.Has_Buffer (Destination)
+                       or else Buffers.Length (Destination) /= 0
+                     then
+                        raise Program_Error with
+                          "admitted GetObject cancellation mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "GetObject drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Objects.Get_Whole
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           "scoped-get-restart", Destination'Access,
+                           Identity, HTTP_Client.Deadline_After (5.0),
+                           Expected_Entity_Tag =>
+                             """scoped-get-restart""",
+                           Version_ID => "cancel-version",
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "whole GET restart changed a retained owner";
+                     end;
+                     begin
+                        Objects.Get_Whole
+                          (HTTP'Access, Origin, "example-bucket",
+                           "scoped-get-restart",
+                           Alternate_Destination'Access, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Expected_Entity_Tag =>
+                             """scoped-get-restart""",
+                           Version_ID => "cancel-version",
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Destination_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "whole GET restart changed a retained owner";
+                     end;
+                     begin
+                        Objects.Get_Whole
+                          (HTTP'Access, Origin, "example-bucket",
+                           "scoped-get-restart", Destination'Access,
+                           Identity, HTTP_Client.Deadline_After (5.0),
+                           Expected_Entity_Tag =>
+                             """scoped-get-restart""",
+                           Version_ID => "cancel-version",
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "whole GET restart changed a retained owner";
+                     end;
+                     if not HTTP_Rejected
+                       or else not Destination_Rejected
+                       or else not Token_Rejected
+                     then
+                        raise Program_Error with
+                          "GetObject accepted a changed retained owner";
+                     end if;
+                     Objects.Get_Whole
+                       (HTTP'Access, Origin, "example-bucket",
+                        "scoped-get-restart", Destination'Access, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Expected_Entity_Tag => """scoped-get-restart""",
+                        Version_ID => "cancel-version",
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Whole_Get_Response_Available
+                       or else Result.Failure /= No_Failure
+                       or else Result.Response.Kind /= Low_Level.Object_Opened
+                       or else Result.Response.Status /= 200
+                       or else US.To_String
+                         (Result.Response.Result.Version_ID) /=
+                           "cancel-version"
+                       or else Buffer_String (Destination) /=
+                         "scoped-get-restart-body"
+                     then
+                        raise Program_Error with
+                          "same-object GetObject restart mismatch";
+                     end if;
+                  end;
+               end Run_Whole_Get_Cancellation;
+            begin
+               Run_Whole_Get_Cancellation;
+            end;
+
+            declare
+               procedure Require_Invalid_Whole_Get
+                 (Key           : String;
+                  Version_ID    : String := "expected-version";
+                  Request_Payer : String := "";
+                  Entity_Tag    : String := """scoped-get-version""")
+               is
+                  Result : constant Whole_Get_Result :=
+                    Objects.Get_Whole
+                       (HTTP, Origin, "example-bucket", Key, Destination,
+                        Identity,
+                       Expected_Entity_Tag => Entity_Tag,
+                       Version_ID => Version_ID,
+                       Request_Payer => Request_Payer,
+                       Timeout => 5.0);
+               begin
+                  if Result.Kind /= Whole_Get_Exchange_Failed
+                    or else Result.Failure /= Corrupt_Or_Invalid_Response
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Buffers.Length (Destination) /= 0
+                  then
+                     raise Program_Error with
+                       "GetObject accepted invalid response binding: " & Key;
+                  end if;
+               end Require_Invalid_Whole_Get;
+            begin
+               Require_Invalid_Whole_Get ("scoped-get-version-missing");
+               Require_Invalid_Whole_Get ("scoped-get-version-mismatch");
+               Require_Invalid_Whole_Get ("scoped-get-version-duplicate");
+               Require_Invalid_Whole_Get ("scoped-get-version-control");
+               Require_Invalid_Whole_Get ("scoped-get-version-del");
+               Require_Invalid_Whole_Get
+                 ("scoped-get-payer-mismatch", Version_ID => "",
+                  Entity_Tag => """scoped-get-payer""");
+            end;
+
+            declare
+               Result : constant Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket",
+                    "scoped-range-version-mismatch",
+                    (Kind  => Flyology.Object_Storage.Bounded_Range,
+                     First => 2, Last => 5, Count => 0),
+                    Destination, Identity, """range-generation""",
+                    Version_ID => "expected-version", Timeout => 5.0);
+            begin
+               if Result.Kind /= Range_Get_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "range GetObject accepted mismatched version binding";
                end if;
             end;
 
