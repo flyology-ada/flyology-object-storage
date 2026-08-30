@@ -37,6 +37,7 @@ OPERATION_DOCUMENTATION = {
     ),
     "DeleteBucketMetricsConfiguration": "Delete metrics configuration",
     "DeleteBucketOwnershipControls": "Delete bucket ownership controls",
+    "DeleteBucketPolicy": "Delete bucket policy",
     "DeleteBucketReplication": "Delete bucket replication",
     "DeleteBucketWebsite": "Delete bucket website",
     "DeleteBucketTagging": "Delete bucket tagging operation",

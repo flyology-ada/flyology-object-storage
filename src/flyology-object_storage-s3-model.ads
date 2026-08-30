@@ -30,6 +30,7 @@ is
    --    Delete metrics configuration
    --  @enum Delete_Bucket_Ownership_Controls_Operation Delete bucket ownership
    --    controls
+   --  @enum Delete_Bucket_Policy_Operation Delete bucket policy
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Delete_Bucket_Website_Operation Delete bucket website
