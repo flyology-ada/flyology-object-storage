@@ -2,8 +2,9 @@
 
 This page records the evidence boundary for PutBucketTagging,
 GetBucketTagging, and DeleteBucketTagging in the pinned S3 model. The focused
-GetBucketTagging registry slice is reviewed independently; each mutation keeps
-its own promotion and qualification boundary. The authoritative request shapes
+GetBucketTagging and PutBucketTagging registry slices are reviewed
+independently; DeleteBucketTagging keeps its own promotion and qualification
+boundary. The authoritative request shapes
 contain ExpectedBucketOwner on all three operations and ContentMD5 plus the
 ten-value ChecksumAlgorithm enum on Put. RequestPayer and RequestCharged are
 not modeled; the strict high-level API omits them, while retained low-level
@@ -102,3 +103,14 @@ selected-operation GNATdoc qualification remain blocked by pre-existing
 warnings outside this declaration region, so this page makes no global
 documentation qualification claim. Every command in the maintained
 GetBucketTagging lane must still succeed before a qualification claim.
+
+The PutBucketTagging source slice has a green maintained full test wrapper and
+fresh region-scoped GNATdoc measurement. That measurement removed exactly 48
+candidate-owned warnings and added none. It preserves the client
+interoperability boundary of exact 200 or 204 while the pinned model and
+maintained server remain exact 200. Repository-wide and selected-operation
+GNATdoc qualification remain
+blocked by pre-existing warnings outside this declaration region, so this page
+makes no global documentation qualification claim. Every command in the
+maintained PutBucketTagging lane must still succeed before a qualification
+claim.

@@ -322,6 +322,15 @@ get_bucket_tagging = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_bucket_tagging = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-tagging-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-bucket-tagging-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_versioning = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-versioning-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -4000,18 +4009,22 @@ tier = "core"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "rest_xml_and_headers"
+public_name = "Put_Tags"
+absence = "not_applicable; the operation atomically replaces the complete bucket tag set and exact NoSuchBucket remains a bounded structured rejection proving the requested replacement was not applied"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 or 204 response reports Bucket_Tag_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Tag_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Tag_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Tag_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Tags may observe the current complete bucket tag set before a retry but does not prove that the lost mutation caused the observed state or upgrade mutation certainty; no automatic replay"
+exclusions = ["directory buckets and ABAC-enabled general-purpose buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting, including S3 Express control-endpoint selection, is not claimed; caller-supplied Origin remains authoritative", "the pinned model and maintained server use exact HTTP 200 while the compatibility-preserving client accepts only exact 200 or 204; no other success status is claimed", "whitespace-only success payload tolerance is preserved as an existing client compatibility behavior and is not a server or external-provider compatibility claim", "current-state tag observation does not establish causation or authorize automatic replay"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_bucket_tagging"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-put-bucket-tagging-preparation.py", "docs/qualification/bucket-tagging.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+ada_symbols = ["Prepare_Put_Bucket_Tagging", "Decode_Put_Bucket_Tagging_Response", "Execute_Put_Bucket_Tagging", "Put_Bucket_Tagging_Operation", "Put_Tags", "Finish"]
 
 [[operation]]
 name = "PutBucketVersioning"

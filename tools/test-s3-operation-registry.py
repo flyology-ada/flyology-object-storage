@@ -3565,6 +3565,156 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketTagging lane was accepted")
+    put_bucket_tagging_certainty = (
+        "only a complete validated 200 or 204 response reports "
+        "Bucket_Tag_Mutation_Completed; an exact recognized non-mutating "
+        "rejection or definite non-admission reports "
+        "Bucket_Tag_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Tag_Mutation_Cancelled_Before_Admission; possible or "
+        "incomplete admission, retryable responses, and malformed or "
+        "oversized responses report Bucket_Tag_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    put_bucket_tagging_reconciliation = (
+        "caller-selected Get_Tags may observe the current complete bucket "
+        "tag set before a retry but does not prove that the lost mutation "
+        "caused the observed state or upgrade mutation certainty; no "
+        "automatic replay"
+    )
+
+    def assert_put_bucket_tagging_registry(candidate):
+        entry = candidate.operations["PutBucketTagging"]
+        assert entry.get("public_name") == "Put_Tags"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_bucket_tagging"
+        assert entry.get("codec") == "rest_xml_and_headers"
+        assert entry.get("certainty") == put_bucket_tagging_certainty
+        assert entry.get("reconciliation") == (
+            put_bucket_tagging_reconciliation
+        )
+        assert entry.get("ada_symbols") == [
+            "Prepare_Put_Bucket_Tagging",
+            "Decode_Put_Bucket_Tagging_Response",
+            "Execute_Put_Bucket_Tagging",
+            "Put_Bucket_Tagging_Operation",
+            "Put_Tags",
+            "Finish",
+        ]
+        assert "exact NoSuchBucket" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][2]
+        assert "exact 200 or 204" in entry["exclusions"][2]
+        assert "whitespace-only success payload" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert "tools/verify-put-bucket-tagging-preparation.py" in (
+            candidate.qualification["put_bucket_tagging"][0]
+        )
+
+    def reject_put_bucket_tagging_registry(candidate, label):
+        try:
+            assert_put_bucket_tagging_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketTagging registry accepted"
+        )
+
+    assert_put_bucket_tagging_registry(registry)
+    missing_put_bucket_tagging_name = copy.deepcopy(registry)
+    del missing_put_bucket_tagging_name.operations["PutBucketTagging"][
+        "public_name"
+    ]
+    reject_put_bucket_tagging_registry(
+        missing_put_bucket_tagging_name,
+        "missing public name",
+    )
+    wrong_put_bucket_tagging_name = copy.deepcopy(registry)
+    wrong_put_bucket_tagging_name.operations["PutBucketTagging"][
+        "public_name"
+    ] = "Put_Object_Tags"
+    reject_put_bucket_tagging_registry(
+        wrong_put_bucket_tagging_name,
+        "wrong public name",
+    )
+    narrowed_put_bucket_tagging_success = copy.deepcopy(registry)
+    narrowed_put_bucket_tagging_success.operations["PutBucketTagging"][
+        "certainty"
+    ] = put_bucket_tagging_certainty.replace("200 or 204", "200")
+    reject_put_bucket_tagging_registry(
+        narrowed_put_bucket_tagging_success,
+        "narrowed client success status",
+    )
+    causal_put_bucket_tagging_reconciliation = copy.deepcopy(registry)
+    causal_put_bucket_tagging_reconciliation.operations[
+        "PutBucketTagging"
+    ]["reconciliation"] = "Get_Tags proves the mutation completed"
+    reject_put_bucket_tagging_registry(
+        causal_put_bucket_tagging_reconciliation,
+        "causal reconciliation",
+    )
+    cross_put_bucket_tagging_symbol = copy.deepcopy(registry)
+    cross_put_bucket_tagging_symbol.operations["PutBucketTagging"][
+        "ada_symbols"
+    ][0] = "Prepare_Put_Object_Tagging"
+    reject_put_bucket_tagging_registry(
+        cross_put_bucket_tagging_symbol,
+        "cross-operation symbol",
+    )
+    put_bucket_tagging_qualification, put_bucket_tagging_commands = (
+        s3_operation.qualification_plan(registry, ["PutBucketTagging"])
+    )
+    assert put_bucket_tagging_qualification == "put_bucket_tagging"
+    assert put_bucket_tagging_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-tagging-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert put_bucket_tagging_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-tagging-gnatdoc",
+        "--operation",
+        "PutBucketTagging",
+    ]
+    assert put_bucket_tagging_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_put_bucket_tagging_lane = copy.deepcopy(registry)
+    malformed_put_bucket_tagging_lane.operations["PutBucketTagging"][
+        "qualification"
+    ] = "missing_put_bucket_tagging_lane"
+    try:
+        s3_operation.qualification_plan(
+            malformed_put_bucket_tagging_lane,
+            ["PutBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError("malformed PutBucketTagging lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketTagging", "PutBucketTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutBucketTagging lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketTagging", "PutBucketVersioning"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketTagging lane was accepted")
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
