@@ -28,6 +28,9 @@ REGISTRY = ROOT / "coverage" / "s3-operations.toml"
 QUALIFICATION = ROOT / "docs" / "qualification" / (
     "delete-bucket-configurations.md"
 )
+BUCKET_POLICY_QUALIFICATION = (
+    ROOT / "docs" / "qualification" / "bucket-policy.md"
+)
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
@@ -396,6 +399,39 @@ DELETE_OWNERSHIP_CONTROLS_LANE = [
     [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-delete-bucket-ownership-controls-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
+DELETE_POLICY_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Policy_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Bucket_Policy_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports Bucket_Policy_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, and malformed "
+    "or oversized responses report Bucket_Policy_Mutation_Outcome_Unknown; "
+    "no automatic replay"
+)
+DELETE_POLICY_RECONCILIATION = (
+    "caller-selected Get_Policy may observe the current bucket policy or "
+    "exact NoSuchBucketPolicy before a retry, but does not prove that the "
+    "lost deletion caused the observed absence or upgrade mutation "
+    "certainty; no automatic replay"
+)
+DELETE_POLICY_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-policy-gnatdoc",
     ],
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
@@ -1442,6 +1478,95 @@ def verify_ownership_controls_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def delete_policy_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketPolicy"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketPolicy is not unique")
+    return matches[0]
+
+
+def verify_delete_policy_registry(data: dict[str, object]) -> None:
+    entry = delete_policy_entry(data)
+    expected = {
+        "public_name": "Delete_Policy",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_policy",
+        "codec": "empty_response",
+        "certainty": DELETE_POLICY_CERTAINTY,
+        "reconciliation": DELETE_POLICY_RECONCILIATION,
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Policy",
+            "Execute_Delete_Bucket_Policy",
+            "Delete_Bucket_Policy_Operation",
+            "Delete_Policy",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketPolicy changed: {key}")
+    if "removes the bucket policy" not in entry["absence"]:
+        fail("DeleteBucketPolicy semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][1]:
+        fail("DeleteBucketPolicy success changed")
+    if "previously present" not in entry["exclusions"][2]:
+        fail("DeleteBucketPolicy presence changed")
+    if "does not establish causation" not in entry["exclusions"][3]:
+        fail("DeleteBucketPolicy reconcile changed")
+    if data["qualification"].get(
+        "delete_bucket_policy"
+    ) != DELETE_POLICY_LANE:
+        fail("DeleteBucketPolicy lane changed")
+
+
+def verify_delete_policy_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Ownership_Controls"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_POLICY_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Policy proves deletion",
+        ),
+        (
+            "cross-operation lane",
+            "qualification",
+            "delete_bucket_ownership_controls",
+        ),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = delete_policy_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_delete_policy_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1541,6 +1666,8 @@ def main() -> int:
     verify_metrics_negatives(registry)
     verify_ownership_controls_registry(registry)
     verify_ownership_controls_negatives(registry)
+    verify_delete_policy_registry(registry)
+    verify_delete_policy_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1565,6 +1692,9 @@ def main() -> int:
     socket = SOCKET.read_text(encoding="utf-8")
     qualification = " ".join(
         QUALIFICATION.read_text(encoding="utf-8").split()
+    )
+    bucket_policy_qualification = " ".join(
+        BUCKET_POLICY_QUALIFICATION.read_text(encoding="utf-8").split()
     )
     if model_spec.count(
         "@enum Delete_Bucket_Encryption_Operation "
@@ -1624,6 +1754,10 @@ def main() -> int:
     )
     if model_spec.count(ownership_controls_documentation) != 1:
         fail("DeleteBucketOwnershipControls docs changed")
+    if model_spec.count(
+        "@enum Delete_Bucket_Policy_Operation Delete bucket policy"
+    ) != 1:
+        fail("DeleteBucketPolicy docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -2200,6 +2334,63 @@ def main() -> int:
         ],
         "DeleteBucketOwnershipControls qualification prose",
     )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Delete_Bucket_Policy_Response",
+            "Bucket_Policy_Mutation_Completed",
+            "Bucket_Policy_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Policy_Failure",
+            "procedure Start_Delete_Bucket_Policy",
+            "DeleteBucketPolicy restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeleteBucketPolicy provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Bucket_Policy_Certainty_Corpus",
+            "procedure Check_Delete_Response",
+            "Bucket_Policy_Mutation_Completed",
+            '(404, "NoSuchBucket",',
+            "for Kind of Failure_Kinds loop",
+            "Normalize_Delete_Bucket_Policy_Failure",
+        ],
+        "DeleteBucketPolicy certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            "typed DeleteBucketPolicy response mismatch",
+            "composed DeleteBucketPolicy first result mismatch",
+            "composed DeleteBucketPolicy restart mismatch",
+        ],
+        "DeleteBucketPolicy socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the bucket policy",
+            "NoSuchBucketPolicy",
+            "prior presence",
+            "covered / covered / covered / covered",
+            "Delete_Bucket_Policy_Operation",
+            "added none",
+            "delete_bucket_policy",
+        ],
+        "DeleteBucketPolicy family qualification prose",
+    )
+    ordered(
+        bucket_policy_qualification,
+        [
+            "`DeleteBucketPolicy` registry lane",
+            "exact empty-204 completion",
+            "observational `Get_Policy` reconciliation",
+            "region-scoped warning measurement only",
+        ],
+        "DeleteBucketPolicy backend and server qualification prose",
+    )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
         operation, enum_stem, shape, uri, has_id, prepare, execute, high = expected
@@ -2520,7 +2711,7 @@ def main() -> int:
         "DeleteBucketInventoryConfiguration/"
         "DeleteBucketMetadataConfiguration registry/certainty, and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
-        "metrics, ownership-controls, "
+        "metrics, ownership-controls, policy, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
         "composable forms"
     )

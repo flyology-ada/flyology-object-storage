@@ -5779,6 +5779,147 @@ def main() -> None:
         raise AssertionError(
             "mixed DeleteBucketOwnershipControls lane was accepted"
         )
+    delete_policy_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Policy_Mutation_Completed; an exact recognized "
+        "non-mutating rejection or definite non-admission reports "
+        "Bucket_Policy_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports Bucket_Policy_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report Bucket_Policy_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    delete_policy_reconciliation = (
+        "caller-selected Get_Policy may observe the current bucket policy or "
+        "exact NoSuchBucketPolicy before a retry, but does not prove that the "
+        "lost deletion caused the observed absence or upgrade mutation "
+        "certainty; no automatic replay"
+    )
+
+    def assert_delete_policy_registry(candidate):
+        entry = candidate.operations["DeleteBucketPolicy"]
+        assert entry.get("public_name") == "Delete_Policy"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_policy"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_policy_certainty
+        assert entry.get("reconciliation") == delete_policy_reconciliation
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Policy",
+            "Execute_Delete_Bucket_Policy",
+            "Delete_Bucket_Policy_Operation",
+            "Delete_Policy",
+            "Finish",
+        ]
+        assert "removes the bucket policy" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][1]
+        assert "previously present" in entry["exclusions"][2]
+        assert "does not establish causation" in entry["exclusions"][3]
+        assert (
+            candidate.qualification["delete_bucket_policy"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_policy_registry(candidate, label):
+        try:
+            assert_delete_policy_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketPolicy registry accepted"
+        )
+
+    assert_delete_policy_registry(registry)
+    missing_delete_policy_name = copy.deepcopy(registry)
+    del missing_delete_policy_name.operations["DeleteBucketPolicy"][
+        "public_name"
+    ]
+    reject_delete_policy_registry(
+        missing_delete_policy_name, "missing public name"
+    )
+    wrong_delete_policy_name = copy.deepcopy(registry)
+    wrong_delete_policy_name.operations["DeleteBucketPolicy"][
+        "public_name"
+    ] = "Delete_Ownership_Controls"
+    reject_delete_policy_registry(
+        wrong_delete_policy_name, "wrong public name"
+    )
+    broadened_delete_policy_success = copy.deepcopy(registry)
+    broadened_delete_policy_success.operations["DeleteBucketPolicy"][
+        "certainty"
+    ] = delete_policy_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_policy_registry(
+        broadened_delete_policy_success, "broadened success status"
+    )
+    causal_delete_policy_reconciliation = copy.deepcopy(registry)
+    causal_delete_policy_reconciliation.operations["DeleteBucketPolicy"][
+        "reconciliation"
+    ] = "Get_Policy proves deletion"
+    reject_delete_policy_registry(
+        causal_delete_policy_reconciliation, "causal reconciliation"
+    )
+    cross_delete_policy_symbol = copy.deepcopy(registry)
+    cross_delete_policy_symbol.operations["DeleteBucketPolicy"][
+        "ada_symbols"
+    ][0] = "Prepare_Delete_Bucket_Ownership_Controls"
+    reject_delete_policy_registry(
+        cross_delete_policy_symbol, "cross-operation symbol"
+    )
+    delete_policy_qualification, delete_policy_commands = (
+        s3_operation.qualification_plan(registry, ["DeleteBucketPolicy"])
+    )
+    assert delete_policy_qualification == "delete_bucket_policy"
+    assert delete_policy_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_policy_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-policy-gnatdoc",
+        "--operation",
+        "DeleteBucketPolicy",
+    ]
+    assert delete_policy_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketPolicy", "DeleteBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketPolicy lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteBucketPolicy", "DeleteBucketOwnershipControls"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketPolicy lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )

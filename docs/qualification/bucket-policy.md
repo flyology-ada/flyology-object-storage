@@ -80,3 +80,12 @@ covered / covered`. The maintained 116-operation ledger verifier and its
 negative oracle gate those claims. The root and SQLite deterministic suites,
 repository checks, documentation build, and exact-tree proof result are
 recorded with the commit that introduces this slice.
+
+The `DeleteBucketPolicy` registry lane is conditional on every maintained
+command succeeding. It records exact empty-204 completion, admission-aware
+nonreplaying certainty, and observational `Get_Policy` reconciliation without
+claiming that a later policy or `NoSuchBucketPolicy` observation proves the
+lost deletion caused that state. Its generated-model documentation evidence
+is a region-scoped warning measurement only; repository-wide and selected
+GNATdoc qualification remain blocked by pre-existing warnings outside that
+declaration region.

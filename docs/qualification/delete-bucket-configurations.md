@@ -172,9 +172,19 @@ responses preserve outcome-unknown. A caller-selected
 lost deletion caused the observation, upgrade mutation certainty, or
 authorize automatic replay. Completion does not assert prior presence.
 
+For `DeleteBucketPolicy`, the pinned operation removes the bucket policy.
+Only an exact empty 204 proves completion. Exact recognized rejections or
+definite non-admission prove non-application, while possible admission,
+malformed or oversized responses, and retryable responses preserve
+outcome-unknown. A caller-selected `Get_Policy` can observe the current policy
+or exact `NoSuchBucketPolicy` before a retry, but cannot prove that the lost
+deletion caused the observation, upgrade mutation certainty, or authorize
+automatic replay. Completion does not assert prior presence.
+
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketOwnershipControls,
+DeleteBucketPolicy,
 DeleteBucketIntelligentTieringConfiguration,
 DeleteBucketMetadataConfiguration,
 DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
@@ -236,7 +246,8 @@ routes.
 `DeleteBucketMetadataConfiguration`, and
 `DeleteBucketMetadataTableConfiguration`, and
 `DeleteBucketMetricsConfiguration`, and
-`DeleteBucketOwnershipControls`
+`DeleteBucketOwnershipControls`, and
+`DeleteBucketPolicy`
 have operation-specific reviewed registry lanes, but their ledger tuples remain
 `missing / covered / missing / covered`. Each lane is conditional on every
 maintained command succeeding and does not convert client evidence into
@@ -362,6 +373,15 @@ GNATdoc qualification remain blocked by pre-existing warnings outside this
 declaration region. Every command in the maintained
 `delete_bucket_ownership_controls` lane must still succeed before a
 qualification claim.
+
+The bucket-policy deletion generated-model documentation slice also has a
+green maintained full test wrapper and fresh region-scoped GNATdoc
+measurement. It removed exactly the one candidate-owned
+`Delete_Bucket_Policy_Operation` warning and added none, without changing any
+Ada declaration token. Repository-wide and selected-operation GNATdoc
+qualification remain blocked by pre-existing warnings outside this
+declaration region. Every command in the maintained `delete_bucket_policy`
+lane must still succeed before a qualification claim.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, corpus, coverage, and documentation
