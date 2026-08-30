@@ -5295,6 +5295,175 @@ def main() -> None:
         raise AssertionError(
             "mixed DeleteBucketMetadataConfiguration lane was accepted"
         )
+    delete_metadata_table_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Metadata_Table_Mutation_Completed; an exact "
+        "recognized non-mutating rejection or definite non-admission reports "
+        "Bucket_Metadata_Table_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Metadata_Table_Mutation_Cancelled_Before_Admission; possible "
+        "or incomplete admission, retryable responses, and malformed or "
+        "oversized responses report "
+        "Bucket_Metadata_Table_Mutation_Outcome_Unknown; no automatic replay"
+    )
+    delete_metadata_table_reconciliation = (
+        "caller-selected Get_Metadata_Table_Configuration may observe the "
+        "current modeled configuration response or structured rejection "
+        "before a retry, but does not prove that the lost deletion caused the "
+        "observation or upgrade mutation certainty; no automatic replay"
+    )
+
+    def assert_delete_metadata_table_registry(candidate):
+        entry = candidate.operations[
+            "DeleteBucketMetadataTableConfiguration"
+        ]
+        assert (
+            entry.get("public_name")
+            == "Delete_Metadata_Table_Configuration"
+        )
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_metadata_table"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_metadata_table_certainty
+        assert (
+            entry.get("reconciliation")
+            == delete_metadata_table_reconciliation
+        )
+        assert entry.get("coverage") == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Metadata_Table_Configuration",
+            "Execute_Delete_Bucket_Metadata_Table_Configuration",
+            "Delete_Bucket_Metadata_Table_Operation",
+            "Delete_Metadata_Table_Configuration",
+            "Finish",
+        ]
+        assert "removes the bucket metadata-table" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert "previously present" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification["delete_bucket_metadata_table"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_metadata_table_registry(candidate, label):
+        try:
+            assert_delete_metadata_table_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketMetadataTableConfiguration registry "
+            "accepted"
+        )
+
+    assert_delete_metadata_table_registry(registry)
+    missing_delete_metadata_table_name = copy.deepcopy(registry)
+    del missing_delete_metadata_table_name.operations[
+        "DeleteBucketMetadataTableConfiguration"
+    ]["public_name"]
+    reject_delete_metadata_table_registry(
+        missing_delete_metadata_table_name,
+        "missing public name",
+    )
+    wrong_delete_metadata_table_name = copy.deepcopy(registry)
+    wrong_delete_metadata_table_name.operations[
+        "DeleteBucketMetadataTableConfiguration"
+    ]["public_name"] = "Delete_Metadata_Configuration"
+    reject_delete_metadata_table_registry(
+        wrong_delete_metadata_table_name,
+        "wrong public name",
+    )
+    broadened_delete_metadata_table_success = copy.deepcopy(registry)
+    broadened_delete_metadata_table_success.operations[
+        "DeleteBucketMetadataTableConfiguration"
+    ]["certainty"] = delete_metadata_table_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_metadata_table_registry(
+        broadened_delete_metadata_table_success,
+        "broadened success status",
+    )
+    causal_delete_metadata_table_reconciliation = copy.deepcopy(registry)
+    causal_delete_metadata_table_reconciliation.operations[
+        "DeleteBucketMetadataTableConfiguration"
+    ]["reconciliation"] = (
+        "Get_Metadata_Table_Configuration proves deletion completed"
+    )
+    reject_delete_metadata_table_registry(
+        causal_delete_metadata_table_reconciliation,
+        "causal reconciliation",
+    )
+    cross_delete_metadata_table_symbol = copy.deepcopy(registry)
+    cross_delete_metadata_table_symbol.operations[
+        "DeleteBucketMetadataTableConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Delete_Bucket_Metadata_Configuration"
+    reject_delete_metadata_table_registry(
+        cross_delete_metadata_table_symbol,
+        "cross-operation symbol",
+    )
+    delete_metadata_table_qualification, delete_metadata_table_commands = (
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketMetadataTableConfiguration"]
+        )
+    )
+    assert (
+        delete_metadata_table_qualification == "delete_bucket_metadata_table"
+    )
+    assert delete_metadata_table_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_metadata_table_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-metadata-table-gnatdoc",
+        "--operation",
+        "DeleteBucketMetadataTableConfiguration",
+    ]
+    assert delete_metadata_table_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketMetadataTableConfiguration",
+                "DeleteBucketMetadataTableConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketMetadataTableConfiguration lane was "
+            "accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketMetadataTableConfiguration",
+                "DeleteBucketMetadataConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketMetadataTableConfiguration lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
