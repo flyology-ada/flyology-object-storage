@@ -2997,6 +2997,131 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed HeadObject lane was accepted")
+    get_object_attributes_public_name = "Get_Attributes"
+
+    def assert_get_object_attributes_registry(candidate):
+        entry = candidate.operations["GetObjectAttributes"]
+        assert entry.get("public_name") == (
+            get_object_attributes_public_name
+        )
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_object_attributes"
+        assert entry.get("ada_symbols") == [
+            "Prepare_Get_Object_Attributes",
+            "Decode_Get_Object_Attributes_Response",
+            "Decode_Get_Object_Attributes_Complete_Response",
+            "Execute_Get_Object_Attributes",
+            "Get_Object_Attributes_Operation",
+            "Get_Attributes",
+            "Finish",
+        ]
+        assert "MaxParts=0" in entry["absence"]
+        assert "bind to the prepared request" in entry["certainty"]
+        assert "does not recompute" in entry["exclusions"][0]
+        assert "tools/verify-get-object-attributes-preparation.py" in (
+            entry["evidence"]["corpus"]
+        )
+
+    def reject_get_object_attributes_registry(candidate, label):
+        try:
+            assert_get_object_attributes_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetObjectAttributes registry accepted"
+        )
+
+    assert_get_object_attributes_registry(registry)
+    missing_attributes_name = copy.deepcopy(registry)
+    del missing_attributes_name.operations["GetObjectAttributes"][
+        "public_name"
+    ]
+    reject_get_object_attributes_registry(
+        missing_attributes_name,
+        "missing public name",
+    )
+    wrong_attributes_name = copy.deepcopy(registry)
+    wrong_attributes_name.operations["GetObjectAttributes"][
+        "public_name"
+    ] = "Get_Whole"
+    reject_get_object_attributes_registry(
+        wrong_attributes_name,
+        "wrong public name",
+    )
+    cross_attributes_symbol = copy.deepcopy(registry)
+    cross_attributes_symbol.operations["GetObjectAttributes"][
+        "ada_symbols"
+    ][0] = "Prepare_Head_Object"
+    reject_get_object_attributes_registry(
+        cross_attributes_symbol,
+        "cross-operation symbol",
+    )
+    attributes_qualification, attributes_commands = (
+        s3_operation.qualification_plan(
+            registry,
+            ["GetObjectAttributes"],
+        )
+    )
+    assert attributes_qualification == "get_object_attributes"
+    assert attributes_commands[:4] == [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-get-object-attributes-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert attributes_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-object-attributes-gnatdoc",
+        "--operation",
+        "GetObjectAttributes",
+    ]
+    assert attributes_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_attributes_lane = copy.deepcopy(registry)
+    malformed_attributes_lane.operations["GetObjectAttributes"][
+        "qualification"
+    ] = "missing_get_object_attributes_lane"
+    try:
+        s3_operation.qualification_plan(
+            malformed_attributes_lane,
+            ["GetObjectAttributes"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "malformed GetObjectAttributes lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetObjectAttributes", "GetObjectAttributes"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetObjectAttributes lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetObjectAttributes", "HeadObject"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetObjectAttributes lane was accepted")
     copy_qualification, copy_commands = s3_operation.qualification_plan(
         registry, ["CopyObject"]
     )

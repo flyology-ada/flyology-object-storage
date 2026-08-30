@@ -253,6 +253,15 @@ get_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_object_attributes = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-attributes-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-object-attributes-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 head_object = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-head-object-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -2341,18 +2350,22 @@ tier = "core"
 provider = "objects"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Get_Attributes"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+absence = "an omitted VersionId selects the object generation current at read time; an explicit nonempty selector must be echoed exactly by a successful response, unavailable requested attributes remain omitted, and an explicit MaxParts=0 yields an empty terminal parts page that retains the total count"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only; only one complete validated response whose returned attribute groups, singleton headers, explicit or omitted pagination controls, version selection, and requester-pays admission bind to the prepared request exposes metadata"
+reconciliation = "the exact returned VersionId and selected attributes identify the observed generation for caller-selected follow-up reads; an omitted VersionId observes the generation current at read time and neither form proves the cause of any prior mutation"
+exclusions = ["checksum values are structurally validated and exposed but this client slice does not recompute object or part checksum values", "configured SSE-C object state, directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-get-object-attributes-preparation.py", "docs/qualification/get-object-attributes.md", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "get_object_attributes"
+ada_symbols = ["Prepare_Get_Object_Attributes", "Decode_Get_Object_Attributes_Response", "Decode_Get_Object_Attributes_Complete_Response", "Execute_Get_Object_Attributes", "Get_Object_Attributes_Operation", "Get_Attributes", "Finish"]
 
 [[operation]]
 name = "GetObjectLegalHold"
