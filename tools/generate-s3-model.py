@@ -20,6 +20,7 @@ EXPECTED_SHAPES = 718
 
 OPERATION_DOCUMENTATION = {
     "DeleteBucketCors": "Delete bucket CORS operation",
+    "DeleteBucketEncryption": "Delete bucket encryption",
     "DeleteBucketTagging": "Delete bucket tagging operation",
     "GetBucketTagging": "Get bucket tagging operation",
     "GetObjectAttributes": "Get object attributes operation",
