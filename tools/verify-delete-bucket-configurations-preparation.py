@@ -131,6 +131,39 @@ DELETE_REPLICATION_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_WEBSITE_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Website_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Bucket_Website_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports "
+    "Bucket_Website_Mutation_Cancelled_Before_Admission; possible or "
+    "incomplete admission, retryable responses, and malformed or oversized "
+    "responses report Bucket_Website_Mutation_Outcome_Unknown; no automatic "
+    "replay"
+)
+DELETE_WEBSITE_RECONCILIATION = (
+    "caller-selected Get_Website may observe the current website "
+    "configuration or exact NoSuchWebsiteConfiguration before a retry, but "
+    "does not prove that the lost deletion caused the observed absence or "
+    "upgrade mutation certainty; no automatic replay"
+)
+DELETE_WEBSITE_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-website-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -467,6 +500,91 @@ def verify_delete_replication_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def delete_website_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketWebsite"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketWebsite registry entry is not unique")
+    return matches[0]
+
+
+def verify_delete_website_registry(data: dict[str, object]) -> None:
+    entry = delete_website_entry(data)
+    expected = {
+        "public_name": "Delete_Website",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_website",
+        "codec": "empty_response",
+        "certainty": DELETE_WEBSITE_CERTAINTY,
+        "reconciliation": DELETE_WEBSITE_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Website",
+            "Execute_Delete_Bucket_Website",
+            "Delete_Bucket_Website_Operation",
+            "Delete_Website",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketWebsite registry changed: {key}")
+    if "removes the bucket website configuration" not in entry["absence"]:
+        fail("DeleteBucketWebsite deletion semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeleteBucketWebsite success status changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeleteBucketWebsite prior-presence boundary changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeleteBucketWebsite reconciliation boundary changed")
+    if data["qualification"].get("delete_bucket_website") != (
+        DELETE_WEBSITE_LANE
+    ):
+        fail("DeleteBucketWebsite qualification lane changed")
+
+
+def verify_delete_website_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Replication"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_WEBSITE_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Website proves the deletion completed",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_replication"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = delete_website_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_delete_website_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -550,6 +668,8 @@ def main() -> int:
     verify_delete_lifecycle_negatives(registry)
     verify_delete_replication_registry(registry)
     verify_delete_replication_negatives(registry)
+    verify_delete_website_registry(registry)
+    verify_delete_website_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -588,6 +708,10 @@ def main() -> int:
         "@enum Delete_Bucket_Replication_Operation Delete bucket replication"
     ) != 1:
         fail("DeleteBucketReplication generated documentation changed")
+    if model_spec.count(
+        "@enum Delete_Bucket_Website_Operation Delete bucket website"
+    ) != 1:
+        fail("DeleteBucketWebsite generated documentation changed")
     ordered(
         texts["high-level body"],
         [
@@ -737,6 +861,57 @@ def main() -> int:
             "delete_bucket_replication",
         ],
         "DeleteBucketReplication qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Conclusive_Bucket_Website_Rejection",
+            "function Normalize_Delete_Bucket_Website_Response",
+            "Bucket_Website_Mutation_Completed",
+            "Bucket_Website_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Website_Failure",
+            "procedure Start_Delete_Bucket_Website",
+            "DeleteBucketWebsite restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeleteBucketWebsite provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Delete_Bucket_Website_Certainty_Corpus",
+            "Check_Response",
+            "Bucket_Website_Mutation_Completed, No_Failure",
+            '(409, "OperationAborted",',
+            "Bucket_Website_Mutation_Outcome_Unknown",
+            "for Admission in",
+            "Normalize_Delete_Bucket_Website_Failure",
+        ],
+        "DeleteBucketWebsite certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeleteBucketWebsite"',
+            "typed DeleteBucketWebsite response mismatch",
+            "DeleteBucketWebsite accepted a lifecycle request",
+            "composed DeleteBucketWebsite mismatch",
+            "restarted DeleteBucketWebsite mismatch",
+        ],
+        "DeleteBucketWebsite socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the bucket website configuration",
+            "NoSuchWebsiteConfiguration",
+            "previously present",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Website_Operation",
+            "added none",
+            "delete_bucket_website",
+        ],
+        "DeleteBucketWebsite qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
@@ -1052,7 +1227,8 @@ def main() -> int:
         "bucket-configuration DELETE preparation: 13 operations, 30 request "
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
         "pinned model, DeleteBucketEncryption/DeleteBucketLifecycle/"
-        "DeleteBucketReplication registry/certainty, and exact "
+        "DeleteBucketReplication/DeleteBucketWebsite registry/certainty, "
+        "and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
         "metrics, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
