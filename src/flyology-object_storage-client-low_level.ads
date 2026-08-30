@@ -823,10 +823,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Tagging_Outcome;
 
+   --  Complete modeled DeleteBucketTagging request controls.
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
    type Delete_Bucket_Tagging_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one nonreplaying DeleteBucketTagging request.
+   --  @param Origin Exact request origin
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Bucket Bucket whose complete tag set is deleted
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request with an empty payload
    function Prepare_Delete_Bucket_Tagging
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -836,9 +847,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Shape of one decoded DeleteBucketTagging response.
+   --  @enum Bucket_Tags_Deleted Completed deletion and exact status
+   --  @enum Delete_Bucket_Tagging_Rejected Exact status and S3 error
    type Delete_Bucket_Tagging_Outcome_Kind is
      (Bucket_Tags_Deleted, Delete_Bucket_Tagging_Rejected);
 
+   --  Payload-free completed deletion or structured S3 rejection.
+   --  @field Kind Result shape
+   --  @field Status Exact response status
+   --  @field Error Structured S3 rejection
    type Delete_Bucket_Tagging_Outcome
      (Kind : Delete_Bucket_Tagging_Outcome_Kind :=
        Delete_Bucket_Tagging_Rejected)
@@ -852,6 +870,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode exact HTTP 204 with an exactly empty response body.
+   --  Completion does not assert that a tag set was previously present.
+   --  @param Status Exact response status
+   --  @param Payload Complete bounded response payload
+   --  @param Request_ID Request identifier fallback for structured errors
+   --  @param Host_ID Host identifier fallback for structured errors
+   --  @param Limits Caller-selected XML parser limits
+   --  @return Completed deletion or structured S3 rejection
+   --  @exception Invalid_Response Response payload is invalid
    function Decode_Delete_Bucket_Tagging_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -860,6 +887,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Tagging_Outcome;
 
+   --  Execute one prepared DeleteBucketTagging exchange synchronously.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact prepared DeleteBucketTagging request
+   --  @param Timeout Whole-exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and XML limits
+   --  @return Completed deletion or structured S3 rejection
    function Execute_Delete_Bucket_Tagging
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -7427,6 +7461,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared DeleteBucketTagging exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Empty request source retained through terminal drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Delete_Bucket_Tagging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

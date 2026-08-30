@@ -18182,6 +18182,7 @@ procedure S3_HTTP_Socket_Corpus is
                    HTTP_Client.Response_Observed
                  or else Delete_Result.Response.Kind /=
                    Low_Level.Bucket_Tags_Deleted
+                 or else Delete_Result.Response.Status /= 204
                then
                   raise Program_Error with
                     "scoped DeleteBucketTagging socket mismatch";
@@ -18204,6 +18205,7 @@ procedure S3_HTTP_Socket_Corpus is
                  or else Delete_Result.Failure /= No_Failure
                  or else Delete_Result.Response.Kind /=
                    Low_Level.Bucket_Tags_Deleted
+                 or else Delete_Result.Response.Status /= 204
                then
                   raise Program_Error with
                     "scoped DeleteBucketTagging restart mismatch";
@@ -18223,6 +18225,7 @@ procedure S3_HTTP_Socket_Corpus is
                  or else US.To_String (Get_Result.Error.Code) /=
                    "NoSuchTagSet"
                  or else Delete_Result.Kind /= Buckets.Tags_Deleted
+                 or else Delete_Result.Status /= 204
                then
                   raise Program_Error with
                     "synchronous composable bucket-tag mapping mismatch";

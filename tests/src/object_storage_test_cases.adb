@@ -13943,7 +13943,8 @@ package body Object_Storage_Test_Cases is
            Low_Level.Decode_Delete_Bucket_Tagging_Response (204, "");
       begin
          Assert
-           (Outcome.Kind = Low_Level.Bucket_Tags_Deleted,
+           (Outcome.Kind = Low_Level.Bucket_Tags_Deleted
+            and then Outcome.Status = 204,
             "typed DeleteBucketTagging success response");
       end;
 

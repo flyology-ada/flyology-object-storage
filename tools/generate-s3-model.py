@@ -19,6 +19,7 @@ EXPECTED_OPERATIONS = 116
 EXPECTED_SHAPES = 718
 
 OPERATION_DOCUMENTATION = {
+    "DeleteBucketTagging": "Delete bucket tagging operation",
     "GetBucketTagging": "Get bucket tagging operation",
     "GetObjectAttributes": "Get object attributes operation",
     "PutBucketTagging": "Put bucket tagging operation",

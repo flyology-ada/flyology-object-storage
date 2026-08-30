@@ -10,6 +10,7 @@ is
    Shape_Count : constant := 718;
 
    --  Identifiers for operations in the pinned S3 model.
+   --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation

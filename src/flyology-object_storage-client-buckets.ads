@@ -10124,9 +10124,17 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Tags_Outcome;
 
+   --  Outcome of one synchronous bucket-tag deletion.
+   --  @enum Tags_Deleted Completed payload-free deletion with status
+   --  @enum Delete_Tags_Rejected Exact status and structured S3 error
    type Delete_Tags_Outcome_Kind is
      (Tags_Deleted, Delete_Tags_Rejected);
 
+   --  Payload-free completed deletion or structured S3 rejection.
+   --  Completion does not assert that a tag set was previously present.
+   --  @field Kind Result shape
+   --  @field Status Exact response status
+   --  @field Error Structured S3 rejection
    type Delete_Tags_Outcome
      (Kind : Delete_Tags_Outcome_Kind := Delete_Tags_Rejected)
    is record
@@ -15591,10 +15599,12 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Tagging_Result;
+   --  @exclude
    function Normalize_Delete_Bucket_Tagging_Response
      (Value     : Low_Level.Delete_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Bucket_Tagging_Result;
+   --  @exclude
    function Normalize_Delete_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
