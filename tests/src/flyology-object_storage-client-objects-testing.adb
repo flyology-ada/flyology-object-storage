@@ -1614,27 +1614,61 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
    end Check_Get_Object_ACL_Result_Corpus;
 
    procedure Check_Delete_Objects_Certainty_Corpus is
-      type Failure_Kind_Array is array (Positive range <>) of
-        HTTP_Client.Exchange_Result_Kind;
-      Failure_Kinds : constant Failure_Kind_Array :=
-        (HTTP_Client.Pre_Admission_Rejected,
-         HTTP_Client.Cancelled,
-         HTTP_Client.Timed_Out,
-         HTTP_Client.Client_Unavailable,
-         HTTP_Client.Connection_Failed,
-         HTTP_Client.Transport_Failed,
-         HTTP_Client.Request_Source_Failed,
-         HTTP_Client.Response_Invalid,
-         HTTP_Client.Response_Body_Too_Large,
-         HTTP_Client.Response_Sink_Failed);
+      type Failure_Case is record
+         Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty;
+      end record;
+      type Failure_Case_Array is array (Positive range <>) of Failure_Case;
+      Failure_Cases : constant Failure_Case_Array :=
+        ((HTTP_Client.Pre_Admission_Rejected, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Cancelled, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Cancelled, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Cancelled, HTTP_Client.Response_Observed),
+         (HTTP_Client.Timed_Out, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Timed_Out, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Timed_Out, HTTP_Client.Response_Observed),
+         (HTTP_Client.Client_Unavailable, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Client_Unavailable, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Client_Unavailable, HTTP_Client.Response_Observed),
+         (HTTP_Client.Connection_Failed, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Connection_Failed, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Connection_Failed, HTTP_Client.Response_Observed),
+         (HTTP_Client.Transport_Failed, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Transport_Failed, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Transport_Failed, HTTP_Client.Response_Observed),
+         (HTTP_Client.Request_Source_Failed, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Request_Source_Failed, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Request_Source_Failed, HTTP_Client.Response_Observed),
+         (HTTP_Client.Response_Invalid, HTTP_Client.Not_Admitted),
+         (HTTP_Client.Response_Invalid, HTTP_Client.Possibly_Admitted),
+         (HTTP_Client.Response_Invalid, HTTP_Client.Response_Observed),
+         (HTTP_Client.Response_Body_Too_Large,
+          HTTP_Client.Response_Observed),
+         (HTTP_Client.Response_Sink_Failed,
+          HTTP_Client.Response_Observed));
    begin
       Check_Delete_Objects_Response
         (200, "", Batch_Processed, No_Failure);
       Check_Delete_Objects_Response
         (400, "BadDigest", Batch_Definitely_Not_Processed, Invalid_Request);
       Check_Delete_Objects_Response
+        (400, "EntityTooLarge", Batch_Definitely_Not_Processed,
+         Invalid_Request);
+      Check_Delete_Objects_Response
+        (400, "InvalidArgument", Batch_Definitely_Not_Processed,
+         Invalid_Request);
+      Check_Delete_Objects_Response
+        (400, "InvalidDigest", Batch_Definitely_Not_Processed,
+         Invalid_Request);
+      Check_Delete_Objects_Response
+        (400, "InvalidRequest", Batch_Definitely_Not_Processed,
+         Invalid_Request);
+      Check_Delete_Objects_Response
         (400, "MalformedXML", Batch_Definitely_Not_Processed,
          Invalid_Request);
+      Check_Delete_Objects_Response
+        (400, "XAmzContentSHA256Mismatch",
+         Batch_Definitely_Not_Processed, Invalid_Request);
       Check_Delete_Objects_Response
         (401, "InvalidAccessKeyId", Batch_Definitely_Not_Processed,
          Authentication_Failed);
@@ -1650,7 +1684,19 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
         (409, "OperationAborted", Batch_Outcome_Unknown,
          Unavailable_Or_Retryable);
       Check_Delete_Objects_Response
+        (429, "SlowDown", Batch_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Objects_Response
         (500, "InternalError", Batch_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Objects_Response
+        (502, "BadGateway", Batch_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Objects_Response
+        (503, "SlowDown", Batch_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Objects_Response
+        (504, "RequestTimeout", Batch_Outcome_Unknown,
          Unavailable_Or_Retryable);
       Check_Delete_Objects_Response
         (400, "", Batch_Outcome_Unknown, Corrupt_Or_Invalid_Response);
@@ -1675,10 +1721,8 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
          end;
       end loop;
 
-      for Kind of Failure_Kinds loop
-         for Admission in HTTP_Client.Admission_Certainty loop
-            Check_Delete_Objects_Failure (Kind, Admission);
-         end loop;
+      for Item of Failure_Cases loop
+         Check_Delete_Objects_Failure (Item.Kind, Item.Admission);
       end loop;
    end Check_Delete_Objects_Certainty_Corpus;
 

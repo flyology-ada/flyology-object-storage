@@ -27,6 +27,8 @@ reset_fixtures() {
   cp "$SOURCE_DIR/abort-multipart-certainty.tsv" "$WORK_DIR/abort.tsv"
   cp "$SOURCE_DIR/copy-certainty.tsv" "$WORK_DIR/copy.tsv"
   cp "$SOURCE_DIR/object-tagging-certainty.tsv" "$WORK_DIR/tagging.tsv"
+  cp "$SOURCE_DIR/delete-objects-certainty.tsv" \
+    "$WORK_DIR/delete-objects.tsv"
 }
 
 expect_rejection() {
@@ -36,6 +38,7 @@ expect_rejection() {
       "$WORK_DIR/create.tsv" "$WORK_DIR/upload.tsv" \
       "$WORK_DIR/complete.tsv" "$WORK_DIR/abort.tsv" \
       "$WORK_DIR/copy.tsv" "$WORK_DIR/tagging.tsv" \
+      "$WORK_DIR/delete-objects.tsv" \
       >"$WORK_DIR/stdout" 2>"$WORK_DIR/stderr"; then
     printf '%s\n' "verifier accepted invalid fixture: $label" >&2
     exit 1
@@ -57,13 +60,24 @@ install_tagging_mutation() {
   mv "$candidate" "$original"
 }
 
+install_delete_objects_mutation() {
+  original=$1
+  candidate=$2
+  label=$3
+  if cmp -s "$original" "$candidate"; then
+    printf '%s\n' "DeleteObjects mutation changed no row: $label" >&2
+    exit 1
+  fi
+  mv "$candidate" "$original"
+}
+
 reset_fixtures
 "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
   "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" \
   "$WORK_DIR/delete.tsv" "$WORK_DIR/create.tsv" \
   "$WORK_DIR/upload.tsv" "$WORK_DIR/complete.tsv" \
   "$WORK_DIR/abort.tsv" "$WORK_DIR/copy.tsv" \
-  "$WORK_DIR/tagging.tsv" >/dev/null
+  "$WORK_DIR/tagging.tsv" "$WORK_DIR/delete-objects.tsv" >/dev/null
 
 reset_fixtures
 awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
@@ -311,5 +325,67 @@ awk -F '\t' 'BEGIN { OFS = "\t" }
 install_tagging_mutation "$WORK_DIR/tagging.tsv" \
   "$WORK_DIR/mutated.tsv" "Put-only code leakage"
 expect_rejection "Put-only object-tagging code leakage"
+
+reset_fixtures
+awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
+  "$WORK_DIR/delete-objects.tsv" >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "duplicate exact tuple"
+expect_rejection "duplicate DeleteObjects input tuple"
+
+reset_fixtures
+awk 'NR != 2' "$WORK_DIR/delete-objects.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "missing exact tuple"
+expect_rejection "missing exact DeleteObjects tuple"
+
+reset_fixtures
+awk '1; END { print "Unknown_Result\tNot_Admitted\tnone\t" \
+  "not-applicable\tBatch_Definitely_Not_Processed\tInvalid_Request\t" \
+  "no\tunknown tuple" }' "$WORK_DIR/delete-objects.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "extra unknown tuple"
+expect_rejection "extra unknown DeleteObjects tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $1 == "Pre_Admission_Rejected" { $2 = "Possibly_Admitted"; changed = 1 }
+  { print } END { if (!changed) exit 2 }' \
+  "$WORK_DIR/delete-objects.tsv" >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "invalid admission pairing"
+expect_rejection "invalid DeleteObjects admission pairing"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $1 == "Timed_Out" && !changed { $6 = "Cancelled"; changed = 1 }
+  { print } END { if (!changed) exit 2 }' \
+  "$WORK_DIR/delete-objects.tsv" >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "wrong failure reason"
+expect_rejection "wrong DeleteObjects failure reason"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $5 == "Batch_Outcome_Unknown" && !changed {
+    $5 = "Batch_Definitely_Not_Processed"; $7 = "no"; changed = 1
+  } { print } END { if (!changed) exit 2 }' \
+  "$WORK_DIR/delete-objects.tsv" >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "wrong disposition relation"
+expect_rejection "wrong DeleteObjects disposition relation"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $4 == "InvalidDigest" && !changed {
+    $5 = "Batch_Outcome_Unknown"; $6 = "Corrupt_Or_Invalid_Response";
+    $7 = "yes"; changed = 1
+  } { print } END { if (!changed) exit 2 }' \
+  "$WORK_DIR/delete-objects.tsv" >"$WORK_DIR/mutated.tsv"
+install_delete_objects_mutation "$WORK_DIR/delete-objects.tsv" \
+  "$WORK_DIR/mutated.tsv" "checksum certainty leakage"
+expect_rejection "DeleteObjects checksum rejection certainty leakage"
 
 printf '%s\n' "composable client fixture verifier self-tests: OK"

@@ -15005,6 +15005,9 @@ package body Object_Storage_Test_Cases is
    procedure Check_Low_Level_Delete_Requests (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
+      package Checksum_Policy renames
+        Flyology.Object_Storage.S3.Checksum_Policy;
+      package Checksums renames Flyology.Object_Storage.S3.Checksums;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
       package Deletions renames Flyology.Object_Storage.S3.Deletions;
       package US renames Ada.Strings.Unbounded;
@@ -15030,6 +15033,20 @@ package body Object_Storage_Test_Cases is
          Parameters.Checksum_Algorithm :=
            US.To_Unbounded_String (Algorithm);
          declare
+            Document : constant String :=
+              Deletions.Serialize_Request (Request);
+            Parsed : constant Checksum_Policy.Algorithm_Parse_Result :=
+              Checksum_Policy.Parse_Algorithm (Algorithm);
+            Digest : constant String := Checksums.Encode_Base64
+              (Checksums.Compute
+                 (Parsed.Value,
+                  Flyology.Bytes.To_Array
+                    (Flyology.Bytes.From_Byte_String (Document))));
+            MD5_Digest : constant String := Checksums.Encode_Base64
+              (Checksums.Compute
+                 (Flyology.Object_Storage.S3.Core.MD5,
+                  Flyology.Bytes.To_Array
+                    (Flyology.Bytes.From_Byte_String (Document))));
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Objects
                 (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
@@ -15046,7 +15063,11 @@ package body Object_Storage_Test_Cases is
                and then Ada.Strings.Fixed.Index
                  (Signed, ";x-amz-sdk-checksum-algorithm;") > 0
                and then Ada.Strings.Fixed.Index
-                 (Canonical, Header_Name & ":") > 0
+                 (Canonical,
+                  Header_Name & ":" & Digest & ASCII.LF) > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "content-md5:" & MD5_Digest & ASCII.LF) > 0
                and then Ada.Strings.Fixed.Index
                  (Canonical,
                   "x-amz-sdk-checksum-algorithm:" & Algorithm) > 0,
@@ -15456,7 +15477,7 @@ package body Object_Storage_Test_Cases is
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Objects
-                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
                  Low_Level.Path_Style, "example-bucket", Request,
                  Parameters, Identity, "us-east-1",
                  "20130524T000000Z");
@@ -15510,6 +15531,54 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid DeleteObjects checksum algorithm prepared");
+      end;
+
+      declare
+         procedure Reject
+           (MFA, Origin, Label : String)
+         is
+            Request : Deletions.Delete_Objects_Request;
+            Parameters : Low_Level.Delete_Objects_Parameters;
+            Raised : Boolean := False;
+         begin
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String ("key"),
+                  Version_ID => US.Null_Unbounded_String,
+                  others     => <>));
+            Parameters.MFA := US.To_Unbounded_String (MFA);
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Delete_Objects
+                      (Flyology.HTTP.Parse_Origin (Origin),
+                       Low_Level.Path_Style, "example-bucket", Request,
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert (Raised, Label);
+         end Reject;
+      begin
+         Reject
+           ("device 123456", "http://localhost:9000",
+            "DeleteObjects prepared MFA over insecure transport");
+         Reject
+           (String'(1 .. 2_049 => 'm'), "https://localhost:9000",
+            "DeleteObjects prepared oversized MFA");
+         Reject
+           ("device" & Character'Val (10) & "123456",
+            "https://localhost:9000",
+            "DeleteObjects prepared control-bearing MFA");
+         Reject
+           ("device" & Character'Val (127) & "123456",
+            "https://localhost:9000",
+            "DeleteObjects prepared DEL-bearing MFA");
       end;
 
       declare

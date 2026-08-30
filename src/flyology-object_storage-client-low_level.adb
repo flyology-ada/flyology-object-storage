@@ -12423,11 +12423,36 @@ package body Flyology.Object_Storage.Client.Low_Level is
             Headers (Last) := SigV4.Pair (Name, Value);
          end if;
       end Add;
+
+      function Valid_MFA_Header (Value : String) return Boolean is
+      begin
+         --  Compatibility contract shared with DeleteObject: optional MFA
+         --  transport metadata is bounded to 2 KiB and contains no HTTP
+         --  control bytes. The service authenticator owns credential syntax.
+         if Value'Length > 2 * 1_024 then
+            return False;
+         end if;
+         for Character_Value of Value loop
+            if Character'Pos (Character_Value) < 32
+              or else Character'Pos (Character_Value) = 127
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_MFA_Header;
    begin
       if Request_Payer'Length > 0 and then Request_Payer /= "requester" then
          raise Invalid_Request with "invalid DeleteObjects request payer";
       elsif Algorithm_Text'Length > 0 and then not Algorithm.Valid then
          raise Invalid_Request with "invalid DeleteObjects checksum algorithm";
+      elsif not Valid_MFA_Header (US.To_String (Parameters.MFA))
+        or else
+          (US.Length (Parameters.MFA) > 0
+           and then Flyology.HTTP.Scheme (Origin) /=
+             Flyology.HTTP.Secure_HTTPS)
+      then
+         raise Invalid_Request with "invalid DeleteObjects MFA header";
       end if;
       declare
          Payload : constant String :=
@@ -12551,6 +12576,60 @@ package body Flyology.Object_Storage.Client.Low_Level is
             return Value;
          end;
       end Singleton_Header;
+
+      function Requested_Delete return S3.Deletions.Delete_Objects_Request is
+      begin
+         return S3.Deletions.Parse_Request
+           (US.To_String (Prepared.Owned_Request_Payload));
+      exception
+         when S3.Deletions.Malformed_Delete =>
+            raise Invalid_Request with
+              "prepared DeleteObjects payload is invalid";
+      end Requested_Delete;
+
+      procedure Validate_Result_Binding
+        (Value : S3.Deletions.Delete_Objects_Result)
+      is
+         Remaining : S3.Deletions.Delete_Objects_Request := Requested_Delete;
+
+         procedure Consume (Key, Version_ID : String) is
+         begin
+            for Index in Remaining.Objects.First_Index ..
+              Remaining.Objects.Last_Index
+            loop
+               declare
+                  Item : constant S3.Deletions.Object_Identifier :=
+                    Remaining.Objects (Index);
+               begin
+                  if US.To_String (Item.Key) = Key
+                    and then US.To_String (Item.Version_ID) = Version_ID
+                  then
+                     Remaining.Objects.Delete (Index);
+                     return;
+                  end if;
+               end;
+            end loop;
+            raise Invalid_Response with
+              "DeleteObjects response entry was not requested";
+         end Consume;
+      begin
+         if Remaining.Quiet and then not Value.Deleted.Is_Empty then
+            raise Invalid_Response with
+              "quiet DeleteObjects response contains a success entry";
+         end if;
+         for Item of Value.Deleted loop
+            Consume
+              (US.To_String (Item.Key), US.To_String (Item.Version_ID));
+         end loop;
+         for Item of Value.Errors loop
+            Consume
+              (US.To_String (Item.Key), US.To_String (Item.Version_ID));
+         end loop;
+         if not Remaining.Quiet and then not Remaining.Objects.Is_Empty then
+            raise Invalid_Response with
+              "DeleteObjects response omitted a requested entry";
+         end if;
+      end Validate_Result_Binding;
    begin
       if Prepared.Operation /= Delete_Objects_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
@@ -12574,6 +12653,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
          then
             raise Invalid_Response with
               "DeleteObjects charged response was not requested";
+         end if;
+         if Outcome.Kind = Objects_Deleted then
+            Validate_Result_Binding (Outcome.Result.Result);
          end if;
          return Outcome;
       end;

@@ -14,6 +14,8 @@ COMPLETE_FIXTURE=${8:-"$PROJECT_DIR/tests/corpora/composable-client/complete-mul
 ABORT_FIXTURE=${9:-"$PROJECT_DIR/tests/corpora/composable-client/abort-multipart-certainty.tsv"}
 COPY_FIXTURE=${10:-"$PROJECT_DIR/tests/corpora/composable-client/copy-certainty.tsv"}
 TAGGING_FIXTURE=${11:-"$PROJECT_DIR/tests/corpora/composable-client/object-tagging-certainty.tsv"}
+DELETE_OBJECTS_FIXTURE=${12:-"$PROJECT_DIR/tests/corpora/"\
+"composable-client/delete-objects-certainty.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -57,6 +59,10 @@ if [ ! -f "$COPY_FIXTURE" ]; then
 fi
 if [ ! -f "$TAGGING_FIXTURE" ]; then
   printf '%s\n' "missing object-tagging fixture: $TAGGING_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$DELETE_OBJECTS_FIXTURE" ]; then
+  printf '%s\n' "missing DeleteObjects fixture: $DELETE_OBJECTS_FIXTURE" >&2
   exit 1
 fi
 
@@ -1000,5 +1006,166 @@ END {
   exit failed
 }
 ' "$TAGGING_FIXTURE"
+
+awk -F '\t' '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+function add_expected(row) { expected[row] = 1 }
+function add_response(status, code, disposition, reason, note) {
+  add_expected("Response_Complete\tResponse_Observed\t" status "\t" code \
+    "\t" disposition "\t" reason "\t" \
+    (disposition == "Batch_Outcome_Unknown" ? "yes" : "no") "\t" note)
+}
+function failure_disposition(result, admission) {
+  if (admission != "Not_Admitted") return "Batch_Outcome_Unknown"
+  if (result == "Cancelled") return "Batch_Cancelled_Before_Admission"
+  return "Batch_Definitely_Not_Processed"
+}
+function failure_note(result, admission) {
+  if (result == "Pre_Admission_Rejected")
+    return "HTTP validation rejected before handoff"
+  if (result == "Cancelled" && admission == "Not_Admitted")
+    return "cancelled before possible admission"
+  if (result == "Cancelled" && admission == "Possibly_Admitted")
+    return "cancellation cannot retract possible admission"
+  if (result == "Timed_Out" && admission == "Not_Admitted")
+    return "deadline expired before handoff"
+  if (result == "Timed_Out" && admission == "Possibly_Admitted")
+    return "deadline expired after possible admission"
+  if (result == "Client_Unavailable" && admission == "Not_Admitted")
+    return "client rejected admission"
+  if (result == "Connection_Failed" && admission == "Not_Admitted")
+    return "connection failed before handoff"
+  if (result == "Transport_Failed" && admission == "Not_Admitted")
+    return "transport failed before handoff"
+  if (result == "Transport_Failed" && admission == "Possibly_Admitted")
+    return "lost accepted-request response is unknown"
+  if (result == "Request_Source_Failed" && admission == "Not_Admitted")
+    return "source failed before handoff"
+  if (result == "Request_Source_Failed" && admission == "Possibly_Admitted")
+    return "partial admitted request remains conservative"
+  if (result == "Response_Invalid" && admission == "Not_Admitted")
+    return "invalid local state preceded admission"
+  if (result == "Response_Invalid" && admission == "Possibly_Admitted")
+    return "invalid response cannot disprove processing"
+  if (result == "Response_Invalid")
+    return "invalid observed response requires reconciliation"
+  if (result == "Response_Body_Too_Large")
+    return "oversized response cannot prove processing"
+  if (result == "Response_Sink_Failed")
+    return "failed response sink cannot prove processing"
+  if (admission == "Response_Observed")
+    return "observed partial response is not conclusive"
+  return "possible admission remains conservative"
+}
+function add_failure(encoded, item, disposition, reconcile) {
+  split(encoded, item, ":")
+  disposition = failure_disposition(item[1], item[2])
+  reconcile = (disposition == "Batch_Outcome_Unknown" ? "yes" : "no")
+  add_expected(item[1] "\t" item[2] "\t" item[3] "\t" item[4] \
+    "\t" disposition "\t" item[5] "\t" reconcile "\t" \
+    failure_note(item[1], item[2]))
+}
+BEGIN {
+  add_response("200", "none", "Batch_Processed", "No_Failure",
+    "complete bound DeleteObjects response")
+  add_response("400", "BadDigest", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "checksum rejection is conclusive")
+  add_response("400", "EntityTooLarge", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "request size rejection is conclusive")
+  add_response("400", "InvalidArgument", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "argument rejection is conclusive")
+  add_response("400", "InvalidDigest", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "digest rejection is conclusive")
+  add_response("400", "InvalidRequest", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "request rejection is conclusive")
+  add_response("400", "MalformedXML", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "request document rejection is conclusive")
+  add_response("400", "XAmzContentSHA256Mismatch",
+    "Batch_Definitely_Not_Processed", "Invalid_Request",
+    "payload checksum rejection is conclusive")
+  add_response("401", "InvalidAccessKeyId",
+    "Batch_Definitely_Not_Processed", "Authentication_Failed",
+    "authentication rejection is conclusive")
+  add_response("403", "AccessDenied", "Batch_Definitely_Not_Processed",
+    "Authorization_Failed", "authorization rejection is conclusive")
+  add_response("404", "NoSuchBucket", "Batch_Definitely_Not_Processed",
+    "Not_Found", "missing bucket rejection is conclusive")
+  add_response("501", "NotImplemented", "Batch_Definitely_Not_Processed",
+    "Invalid_Request", "unsupported request rejection is conclusive")
+  retry_note = "caller reconciles the selected object set before retry"
+  add_response("409", "OperationAborted", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  add_response("429", "SlowDown", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  add_response("500", "InternalError", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  add_response("502", "BadGateway", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  add_response("503", "SlowDown", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  add_response("504", "RequestTimeout", "Batch_Outcome_Unknown",
+    "Unavailable_Or_Retryable", retry_note)
+  failures = "Pre_Admission_Rejected:Not_Admitted:none:not-applicable:"
+  failures = failures "Invalid_Request "
+  results = "Cancelled Timed_Out Client_Unavailable Connection_Failed "
+  results = results "Transport_Failed Request_Source_Failed Response_Invalid"
+  split(results, values, " ")
+  for (i in values) {
+    result = values[i]
+    reason = result
+    status = "none"
+    if (result == "Response_Invalid") {
+      reason = "Corrupt_Or_Invalid_Response"
+      status = "invalid"
+    }
+    failures = failures result ":Not_Admitted:" status ":not-applicable:"
+    failures = failures reason " " result ":Possibly_Admitted:" status
+    failures = failures ":not-applicable:" reason " " result
+    failures = failures ":Response_Observed:"
+    if (result == "Response_Invalid")
+      response_status = "invalid"
+    else
+      response_status = "incomplete"
+    failures = failures response_status
+    failures = failures ":not-applicable:" reason " "
+  }
+  failures = failures "Response_Body_Too_Large:Response_Observed:"
+  failures = failures "oversized:not-applicable:Corrupt_Or_Invalid_Response "
+  failures = failures "Response_Sink_Failed:Response_Observed:"
+  failures = failures "overflow-or-fault:not-applicable:"
+  failures = failures "Corrupt_Or_Invalid_Response"
+  split(failures, failure, " ")
+  for (i in failure) add_failure(failure[i])
+}
+NR == 1 {
+  if (NF != 8 || $1 != "http_result" || $2 != "admission" ||
+      $3 != "status" || $4 != "s3_code" || $5 != "disposition" ||
+      $6 != "failure_reason" || $7 != "reconcile" || $8 != "note")
+    fail("unexpected DeleteObjects fixture header")
+  next
+}
+{
+  if (NF != 8 || $8 == "") fail("invalid DeleteObjects fixture row")
+  key = $0
+  if (key in seen) fail("duplicate DeleteObjects input tuple")
+  seen[key] = 1
+  if (!(key in expected)) fail("unexpected DeleteObjects tuple")
+  if (($5 == "Batch_Outcome_Unknown") != ($7 == "yes"))
+    fail("DeleteObjects reconciliation does not match certainty")
+  if ($4 == "InvalidDigest" || $4 == "XAmzContentSHA256Mismatch")
+    if ($5 != "Batch_Definitely_Not_Processed" ||
+        $6 != "Invalid_Request")
+      fail("DeleteObjects checksum rejection is not conclusive")
+}
+END {
+  for (key in expected)
+    if (!(key in seen)) fail("missing exact DeleteObjects tuple")
+  if (NR != 43) fail("DeleteObjects fixture must contain exactly 42 rows")
+  exit failed
+}
+' "$DELETE_OBJECTS_FIXTURE"
 
 printf '%s\n' "composable client fixtures: OK"

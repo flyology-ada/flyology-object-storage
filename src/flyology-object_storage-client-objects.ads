@@ -4563,10 +4563,20 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Result;
+   --  @exclude Internal DeleteObjects response certainty projection
+   --  @param Value Complete modeled response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal public-result projection
    function Normalize_Delete_Objects_Response
      (Value     : Low_Level.Delete_Objects_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Objects_Result;
+   --  @exclude Internal DeleteObjects HTTP failure certainty projection
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Causal terminal HTTP phase
+   --  @param Detail Bounded sanitized diagnostic
+   --  @return Internal failure projection
    function Normalize_Delete_Objects_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;

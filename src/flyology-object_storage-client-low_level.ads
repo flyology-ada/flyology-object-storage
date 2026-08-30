@@ -4726,6 +4726,11 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Content-MD5 is always generated over the exact serialized document.
    --  When Checksum_Algorithm is present, the client also generates the
    --  matching algorithm-specific checksum header over those same bytes.
+   --  @field MFA Optional root-owner MFA device and credential value
+   --  @field Request_Payer Empty or requester for Requester Pays buckets
+   --  @field Bypass_Governance_Retention Optional governance bypass request
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field Checksum_Algorithm Optional maintained checksum algorithm
    type Delete_Objects_Parameters is record
       MFA                         : Ada.Strings.Unbounded.Unbounded_String;
       Request_Payer               : Ada.Strings.Unbounded.Unbounded_String;
@@ -4734,6 +4739,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Checksum_Algorithm          : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exact signed DeleteObjects request and retain its body.
+   --  @param Origin Exact HTTP origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Timestamp SigV4 basic-format timestamp
+   --  @return Signed request with an owned one-shot XML payload
+   --  @exception Invalid_Request Request or controls are invalid
    function Prepare_Delete_Objects
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -4744,14 +4760,25 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Modeled per-entry DeleteObjects result and Requester Pays metadata.
+   --  @field Result Exact Deleted and Error entry collections
+   --  @field Request_Charged Empty or requester from the response
    type Delete_Objects_Result is record
       Result          : S3.Deletions.Delete_Objects_Result;
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of a decoded DeleteObjects response.
+   --  @enum Objects_Deleted A modeled batch response is available
+   --  @enum Delete_Objects_Rejected The service rejected the batch request
    type Delete_Objects_Outcome_Kind is
      (Objects_Deleted, Delete_Objects_Rejected);
 
+   --  Complete modeled DeleteObjects response or structured S3 rejection.
+   --  @field Kind Selects the processed or rejected response variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Result Modeled per-entry batch result and response metadata
+   --  @field Error Structured S3 rejection
    type Delete_Objects_Outcome
      (Kind : Delete_Objects_Outcome_Kind := Delete_Objects_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -4763,6 +4790,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one syntactically complete DeleteObjects response document.
+   --  Request binding requires Decode_Delete_Objects_Complete_Response.
+   --  @param Status HTTP status returned by the completed exchange
+   --  @param Payload Complete bounded response body
+   --  @param Request_Charged Empty or requester response metadata
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @param Limits Caller-selected bounded XML limits
+   --  @return Modeled per-entry result or structured S3 rejection
+   --  @exception Invalid_Response Response XML or metadata is invalid
    function Decode_Delete_Objects_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -4789,6 +4826,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Objects_Outcome;
 
+   --  Execute one exact prepared DeleteObjects request synchronously.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed DeleteObjects request
+   --  @param Timeout Whole synchronous exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed per-entry response or structured S3 rejection
+   --  @exception Invalid_Request Prepared is not DeleteObjects
+   --  @exception Invalid_Response Complete response is inconsistent
    function Execute_Delete_Objects
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -6957,6 +7003,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared DeleteObjects batch exchange.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed DeleteObjects request
+   --  @param Source One-shot request body source retained through drain
+   --  @param Sink Bounded response sink retained through drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Caller-owned HTTP exchange operation
    procedure Delete_Objects
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

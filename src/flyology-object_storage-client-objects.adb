@@ -3354,7 +3354,8 @@ package body Flyology.Object_Storage.Client.Objects is
         (Value.Status = 400
          and then Code in
            "BadDigest" | "EntityTooLarge" | "InvalidArgument" |
-           "InvalidRequest" | "MalformedXML")
+           "InvalidDigest" | "InvalidRequest" | "MalformedXML" |
+           "XAmzContentSHA256Mismatch")
         or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
         or else (Value.Status = 403 and then Code = "AccessDenied")
         or else (Value.Status = 404 and then Code = "NoSuchBucket")

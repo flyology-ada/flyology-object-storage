@@ -744,6 +744,11 @@ procedure S3_HTTP_Socket_Corpus is
    Delete_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
    Delete_Drain_Native           : aliased Flyology.Cancellation.Token;
    Delete_Drain_Lightweight      : aliased Flyology.Cancellation.Token;
+   Delete_Objects_Admission_Native : aliased Flyology.Cancellation.Token;
+   Delete_Objects_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Delete_Objects_Drain_Native   : aliased Flyology.Cancellation.Token;
+   Delete_Objects_Drain_Lightweight : aliased Flyology.Cancellation.Token;
    Complete_Admission_Native     : aliased Flyology.Cancellation.Token;
    Complete_Admission_Lightweight : aliased Flyology.Cancellation.Token;
    Complete_Drain_Native         : aliased Flyology.Cancellation.Token;
@@ -821,6 +826,7 @@ procedure S3_HTTP_Socket_Corpus is
       List_Object_Versions_Cancellation,
       Put_Object_Cancellation,
       Delete_Object_Cancellation,
+      Delete_Objects_Cancellation,
       Complete_Multipart_Cancellation,
       Abort_Multipart_Cancellation,
       Copy_Object_Cancellation,
@@ -1613,6 +1619,12 @@ procedure S3_HTTP_Socket_Corpus is
                         else
                            Delete_Drain_Lightweight.Request;
                         end if;
+                     when Delete_Objects_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Delete_Objects_Drain_Native.Request;
+                        else
+                           Delete_Objects_Drain_Lightweight.Request;
+                        end if;
                      when Complete_Multipart_Cancellation =>
                         if Cancellation_Round = 1 then
                            Complete_Drain_Native.Request;
@@ -1741,6 +1753,12 @@ procedure S3_HTTP_Socket_Corpus is
                      else
                         Delete_Admission_Lightweight.Request;
                      end if;
+                  when Delete_Objects_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Delete_Objects_Admission_Native.Request;
+                     else
+                        Delete_Objects_Admission_Lightweight.Request;
+                     end if;
                   when Complete_Multipart_Cancellation =>
                      if Cancellation_Round = 1 then
                         Complete_Admission_Native.Request;
@@ -1854,6 +1872,10 @@ procedure S3_HTTP_Socket_Corpus is
                         when Delete_Object_Cancellation =>
                            raise Program_Error with
                              "DeleteObject cancel peer sent data before " &
+                             "drain";
+                        when Delete_Objects_Cancellation =>
+                           raise Program_Error with
+                             "DeleteObjects cancel peer sent data before " &
                              "drain";
                         when Complete_Multipart_Cancellation =>
                            raise Program_Error with
@@ -2412,6 +2434,16 @@ procedure S3_HTTP_Socket_Corpus is
         "<DeleteMarkerVersionId>marker-a</DeleteMarkerVersionId>" &
         "</Deleted><Error><Key>socket-delete-b</Key>" &
         "<VersionId>version-b</VersionId><Code>AccessDenied</Code>" &
+        "<Message>denied</Message></Error></DeleteResult>";
+      Unsupported_Delete_Objects_XML : constant String :=
+        "<DeleteResult><Deleted><Key>unsupported</Key>" &
+        "<VersionId>version-id</VersionId></Deleted></DeleteResult>";
+      Cancel_Delete_Objects_XML : constant String :=
+        "<DeleteResult><Deleted><Key>cancel-delete-object</Key>" &
+        "<VersionId>cancel-version</VersionId></Deleted></DeleteResult>";
+      Quiet_Delete_Objects_XML : constant String :=
+        "<DeleteResult><Error><Key>quiet-failed</Key>" &
+        "<VersionId>quiet-version</VersionId><Code>AccessDenied</Code>" &
         "<Message>denied</Message></Error></DeleteResult>";
    begin
       Sockets.Create_Socket (Listener);
@@ -4226,7 +4258,6 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "*",
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
-            Expected_MFA => "device 123456",
             Expected_Governance_Bypass => "true",
             Expected_SDK_Checksum => "CRC32",
             Expected_Checksum_CRC32 => "*", Fragmented => True);
@@ -4239,19 +4270,64 @@ procedure S3_HTTP_Socket_Corpus is
             "POST", "/missing-bucket?delete", "<Delete",
             Expected_Content_MD5 => "*");
          Serve
-           (HTTP_Response ("200 OK", Delete_Objects_XML),
+           ("", "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*", Await_Cancellation => True,
+            Cancellation_Kind => Delete_Objects_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", Cancel_Delete_Objects_XML),
             "POST", "/example-bucket?delete", "<Delete",
             Expected_Content_MD5 => "*");
          Serve
-           (HTTP_Response ("200 OK", Delete_Objects_XML),
+           (HTTP_Response ("200 OK", Unsupported_Delete_Objects_XML),
+            "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", Unsupported_Delete_Objects_XML),
             "POST", "/example-bucket?delete", "<Delete",
             Expected_Content_MD5 => "*");
          Serve
            (HTTP_Response
-              ("200 OK", Delete_Objects_XML,
+              ("200 OK", Unsupported_Delete_Objects_XML,
                "x-amz-request-charged: requester" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", Quiet_Delete_Objects_XML),
+            "POST", "/quiet-delete-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<DeleteResult><Deleted><Key>extra</Key>" &
+               "</Deleted></DeleteResult>"),
+            "POST", "/extra-delete-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", "<DeleteResult></DeleteResult>"),
+            "POST", "/missing-delete-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<DeleteResult><Deleted><Key>bound</Key>" &
+               "<VersionId>wrong-version</VersionId></Deleted>" &
+               "</DeleteResult>"),
+            "POST", "/version-delete-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<DeleteResult><Deleted><Key>bound</Key>" &
+               "<VersionId>bound-version</VersionId></Deleted>" &
+               "<Deleted><Key>bound</Key>" &
+               "<VersionId>bound-version</VersionId></Deleted>" &
+               "</DeleteResult>"),
+            "POST", "/duplicate-delete-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<DeleteResult><Deleted><Key>quiet-bound</Key>" &
+               "</Deleted></DeleteResult>"),
+            "POST", "/quiet-success-delete-bucket?delete", "<Delete",
             Expected_Content_MD5 => "*");
          Serve
            (HTTP_Response
@@ -14709,7 +14785,7 @@ procedure S3_HTTP_Socket_Corpus is
             Request : Deletions.Delete_Objects_Request;
             Parameters : Low_Level.Delete_Objects_Parameters;
          begin
-            Request.Quiet := True;
+            Request.Quiet := False;
             Request.Objects.Append
               (Deletions.Object_Identifier'
                  (Key                    =>
@@ -14728,7 +14804,6 @@ procedure S3_HTTP_Socket_Corpus is
                  (Key        => US.To_Unbounded_String ("socket-delete-b"),
                   Version_ID => US.To_Unbounded_String ("version-b"),
                   others     => <>));
-            Parameters.MFA := US.To_Unbounded_String ("device 123456");
             Parameters.Request_Payer :=
               US.To_Unbounded_String ("requester");
             Parameters.Bypass_Governance_Retention :=
@@ -14838,6 +14913,147 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
             declare
+               procedure Run_Delete_Objects_Cancellation is
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+                  Cancel_Request : Deletions.Delete_Objects_Request;
+                  Cancel_Parameters : Low_Level.Delete_Objects_Parameters;
+               begin
+                  Cancel_Request.Objects.Append
+                    (Deletions.Object_Identifier'
+                       (Key =>
+                          US.To_Unbounded_String ("cancel-delete-object"),
+                        Version_ID =>
+                          US.To_Unbounded_String ("cancel-version"),
+                        others => <>));
+                  if Round = 1 then
+                     Delete_Objects_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Delete_Objects_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Delete_Objects_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Delete_Objects_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale DeleteObjects cancellation readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Delete_Objects_Operation :=
+                       Delete_Objects
+                         (Cancel_Set'Access, HTTP'Access, Origin,
+                          "example-bucket", Cancel_Request,
+                          Cancel_Parameters, Identity,
+                          HTTP_Client.Deadline_After (5.0),
+                          Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Delete_Objects_Result;
+                     HTTP_Rejected, Token_Rejected : Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "DeleteObjects did not remain active through " &
+                          "admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Delete_Objects_Exchange_Failed
+                       or else Result.Disposition /= Batch_Outcome_Unknown
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                       or else Result.Admission /=
+                         HTTP_Client.Possibly_Admitted
+                     then
+                        raise Program_Error with
+                          "admitted DeleteObjects cancellation mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "DeleteObjects drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Delete_Objects
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           Cancel_Request, Cancel_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "DeleteObjects restart changed a retained " &
+                               "owner";
+                     end;
+                     begin
+                        Delete_Objects
+                          (HTTP'Access, Origin, "example-bucket",
+                           Cancel_Request, Cancel_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "DeleteObjects restart changed a retained " &
+                               "owner";
+                     end;
+                     if not HTTP_Rejected or else not Token_Rejected then
+                        raise Program_Error with
+                          "DeleteObjects accepted a changed owner";
+                     end if;
+                     Delete_Objects
+                       (HTTP'Access, Origin, "example-bucket",
+                        Cancel_Request, Cancel_Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Delete_Objects_Response_Available
+                       or else Result.Disposition /= Batch_Processed
+                       or else Result.Failure /= No_Failure
+                       or else Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Result.Response.Kind /=
+                         Low_Level.Objects_Deleted
+                       or else Result.Response.Status /= 200
+                     then
+                        raise Program_Error with
+                          "same-object DeleteObjects restart mismatch";
+                     end if;
+                  end;
+               end Run_Delete_Objects_Cancellation;
+            begin
+               Run_Delete_Objects_Cancellation;
+            end;
+            declare
                --  Batch parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
                Operation : Delete_Objects_Operation :=
@@ -14888,6 +15104,96 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "DeleteObjects accepted duplicate response metadata";
                end if;
+            end;
+            declare
+               Quiet_Request : Deletions.Delete_Objects_Request;
+               Quiet_Parameters : Low_Level.Delete_Objects_Parameters;
+            begin
+               Quiet_Request.Quiet := True;
+               Quiet_Request.Objects.Append
+                 (Deletions.Object_Identifier'
+                    (Key => US.To_Unbounded_String ("quiet-success"),
+                     others => <>));
+               Quiet_Request.Objects.Append
+                 (Deletions.Object_Identifier'
+                    (Key => US.To_Unbounded_String ("quiet-failed"),
+                     Version_ID => US.To_Unbounded_String ("quiet-version"),
+                     others => <>));
+               declare
+                  Result : constant Delete_Objects_Result :=
+                    Objects.Delete_Objects
+                      (HTTP, Origin, "quiet-delete-bucket", Quiet_Request,
+                       Quiet_Parameters, Identity, Timeout => 5.0);
+               begin
+                  if Result.Kind /= Delete_Objects_Response_Available
+                    or else Result.Disposition /= Batch_Processed
+                    or else Result.Failure /= No_Failure
+                    or else Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else not
+                      Result.Response.Result.Result.Deleted.Is_Empty
+                    or else Natural
+                      (Result.Response.Result.Result.Errors.Length) /= 1
+                    or else US.To_String
+                      (Result.Response.Result.Result.Errors.First_Element
+                         .Key) /= "quiet-failed"
+                  then
+                     raise Program_Error with
+                       "quiet DeleteObjects response binding mismatch";
+                  end if;
+               end;
+            end;
+            declare
+               procedure Reject_Binding
+                 (Bucket, Key, Version_ID : String;
+                  Quiet                   : Boolean;
+                  Label                   : String)
+               is
+                  Bound_Request : Deletions.Delete_Objects_Request;
+                  Bound_Parameters : Low_Level.Delete_Objects_Parameters;
+               begin
+                  Bound_Request.Quiet := Quiet;
+                  Bound_Request.Objects.Append
+                    (Deletions.Object_Identifier'
+                       (Key        => US.To_Unbounded_String (Key),
+                        Version_ID => US.To_Unbounded_String (Version_ID),
+                        others     => <>));
+                  declare
+                     Result : constant Delete_Objects_Result :=
+                       Objects.Delete_Objects
+                         (HTTP, Origin, Bucket, Bound_Request,
+                          Bound_Parameters, Identity, Timeout => 5.0);
+                  begin
+                     if Result.Kind /= Delete_Objects_Exchange_Failed
+                       or else Result.Disposition /= Batch_Outcome_Unknown
+                       or else Result.Failure /=
+                         Corrupt_Or_Invalid_Response
+                       or else Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Result.HTTP_Result /=
+                         HTTP_Client.Response_Invalid
+                     then
+                        raise Program_Error with Label;
+                     end if;
+                  end;
+               end Reject_Binding;
+            begin
+               Reject_Binding
+                 ("extra-delete-bucket", "bound", "", False,
+                  "DeleteObjects accepted an unrequested response entry");
+               Reject_Binding
+                 ("missing-delete-bucket", "bound", "", False,
+                  "DeleteObjects accepted an omitted verbose entry");
+               Reject_Binding
+                 ("version-delete-bucket", "bound", "bound-version", False,
+                  "DeleteObjects accepted a mismatched version entry");
+               Reject_Binding
+                 ("duplicate-delete-bucket", "bound", "bound-version",
+                  False,
+                  "DeleteObjects accepted excess duplicate entries");
+               Reject_Binding
+                 ("quiet-success-delete-bucket", "quiet-bound", "", True,
+                  "DeleteObjects accepted a quiet success entry");
             end;
          end;
          declare
