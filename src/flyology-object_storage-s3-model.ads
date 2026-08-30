@@ -10,6 +10,8 @@ is
    Shape_Count : constant := 718;
 
    --  Identifiers for operations in the pinned S3 model.
+   --  @enum Create_Bucket_Metadata_Table_Configuration_Operation
+   --    Create metadata-table configuration
    --  @enum Delete_Bucket_Analytics_Configuration_Operation Delete analytics
    --  @enum Delete_Bucket_Cors_Operation Delete bucket CORS operation
    --  @enum Delete_Bucket_Encryption_Operation Delete bucket encryption

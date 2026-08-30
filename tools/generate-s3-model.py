@@ -19,6 +19,9 @@ EXPECTED_OPERATIONS = 116
 EXPECTED_SHAPES = 718
 
 OPERATION_DOCUMENTATION = {
+    "CreateBucketMetadataTableConfiguration": (
+        "Create metadata-table configuration"
+    ),
     "DeleteBucketAnalyticsConfiguration": "Delete analytics",
     "DeleteBucketCors": "Delete bucket CORS operation",
     "DeleteBucketEncryption": "Delete bucket encryption",
