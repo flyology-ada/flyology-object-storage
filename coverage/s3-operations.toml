@@ -241,6 +241,16 @@ delete_bucket_encryption = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+delete_bucket_lifecycle = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-delete-bucket-lifecycle-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_object = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-object-preparation.py"],
   ["./tools/verify-composable-client-fixtures.sh"],
@@ -852,17 +862,21 @@ provider = "buckets"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+public_name = "Delete_Lifecycle"
+absence = "successful completion removes all lifecycle configuration rules and returns no absence payload; exact NoSuchBucket remains a bounded structured rejection proving the requested deletion was not applied"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 204 response with an exactly empty body reports Bucket_Lifecycle_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Lifecycle_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Lifecycle_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Lifecycle_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Lifecycle_Configuration may observe the current lifecycle configuration or exact NoSuchLifecycleConfiguration before a retry, but does not prove that the lost deletion caused the observed absence or upgrade mutation certainty; no automatic replay"
+exclusions = ["qualification covers caller-supplied origins for general-purpose buckets; automatic S3 Express control-endpoint selection, directory-bucket permissions, and cross-account restrictions are not claimed", "success requires exact HTTP 204 with an exactly empty response body; no other success status or payload tolerance is claimed", "a current Get_Lifecycle_Configuration observation, including NoSuchLifecycleConfiguration, does not establish causation or authorize automatic replay", "backend persistence, authenticated server routing, and external-provider behavior are not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "delete_bucket_lifecycle"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/delete-bucket-configurations.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Delete_Bucket_Lifecycle", "Execute_Delete_Bucket_Lifecycle", "Delete_Bucket_Lifecycle_Operation", "Delete_Lifecycle", "Finish"]
 
 [[operation]]
 name = "DeleteBucketMetadataConfiguration"

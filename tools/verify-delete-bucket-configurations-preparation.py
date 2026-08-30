@@ -64,6 +64,39 @@ DELETE_ENCRYPTION_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_LIFECYCLE_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Lifecycle_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Bucket_Lifecycle_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports "
+    "Bucket_Lifecycle_Mutation_Cancelled_Before_Admission; possible or "
+    "incomplete admission, retryable responses, and malformed or "
+    "oversized responses report Bucket_Lifecycle_Mutation_Outcome_Unknown; no "
+    "automatic replay"
+)
+DELETE_LIFECYCLE_RECONCILIATION = (
+    "caller-selected Get_Lifecycle_Configuration may observe the current "
+    "lifecycle configuration or exact NoSuchLifecycleConfiguration before a "
+    "retry, but does not prove that the lost deletion caused the "
+    "observed absence or upgrade mutation certainty; no automatic replay"
+)
+DELETE_LIFECYCLE_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-lifecycle-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -234,6 +267,89 @@ def verify_delete_encryption_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def delete_lifecycle_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketLifecycle"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketLifecycle registry entry is not unique")
+    return matches[0]
+
+
+def verify_delete_lifecycle_registry(data: dict[str, object]) -> None:
+    entry = delete_lifecycle_entry(data)
+    expected = {
+        "public_name": "Delete_Lifecycle",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_lifecycle",
+        "codec": "empty_response",
+        "certainty": DELETE_LIFECYCLE_CERTAINTY,
+        "reconciliation": DELETE_LIFECYCLE_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Lifecycle",
+            "Execute_Delete_Bucket_Lifecycle",
+            "Delete_Bucket_Lifecycle_Operation",
+            "Delete_Lifecycle",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketLifecycle registry changed: {key}")
+    if "removes all lifecycle configuration rules" not in entry["absence"]:
+        fail("DeleteBucketLifecycle deletion semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][1]:
+        fail("DeleteBucketLifecycle success status changed")
+    if "does not establish causation" not in entry["exclusions"][2]:
+        fail("DeleteBucketLifecycle reconciliation boundary changed")
+    if data["qualification"].get("delete_bucket_lifecycle") != (
+        DELETE_LIFECYCLE_LANE
+    ):
+        fail("DeleteBucketLifecycle qualification lane changed")
+
+
+def verify_delete_lifecycle_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Encryption"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_LIFECYCLE_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Lifecycle_Configuration proves the deletion completed",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_encryption"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = delete_lifecycle_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_delete_lifecycle_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -313,6 +429,8 @@ def main() -> int:
     registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
     verify_delete_encryption_registry(registry)
     verify_delete_encryption_negatives(registry)
+    verify_delete_lifecycle_registry(registry)
+    verify_delete_lifecycle_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -343,6 +461,10 @@ def main() -> int:
         "Delete bucket encryption"
     ) != 1:
         fail("DeleteBucketEncryption generated documentation changed")
+    if model_spec.count(
+        "@enum Delete_Bucket_Lifecycle_Operation Delete bucket lifecycle"
+    ) != 1:
+        fail("DeleteBucketLifecycle generated documentation changed")
     ordered(
         texts["high-level body"],
         [
@@ -392,6 +514,56 @@ def main() -> int:
             "delete_bucket_encryption",
         ],
         "DeleteBucketEncryption qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Conclusive_Bucket_Lifecycle_Rejection",
+            "function Normalize_Delete_Bucket_Lifecycle_Response",
+            "Bucket_Lifecycle_Mutation_Completed",
+            "Bucket_Lifecycle_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Lifecycle_Failure",
+            "procedure Start_Delete_Bucket_Lifecycle",
+            "DeleteBucketLifecycle restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeleteBucketLifecycle provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Delete_Bucket_Lifecycle_Certainty_Corpus",
+            "Check_Response",
+            "Bucket_Lifecycle_Mutation_Completed, No_Failure",
+            '(409, "OperationAborted",',
+            "Bucket_Lifecycle_Mutation_Outcome_Unknown",
+            "for Admission in",
+            "Normalize_Delete_Bucket_Lifecycle_Failure",
+        ],
+        "DeleteBucketLifecycle certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeleteBucketLifecycle"',
+            "typed DeleteBucketLifecycle response mismatch",
+            "DeleteBucketLifecycle accepted an encryption request",
+            "composed DeleteBucketLifecycle mismatch",
+            "restarted DeleteBucketLifecycle mismatch",
+        ],
+        "DeleteBucketLifecycle socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes every rule from the bucket lifecycle configuration",
+            "NoSuchLifecycleConfiguration",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Lifecycle_Operation",
+            "added none",
+            "delete_bucket_lifecycle",
+        ],
+        "DeleteBucketLifecycle qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
@@ -706,7 +878,8 @@ def main() -> int:
     print(
         "bucket-configuration DELETE preparation: 13 operations, 30 request "
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
-        "pinned model, DeleteBucketEncryption registry/certainty, and exact "
+        "pinned model, DeleteBucketEncryption/DeleteBucketLifecycle "
+        "registry/certainty, and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
         "metrics, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
