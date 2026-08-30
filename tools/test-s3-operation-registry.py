@@ -4041,6 +4041,160 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed DeleteBucketCors lane was accepted")
+    delete_encryption_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Encryption_Mutation_Completed; an exact recognized "
+        "non-mutating rejection or definite non-admission reports "
+        "Bucket_Encryption_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Encryption_Mutation_Cancelled_Before_Admission; possible or "
+        "incomplete admission, retryable responses, and malformed or "
+        "oversized responses report "
+        "Bucket_Encryption_Mutation_Outcome_Unknown; no automatic replay"
+    )
+    delete_encryption_reconciliation = (
+        "caller-selected Get_Encryption may observe the current "
+        "default-encryption configuration before a retry, including SSE-S3 "
+        "reset state, but does not prove that the lost deletion caused the "
+        "observed state or upgrade mutation certainty; no automatic replay"
+    )
+
+    def assert_delete_encryption_registry(candidate):
+        entry = candidate.operations["DeleteBucketEncryption"]
+        assert entry.get("public_name") == "Delete_Encryption"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_encryption"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_encryption_certainty
+        assert entry.get("reconciliation") == (
+            delete_encryption_reconciliation
+        )
+        assert entry.get("coverage") == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Encryption",
+            "Execute_Delete_Bucket_Encryption",
+            "Delete_Bucket_Encryption_Operation",
+            "Delete_Encryption",
+            "Finish",
+        ]
+        assert "resets bucket default encryption to SSE-S3" in (
+            entry["absence"]
+        )
+        assert "exact HTTP 204" in entry["exclusions"][1]
+        assert "does not establish an absent configuration" in (
+            entry["exclusions"][2]
+        )
+        assert (
+            candidate.qualification["delete_bucket_encryption"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_encryption_registry(candidate, label):
+        try:
+            assert_delete_encryption_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketEncryption registry accepted"
+        )
+
+    assert_delete_encryption_registry(registry)
+    missing_delete_encryption_name = copy.deepcopy(registry)
+    del missing_delete_encryption_name.operations[
+        "DeleteBucketEncryption"
+    ]["public_name"]
+    reject_delete_encryption_registry(
+        missing_delete_encryption_name,
+        "missing public name",
+    )
+    wrong_delete_encryption_name = copy.deepcopy(registry)
+    wrong_delete_encryption_name.operations["DeleteBucketEncryption"][
+        "public_name"
+    ] = "Delete_CORS"
+    reject_delete_encryption_registry(
+        wrong_delete_encryption_name,
+        "wrong public name",
+    )
+    broadened_delete_encryption_success = copy.deepcopy(registry)
+    broadened_delete_encryption_success.operations[
+        "DeleteBucketEncryption"
+    ]["certainty"] = delete_encryption_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_encryption_registry(
+        broadened_delete_encryption_success,
+        "broadened success status",
+    )
+    causal_delete_encryption_reconciliation = copy.deepcopy(registry)
+    causal_delete_encryption_reconciliation.operations[
+        "DeleteBucketEncryption"
+    ]["reconciliation"] = "Get_Encryption proves the reset completed"
+    reject_delete_encryption_registry(
+        causal_delete_encryption_reconciliation,
+        "causal reconciliation",
+    )
+    cross_delete_encryption_symbol = copy.deepcopy(registry)
+    cross_delete_encryption_symbol.operations["DeleteBucketEncryption"][
+        "ada_symbols"
+    ][0] = "Prepare_Delete_Bucket_CORS"
+    reject_delete_encryption_registry(
+        cross_delete_encryption_symbol,
+        "cross-operation symbol",
+    )
+    delete_encryption_qualification, delete_encryption_commands = (
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketEncryption"]
+        )
+    )
+    assert delete_encryption_qualification == "delete_bucket_encryption"
+    assert delete_encryption_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_encryption_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-encryption-gnatdoc",
+        "--operation",
+        "DeleteBucketEncryption",
+    ]
+    assert delete_encryption_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteBucketEncryption", "DeleteBucketEncryption"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketEncryption lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteBucketEncryption", "DeleteBucketCors"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketEncryption lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )

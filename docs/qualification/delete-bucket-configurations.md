@@ -61,6 +61,15 @@ bindings while returning the existing deletion-completed or structured-error
 outcome. Calls are synchronous, do not retry, retain no caller input, release
 the response before return, and create no detached helper task.
 
+For `DeleteBucketEncryption`, the pinned operation resets bucket default
+encryption to SSE-S3; it does not create an absent configuration state. Only
+an exact empty 204 proves completion. Exact recognized rejections or definite
+non-admission prove non-application, while possible admission, malformed or
+oversized responses, and retryable responses preserve outcome-unknown. A
+caller-selected `Get_Encryption` can observe current configuration before a
+retry, but cannot prove that the lost deletion caused the observed state,
+upgrade mutation certainty, or authorize automatic replay.
+
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -116,6 +125,12 @@ ledger tuples.
 This client corpus does not manufacture their backend persistence or server
 routes.
 
+`DeleteBucketEncryption` has an operation-specific reviewed registry lane,
+but its ledger tuple remains `missing / covered / missing / covered`. The lane
+is conditional on every maintained command succeeding and does not convert
+client evidence into backend, server, directory-bucket, or external-provider
+qualification.
+
 ## Gate evidence
 
 The final warning-strict root gate passed 41/41 AUnit tests, the 132-case files
@@ -132,6 +147,15 @@ also passed. GNATdoc produced a 44,241-line log and 429 HTML files with all
 nine composable APIs present. It reported no error diagnostic and no warning
 naming the new public API; the generated model's pre-existing undocumented
 operation-enum warnings remain visible.
+
+The focused generated-model documentation slice has a green maintained full
+test wrapper and fresh region-scoped GNATdoc measurement. That measurement
+removed exactly the one candidate-owned
+`Delete_Bucket_Encryption_Operation` warning and added none, without changing
+any Ada declaration token. Repository-wide and selected-operation GNATdoc
+qualification remain blocked by pre-existing warnings outside this declaration
+region. Every command in the maintained `delete_bucket_encryption` lane must
+still succeed before a qualification claim.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, corpus, coverage, and documentation

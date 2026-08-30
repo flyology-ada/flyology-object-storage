@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -16,9 +18,52 @@ LOW_SPEC = ROOT / "src" / "flyology-object_storage-client-low_level.ads"
 LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
 HIGH_SPEC = ROOT / "src" / "flyology-object_storage-client-buckets.ads"
 HIGH_BODY = ROOT / "src" / "flyology-object_storage-client-buckets.adb"
+MODEL_SPEC = ROOT / "src" / "flyology-object_storage-s3-model.ads"
+TESTING = (
+    ROOT / "tests" / "src" /
+    "flyology-object_storage-client-buckets-testing.adb"
+)
+SOCKET = ROOT / "tests" / "src" / "s3_http_socket_corpus.adb"
+REGISTRY = ROOT / "coverage" / "s3-operations.toml"
+QUALIFICATION = ROOT / "docs" / "qualification" / (
+    "delete-bucket-configurations.md"
+)
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
+DELETE_ENCRYPTION_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Encryption_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Bucket_Encryption_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports "
+    "Bucket_Encryption_Mutation_Cancelled_Before_Admission; possible or "
+    "incomplete admission, retryable responses, and malformed or oversized "
+    "responses report Bucket_Encryption_Mutation_Outcome_Unknown; no "
+    "automatic replay"
+)
+DELETE_ENCRYPTION_RECONCILIATION = (
+    "caller-selected Get_Encryption may observe the current "
+    "default-encryption configuration before a retry, including SSE-S3 "
+    "reset state, but does not prove that the lost deletion caused the "
+    "observed state or upgrade mutation certainty; no automatic replay"
+)
+DELETE_ENCRYPTION_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-encryption-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -93,6 +138,100 @@ LOCATION = {
 
 def fail(message: str) -> None:
     raise ValueError(message)
+
+
+def ordered(text: str, markers: list[str], label: str) -> None:
+    cursor = 0
+    for marker in markers:
+        position = text.find(marker, cursor)
+        if position < 0:
+            fail(f"{label}: missing ordered marker: {marker}")
+        cursor = position + len(marker)
+
+
+def delete_encryption_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketEncryption"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketEncryption registry entry is not unique")
+    return matches[0]
+
+
+def verify_delete_encryption_registry(data: dict[str, object]) -> None:
+    entry = delete_encryption_entry(data)
+    expected = {
+        "public_name": "Delete_Encryption",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_encryption",
+        "codec": "empty_response",
+        "certainty": DELETE_ENCRYPTION_CERTAINTY,
+        "reconciliation": DELETE_ENCRYPTION_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Encryption",
+            "Execute_Delete_Bucket_Encryption",
+            "Delete_Bucket_Encryption_Operation",
+            "Delete_Encryption",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketEncryption registry changed: {key}")
+    if "resets bucket default encryption to SSE-S3" not in entry["absence"]:
+        fail("DeleteBucketEncryption reset semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][1]:
+        fail("DeleteBucketEncryption success status changed")
+    if "does not establish an absent configuration" not in (
+        entry["exclusions"][2]
+    ):
+        fail("DeleteBucketEncryption absence boundary changed")
+    if data["qualification"].get("delete_bucket_encryption") != (
+        DELETE_ENCRYPTION_LANE
+    ):
+        fail("DeleteBucketEncryption qualification lane changed")
+
+
+def verify_delete_encryption_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_CORS"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_ENCRYPTION_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Encryption proves the reset completed",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_cors"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = delete_encryption_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_delete_encryption_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
 
 
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
@@ -171,6 +310,9 @@ def member_count(model: str, shape: int) -> int:
 
 
 def main() -> int:
+    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    verify_delete_encryption_registry(registry)
+    verify_delete_encryption_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -190,6 +332,67 @@ def main() -> int:
         "high-level specification": HIGH_SPEC.read_text(encoding="utf-8"),
         "high-level body": HIGH_BODY.read_text(encoding="utf-8"),
     }
+    model_spec = MODEL_SPEC.read_text(encoding="utf-8")
+    testing = TESTING.read_text(encoding="utf-8")
+    socket = SOCKET.read_text(encoding="utf-8")
+    qualification = " ".join(
+        QUALIFICATION.read_text(encoding="utf-8").split()
+    )
+    if model_spec.count(
+        "@enum Delete_Bucket_Encryption_Operation "
+        "Delete bucket encryption"
+    ) != 1:
+        fail("DeleteBucketEncryption generated documentation changed")
+    ordered(
+        texts["high-level body"],
+        [
+            "function Conclusive_Bucket_Encryption_Rejection",
+            "function Normalize_Delete_Bucket_Encryption_Response",
+            "Bucket_Encryption_Mutation_Completed",
+            "Bucket_Encryption_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Encryption_Failure",
+            "procedure Start_Delete_Bucket_Encryption",
+            "DeleteBucketEncryption restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeleteBucketEncryption provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Bucket_Encryption_Result_Corpus",
+            "Check_Delete",
+            '(204, "", Bucket_Encryption_Mutation_Completed, No_Failure)',
+            '(409, "OperationAborted",',
+            "Bucket_Encryption_Mutation_Outcome_Unknown",
+            "for Admission in",
+            "Normalize_Delete_Bucket_Encryption_Failure",
+        ],
+        "DeleteBucketEncryption certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeleteBucketEncryption"',
+            "typed DeleteBucketEncryption response mismatch",
+            "DeleteBucketEncryption accepted an ownership-controls",
+            "composed DeleteBucketEncryption mismatch",
+            "restarted DeleteBucketEncryption mismatch",
+        ],
+        "DeleteBucketEncryption socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "resets bucket default encryption to SSE-S3",
+            "does not create an absent configuration state",
+            "missing / covered / missing / covered",
+            "removed exactly the one candidate-owned",
+            "added none",
+            "delete_bucket_encryption",
+        ],
+        "DeleteBucketEncryption qualification prose",
+    )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
         operation, enum_stem, shape, uri, has_id, prepare, execute, high = expected
@@ -503,7 +706,9 @@ def main() -> int:
     print(
         "bucket-configuration DELETE preparation: 13 operations, 30 request "
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
-        "pinned model and exact public APIs match, including analytics, metadata, metadata-table, metrics, "
+        "pinned model, DeleteBucketEncryption registry/certainty, and exact "
+        "public APIs match, including analytics, metadata, metadata-table, "
+        "metrics, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
         "composable forms"
     )
