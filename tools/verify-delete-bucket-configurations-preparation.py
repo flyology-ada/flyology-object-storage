@@ -198,6 +198,39 @@ DELETE_ANALYTICS_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_INTELLIGENT_TIERING_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Intelligent_Tiering_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Intelligent_Tiering_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports Intelligent_Tiering_Mutation_Cancelled_Before_"
+    "Admission; possible or incomplete admission, retryable responses, and "
+    "malformed or oversized responses report "
+    "Intelligent_Tiering_Mutation_Outcome_Unknown; no automatic replay"
+)
+DELETE_INTELLIGENT_TIERING_RECONCILIATION = (
+    "caller-selected Get_Intelligent_Tiering_Configuration for the same "
+    "identifier may observe the current configuration or exact "
+    "NoSuchConfiguration before a retry, but does not prove that the lost "
+    "deletion caused the observed absence or upgrade mutation certainty; no "
+    "automatic replay"
+)
+DELETE_INTELLIGENT_TIERING_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-intelligent-tiering-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -704,6 +737,93 @@ def verify_delete_analytics_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def intelligent_tiering_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketIntelligentTieringConfiguration"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketIntelligentTieringConfiguration is not unique")
+    return matches[0]
+
+
+def verify_intelligent_tiering_registry(data: dict[str, object]) -> None:
+    entry = intelligent_tiering_entry(data)
+    expected = {
+        "public_name": "Delete_Intelligent_Tiering_Configuration",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_intelligent_tiering",
+        "codec": "empty_response",
+        "certainty": DELETE_INTELLIGENT_TIERING_CERTAINTY,
+        "reconciliation": DELETE_INTELLIGENT_TIERING_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Intelligent_Tiering_Configuration",
+            "Execute_Delete_Bucket_Intelligent_Tiering_Configuration",
+            "Delete_Bucket_Tiering_Operation",
+            "Delete_Intelligent_Tiering_Configuration",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketIntelligentTieringConfiguration changed: {key}")
+    if "removes the selected bucket intelligent-tiering" not in entry[
+        "absence"
+    ]:
+        fail("DeleteBucketIntelligentTieringConfiguration semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeleteBucketIntelligentTieringConfiguration success changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeleteBucketIntelligentTieringConfiguration presence changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeleteBucketIntelligentTieringConfiguration reconcile changed")
+    if data["qualification"].get(
+        "delete_bucket_intelligent_tiering"
+    ) != DELETE_INTELLIGENT_TIERING_LANE:
+        fail("DeleteBucketIntelligentTieringConfiguration lane changed")
+
+
+def verify_intelligent_tiering_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Analytics_Configuration"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_INTELLIGENT_TIERING_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Intelligent_Tiering_Configuration proves deletion",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_analytics"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = intelligent_tiering_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_intelligent_tiering_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -791,6 +911,8 @@ def main() -> int:
     verify_delete_website_negatives(registry)
     verify_delete_analytics_registry(registry)
     verify_delete_analytics_negatives(registry)
+    verify_intelligent_tiering_registry(registry)
+    verify_intelligent_tiering_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -838,6 +960,12 @@ def main() -> int:
         "Delete analytics"
     ) != 1:
         fail("DeleteBucketAnalyticsConfiguration documentation changed")
+    intelligent_tiering_documentation = (
+        "@enum Delete_Bucket_Intelligent_Tiering_Configuration_Operation\n"
+        "   --    Delete intelligent-tiering configuration"
+    )
+    if model_spec.count(intelligent_tiering_documentation) != 1:
+        fail("DeleteBucketIntelligentTieringConfiguration docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -1088,6 +1216,59 @@ def main() -> int:
             "delete_bucket_analytics",
         ],
         "DeleteBucketAnalyticsConfiguration qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Delete_Bucket_Tiering_Response",
+            "Bucket_Tiering_Configuration_Mutation_Completed",
+            "Bucket_Tiering_Configuration_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Tiering_Failure",
+            "procedure Start_Delete_Bucket_Tiering",
+            "DeleteBucketIntelligentTieringConfiguration restart changed a",
+            "procedure Finish",
+        ],
+        "DeleteBucketIntelligentTieringConfiguration provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Delete_Bucket_Intelligent_Tiering_Certainty_Corpus",
+            "Bucket_Tiering_Configuration_Mutation_Completed",
+            "Check_Response",
+            '(409, "OperationAborted",',
+            "for Admission in",
+            "Normalize_Delete_Bucket_Tiering_Failure",
+        ],
+        "DeleteBucketIntelligentTieringConfiguration certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeleteBucketIntelligentTieringConfiguration"',
+            "typed DeleteBucketIntelligentTieringConfiguration",
+            "DeleteBucketIntelligentTieringConfiguration accepted ",
+            "an analytics ",
+            "composed DeleteBucketIntelligentTieringConfiguration",
+            "restarted DeleteBucketIntelligentTieringConfiguration",
+            "duplicate ",
+            "an empty ",
+            "bounded DeleteBucketIntelligentTieringConfiguration",
+        ],
+        "DeleteBucketIntelligentTieringConfiguration socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the selected intelligent-tiering configuration",
+            "NoSuchConfiguration",
+            "prior presence",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Intelligent_Tiering_Configuration_Operation",
+            "added none",
+            "delete_bucket_intelligent_tiering",
+        ],
+        "DeleteBucketIntelligentTieringConfiguration qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
@@ -1404,7 +1585,9 @@ def main() -> int:
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
         "pinned model, DeleteBucketEncryption/DeleteBucketLifecycle/"
         "DeleteBucketReplication/DeleteBucketWebsite/"
-        "DeleteBucketAnalyticsConfiguration registry/certainty, and exact "
+        "DeleteBucketAnalyticsConfiguration/"
+        "DeleteBucketIntelligentTieringConfiguration registry/certainty, "
+        "and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
         "metrics, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
