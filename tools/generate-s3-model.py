@@ -23,6 +23,7 @@ OPERATION_DOCUMENTATION = {
     "DeleteBucketEncryption": "Delete bucket encryption",
     "DeleteBucketLifecycle": "Delete bucket lifecycle",
     "DeleteBucketReplication": "Delete bucket replication",
+    "DeleteBucketWebsite": "Delete bucket website",
     "DeleteBucketTagging": "Delete bucket tagging operation",
     "GetBucketTagging": "Get bucket tagging operation",
     "GetObjectAttributes": "Get object attributes operation",

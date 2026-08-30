@@ -15,6 +15,7 @@ is
    --  @enum Delete_Bucket_Lifecycle_Operation Delete bucket lifecycle
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
+   --  @enum Delete_Bucket_Website_Operation Delete bucket website
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation
