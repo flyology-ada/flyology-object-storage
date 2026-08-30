@@ -5,6 +5,7 @@ with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Lifecycle;
+with Flyology.Object_Storage.S3.Tagging;
 
 package body Flyology.Object_Storage.Client.Buckets.Testing is
 
@@ -6502,6 +6503,12 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
    end Check_Request_Payment_Certainty_Corpus;
 
    procedure Check_Bucket_Tagging_Certainty_Corpus is
+      Caller_Lowered_Limits :
+        Flyology.Object_Storage.S3.XML.Parse_Limits :=
+          Flyology.Object_Storage.S3.XML.Default_Limits;
+      Caller_Raised_Limits :
+        Flyology.Object_Storage.S3.XML.Parse_Limits :=
+          Flyology.Object_Storage.S3.XML.Default_Limits;
       type Failure_Kind_Array is array (Positive range <>) of
         HTTP_Client.Exchange_Result_Kind;
       Failure_Kinds : constant Failure_Kind_Array :=
@@ -6670,6 +6677,20 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          end if;
       end Check_Failure;
    begin
+      Caller_Lowered_Limits.Maximum_Document_Bytes := 8 * 1_024;
+      Caller_Raised_Limits.Maximum_Document_Bytes := 2 * 1_024 * 1_024;
+      if Get_Bucket_Tagging_Response_Limit (Caller_Lowered_Limits) /=
+          8 * 1_024
+        or else Get_Bucket_Tagging_Response_Limit (Caller_Raised_Limits) /=
+          Flyology.Object_Storage.S3.Tagging.Maximum_Bucket_Document_Bytes
+        or else Get_Bucket_Tagging_Response_Limit
+          (Flyology.Object_Storage.S3.XML.Default_Limits) /=
+            Flyology.Object_Storage.S3.Tagging.Maximum_Bucket_Document_Bytes
+      then
+         raise Program_Error with
+           "GetBucketTagging response ceiling mismatch";
+      end if;
+
       Check_Put_Response
         (200, "", Bucket_Tag_Mutation_Completed, No_Failure);
       Check_Put_Response

@@ -5,9 +5,9 @@
         "generator_eligible": false,
         "mode": "shared-family",
         "source_sha256": {
-          "src/flyology-object_storage-client-buckets.adb": "5612348a2050c8c6e57aac6686201bc28d9521ac15310cceebc706e9c7cf6962",
-          "src/flyology-object_storage-client-buckets.ads": "0cac08197b6a94813175787d7c2f2c814788f3e2263711e9d66e7b2a49e85a72",
-          "src/flyology-object_storage-client-low_level.adb": "1d1ccb758f20c2a70658d4ea00c96557452b333fda3789b111d43f9001981016",
+          "src/flyology-object_storage-client-buckets.adb": "e987bbe96d85857fd7411add2bc7e4366dee26dc2e04e1b2dd80c8fb5848fd34",
+          "src/flyology-object_storage-client-buckets.ads": "26fd490d365621a2b99edc8a64755591e1559107e5d33c55559b42a84190a62d",
+          "src/flyology-object_storage-client-low_level.adb": "d0e60d37f98d5868edea823a68d8cc8cd1af56fadee1377e03a0f9029bfce331",
           "src/flyology-object_storage-s3-website.adb": "27e66369079c2cc7403d3d012fc035cb3e037b3d6ccf6220de4ed35a2ede147e",
           "src/flyology-object_storage-s3-website.ads": "4b1e2fa24070f50db0117ba17cc18b46522b7d73f2b990ef33c441d59c908a40",
           "tests/src/s3_get_bucket_website_qualification.adb": "03c8c16f961ed7c5c6800aa7c60d34f4b1c310e082388a833dbf3e1fea157450"

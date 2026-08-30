@@ -437,7 +437,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Response,
               Natural'Min
                 (Limits.Maximum_Document_Bytes,
-                 S3.Tagging.Maximum_Document_Bytes),
+                 S3.Tagging.Maximum_Bucket_Document_Bytes),
               Token);
       begin
          return Decode_Get_Bucket_Tagging_Response

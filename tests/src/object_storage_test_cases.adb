@@ -13840,6 +13840,37 @@ package body Object_Storage_Test_Cases is
 
       declare
          Headers : Low_Level.Get_Bucket_Tagging_Result;
+         Document : US.Unbounded_String :=
+           US.To_Unbounded_String ("<Tagging><TagSet>");
+      begin
+         for Index in 1 .. 50 loop
+            US.Append
+              (Document,
+               "<Tag><Key>key" &
+               Ada.Strings.Fixed.Trim
+                 (Positive'Image (Index), Ada.Strings.Both) &
+               String'(1 .. 120 => 'k') & "</Key><Value>" &
+               String'(1 .. 256 => 'v') & "</Value></Tag>");
+         end loop;
+         US.Append (Document, "</TagSet></Tagging>");
+         Assert
+           (US.Length (Document) >
+              Flyology.Object_Storage.S3.Tagging.Maximum_Document_Bytes,
+            "GetBucketTagging large response fixture is not over 16 KiB");
+         declare
+            Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
+              Low_Level.Decode_Get_Bucket_Tagging_Response
+                (200, US.To_String (Document), Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Bucket_Tags_Found
+               and then Outcome.Result.Value.Length = 50,
+               "GetBucketTagging rejected a valid response over 16 KiB");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Get_Bucket_Tagging_Result;
          Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
            Low_Level.Decode_Get_Bucket_Tagging_Response
              (404,

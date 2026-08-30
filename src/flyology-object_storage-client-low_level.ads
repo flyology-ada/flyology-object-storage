@@ -689,12 +689,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Tagging_Outcome;
 
+   --  Complete modeled GetBucketTagging request controls.
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Request_Payer Compatibility field rejected when nonempty
    type Get_Bucket_Tagging_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
       --  Retained for source compatibility; any nonempty value is rejected.
       Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one signed GetBucketTagging request.
+   --  @param Origin Exact HTTP origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Required exact target bucket
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region Exact SigV4 signing region
+   --  @param Timestamp SigV4 basic-format timestamp
+   --  @return Owned signed request ready for execution
    function Prepare_Get_Bucket_Tagging
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -704,6 +716,9 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Complete modeled GetBucketTagging success fields.
+   --  @field Value Complete decoded bucket tag set
+   --  @field Request_Charged Compatibility field rejected when nonempty
    type Get_Bucket_Tagging_Result is record
       Value           : Tags.Tag_Set;
       --  Retained for source compatibility. GetBucketTagging has no modeled
@@ -711,9 +726,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Result shape for one completed GetBucketTagging exchange.
+   --  @enum Bucket_Tags_Found Complete tag snapshot exists
+   --  @enum Get_Bucket_Tagging_Rejected Structured S3 rejection exists
    type Get_Bucket_Tagging_Outcome_Kind is
      (Bucket_Tags_Found, Get_Bucket_Tagging_Rejected);
 
+   --  Complete GetBucketTagging response or structured S3 rejection.
+   --  @field Kind Result shape
+   --  @field Status Exact HTTP response status
+   --  @field Result Complete modeled successful response
+   --  @field Error Structured S3 rejection
    type Get_Bucket_Tagging_Outcome
      (Kind : Get_Bucket_Tagging_Outcome_Kind :=
        Get_Bucket_Tagging_Rejected)
@@ -727,6 +750,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one complete bounded GetBucketTagging response.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete retained response body
+   --  @param Headers Complete modeled response headers
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @return Complete modeled response or structured S3 rejection
    function Decode_Get_Bucket_Tagging_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -736,6 +767,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Tagging_Outcome;
 
+   --  Execute one prepared GetBucketTagging request synchronously.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Owned request prepared for GetBucketTagging
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Complete modeled response or structured S3 rejection
    function Execute_Get_Bucket_Tagging
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

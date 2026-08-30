@@ -10044,8 +10044,16 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Put_Tags_Outcome;
 
+   --  Result shape for one completed bucket-tag read.
+   --  @enum Tags_Found Complete tag snapshot and response status
+   --  @enum Get_Tags_Rejected Exact response status and structured S3 error
    type Get_Tags_Outcome_Kind is (Tags_Found, Get_Tags_Rejected);
 
+   --  Complete bucket-tag snapshot or structured S3 rejection.
+   --  @field Kind Result shape
+   --  @field Status Exact response status
+   --  @field Value Complete decoded bucket tag set
+   --  @field Error Structured S3 rejection
    type Get_Tags_Outcome
      (Kind : Get_Tags_Outcome_Kind := Get_Tags_Rejected)
    is record
@@ -13668,6 +13676,10 @@ private
      (Item : in out Put_Bucket_Tagging_Operation);
 
    --  @exclude
+   function Get_Bucket_Tagging_Response_Limit
+     (Limits : Flyology.Object_Storage.S3.XML.Parse_Limits) return Natural;
+
+   --  @exclude
    type Get_Bucket_Tagging_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
       HTTP : not null access Flyology.HTTP.Client.Client;
@@ -15559,10 +15571,12 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Tagging_Result;
+   --  @exclude
    function Normalize_Get_Bucket_Tagging_Response
      (Value     : Low_Level.Get_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Tagging_Result;
+   --  @exclude
    function Normalize_Get_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;

@@ -24812,6 +24812,14 @@ package body Flyology.Object_Storage.Client.Buckets is
          Response => Value);
    end Normalize_Get_Bucket_Tagging_Response;
 
+   function Get_Bucket_Tagging_Response_Limit
+     (Limits : Flyology.Object_Storage.S3.XML.Parse_Limits) return Natural is
+   begin
+      return Natural'Min
+        (Limits.Maximum_Document_Bytes,
+         Flyology.Object_Storage.S3.Tagging.Maximum_Bucket_Document_Bytes);
+   end Get_Bucket_Tagging_Response_Limit;
+
    function Normalize_Get_Bucket_Tagging_Failure
      (Kind      : HTTP_Client.Exchange_Result_Kind;
       Admission : HTTP_Client.Admission_Certainty;
@@ -24979,9 +24987,8 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
       Operation.Deadline := Deadline;
       Flyology.Bytes.Clear (Operation.Response_Data);
-      Operation.Response_Limit := Natural'Min
-        (Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes,
-         Flyology.Object_Storage.S3.Tagging.Maximum_Document_Bytes);
+      Operation.Response_Limit := Get_Bucket_Tagging_Response_Limit
+        (Flyology.Object_Storage.S3.XML.Default_Limits);
       Operation.Has_Final_Result := False;
       Operation.Has_Saved_Error := False;
       Operation_Drivers.Start (Operation);
