@@ -2809,6 +2809,171 @@ def main() -> None:
         "--operation",
         "ListMultipartUploads",
     ]
+    tagging_lanes = {
+        "DeleteObjectTagging": (
+            "delete_object_tagging",
+            "/private/tmp/fos-delete-object-tagging-gnatdoc",
+        ),
+        "GetObjectTagging": (
+            "get_object_tagging",
+            "/private/tmp/fos-get-object-tagging-gnatdoc",
+        ),
+        "PutObjectTagging": (
+            "put_object_tagging",
+            "/private/tmp/fos-put-object-tagging-gnatdoc",
+        ),
+    }
+    tagging_public_names = {
+        "DeleteObjectTagging": "Delete_Tags",
+        "GetObjectTagging": "Get_Tags",
+        "PutObjectTagging": "Put_Tags",
+    }
+
+    def assert_tagging_public_names(candidate):
+        actual = {
+            operation: candidate.operations[operation].get("public_name")
+            for operation in tagging_public_names
+        }
+        assert actual == tagging_public_names
+        assert all(isinstance(value, str) for value in actual.values())
+        assert len(set(actual.values())) == len(tagging_public_names)
+
+    def reject_tagging_public_names(candidate, label):
+        try:
+            assert_tagging_public_names(candidate)
+        except (AssertionError, TypeError):
+            return
+        raise AssertionError(f"{label} object-tagging public names accepted")
+
+    assert_tagging_public_names(registry)
+    missing_tagging_public_name = copy.deepcopy(registry)
+    del missing_tagging_public_name.operations["DeleteObjectTagging"][
+        "public_name"
+    ]
+    reject_tagging_public_names(
+        missing_tagging_public_name,
+        "missing",
+    )
+    wrong_tagging_public_name = copy.deepcopy(registry)
+    wrong_tagging_public_name.operations["GetObjectTagging"][
+        "public_name"
+    ] = "Get_Object_Tags"
+    reject_tagging_public_names(wrong_tagging_public_name, "wrong")
+    swapped_tagging_public_names = copy.deepcopy(registry)
+    swapped_tagging_public_names.operations["DeleteObjectTagging"][
+        "public_name"
+    ] = "Get_Tags"
+    swapped_tagging_public_names.operations["GetObjectTagging"][
+        "public_name"
+    ] = "Delete_Tags"
+    reject_tagging_public_names(swapped_tagging_public_names, "swapped")
+    duplicate_tagging_public_name = copy.deepcopy(registry)
+    duplicate_tagging_public_name.operations["PutObjectTagging"][
+        "public_name"
+    ] = "Get_Tags"
+    reject_tagging_public_names(duplicate_tagging_public_name, "duplicate")
+    malformed_tagging_public_name = copy.deepcopy(registry)
+    malformed_tagging_public_name.operations["PutObjectTagging"][
+        "public_name"
+    ] = ["Put_Tags"]
+    reject_tagging_public_names(malformed_tagging_public_name, "malformed")
+    for operation, (lane, root) in tagging_lanes.items():
+        qualification, commands = s3_operation.qualification_plan(
+            registry, [operation]
+        )
+        assert qualification == lane
+        assert commands[:3] == [
+            [
+                "uv",
+                "run",
+                "--python",
+                "3.13",
+                "--",
+                "tools/verify-object-tagging-preparation.py",
+            ],
+            ["./tools/verify-composable-client-fixtures.sh"],
+            ["./tools/test-composable-client-fixtures-verifier.sh"],
+        ]
+        assert commands[3:6] == [
+            ["@tests", "alr", "-n", "build"],
+            ["@tests", "./bin/s3_http_socket_corpus"],
+            ["./tools/verify-coverage.sh"],
+        ]
+        assert commands[6] == [
+            "./tools/build-api-docs.sh",
+            root,
+            "--operation",
+            operation,
+        ]
+        assert commands[7:] == [
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteObjectTagging",
+                "GetObjectTagging",
+                "PutObjectTagging",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed object-tagging lanes were accepted")
+    try:
+        s3_operation.qualification_plan(registry, [])
+    except s3_operation.Audit_Error as error:
+        assert "at least one operation is required" in str(error)
+    else:
+        raise AssertionError("empty object-tagging lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutObjectTagging", "PutObjectTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate object-tagging operation was accepted")
+    malformed_tagging = copy.deepcopy(registry)
+    malformed_tagging.operations["DeleteObjectTagging"]["qualification"] = (
+        "missing_object_tagging_lane"
+    )
+    try:
+        s3_operation.qualification_plan(
+            malformed_tagging, ["DeleteObjectTagging"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError("missing object-tagging lane was accepted")
+    omitted_tagging = copy.deepcopy(registry)
+    omitted_tagging.operations["PutObjectTagging"]["qualification"] = (
+        "delete_object_tagging"
+    )
+    try:
+        s3_operation.qualification_plan(
+            omitted_tagging, ["DeleteObjectTagging"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "complete reviewed qualification lane" in str(error)
+    else:
+        raise AssertionError("omitted object-tagging operation was accepted")
+    cross_family_tagging = copy.deepcopy(registry)
+    cross_family_tagging.operations["GetObjectTagging"]["qualification"] = (
+        "delete_object_tagging"
+    )
+    try:
+        s3_operation.qualification_plan(
+            cross_family_tagging,
+            ["DeleteObjectTagging", "GetObjectTagging"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "one provider and family" in str(error)
+    else:
+        raise AssertionError("cross-family object-tagging lane was accepted")
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )

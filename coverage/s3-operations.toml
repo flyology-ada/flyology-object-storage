@@ -231,6 +231,39 @@ delete_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+delete_object_tagging = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-tagging-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-delete-object-tagging-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+get_object_tagging = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-tagging-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-object-tagging-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+put_object_tagging = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-tagging-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-object-tagging-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_location = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-location-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -935,18 +968,22 @@ tier = "core"
 provider = "objects"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Delete_Tags"
 codec = "rest_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 204 with one nonempty text-safe version id reports Object_Tag_Mutation_Completed; an exact recognized S3 rejection or definite non-admission reports Object_Tag_Mutation_Definitely_Not_Applied, pre-admission cancellation reports Object_Tag_Mutation_Cancelled_Before_Admission, and every other possibly admitted or incomplete outcome reports Object_Tag_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "an explicit VersionId permits an exact same-version current-state GetObjectTagging observation and an omitted VersionId permits only a current-version observation; neither proves that the lost mutation caused the observed state or upgrades mutation certainty without caller-supplied serialization authority"
+exclusions = ["directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "configured server Requester Pays accounting and SDK checksum execution remain explicit typed capability exclusions; exact client control construction remains covered", "same-version and current-version observations do not establish causation or authorize automatic replay", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/composable-client/object-tagging-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tools/verify-object-tagging-preparation.py", "docs/qualification/object-tagging.md", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "delete_object_tagging"
+ada_symbols = ["Prepare_Delete_Object_Tagging", "Decode_Delete_Object_Tagging_Response", "Execute_Delete_Object_Tagging", "Delete_Object_Tagging_Operation", "Delete_Tags", "Finish"]
 
 [[operation]]
 name = "DeleteObjects"
@@ -2341,18 +2378,22 @@ tier = "core"
 provider = "objects"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Get_Tags"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+absence = "an existing selected version with no tags returns one successful empty TagSet; a missing bucket, key, or selected version is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+reconciliation = "an explicit VersionId yields an exact same-version current-state observation and an omitted VersionId yields only a current-version observation; neither proves causation or upgrades any prior mutation certainty without caller-supplied serialization authority"
+exclusions = ["directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "configured server Requester Pays accounting remains an explicit typed capability exclusion; exact client control construction remains covered", "same-version and current-version observations do not establish causation or authorize automatic replay", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/composable-client/object-tagging-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tools/verify-object-tagging-preparation.py", "docs/qualification/object-tagging.md", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "get_object_tagging"
+ada_symbols = ["Prepare_Get_Object_Tagging", "Decode_Get_Object_Tagging_Response", "Execute_Get_Object_Tagging", "Get_Object_Tagging_Operation", "Get_Tags", "Finish"]
 
 [[operation]]
 name = "GetObjectTorrent"
@@ -4075,18 +4116,22 @@ tier = "core"
 provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Put_Tags"
 codec = "rest_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 with one nonempty text-safe version id reports Object_Tag_Mutation_Completed; an exact recognized S3 rejection or definite non-admission reports Object_Tag_Mutation_Definitely_Not_Applied, pre-admission cancellation reports Object_Tag_Mutation_Cancelled_Before_Admission, and every other possibly admitted or incomplete outcome reports Object_Tag_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "an explicit VersionId permits an exact same-version current-state GetObjectTagging observation and an omitted VersionId permits only a current-version observation; neither proves that the lost mutation caused the observed state or upgrades mutation certainty without caller-supplied serialization authority"
+exclusions = ["directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "configured server Requester Pays accounting and SDK checksum execution remain explicit typed capability exclusions; exact Content-MD5 and client generated-checksum construction remain covered", "same-version and current-version observations do not establish causation or authorize automatic replay", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/composable-client/object-tagging-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tools/verify-object-tagging-preparation.py", "docs/qualification/object-tagging.md", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "put_object_tagging"
+ada_symbols = ["Prepare_Put_Object_Tagging", "Decode_Put_Object_Tagging_Response", "Execute_Put_Object_Tagging", "Put_Object_Tagging_Operation", "Put_Tags", "Finish"]
 
 [[operation]]
 name = "PutPublicAccessBlock"

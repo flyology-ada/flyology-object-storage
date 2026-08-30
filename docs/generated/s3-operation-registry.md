@@ -34,7 +34,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeleteBucketWebsite | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteObject | Delete | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteObjectAnnotation | legacy_preserved | objects | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteObjectTagging | legacy_preserved | objects | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteObjectTagging | Delete_Tags | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteObjects | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeletePublicAccessBlock | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketAbac | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
@@ -69,7 +69,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetObjectLegalHold | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetObjectLockConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetObjectRetention | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetObjectTagging | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObjectTagging | Get_Tags | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectTorrent | legacy_preserved | objects | bounded_binary_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetPublicAccessBlock | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | HeadBucket | Head | buckets | response_head_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -113,7 +113,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutObjectLegalHold | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutObjectLockConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutObjectRetention | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutObjectTagging | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutObjectTagging | Put_Tags | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutPublicAccessBlock | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | RenameObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | RestoreObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |

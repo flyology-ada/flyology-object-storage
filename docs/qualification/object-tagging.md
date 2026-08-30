@@ -1,9 +1,19 @@
 # Object-tagging qualification and boundaries
 
-This slice qualifies the authenticated general-purpose path-style server for
-`PutObjectTagging`, `GetObjectTagging`, and `DeleteObjectTagging`. Configured
-Requester Pays accounting and SDK checksum execution remain explicit typed
-capability exclusions. Directory-bucket-specific behavior is not claimed.
+This record defines the reviewed evidence boundary for the authenticated
+general-purpose path-style server and composable client for
+`PutObjectTagging`, `GetObjectTagging`, and `DeleteObjectTagging`. Each
+operation is qualified only when its complete registered lane succeeds.
+Configured Requester Pays accounting and SDK checksum execution remain
+explicit typed server capability exclusions. Directory-bucket-specific
+behavior is not claimed.
+
+The committed source and retained API site currently establish only a
+region-scoped documentation measurement: the 155 candidate-owned Low_Level
+and Objects warnings are absent with no added warning. Repository-wide and
+selected-operation qualification remain blocked by unrelated pre-existing
+Buckets specification warnings. This record does not convert that measurement
+into a qualification claim.
 
 ## Admission and atomicity
 
@@ -78,8 +88,12 @@ three operations directly, verifies same-owner restart, fragmented bounded
 reads, exact returned version identities, cancellation and deadline handling,
 and the convenience wrappers through the same state machines.
 
-The qualified source passes the 41/41 AUnit root suite, 126 abrupt files-crash
-cases, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC linearization
-oracle, signed server/application/socket/TLS corpora, the SQLite backend suite,
-the 116-operation coverage verifier and negative oracle, and GNATdoc generation.
-The composable addition changes no backend state model or pagination boundary.
+Each operation-specific lane requires the dedicated preparation verifier, the
+composable certainty fixture and its negative self-test, the warning-strict
+test build and socket corpus, the 116-operation coverage verifier, selected
+API documentation, the repository gate, and a clean diff. The retained root
+wrapper is green, including 41/41 AUnit tests, the files crash matrix, checksum
+and chunk-boundary oracles, and signed server/application/socket corpora. The
+composable addition changes no backend state model or pagination boundary.
+Those retained results remain evidence only until every registered lane,
+including the repository-wide documentation classifier, succeeds.
