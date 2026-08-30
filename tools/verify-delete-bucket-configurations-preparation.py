@@ -366,6 +366,40 @@ DELETE_METRICS_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_OWNERSHIP_CONTROLS_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Ownership_Controls_Mutation_Completed; an exact "
+    "recognized non-mutating rejection or definite non-admission reports "
+    "Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied; "
+    "pre-admission cancellation reports "
+    "Bucket_Ownership_Controls_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, and malformed "
+    "or oversized responses report "
+    "Bucket_Ownership_Controls_Mutation_Outcome_Unknown; no automatic replay"
+)
+DELETE_OWNERSHIP_CONTROLS_RECONCILIATION = (
+    "caller-selected Get_Ownership_Controls may observe the current "
+    "ownership-controls configuration or exact "
+    "OwnershipControlsNotFoundError before a retry, but does not prove that "
+    "the lost deletion caused the observed absence or upgrade mutation "
+    "certainty; no automatic replay"
+)
+DELETE_OWNERSHIP_CONTROLS_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-ownership-controls-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -1323,6 +1357,91 @@ def verify_metrics_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def ownership_controls_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketOwnershipControls"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketOwnershipControls is not unique")
+    return matches[0]
+
+
+def verify_ownership_controls_registry(data: dict[str, object]) -> None:
+    entry = ownership_controls_entry(data)
+    expected = {
+        "public_name": "Delete_Ownership_Controls",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_ownership_controls",
+        "codec": "empty_response",
+        "certainty": DELETE_OWNERSHIP_CONTROLS_CERTAINTY,
+        "reconciliation": DELETE_OWNERSHIP_CONTROLS_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Ownership_Controls",
+            "Execute_Delete_Bucket_Ownership_Controls",
+            "Delete_Ownership_Controls_Operation",
+            "Delete_Ownership_Controls",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketOwnershipControls changed: {key}")
+    if "removes the bucket ownership-controls" not in entry["absence"]:
+        fail("DeleteBucketOwnershipControls semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeleteBucketOwnershipControls success changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeleteBucketOwnershipControls presence changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeleteBucketOwnershipControls reconcile changed")
+    if data["qualification"].get(
+        "delete_bucket_ownership_controls"
+    ) != DELETE_OWNERSHIP_CONTROLS_LANE:
+        fail("DeleteBucketOwnershipControls lane changed")
+
+
+def verify_ownership_controls_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Metrics_Configuration"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_OWNERSHIP_CONTROLS_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Ownership_Controls proves deletion",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_metrics"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = ownership_controls_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_ownership_controls_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1420,6 +1539,8 @@ def main() -> int:
     verify_metadata_table_negatives(registry)
     verify_metrics_registry(registry)
     verify_metrics_negatives(registry)
+    verify_ownership_controls_registry(registry)
+    verify_ownership_controls_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1497,6 +1618,12 @@ def main() -> int:
     )
     if model_spec.count(metrics_documentation) != 1:
         fail("DeleteBucketMetricsConfiguration docs changed")
+    ownership_controls_documentation = (
+        "@enum Delete_Bucket_Ownership_Controls_Operation Delete bucket "
+        "ownership\n   --    controls"
+    )
+    if model_spec.count(ownership_controls_documentation) != 1:
+        fail("DeleteBucketOwnershipControls docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -2024,6 +2151,55 @@ def main() -> int:
         ],
         "DeleteBucketMetricsConfiguration qualification prose",
     )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Delete_Ownership_Controls_Response",
+            "Bucket_Ownership_Controls_Mutation_Completed",
+            "Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Ownership_Controls_Failure",
+            "procedure Start_Delete_Ownership_Controls",
+            "DeleteBucketOwnershipControls restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeleteBucketOwnershipControls provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Ownership_Controls_Certainty_Corpus",
+            "procedure Check_Delete_Response",
+            "Bucket_Ownership_Controls_Mutation_Completed",
+            '(404, "NoSuchBucket",',
+            "for Kind of Failure_Kinds loop",
+            "Normalize_Delete_Ownership_Controls_Failure",
+        ],
+        "DeleteBucketOwnershipControls certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"/composed-delete-ownership?ownershipControls"',
+            '"/restart-delete-ownership?ownershipControls"',
+            "DeleteBucketOwnershipControls accepted a public-access",
+            "composed DeleteBucketOwnershipControls mismatch",
+            "restarted DeleteBucketOwnershipControls mismatch",
+        ],
+        "DeleteBucketOwnershipControls socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the bucket ownership-controls configuration",
+            "OwnershipControlsNotFoundError",
+            "prior presence",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Ownership_Controls_Operation",
+            "added none",
+            "delete_bucket_ownership_controls",
+        ],
+        "DeleteBucketOwnershipControls qualification prose",
+    )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
         operation, enum_stem, shape, uri, has_id, prepare, execute, high = expected
@@ -2344,7 +2520,7 @@ def main() -> int:
         "DeleteBucketInventoryConfiguration/"
         "DeleteBucketMetadataConfiguration registry/certainty, and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
-        "metrics, "
+        "metrics, ownership-controls, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
         "composable forms"
     )

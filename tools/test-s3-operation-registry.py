@@ -5615,6 +5615,170 @@ def main() -> None:
         raise AssertionError(
             "mixed DeleteBucketMetricsConfiguration lane was accepted"
         )
+    delete_ownership_controls_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Ownership_Controls_Mutation_Completed; an exact "
+        "recognized non-mutating rejection or definite non-admission reports "
+        "Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied; "
+        "pre-admission cancellation reports "
+        "Bucket_Ownership_Controls_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report "
+        "Bucket_Ownership_Controls_Mutation_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    delete_ownership_controls_reconciliation = (
+        "caller-selected Get_Ownership_Controls may observe the current "
+        "ownership-controls configuration or exact "
+        "OwnershipControlsNotFoundError before a retry, but does not prove "
+        "that the lost deletion caused the observed absence or upgrade "
+        "mutation certainty; no automatic replay"
+    )
+
+    def assert_delete_ownership_controls_registry(candidate):
+        entry = candidate.operations["DeleteBucketOwnershipControls"]
+        assert entry.get("public_name") == "Delete_Ownership_Controls"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "delete_bucket_ownership_controls"
+        )
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == (
+            delete_ownership_controls_certainty
+        )
+        assert entry.get("reconciliation") == (
+            delete_ownership_controls_reconciliation
+        )
+        assert entry.get("coverage") == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Ownership_Controls",
+            "Execute_Delete_Bucket_Ownership_Controls",
+            "Delete_Ownership_Controls_Operation",
+            "Delete_Ownership_Controls",
+            "Finish",
+        ]
+        assert "removes the bucket ownership-controls" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert "previously present" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification[
+                "delete_bucket_ownership_controls"
+            ][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_ownership_controls_registry(candidate, label):
+        try:
+            assert_delete_ownership_controls_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketOwnershipControls registry accepted"
+        )
+
+    assert_delete_ownership_controls_registry(registry)
+    missing_delete_ownership_controls_name = copy.deepcopy(registry)
+    del missing_delete_ownership_controls_name.operations[
+        "DeleteBucketOwnershipControls"
+    ]["public_name"]
+    reject_delete_ownership_controls_registry(
+        missing_delete_ownership_controls_name, "missing public name"
+    )
+    wrong_delete_ownership_controls_name = copy.deepcopy(registry)
+    wrong_delete_ownership_controls_name.operations[
+        "DeleteBucketOwnershipControls"
+    ]["public_name"] = "Delete_Metrics_Configuration"
+    reject_delete_ownership_controls_registry(
+        wrong_delete_ownership_controls_name, "wrong public name"
+    )
+    broadened_delete_ownership_controls_success = copy.deepcopy(registry)
+    broadened_delete_ownership_controls_success.operations[
+        "DeleteBucketOwnershipControls"
+    ]["certainty"] = delete_ownership_controls_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_ownership_controls_registry(
+        broadened_delete_ownership_controls_success,
+        "broadened success status",
+    )
+    causal_delete_ownership_controls_reconciliation = copy.deepcopy(registry)
+    causal_delete_ownership_controls_reconciliation.operations[
+        "DeleteBucketOwnershipControls"
+    ]["reconciliation"] = "Get_Ownership_Controls proves deletion"
+    reject_delete_ownership_controls_registry(
+        causal_delete_ownership_controls_reconciliation,
+        "causal reconciliation",
+    )
+    cross_delete_ownership_controls_symbol = copy.deepcopy(registry)
+    cross_delete_ownership_controls_symbol.operations[
+        "DeleteBucketOwnershipControls"
+    ]["ada_symbols"][0] = "Prepare_Delete_Bucket_Metrics_Configuration"
+    reject_delete_ownership_controls_registry(
+        cross_delete_ownership_controls_symbol, "cross-operation symbol"
+    )
+    delete_ownership_controls_qualification, ownership_controls_commands = (
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketOwnershipControls"]
+        )
+    )
+    assert delete_ownership_controls_qualification == (
+        "delete_bucket_ownership_controls"
+    )
+    assert ownership_controls_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert ownership_controls_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-ownership-controls-gnatdoc",
+        "--operation",
+        "DeleteBucketOwnershipControls",
+    ]
+    assert ownership_controls_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketOwnershipControls",
+                "DeleteBucketOwnershipControls",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketOwnershipControls lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketOwnershipControls",
+                "DeleteBucketMetricsConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketOwnershipControls lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
