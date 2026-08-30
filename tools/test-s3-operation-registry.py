@@ -2887,6 +2887,116 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetObject lane was accepted")
+    head_object_public_name = "Head_Object"
+
+    def assert_head_object_registry(candidate):
+        entry = candidate.operations["HeadObject"]
+        assert entry.get("public_name") == head_object_public_name
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "head_object"
+        assert entry.get("ada_symbols") == [
+            "Prepare_Head_Object",
+            "Decode_Head_Object_Response",
+            "Decode_Head_Object_Complete_Response",
+            "Execute_Head_Object",
+            "Head_Operation",
+            "Head_Object",
+            "Finish",
+        ]
+        assert "must be echoed exactly" in entry["absence"]
+        assert "bind to the prepared request" in entry["certainty"]
+        assert "no payload to recompute" in entry["exclusions"][0]
+        assert "tools/verify-head-object-preparation.py" in (
+            entry["evidence"]["corpus"]
+        )
+
+    def reject_head_object_registry(candidate, label):
+        try:
+            assert_head_object_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} HeadObject registry accepted")
+
+    assert_head_object_registry(registry)
+    missing_head_object_name = copy.deepcopy(registry)
+    del missing_head_object_name.operations["HeadObject"]["public_name"]
+    reject_head_object_registry(
+        missing_head_object_name,
+        "missing public name",
+    )
+    wrong_head_object_name = copy.deepcopy(registry)
+    wrong_head_object_name.operations["HeadObject"]["public_name"] = "Head"
+    reject_head_object_registry(
+        wrong_head_object_name,
+        "wrong public name",
+    )
+    cross_head_object_symbol = copy.deepcopy(registry)
+    cross_head_object_symbol.operations["HeadObject"]["ada_symbols"][0] = (
+        "Prepare_Head_Bucket"
+    )
+    reject_head_object_registry(
+        cross_head_object_symbol,
+        "cross-operation symbol",
+    )
+    head_object_qualification, head_object_commands = (
+        s3_operation.qualification_plan(registry, ["HeadObject"])
+    )
+    assert head_object_qualification == "head_object"
+    assert head_object_commands[:4] == [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-head-object-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert head_object_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-head-object-gnatdoc",
+        "--operation",
+        "HeadObject",
+    ]
+    assert head_object_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    malformed_head_object_lane = copy.deepcopy(registry)
+    malformed_head_object_lane.operations["HeadObject"]["qualification"] = (
+        "missing_head_object_lane"
+    )
+    try:
+        s3_operation.qualification_plan(
+            malformed_head_object_lane,
+            ["HeadObject"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "unknown qualification lane" in str(error)
+    else:
+        raise AssertionError("malformed HeadObject lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["HeadObject", "HeadObject"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate HeadObject lane was accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["HeadObject", "GetObject"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed HeadObject lane was accepted")
     copy_qualification, copy_commands = s3_operation.qualification_plan(
         registry, ["CopyObject"]
     )

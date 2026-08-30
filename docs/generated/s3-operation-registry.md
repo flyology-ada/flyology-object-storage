@@ -73,7 +73,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetObjectTorrent | legacy_preserved | objects | bounded_binary_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetPublicAccessBlock | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | HeadBucket | Head | buckets | response_head_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| HeadObject | legacy_preserved | objects | response_head_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| HeadObject | Head_Object | objects | response_head_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListBucketAnalyticsConfigurations | List_Analytics_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListBucketIntelligentTieringConfigurations | List_Intelligent_Tiering_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | ListBucketInventoryConfigurations | List_Inventory_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
