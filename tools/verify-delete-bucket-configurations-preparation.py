@@ -265,6 +265,40 @@ DELETE_INVENTORY_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+DELETE_METADATA_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Bucket_Metadata_Configuration_Mutation_Completed; an exact "
+    "recognized non-mutating rejection or definite non-admission reports "
+    "Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied; "
+    "pre-admission cancellation reports "
+    "Bucket_Metadata_Configuration_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, and malformed "
+    "or oversized responses report "
+    "Bucket_Metadata_Configuration_Mutation_Outcome_Unknown; no automatic "
+    "replay"
+)
+DELETE_METADATA_RECONCILIATION = (
+    "caller-selected Get_Metadata_Configuration may observe the current "
+    "modeled configuration response or structured rejection before a retry, "
+    "but does not prove that the lost deletion caused the observation or "
+    "upgrade mutation certainty; no automatic replay"
+)
+DELETE_METADATA_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-metadata-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -951,6 +985,99 @@ def verify_inventory_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def metadata_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeleteBucketMetadataConfiguration"
+    ]
+    if len(matches) != 1:
+        fail("DeleteBucketMetadataConfiguration is not unique")
+    return matches[0]
+
+
+def verify_metadata_registry(data: dict[str, object]) -> None:
+    entry = metadata_entry(data)
+    expected = {
+        "public_name": "Delete_Metadata_Configuration",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_bucket_metadata",
+        "codec": "empty_response",
+        "certainty": DELETE_METADATA_CERTAINTY,
+        "reconciliation": DELETE_METADATA_RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Bucket_Metadata_Configuration",
+            "Execute_Delete_Bucket_Metadata_Configuration",
+            "Delete_Bucket_Metadata_Operation",
+            "Delete_Metadata_Configuration",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeleteBucketMetadataConfiguration changed: {key}")
+    if "removes the bucket metadata" not in entry["absence"]:
+        fail("DeleteBucketMetadataConfiguration semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeleteBucketMetadataConfiguration success changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeleteBucketMetadataConfiguration presence changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeleteBucketMetadataConfiguration reconcile changed")
+    if data["qualification"].get(
+        "delete_bucket_metadata"
+    ) != DELETE_METADATA_LANE:
+        fail("DeleteBucketMetadataConfiguration lane changed")
+
+
+def verify_metadata_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        (
+            "wrong public name",
+            "public_name",
+            "Delete_Inventory_Configuration",
+        ),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_METADATA_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Metadata_Configuration proves deletion",
+        ),
+        (
+            "cross-operation lane",
+            "qualification",
+            "delete_bucket_inventory",
+        ),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = metadata_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_metadata_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1042,6 +1169,8 @@ def main() -> int:
     verify_intelligent_tiering_negatives(registry)
     verify_inventory_registry(registry)
     verify_inventory_negatives(registry)
+    verify_metadata_registry(registry)
+    verify_metadata_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1101,6 +1230,12 @@ def main() -> int:
     )
     if model_spec.count(inventory_documentation) != 1:
         fail("DeleteBucketInventoryConfiguration docs changed")
+    metadata_documentation = (
+        "@enum Delete_Bucket_Metadata_Configuration_Operation\n"
+        "   --    Delete metadata configuration"
+    )
+    if model_spec.count(metadata_documentation) != 1:
+        fail("DeleteBucketMetadataConfiguration docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -1463,6 +1598,61 @@ def main() -> int:
         ],
         "DeleteBucketInventoryConfiguration qualification prose",
     )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Delete_Bucket_Metadata_Response",
+            "Bucket_Metadata_Configuration_Mutation_Completed",
+            "Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Bucket_Metadata_Failure",
+            "procedure Start_Delete_Bucket_Metadata",
+            "DeleteBucketMetadataConfiguration restart changed a",
+            "procedure Finish",
+        ],
+        "DeleteBucketMetadataConfiguration provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Delete_Bucket_Metadata_Certainty_Corpus",
+            "Bucket_Metadata_Configuration_Mutation_Completed",
+            "Check_Response",
+            '(409, "OperationAborted",',
+            "for Admission in",
+            "Normalize_Delete_Bucket_Metadata_Failure",
+        ],
+        "DeleteBucketMetadataConfiguration certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeleteBucketMetadataConfiguration"',
+            "typed DeleteBucketMetadataConfiguration ",
+            "DeleteBucketMetadataConfiguration accepted ",
+            "a lifecycle ",
+            "composed DeleteBucketMetadataConfiguration ",
+            "restarted DeleteBucketMetadataConfiguration ",
+            "DeleteBucketMetadataConfiguration accepted ",
+            '"duplicate " &',
+            "DeleteBucketMetadataConfiguration accepted ",
+            '"an empty " &',
+            "bounded DeleteBucketMetadataConfiguration ",
+        ],
+        "DeleteBucketMetadataConfiguration socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "removes the bucket metadata configuration",
+            "structured rejection",
+            "prior presence",
+            "missing / covered / missing / covered",
+            "Delete_Bucket_Metadata_Configuration_Operation",
+            "added none",
+            "delete_bucket_metadata",
+        ],
+        "DeleteBucketMetadataConfiguration qualification prose",
+    )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
         operation, enum_stem, shape, uri, has_id, prepare, execute, high = expected
@@ -1780,7 +1970,8 @@ def main() -> int:
         "DeleteBucketReplication/DeleteBucketWebsite/"
         "DeleteBucketAnalyticsConfiguration/"
         "DeleteBucketIntelligentTieringConfiguration registry/certainty, "
-        "DeleteBucketInventoryConfiguration registry/certainty, and exact "
+        "DeleteBucketInventoryConfiguration/"
+        "DeleteBucketMetadataConfiguration registry/certainty, and exact "
         "public APIs match, including analytics, metadata, metadata-table, "
         "metrics, "
         "lifecycle, replication, website, intelligent-tiering, and inventory "
