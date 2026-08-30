@@ -20,6 +20,8 @@ is
    --  @enum Delete_Bucket_Lifecycle_Operation Delete bucket lifecycle
    --  @enum Delete_Bucket_Metadata_Configuration_Operation
    --    Delete metadata configuration
+   --  @enum Delete_Bucket_Metadata_Table_Configuration_Operation
+   --    Delete metadata-table configuration
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Delete_Bucket_Website_Operation Delete bucket website
