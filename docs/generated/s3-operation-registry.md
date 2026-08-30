@@ -29,7 +29,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeleteBucketMetricsConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketOwnershipControls | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketPolicy | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketReplication | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketReplication | Delete_Replication | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketTagging | Delete_Tags | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketWebsite | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteObject | Delete | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
