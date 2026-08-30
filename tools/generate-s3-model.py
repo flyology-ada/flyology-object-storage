@@ -27,6 +27,7 @@ OPERATION_DOCUMENTATION = {
     ),
     "DeleteBucketInventoryConfiguration": "Delete inventory configuration",
     "DeleteBucketLifecycle": "Delete bucket lifecycle",
+    "DeleteBucketMetadataConfiguration": "Delete metadata configuration",
     "DeleteBucketReplication": "Delete bucket replication",
     "DeleteBucketWebsite": "Delete bucket website",
     "DeleteBucketTagging": "Delete bucket tagging operation",
