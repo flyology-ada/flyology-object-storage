@@ -22,6 +22,9 @@ OPERATION_DOCUMENTATION = {
     "DeleteBucketAnalyticsConfiguration": "Delete analytics",
     "DeleteBucketCors": "Delete bucket CORS operation",
     "DeleteBucketEncryption": "Delete bucket encryption",
+    "DeleteBucketIntelligentTieringConfiguration": (
+        "Delete intelligent-tiering configuration"
+    ),
     "DeleteBucketLifecycle": "Delete bucket lifecycle",
     "DeleteBucketReplication": "Delete bucket replication",
     "DeleteBucketWebsite": "Delete bucket website",
@@ -46,6 +49,17 @@ def quote(value: str) -> str:
 
 def bool_image(value: object) -> str:
     return "True" if value is True else "False"
+
+
+def operation_documentation(literal: str, description: str) -> list[str]:
+    association = "   --  @enum " + literal
+    one_line = association + " " + description
+    if len(one_line) <= 79:
+        return [one_line]
+    continuation = "   --    " + description
+    if len(association) > 79 or len(continuation) > 79:
+        raise ValueError("operation documentation exceeds source width")
+    return [association, continuation]
 
 
 def line_case_function(
@@ -170,11 +184,10 @@ def generate(model_path: pathlib.Path) -> tuple[str, str]:
     ]
     for name in operations:
         if name in OPERATION_DOCUMENTATION:
-            spec.append(
-                "   --  @enum "
-                + operation_literal[name]
-                + " "
-                + OPERATION_DOCUMENTATION[name]
+            spec.extend(
+                operation_documentation(
+                    operation_literal[name], OPERATION_DOCUMENTATION[name]
+                )
             )
     spec.extend(
         [
