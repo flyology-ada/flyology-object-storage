@@ -4977,6 +4977,166 @@ def main() -> None:
             "mixed DeleteBucketIntelligentTieringConfiguration lane was "
             "accepted"
         )
+    delete_inventory_certainty = (
+        "only a complete validated 204 response with an exactly empty body "
+        "reports Bucket_Inventory_Configuration_Mutation_Completed; an exact "
+        "recognized non-mutating rejection or definite non-admission reports "
+        "Bucket_Inventory_Configuration_Mutation_Definitely_Not_Applied; "
+        "pre-admission cancellation reports "
+        "Bucket_Inventory_Configuration_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report "
+        "Bucket_Inventory_Configuration_Mutation_Outcome_Unknown; no "
+        "automatic replay"
+    )
+    delete_inventory_reconciliation = (
+        "caller-selected Get_Inventory_Configuration for the same identifier "
+        "may observe the current configuration or exact NoSuchConfiguration "
+        "before a retry, but does not prove that the lost deletion caused the "
+        "observed absence or upgrade mutation certainty; no automatic replay"
+    )
+
+    def assert_delete_inventory_registry(candidate):
+        entry = candidate.operations["DeleteBucketInventoryConfiguration"]
+        assert entry.get("public_name") == "Delete_Inventory_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_bucket_inventory"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == delete_inventory_certainty
+        assert entry.get("reconciliation") == delete_inventory_reconciliation
+        assert entry.get("coverage") == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Delete_Bucket_Inventory_Configuration",
+            "Execute_Delete_Bucket_Inventory_Configuration",
+            "Delete_Bucket_Inventory_Configuration_Operation",
+            "Delete_Inventory_Configuration",
+            "Finish",
+        ]
+        assert "removes the selected bucket inventory" in entry["absence"]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert "previously present" in entry["exclusions"][3]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification["delete_bucket_inventory"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_delete_inventory_registry(candidate, label):
+        try:
+            assert_delete_inventory_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteBucketInventoryConfiguration registry accepted"
+        )
+
+    assert_delete_inventory_registry(registry)
+    missing_delete_inventory_name = copy.deepcopy(registry)
+    del missing_delete_inventory_name.operations[
+        "DeleteBucketInventoryConfiguration"
+    ]["public_name"]
+    reject_delete_inventory_registry(
+        missing_delete_inventory_name,
+        "missing public name",
+    )
+    wrong_delete_inventory_name = copy.deepcopy(registry)
+    wrong_delete_inventory_name.operations[
+        "DeleteBucketInventoryConfiguration"
+    ]["public_name"] = "Delete_Intelligent_Tiering_Configuration"
+    reject_delete_inventory_registry(
+        wrong_delete_inventory_name,
+        "wrong public name",
+    )
+    broadened_delete_inventory_success = copy.deepcopy(registry)
+    broadened_delete_inventory_success.operations[
+        "DeleteBucketInventoryConfiguration"
+    ]["certainty"] = delete_inventory_certainty.replace(
+        "validated 204", "validated 200 or 204"
+    )
+    reject_delete_inventory_registry(
+        broadened_delete_inventory_success,
+        "broadened success status",
+    )
+    causal_delete_inventory_reconciliation = copy.deepcopy(registry)
+    causal_delete_inventory_reconciliation.operations[
+        "DeleteBucketInventoryConfiguration"
+    ]["reconciliation"] = (
+        "Get_Inventory_Configuration proves deletion completed"
+    )
+    reject_delete_inventory_registry(
+        causal_delete_inventory_reconciliation,
+        "causal reconciliation",
+    )
+    cross_delete_inventory_symbol = copy.deepcopy(registry)
+    cross_delete_inventory_symbol.operations[
+        "DeleteBucketInventoryConfiguration"
+    ]["ada_symbols"][0] = (
+        "Prepare_Delete_Bucket_Intelligent_Tiering_Configuration"
+    )
+    reject_delete_inventory_registry(
+        cross_delete_inventory_symbol,
+        "cross-operation symbol",
+    )
+    delete_inventory_qualification, delete_inventory_commands = (
+        s3_operation.qualification_plan(
+            registry, ["DeleteBucketInventoryConfiguration"]
+        )
+    )
+    assert delete_inventory_qualification == "delete_bucket_inventory"
+    assert delete_inventory_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert delete_inventory_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-bucket-inventory-gnatdoc",
+        "--operation",
+        "DeleteBucketInventoryConfiguration",
+    ]
+    assert delete_inventory_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketInventoryConfiguration",
+                "DeleteBucketInventoryConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteBucketInventoryConfiguration lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "DeleteBucketInventoryConfiguration",
+                "DeleteBucketIntelligentTieringConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed DeleteBucketInventoryConfiguration lane was accepted"
+        )
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )
