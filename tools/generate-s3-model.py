@@ -19,6 +19,7 @@ EXPECTED_OPERATIONS = 116
 EXPECTED_SHAPES = 718
 
 OPERATION_DOCUMENTATION = {
+    "DeleteBucketAnalyticsConfiguration": "Delete analytics",
     "DeleteBucketCors": "Delete bucket CORS operation",
     "DeleteBucketEncryption": "Delete bucket encryption",
     "DeleteBucketLifecycle": "Delete bucket lifecycle",
