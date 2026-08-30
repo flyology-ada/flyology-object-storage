@@ -7537,6 +7537,7 @@ procedure S3_HTTP_Socket_Corpus is
            Low_Level.Prepare_List_Objects_V2
              (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
               Identity, "us-east-1", "20130524T000000Z");
+         V1_Parameters : Low_Level.List_Objects_Parameters;
 
          procedure Require_Configuration_Deletion
            (Result    : Buckets.Delete_Outcome;
@@ -10657,7 +10658,6 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
-            V1_Parameters : Low_Level.List_Objects_Parameters;
          begin
             V1_Parameters.Prefix := US.To_Unbounded_String ("socket/");
             V1_Parameters.Delimiter := US.To_Unbounded_String ("/");
