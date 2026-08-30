@@ -18,7 +18,8 @@ validated configured region.
 
 Every modeled header distinguishes absence from an explicitly empty value.
 Duplicate or empty ACL, ownership, Object Lock, namespace, and grant controls
-are rejected. The exact `private` ACL and `BucketOwnerEnforced` ownership values
+are rejected. The exact `private` ACL and `BucketOwnerEnforced` ownership
+values
 are supported; other valid modeled values receive `NotImplemented`; invalid
 enum values receive `InvalidArgument`. Directory configuration and initial tag
 sets are parsed completely before their explicit capability results. A corrupt
@@ -56,15 +57,16 @@ reconciliation before retry.
 
 The signed socket corpus covers fragmented success metadata, the convenience
 wait-through path, duplicate physical singleton headers, same-owner restart
-through a modeled conflict, cancellation, and an expired deadline on native and
-lightweight tasks. The normalization corpus covers every HTTP terminal kind in
-every admission-certainty state and the maintained conclusive, retryable, and
-unknown S3 status/code classes.
+through a modeled conflict, pre-admission and admitted cancellation through
+terminal drain, same-operation restart after drain, and lost-response
+HeadBucket reconciliation on native and lightweight tasks. The normalization
+corpus covers every HTTP terminal kind in every admission-certainty state and
+the maintained conclusive, retryable, and unknown S3 status/code classes.
 
-The qualified source passes the 41/41 AUnit root suite, 126 abrupt files-crash
-cases, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC linearization
-oracle, signed server/application/socket/TLS corpora, the 116-operation coverage
-verifier and negative oracle, GNATdoc generation, the repository integrity
-gate, and the warning-strict 936/936 GNATprove campaign. The composable change
-does not alter the backend state model, server admission policy, pagination
-algorithm, or scheduling engine.
+The focused qualification lane builds the maintained tests, runs the signed
+socket corpus, verifies the 116-operation coverage ledger, generates a fresh
+public API site, runs the pinned-model repository gate, and checks the diff.
+These gates qualify CreateBucket only when every step reaches its maintained
+success sentinel; a repository-owned GNATdoc warning prevents a qualification
+claim. The composable change does not alter the backend state model, server
+admission policy, pagination algorithm, or scheduling engine.

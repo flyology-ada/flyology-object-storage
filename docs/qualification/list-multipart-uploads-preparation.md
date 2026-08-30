@@ -1,10 +1,11 @@
 # ListMultipartUploads qualification
 
-This record freezes the pinned model inventory and qualifies the composable
-and synchronous clients plus the authenticated general-purpose path-style
-server. Backend, client, server, and corpus coverage are complete within that
-scope. Directory buckets and configured Requester Pays accounting remain
-explicit capability exclusions.
+This record freezes the pinned model inventory and defines the focused
+qualification boundary for the composable and synchronous clients. Retained
+backend, server, and corpus evidence is complete within the stated
+general-purpose path-style scope, but a qualification claim requires the
+focused lane to pass on the exact promoted source. Directory buckets and
+configured Requester Pays accounting remain explicit capability exclusions.
 
 ## Pinned authority
 
@@ -17,17 +18,21 @@ by this repository:
 - request shape 391, `ListMultipartUploadsRequest`, with 9 members; and
 - output shape 390, `ListMultipartUploadsOutput`, with 13 members.
 
-The current
-[AWS ListMultipartUploads API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListMultipartUploads.html)
-and [multipart upload overview](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
+The current [AWS ListMultipartUploads API] and [multipart upload overview]
 were reviewed on 2026-08-22. The pinned generated model remains authoritative
 for this crate when current prose and the pinned SDK revision differ.
+
+[AWS ListMultipartUploads API]:
+  https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListMultipartUploads.html
+[multipart upload overview]:
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html
 
 ## Paired continuation
 
 For general-purpose buckets, `KeyMarker` and `UploadIdMarker` form one cursor.
-The caller copies both `NextKeyMarker` and `NextUploadIdMarker` from a truncated
-response into the next request. An upload-ID marker without a key marker is
+The caller copies both `NextKeyMarker` and `NextUploadIdMarker` from a
+truncated response into the next request. An upload-ID marker without a key
+marker is
 preserved on the wire but ignored semantically. A key marker without an upload
 ID excludes uploads whose key equals that marker.
 
@@ -64,8 +69,9 @@ until their endpoint and session policy exists.
 ## Qualified client and oracle boundary
 
 The low-level client projects all nine modeled request positions and parses all
-13 top-level output positions. `Client.Transfers.List_Multipart_Uploads_Page` is the
-caller-owned completion-set-aware operation; the typed
+13 top-level output positions.
+`Client.Transfers.List_Multipart_Uploads_Page` is the caller-owned
+completion-set-aware operation; the typed
 `Client.Transfers.List_Multipart_Uploads_Page` overload is a literal wait on
 that same state machine. The established low-level-outcome overload remains
 source compatible. Prepared requests retain bucket, both markers, prefix,
@@ -80,6 +86,11 @@ limit, owns no borrowed request input, creates no helper task, and contains one
 HTTP child. Typed Finish distinguishes a modeled S3 response from a bounded
 exchange failure and preserves terminal admission certainty for diagnostics.
 As a read-only request, ListMultipartUploads has no publication disposition.
+The maintained lifecycle corpus withholds the first response after admission,
+cancels the parent, waits for the HTTP and transport children, consumes typed
+`Finish`, and requires a transport drain acknowledgement. It then rejects a
+changed retained cancellation owner before network activity and restarts the
+same operation object with its original owner.
 
 The sole modeled response header is a physical singleton. Present-empty,
 duplicate, over-8-KiB, control-bearing, or invalid requester-pays values are
@@ -108,7 +119,7 @@ page says it is truncated but omits `NextKeyMarker` and initiation metadata.
 That divergence must stay pinned rather than weakening continuation or upload
 completeness validation.
 
-## Isolated verification
+## Maintained verification
 
 `tests/corpora/list-multipart-uploads/members.tsv` maps every modeled request
 and output member to its generated wire location, current boundary, required
@@ -120,7 +131,7 @@ external-server designs.
 Run:
 
 ```sh
-python3 tools/verify-list-multipart-uploads-preparation.py
+uv run --python 3.13 -- tools/verify-list-multipart-uploads-preparation.py
 ```
 
 The standard-library-only verifier checks the pinned model revision/hash,
@@ -129,10 +140,11 @@ vector identifiers, and reciprocal member/vector references. It does not
 build Ada, invoke shared runners, edit a manifest or ledger, or run GNATprove.
 
 The fragmented raw-loopback corpus runs through both native and Flyology
-lightweight clients, covers pre-admission cancellation and direct operation
-restart, independently mutates all seven echoed scope/cursor fields, rejects a
-charged response without an admitted payer, exercises duplicate and
-present-empty headers, and follows a real two-page paired cursor. Direct
+lightweight clients, covers pre-admission cancellation plus admitted
+cancellation, drain, retained-owner rejection, and same-object restart,
+independently mutates all seven echoed scope/cursor fields, rejects a charged
+response without an admitted payer, exercises duplicate and present-empty
+headers, and follows a real two-page paired cursor. Direct
 normalization checks cover modeled service responses and every HTTP terminal
 failure across all admission states. The signed server corpus additionally
 requires matching
@@ -140,17 +152,26 @@ owner success, mismatched-owner `AccessDenied`, duplicate-owner rejection, and
 valid, invalid, and duplicate requester-pays dispositions. The repeated
 implementation matrix calls the public page API against RustFS, supplemental
 MinIO, and Flyology memory/files/SQLite; the exact SeaweedFS exclusion above
-remains pinned. Ledger promotion records the qualified client and
-general-purpose server boundaries.
+remains pinned. Ledger promotion records the reviewed client boundary and
+retained general-purpose server evidence. It becomes qualification evidence
+only after the exact focused lane completes successfully.
 
-## Frozen gate evidence
+The focused lane is fail-closed on every repository-owned warning, including
+GNATdoc output. Dependency diagnostics remain classified by exact source
+ownership; no warning text, count, baseline, suppression, or narrowed source
+set can establish success. A documentation failure prevents a qualification
+claim even when the build and runtime corpus are otherwise green.
 
-The qualified source passed the root gate with 41/41 AUnit tests, the 126-case
+## Historical gate evidence
+
+The earlier source passed the root gate with 41/41 AUnit tests, the 126-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
 linearization oracle, the server application corpus, and three repetitions of
 the native/lightweight socket corpus. The SQLite gate passed. The six-server
 implementation matrix passed all 18 lanes and repetitions, with the exact
 SeaweedFS exclusions above reported rather than accepted.
+That retained evidence does not qualify this promoted source; the maintained
+focused lane must be rerun on its exact identity.
 
 The serialized proof campaign on 2026-08-24 used FSF GNATprove 16.1.0.
 `./tools/prove.sh` used output headers and warnings as errors and proved

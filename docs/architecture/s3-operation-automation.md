@@ -102,6 +102,53 @@ missing executable evidence. Scaffolding may create the missing implementation
 after every human decision is resolved, but qualification and coverage
 promotion still refuse the operation until executable evidence is present.
 
+Focused qualification also runs the shared GNATdoc gate. GNATdoc's public
+site must be nonempty, contain `index.html`, and name the Object Storage API.
+Every error and every warning resolved to a repository-owned source fails the
+gate, including diagnostics from generated Ada. Warnings may be attributed to
+dependencies only by resolving their source files through the dedicated public
+API project's active source closure. The maintained gate first materializes
+that spec-only project's semantic ALI files through a compile-only
+static-library project. It then retains separate direct `gprls -U -s` and
+dependency-closure `gprls -U -s -d` streams, isolated from Alire setup and
+build notices. The direct stream must independently contain the exact 40
+repository public specs. The dependency stream must use gprls's exact
+three-space-indented absolute Ada-path grammar and contain every direct source;
+repeated dependency rows are expected and are deduplicated by resolved path. A
+transactional normalizer writes their deterministic sorted union only after
+validating both complete streams. That active manifest must still contain
+exactly the project's 40 repository public specs, no repository body or other
+repository source, and every dependency `.ads` or `.adb` source that GNATdoc
+may diagnose. Relative, missing, non-Ada, empty, malformed, noncanonical,
+ambiguous, or notice-contaminated entries fail closed. Unknown diagnostic
+syntax and repository versus dependency basename collisions also fail closed.
+The raw streams remain in `obj/docs/gprls-direct-sources.txt` and
+`obj/docs/gprls-dependency-sources.txt`; their normalized ownership manifest
+remains separately in `obj/docs/gnatdoc-sources.txt`.
+After that manifest is validated, the same path-aware ownership classifier
+checks the retained ALI-materialization log before GNATdoc may start, so a
+zero-exit semantic build cannot hide a repository-owned warning.
+Excluding a dependency warning is an ownership classification only; it is not
+evidence that the dependency's documentation is complete or qualified. The
+full GNATdoc stream remains in `obj/docs/gnatdoc-run.txt`; the active source
+manifest remains in `obj/docs/gnatdoc-sources.txt`; a green console reports the
+classified dependency count instead of replaying dependency diagnostics.
+
+The documentation command builds and uses the dedicated
+`tools/flyology_object_storage_public_api.gpr` project. Its exact 40-source
+list contains the public client-provider, low-level, S3 value, and root specs;
+it excludes implementation bodies, generated request serializers, backends,
+server packages, and the repository's build-configuration project. The
+maintained qualification path appends its exact reviewed operation set to the
+one shared documentation command. A lane must name all and only its registered
+operations, and each operation is resolved to its provider and public name
+from this registry rather than repeated in shell configuration. The output
+path must be absolute, non-symlinked, and absent or empty before generation.
+Success then requires a newly generated nonempty site and `index.html`, one
+unambiguous provider page, and the selected public APIs and their adjacent
+comments. Unknown, duplicate, omitted, extra, missing, or ambiguous
+selections fail closed.
+
 ## Generated strict XML wire codecs
 
 `tools/s3_codegen.py` expands the complete reachable response-payload shape

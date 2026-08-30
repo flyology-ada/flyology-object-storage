@@ -27,11 +27,12 @@ success and rejection set plus every HTTP terminal failure under each
 admission state. The Ada normalization corpus applies the same mapping. Native
 and lightweight socket tests cover success, restart of the same operation,
 physical singleton response-header validation, pre-admission cancellation,
-and a server that accepts abort but loses the response. The next request must
-be an exact-upload ListParts reconciliation; a transparent DELETE retry
-desynchronizes that oracle. The six-server implementation matrix drives the
-typed synchronous path for Flyology memory, files, and SQLite, RustFS,
-SeaweedFS, and supplemental MinIO.
+admitted cancellation through transport drain, `Wait_All`, typed `Finish`,
+and restart of the same operation object, plus a server that accepts abort but
+loses the response. The next request must be an exact-upload ListParts
+reconciliation; a transparent DELETE retry desynchronizes that oracle. The
+six-server implementation matrix drives the typed synchronous path for
+Flyology memory, files, and SQLite, RustFS, SeaweedFS, and supplemental MinIO.
 
 ## Admission and state boundary
 

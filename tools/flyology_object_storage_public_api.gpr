@@ -1,0 +1,81 @@
+with "flyology_http.gpr";
+with "xmlada_input.gpr";
+with "xmlada_sax.gpr";
+project Flyology_Object_Storage_Public_API is
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("../src/");
+   for Source_Files use
+     ("flyology-object_storage.ads",
+      "flyology-object_storage-client.ads",
+      "flyology-object_storage-client-bounded_rest_xml_reads.ads",
+      "flyology-object_storage-client-buckets.ads",
+      "flyology-object_storage-client-low_level.ads",
+      "flyology-object_storage-client-objects.ads",
+      "flyology-object_storage-client-paginated_rest_xml_reads.ads",
+      "flyology-object_storage-client-rest_xml_mutations.ads",
+      "flyology-object_storage-s3.ads",
+      "flyology-object_storage-s3-acl.ads",
+      "flyology-object_storage-s3-analytics.ads",
+      "flyology-object_storage-s3-annotations.ads",
+      "flyology-object_storage-s3-attributes.ads",
+      "flyology-object_storage-s3-bucket_controls.ads",
+      "flyology-object_storage-s3-buckets.ads",
+      "flyology-object_storage-s3-copies.ads",
+      "flyology-object_storage-s3-core.ads",
+      "flyology-object_storage-s3-deletions.ads",
+      "flyology-object_storage-s3-encryption.ads",
+      "flyology-object_storage-s3-errors.ads",
+      "flyology-object_storage-s3-intelligent_tiering.ads",
+      "flyology-object_storage-s3-inventory.ads",
+      "flyology-object_storage-s3-lifecycle.ads",
+      "flyology-object_storage-s3-listings.ads",
+      "flyology-object_storage-s3-logging.ads",
+      "flyology-object_storage-s3-metadata_configurations.ads",
+      "flyology-object_storage-s3-metadata_tables.ads",
+      "flyology-object_storage-s3-metrics.ads",
+      "flyology-object_storage-s3-model.ads",
+      "flyology-object_storage-s3-multipart.ads",
+      "flyology-object_storage-s3-multipart_uploads.ads",
+      "flyology-object_storage-s3-notifications.ads",
+      "flyology-object_storage-s3-object_lock.ads",
+      "flyology-object_storage-s3-replication.ads",
+      "flyology-object_storage-s3-sigv4.ads",
+      "flyology-object_storage-s3-versioning.ads",
+      "flyology-object_storage-s3-versions.ads",
+      "flyology-object_storage-s3-website.ads",
+      "flyology-object_storage-s3-xml.ads",
+      "flyology-object_storage-tags.ads");
+   for Object_Dir use "../obj/docs/public-api-project";
+   for Library_Name use "Flyology_Object_Storage_Public_API";
+   for Library_Dir use "../obj/docs/public-api-library";
+   for Library_Kind use "static";
+   for Create_Missing_Dirs use "True";
+
+   package Compiler is
+      --  Materialize semantic ALIs for this spec-only documentation library.
+      for Default_Switches ("Ada") use ("-gnatc");
+   end Compiler;
+
+   package Documentation is
+      for Excluded_Project_Files use
+        (external ("FLYOLOGY_ROOT", "") & "/flyology.gpr",
+         external ("FLYOLOGY_ALLOCATORS_ALIRE_PREFIX", "")
+         & "/flyology_allocators.gpr",
+         external ("FLYOLOGY_CACHELINES_ALIRE_PREFIX", "")
+         & "/flyology_cachelines.gpr",
+         external ("FLYOLOGY_HTTP_ALIRE_PREFIX", "")
+         & "/flyology_http.gpr",
+         external ("FLYOLOGY_QUIC_ALIRE_PREFIX", "")
+         & "/flyology_quic.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/input_sources/xmlada_input.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/sax/xmlada_sax.gpr",
+         external ("FLYOLOGY_HTTP_ALIRE_PREFIX", "")
+         & "/config/flyology_http_config.gpr",
+         external ("FLYOLOGY_ROOT", "")
+         & "/config/flyology_config.gpr");
+   end Documentation;
+
+end Flyology_Object_Storage_Public_API;

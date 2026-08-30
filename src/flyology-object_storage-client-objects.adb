@@ -1670,7 +1670,11 @@ package body Flyology.Object_Storage.Client.Objects is
             Failure     => Authorization_Failed,
             Admission   => Admission,
             Response    => Value);
-      elsif Value.Status = 400 and then Code = "InvalidRequest" then
+      elsif Value.Status = 400
+        and then Code in
+          "InvalidRequest" | "InvalidWriteOffset" | "TooManyParts" |
+          "EncryptionTypeMismatch"
+      then
          return
            (Kind        => Put_Response_Available,
             Disposition => Definitely_Not_Published,
@@ -4470,7 +4474,7 @@ package body Flyology.Object_Storage.Client.Objects is
    end Finish;
 
    --  S3 service status/code pairs below are externally modeled response
-   --  values. The mapping classifies one read-only ListBuckets attempt; it
+   --  values. The mapping classifies one read-only ListObjectsV2 attempt; it
    --  does not authorize retry or imply a shared snapshot with a later page.
    function Normalize_List_Objects_V2_Response
      (Value     : Low_Level.List_Objects_V2_Outcome;

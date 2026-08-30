@@ -2,6 +2,7 @@ with Ada.Characters.Handling;
 with Ada.Containers;
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Real_Time;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Fixed;
@@ -104,6 +105,7 @@ procedure S3_HTTP_Socket_Corpus is
 
    use Ada.Streams;
    use type Ada.Containers.Count_Type;
+   use type Ada.Real_Time.Time;
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
@@ -720,6 +722,106 @@ procedure S3_HTTP_Socket_Corpus is
 
    State : Coordination;
 
+   List_V2_Admission_Native      : aliased Flyology.Cancellation.Token;
+   List_V2_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   List_V2_Drain_Native          : aliased Flyology.Cancellation.Token;
+   List_V2_Drain_Lightweight     : aliased Flyology.Cancellation.Token;
+   List_V1_Admission_Native      : aliased Flyology.Cancellation.Token;
+   List_V1_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   List_V1_Drain_Native          : aliased Flyology.Cancellation.Token;
+   List_V1_Drain_Lightweight     : aliased Flyology.Cancellation.Token;
+   List_Versions_Admission_Native : aliased Flyology.Cancellation.Token;
+   List_Versions_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   List_Versions_Drain_Native    : aliased Flyology.Cancellation.Token;
+   List_Versions_Drain_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Put_Admission_Native          : aliased Flyology.Cancellation.Token;
+   Put_Admission_Lightweight     : aliased Flyology.Cancellation.Token;
+   Put_Drain_Native              : aliased Flyology.Cancellation.Token;
+   Put_Drain_Lightweight         : aliased Flyology.Cancellation.Token;
+   Delete_Admission_Native       : aliased Flyology.Cancellation.Token;
+   Delete_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
+   Delete_Drain_Native           : aliased Flyology.Cancellation.Token;
+   Delete_Drain_Lightweight      : aliased Flyology.Cancellation.Token;
+   Complete_Admission_Native     : aliased Flyology.Cancellation.Token;
+   Complete_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Complete_Drain_Native         : aliased Flyology.Cancellation.Token;
+   Complete_Drain_Lightweight    : aliased Flyology.Cancellation.Token;
+   Abort_Admission_Native        : aliased Flyology.Cancellation.Token;
+   Abort_Admission_Lightweight   : aliased Flyology.Cancellation.Token;
+   Abort_Drain_Native            : aliased Flyology.Cancellation.Token;
+   Abort_Drain_Lightweight       : aliased Flyology.Cancellation.Token;
+   Copy_Admission_Native         : aliased Flyology.Cancellation.Token;
+   Copy_Admission_Lightweight    : aliased Flyology.Cancellation.Token;
+   Copy_Drain_Native             : aliased Flyology.Cancellation.Token;
+   Copy_Drain_Lightweight        : aliased Flyology.Cancellation.Token;
+   Create_Admission_Native       : aliased Flyology.Cancellation.Token;
+   Create_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
+   Create_Drain_Native           : aliased Flyology.Cancellation.Token;
+   Create_Drain_Lightweight      : aliased Flyology.Cancellation.Token;
+   Delete_Bucket_Admission_Native : aliased Flyology.Cancellation.Token;
+   Delete_Bucket_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Delete_Bucket_Drain_Native    : aliased Flyology.Cancellation.Token;
+   Delete_Bucket_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   Create_Multipart_Admission_Native : aliased Flyology.Cancellation.Token;
+   Create_Multipart_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Create_Multipart_Drain_Native : aliased Flyology.Cancellation.Token;
+   Create_Multipart_Drain_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Get_Location_Admission_Native : aliased Flyology.Cancellation.Token;
+   Get_Location_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Get_Location_Drain_Native : aliased Flyology.Cancellation.Token;
+   Get_Location_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   List_Buckets_Admission_Native : aliased Flyology.Cancellation.Token;
+   List_Buckets_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   List_Buckets_Drain_Native : aliased Flyology.Cancellation.Token;
+   List_Buckets_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   List_Multipart_Uploads_Admission_Native :
+     aliased Flyology.Cancellation.Token;
+   List_Multipart_Uploads_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   List_Multipart_Uploads_Drain_Native :
+     aliased Flyology.Cancellation.Token;
+   List_Multipart_Uploads_Drain_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Head_Bucket_Admission_Native : aliased Flyology.Cancellation.Token;
+   Head_Bucket_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Head_Bucket_Drain_Native : aliased Flyology.Cancellation.Token;
+   Head_Bucket_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   Get_Versioning_Admission_Native : aliased Flyology.Cancellation.Token;
+   Get_Versioning_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Get_Versioning_Drain_Native : aliased Flyology.Cancellation.Token;
+   Get_Versioning_Drain_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Put_Versioning_Admission_Native : aliased Flyology.Cancellation.Token;
+   Put_Versioning_Admission_Lightweight :
+     aliased Flyology.Cancellation.Token;
+   Put_Versioning_Drain_Native : aliased Flyology.Cancellation.Token;
+   Put_Versioning_Drain_Lightweight :
+     aliased Flyology.Cancellation.Token;
+
+   type Cancellation_Exchange is
+     (List_Objects_V2_Cancellation,
+      List_Objects_V1_Cancellation,
+      List_Object_Versions_Cancellation,
+      Put_Object_Cancellation,
+      Delete_Object_Cancellation,
+      Complete_Multipart_Cancellation,
+      Abort_Multipart_Cancellation,
+      Copy_Object_Cancellation,
+      Create_Bucket_Cancellation,
+      Delete_Bucket_Cancellation,
+      Create_Multipart_Cancellation,
+      Get_Bucket_Location_Cancellation,
+      List_Buckets_Cancellation,
+      List_Multipart_Uploads_Cancellation,
+      Head_Bucket_Cancellation,
+      Get_Bucket_Versioning_Cancellation,
+      Put_Bucket_Versioning_Cancellation);
+
    protected type Client_Results is
       procedure Report (Passed : Boolean; Detail : String := "");
       entry Wait_All
@@ -870,31 +972,63 @@ procedure S3_HTTP_Socket_Corpus is
          Require_Zero_Content_Length : Boolean := False;
          Fragmented         : Boolean := False;
          Reuse_Peer         : Boolean := False;
-         Keep_Open          : Boolean := False)
+         Keep_Open          : Boolean := False;
+         Await_Cancellation : Boolean := False;
+         Cancellation_Kind  : Cancellation_Exchange :=
+           List_Objects_V2_Cancellation;
+         Cancellation_Round : Positive := 1)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
          Last   : Stream_Element_Offset;
          Head   : US.Unbounded_String;
+         Deadline : constant Ada.Real_Time.Time :=
+           Ada.Real_Time.Clock + Ada.Real_Time.Seconds (5);
+
+         function Remaining_Time return Duration is
+            Now : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
+         begin
+            if Now >= Deadline then
+               return 0.0;
+            end if;
+            return Ada.Real_Time.To_Duration (Deadline - Now);
+         end Remaining_Time;
       begin
-         if not Reuse_Peer then
-            Sockets.Accept_Socket
-              (Listener, Peer, Address, Timeout => 5.0, Status => Status);
-            if Status /= Sockets.Completed then
-               raise Program_Error with "socket accept timed out";
-            end if;
-         elsif not Sockets.Is_Open (Peer) then
-            raise Program_Error with "socket peer is unavailable for reuse";
-         end if;
          loop
-            Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
-            if Last < Buffer'First then
-               raise Program_Error with "client closed before request head";
+            if not Reuse_Peer then
+               Sockets.Accept_Socket
+                 (Listener,
+                  Peer,
+                  Address,
+                  Timeout => Remaining_Time,
+                  Status => Status);
+               if Status /= Sockets.Completed then
+                  raise Program_Error with "socket accept timed out";
+               end if;
+            elsif not Sockets.Is_Open (Peer) then
+               raise Program_Error with
+                 "socket peer is unavailable for reuse";
             end if;
-            for Index in Buffer'First .. Last loop
-               US.Append (Head, Character'Val (Buffer (Index)));
+            loop
+               Sockets.Receive
+                 (Peer, Buffer, Last, Timeout => Remaining_Time);
+               if Last < Buffer'First then
+                  if not Reuse_Peer and then US.Length (Head) = 0 then
+                     --  TCP acceptance is not HTTP admission.  A client may
+                     --  open and close a fresh connection before sending a
+                     --  request; retain the same expected request slot.
+                     Sockets.Close_Socket (Peer);
+                     exit;
+                  end if;
+                  raise Program_Error with
+                    "client closed before request head";
+               end if;
+               for Index in Buffer'First .. Last loop
+                  US.Append (Head, Character'Val (Buffer (Index)));
+               end loop;
+               exit when Ada.Strings.Fixed.Index
+                 (US.To_String (Head), CRLF & CRLF) /= 0;
             end loop;
-            exit when Ada.Strings.Fixed.Index
-              (US.To_String (Head), CRLF & CRLF) /= 0;
+            exit when US.Length (Head) > 0;
          end loop;
          declare
             Request : constant String := US.To_String (Head);
@@ -1429,7 +1563,317 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end if;
          end;
-         if Response'Length = 0 then
+         if Await_Cancellation then
+            declare
+               procedure Request_Drain is
+               begin
+                  case Cancellation_Kind is
+                     when List_Objects_V2_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           List_V2_Drain_Native.Request;
+                        else
+                           List_V2_Drain_Lightweight.Request;
+                        end if;
+                     when List_Objects_V1_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           List_V1_Drain_Native.Request;
+                        else
+                           List_V1_Drain_Lightweight.Request;
+                        end if;
+                     when List_Object_Versions_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           List_Versions_Drain_Native.Request;
+                        else
+                           List_Versions_Drain_Lightweight.Request;
+                        end if;
+                     when Put_Object_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Put_Drain_Native.Request;
+                        else
+                           Put_Drain_Lightweight.Request;
+                        end if;
+                     when Delete_Object_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Delete_Drain_Native.Request;
+                        else
+                           Delete_Drain_Lightweight.Request;
+                        end if;
+                     when Complete_Multipart_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Complete_Drain_Native.Request;
+                        else
+                           Complete_Drain_Lightweight.Request;
+                        end if;
+                     when Abort_Multipart_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Abort_Drain_Native.Request;
+                        else
+                           Abort_Drain_Lightweight.Request;
+                        end if;
+                     when Copy_Object_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Copy_Drain_Native.Request;
+                        else
+                           Copy_Drain_Lightweight.Request;
+                        end if;
+                     when Create_Bucket_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Create_Drain_Native.Request;
+                        else
+                           Create_Drain_Lightweight.Request;
+                        end if;
+                     when Delete_Bucket_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Delete_Bucket_Drain_Native.Request;
+                        else
+                           Delete_Bucket_Drain_Lightweight.Request;
+                        end if;
+                     when Create_Multipart_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Create_Multipart_Drain_Native.Request;
+                        else
+                           Create_Multipart_Drain_Lightweight.Request;
+                        end if;
+                     when Get_Bucket_Location_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Get_Location_Drain_Native.Request;
+                        else
+                           Get_Location_Drain_Lightweight.Request;
+                        end if;
+                     when List_Buckets_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           List_Buckets_Drain_Native.Request;
+                        else
+                           List_Buckets_Drain_Lightweight.Request;
+                        end if;
+                     when List_Multipart_Uploads_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           List_Multipart_Uploads_Drain_Native.Request;
+                        else
+                           List_Multipart_Uploads_Drain_Lightweight.Request;
+                        end if;
+                     when Head_Bucket_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Head_Bucket_Drain_Native.Request;
+                        else
+                           Head_Bucket_Drain_Lightweight.Request;
+                        end if;
+                     when Get_Bucket_Versioning_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Get_Versioning_Drain_Native.Request;
+                        else
+                           Get_Versioning_Drain_Lightweight.Request;
+                        end if;
+                     when Put_Bucket_Versioning_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Put_Versioning_Drain_Native.Request;
+                        else
+                           Put_Versioning_Drain_Lightweight.Request;
+                        end if;
+                  end case;
+               end Request_Drain;
+            begin
+               if Cancellation_Round not in 1 .. 2 then
+                  raise Program_Error with
+                    "invalid cancellation exchange round";
+               end if;
+               case Cancellation_Kind is
+                  when List_Objects_V2_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        List_V2_Admission_Native.Request;
+                     else
+                        List_V2_Admission_Lightweight.Request;
+                     end if;
+                  when List_Objects_V1_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        List_V1_Admission_Native.Request;
+                     else
+                        List_V1_Admission_Lightweight.Request;
+                     end if;
+                  when List_Object_Versions_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        List_Versions_Admission_Native.Request;
+                     else
+                        List_Versions_Admission_Lightweight.Request;
+                     end if;
+                  when Put_Object_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Put_Admission_Native.Request;
+                     else
+                        Put_Admission_Lightweight.Request;
+                     end if;
+                  when Delete_Object_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Delete_Admission_Native.Request;
+                     else
+                        Delete_Admission_Lightweight.Request;
+                     end if;
+                  when Complete_Multipart_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Complete_Admission_Native.Request;
+                     else
+                        Complete_Admission_Lightweight.Request;
+                     end if;
+                  when Abort_Multipart_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Abort_Admission_Native.Request;
+                     else
+                        Abort_Admission_Lightweight.Request;
+                     end if;
+                  when Copy_Object_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Copy_Admission_Native.Request;
+                     else
+                        Copy_Admission_Lightweight.Request;
+                     end if;
+                  when Create_Bucket_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Create_Admission_Native.Request;
+                     else
+                        Create_Admission_Lightweight.Request;
+                     end if;
+                  when Delete_Bucket_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Delete_Bucket_Admission_Native.Request;
+                     else
+                        Delete_Bucket_Admission_Lightweight.Request;
+                     end if;
+                  when Create_Multipart_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Create_Multipart_Admission_Native.Request;
+                     else
+                        Create_Multipart_Admission_Lightweight.Request;
+                     end if;
+                  when Get_Bucket_Location_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Get_Location_Admission_Native.Request;
+                     else
+                        Get_Location_Admission_Lightweight.Request;
+                     end if;
+                  when List_Buckets_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        List_Buckets_Admission_Native.Request;
+                     else
+                        List_Buckets_Admission_Lightweight.Request;
+                     end if;
+                  when List_Multipart_Uploads_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        List_Multipart_Uploads_Admission_Native.Request;
+                     else
+                        List_Multipart_Uploads_Admission_Lightweight.Request;
+                     end if;
+                  when Head_Bucket_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Head_Bucket_Admission_Native.Request;
+                     else
+                        Head_Bucket_Admission_Lightweight.Request;
+                     end if;
+                  when Get_Bucket_Versioning_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Get_Versioning_Admission_Native.Request;
+                     else
+                        Get_Versioning_Admission_Lightweight.Request;
+                     end if;
+                  when Put_Bucket_Versioning_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Put_Versioning_Admission_Native.Request;
+                     else
+                        Put_Versioning_Admission_Lightweight.Request;
+                     end if;
+               end case;
+               begin
+                  Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
+                  if Last >= Buffer'First then
+                     case Cancellation_Kind is
+                        when List_Objects_V2_Cancellation =>
+                           raise Program_Error with
+                             "ListObjectsV2 cancel peer sent data before " &
+                             "drain";
+                        when List_Objects_V1_Cancellation =>
+                           raise Program_Error with
+                             "ListObjects cancel peer sent data before " &
+                             "drain";
+                        when List_Object_Versions_Cancellation =>
+                           raise Program_Error with
+                             "ListObjectVersions cancel peer sent data " &
+                             "before drain";
+                        when Put_Object_Cancellation =>
+                           raise Program_Error with
+                             "PutObject cancel peer sent data before drain";
+                        when Delete_Object_Cancellation =>
+                           raise Program_Error with
+                             "DeleteObject cancel peer sent data before " &
+                             "drain";
+                        when Complete_Multipart_Cancellation =>
+                           raise Program_Error with
+                             "CompleteMultipartUpload cancel peer sent " &
+                             "data before drain";
+                        when Abort_Multipart_Cancellation =>
+                           raise Program_Error with
+                             "AbortMultipartUpload cancel peer sent data " &
+                             "before drain";
+                        when Copy_Object_Cancellation =>
+                           raise Program_Error with
+                             "CopyObject cancel peer sent data before drain";
+                        when Create_Bucket_Cancellation =>
+                           raise Program_Error with
+                             "CreateBucket cancel peer sent data before " &
+                             "drain";
+                        when Delete_Bucket_Cancellation =>
+                           raise Program_Error with
+                             "DeleteBucket cancel peer sent data before " &
+                             "drain";
+                        when Create_Multipart_Cancellation =>
+                           raise Program_Error with
+                             "CreateMultipartUpload cancel peer sent data " &
+                             "before drain";
+                        when Get_Bucket_Location_Cancellation =>
+                           raise Program_Error with
+                             "GetBucketLocation cancel peer sent data " &
+                             "before drain";
+                        when List_Buckets_Cancellation =>
+                           raise Program_Error with
+                             "ListBuckets cancel peer sent data before drain";
+                        when List_Multipart_Uploads_Cancellation =>
+                           raise Program_Error with
+                             "ListMultipartUploads cancel peer sent data " &
+                             "before drain";
+                        when Head_Bucket_Cancellation =>
+                           raise Program_Error with
+                             "HeadBucket cancel peer sent data before drain";
+                        when Get_Bucket_Versioning_Cancellation =>
+                           raise Program_Error with
+                             "GetBucketVersioning cancel peer sent data " &
+                             "before drain";
+                        when Put_Bucket_Versioning_Cancellation =>
+                           raise Program_Error with
+                             "PutBucketVersioning cancel peer sent data " &
+                             "before drain";
+                     end case;
+                  end if;
+                  Sockets.Close_Socket (Peer);
+               exception
+                  when Occurrence : others =>
+                     declare
+                        Saved : Ada.Exceptions.Exception_Occurrence;
+                     begin
+                        Ada.Exceptions.Save_Occurrence (Saved, Occurrence);
+                        begin
+                           if Sockets.Is_Open (Peer) then
+                              Sockets.Close_Socket (Peer);
+                           end if;
+                        exception
+                           when others =>
+                              null;
+                        end;
+                        Request_Drain;
+                        Ada.Exceptions.Reraise_Occurrence (Saved);
+                     end;
+               end;
+               Request_Drain;
+               return;
+            end;
+         elsif Response'Length = 0 then
             null;
          elsif Fragmented then
             for Character_Value of Response loop
@@ -1758,11 +2202,22 @@ procedure S3_HTTP_Socket_Corpus is
         "<Key>create-lost</Key>" &
         "<Initiated>2026-08-23T00:00:00Z</Initiated></Upload>" &
         "</ListMultipartUploadsResult>";
+      Pre_Create_List_XML : constant String :=
+        "<ListMultipartUploadsResult>" &
+        "<Bucket>example-bucket</Bucket><Prefix>create-lost</Prefix>" &
+        "<MaxUploads>1000</MaxUploads><IsTruncated>false</IsTruncated>" &
+        "</ListMultipartUploadsResult>";
+      function Complete_Result_XML
+        (Bucket, Key, Entity_Tag : String) return String is
+        ("<CompleteMultipartUploadResult>" &
+         "<Bucket>" & Bucket & "</Bucket><Key>" & Key & "</Key>" &
+         "<ETag>&quot;" & Entity_Tag & "&quot;</ETag>" &
+         "</CompleteMultipartUploadResult>");
       Complete_XML : constant String :=
-        "<CompleteMultipartUploadResult>" &
-        "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
-        "<ETag>&quot;whole&quot;</ETag>" &
-        "</CompleteMultipartUploadResult>";
+        Complete_Result_XML ("example-bucket", "object key", "whole");
+      Complete_Restart_XML : constant String :=
+        Complete_Result_XML
+          ("example-bucket", "complete-restart", "complete-restarted");
       Embedded_Error_XML : constant String :=
         "<Error><Code>InternalError</Code>" &
         "<Message>late failure</Message></Error>";
@@ -1867,6 +2322,7 @@ procedure S3_HTTP_Socket_Corpus is
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
         "<ETag>&quot;high-level-copy&quot;</ETag>" &
         "</CopyObjectResult>";
+      Lost_Copy_Payload : constant String := "copy-reconciled";
       Copy_Part_XML : constant String :=
         "<CopyPartResult>" &
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
@@ -1910,6 +2366,17 @@ procedure S3_HTTP_Socket_Corpus is
             "PUT", "/example-bucket/scoped-put",
             Expected_Body_Root => "scoped-put-body",
             Expected_If_None_Match => "*");
+         Serve
+           ("", "PUT", "/example-bucket/scoped-put-cancel",
+            Expected_Body_Exact => "scoped-put-cancel-body",
+            Await_Cancellation => True,
+            Cancellation_Kind => Put_Object_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "etag: ""scoped-put-restart""" & CRLF),
+            "PUT", "/example-bucket/scoped-put-restart",
+            Expected_Body_Exact => "scoped-put-cancel-body");
          Serve
            (HTTP_Response
               ("412 Precondition Failed",
@@ -2047,6 +2514,34 @@ procedure S3_HTTP_Socket_Corpus is
             "PUT", "/restart-existing",
             Expected_Body_Root => "<CreateBucketConfiguration");
          Serve
+           ("", "PUT", "/create-cancel",
+            Expected_Body_Root => "<CreateBucketConfiguration",
+            Await_Cancellation => True,
+            Cancellation_Kind => Create_Bucket_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "location: /create-cancel-restart" & CRLF),
+            "PUT", "/create-cancel-restart",
+            Expected_Body_Root => "<CreateBucketConfiguration");
+         --  Accept exactly one CreateBucket and drop its response. The next
+         --  request must be the caller's HeadBucket reconciliation; an
+         --  automatic replay desynchronizes this sequence.
+         Serve
+           ("HTTP/1.1 404 Not Found" & CRLF &
+            "Content-Length: 0" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/create-lost", Keep_Open => True);
+         Serve
+           ("", "PUT", "/create-lost",
+            Expected_Body_Root => "<CreateBucketConfiguration",
+            Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-bucket-region: us-west-2" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/create-lost");
+         Serve
            (HTTP_Response ("204 No Content", ""),
             "DELETE",
             "/typed-deleted",
@@ -2064,6 +2559,37 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: restarted-delete-request" & CRLF),
             "DELETE",
             "/restart-nonempty",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           ("", "DELETE", "/delete-bucket-cancel",
+            Expected_Bucket_Owner => "123456789012",
+            Await_Cancellation => True,
+            Cancellation_Kind => Delete_Bucket_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/delete-bucket-cancel-restart",
+            Expected_Bucket_Owner => "123456789012");
+         --  Accept exactly one DeleteBucket and drop its response. The next
+         --  request must be the caller's HeadBucket reconciliation; an
+         --  automatic replay desynchronizes this sequence.
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF &
+            "Content-Length: 0" & CRLF &
+            "x-amz-bucket-region: us-west-2" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/delete-bucket-lost",
+            Expected_Bucket_Owner => "123456789012",
+            Keep_Open => True);
+         Serve
+           ("", "DELETE", "/delete-bucket-lost",
+            Expected_Bucket_Owner => "123456789012",
+            Reuse_Peer => True);
+         Serve
+           ("HTTP/1.1 404 Not Found" & CRLF &
+            "Content-Length: 0" & CRLF &
+            "Connection: close" & CRLF & CRLF,
+            "HEAD", "/delete-bucket-lost",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -2090,6 +2616,19 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: restarted-location-request" & CRLF),
             "GET",
             "/restart-location?location",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           ("", "GET", "/get-location-cancel?location",
+            Expected_Bucket_Owner => "123456789012",
+            Await_Cancellation => True,
+            Cancellation_Kind => Get_Bucket_Location_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<LocationConstraint xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/"">EU</LocationConstraint>"),
+            "GET", "/get-location-cancel-restart?location",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -2135,6 +2674,19 @@ procedure S3_HTTP_Socket_Corpus is
             "HEAD", "/restarted-bucket",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           ("", "HEAD", "/head-bucket-cancel",
+            Expected_Bucket_Owner => "123456789012",
+            Await_Cancellation => True,
+            Cancellation_Kind => Head_Bucket_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-bucket-region: us-west-2" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/head-bucket-cancel-restart",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response
               ("204 No Content", "",
                "x-amz-delete-marker: true" & CRLF &
@@ -2161,6 +2713,15 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-version-id: duplicate-a" & CRLF &
                  "x-amz-version-id: duplicate-b" & CRLF),
             "DELETE", "/example-bucket/scoped-delete-duplicate");
+         Serve
+           ("", "DELETE", "/example-bucket/delete-cancel",
+            Await_Cancellation => True,
+            Cancellation_Kind => Delete_Object_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket/delete-restart");
          Serve
            (HTTP_Response ("200 OK", List_Buckets_XML),
             "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
@@ -2217,6 +2778,17 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/?bucket-region=us-east-1&" &
               "continuation-token=socket-next&max-buckets=1&" &
               "prefix=socket-");
+         Serve
+           ("", "GET",
+            "/?bucket-region=us-east-1&max-buckets=1&prefix=socket-",
+            Await_Cancellation => True,
+            Cancellation_Kind => List_Buckets_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", List_Buckets_XML),
+            "GET",
+            "/?bucket-region=us-east-1&max-buckets=1&prefix=socket-",
+            Fragmented => True);
          Serve
            (HTTP_Response
               ("200 OK", V1_Success_XML,
@@ -2315,6 +2887,82 @@ procedure S3_HTTP_Socket_Corpus is
               "prefix=socket-v1%2F");
          Serve
            (HTTP_Response
+              ("401 Unauthorized",
+               "<Error><Code>InvalidAccessKeyId</Code>" &
+                 "<Message>invalid identity</Message></Error>"),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchBucket</Code>" &
+                 "<Message>missing bucket</Message></Error>"),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>InvalidArgument</Code>" &
+                 "<Message>invalid request</Message></Error>"),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("503 Service Unavailable",
+               "<Error><Code>SlowDown</Code>" &
+                 "<Message>retry later</Message></Error>"),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>UnclassifiedListObjectsError</Code>" &
+                 "<Message>unknown</Message></Error>"),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           ("", "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
+            Await_Cancellation => True,
+            Cancellation_Kind => List_Objects_V1_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", V1_Success_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
               ("200 OK", Success_XML,
                "x-amz-request-charged: requester" & CRLF), "GET",
             "/example-bucket?list-type=2&max-keys=2",
@@ -2351,6 +2999,72 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: socket-request" & CRLF &
                "x-amz-id-2: socket-host" & CRLF),
             "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("401 Unauthorized",
+               "<Error><Code>InvalidAccessKeyId</Code>" &
+                 "<Message>invalid identity</Message></Error>"),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchBucket</Code>" &
+                 "<Message>missing bucket</Message></Error>"),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>InvalidArgument</Code>" &
+                 "<Message>invalid request</Message></Error>"),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("503 Service Unavailable",
+               "<Error><Code>SlowDown</Code>" &
+                 "<Message>retry later</Message></Error>"),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>UnclassifiedListObjectsV2Error</Code>" &
+                 "<Message>unknown</Message></Error>"),
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           ("", "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
+            Await_Cancellation => True,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", Success_XML,
+               "x-amz-request-charged: requester" & CRLF), "GET",
+            "/example-bucket?list-type=2&max-keys=2",
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
@@ -2481,6 +3195,16 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket?key-marker=paged%2Fkey&max-uploads=1&" &
               "prefix=paged%2F&upload-id-marker=id-1&uploads");
          Serve
+           ("", "GET",
+            "/example-bucket?max-uploads=1&prefix=paged%2F&uploads",
+            Await_Cancellation => True,
+            Cancellation_Kind => List_Multipart_Uploads_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", List_Uploads_First_Page_XML), "GET",
+            "/example-bucket?max-uploads=1&prefix=paged%2F&uploads",
+            Fragmented => True);
+         Serve
            (HTTP_Response ("200 OK", List_Parts_First_XML), "GET",
             "/example-bucket/paged-parts?max-parts=1&" &
               "part-number-marker=0&uploadId=paged-upload",
@@ -2586,6 +3310,17 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/restart-versioning?versioning",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           ("", "GET", "/get-versioning-cancel?versioning",
+            Expected_Bucket_Owner => "123456789012",
+            Await_Cancellation => True,
+            Cancellation_Kind => Get_Bucket_Versioning_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "<VersioningConfiguration/>"),
+            "GET", "/get-versioning-cancel-restart?versioning",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response ("200 OK", ""),
             "PUT", "/typed-put-versioning?versioning",
             Expected_Body_Root => "<Status>Enabled</Status>",
@@ -2604,6 +3339,20 @@ procedure S3_HTTP_Socket_Corpus is
                  "<Message>denied</Message></Error>",
                "x-amz-request-id: restarted-put-versioning-request" & CRLF),
             "PUT", "/restart-put-versioning?versioning",
+            Expected_Body_Root => "<Status>Enabled</Status>",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*");
+         Serve
+           ("", "PUT", "/put-versioning-cancel?versioning",
+            Expected_Body_Root => "<Status>Enabled</Status>",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*",
+            Await_Cancellation => True,
+            Cancellation_Kind => Put_Bucket_Versioning_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/put-versioning-cancel-restart?versioning",
             Expected_Body_Root => "<Status>Enabled</Status>",
             Expected_Bucket_Owner => "123456789012",
             Expected_Content_MD5 => "*");
@@ -2915,6 +3664,10 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/example-bucket/lost-upload",
             Expected_If_Match => """lost-whole""",
             Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response ("404 Not Found", No_Such_Upload_XML), "GET",
+            "/example-bucket/lost-upload?max-parts=1000&" &
+              "part-number-marker=0&uploadId=lost-upload-id");
          --  Accept exactly one one-shot abort and lose its response. The next
          --  request must be exact-upload ListParts reconciliation; a replayed
          --  DELETE desynchronizes this oracle.
@@ -3632,6 +4385,16 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Copy_If_Match => """source-etag""",
             Expected_Request_Payer => "requester");
          Serve
+           ("", "PUT", "/example-bucket/copy-cancel",
+            Expected_Copy_Source => "source-bucket/source-key",
+            Await_Cancellation => True,
+            Cancellation_Kind => Copy_Object_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", Copy_XML), "PUT",
+            "/example-bucket/copy-cancel-restart",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
            (HTTP_Response ("200 OK", Copy_XML), "PUT",
             "/example-bucket/copy-restart-one",
             Expected_Copy_Source => "source-bucket/source-key");
@@ -3657,6 +4420,24 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-charged: requester" & CRLF),
             "PUT", "/example-bucket/copy-invalid-charged",
             Expected_Copy_Source => "source-bucket/source-key");
+         --  Accept exactly one bodyless CopyObject and drop its response.
+         --  The next request must be the caller's exact destination read;
+         --  an automatic replay desynchronizes this sequence.
+         Serve
+           ("HTTP/1.1 404 Not Found" & CRLF &
+            "Content-Length: 0" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/example-bucket/copy-lost", Keep_Open => True);
+         Serve
+           ("", "PUT", "/example-bucket/copy-lost",
+            Expected_Copy_Source => "source-bucket/source-key",
+            Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", Lost_Copy_Payload,
+               "ETag: ""copy-lost-generation""" & CRLF),
+            "GET", "/example-bucket/copy-lost",
+            Expected_If_Match => """copy-lost-generation""");
          Serve
            (HTTP_Response ("412 Precondition Failed", Error_XML),
             "PUT", "/example-bucket/copy-rejected",
@@ -3898,6 +4679,23 @@ procedure S3_HTTP_Socket_Corpus is
             "POST", "/example-bucket/scoped-create?uploads",
             Fragmented => True);
          Serve
+           ("", "POST",
+            "/example-bucket/create-multipart-cancel?uploads",
+            Await_Cancellation => True,
+            Cancellation_Kind => Create_Multipart_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "create-multipart-cancel-restart",
+                  "create-multipart-restarted")),
+            "POST",
+            "/example-bucket/create-multipart-cancel-restart?uploads");
+         Serve
+           (HTTP_Response ("200 OK", Pre_Create_List_XML), "GET",
+            "/example-bucket?max-uploads=1000&prefix=create-lost&uploads");
+         Serve
            ("", "POST", "/example-bucket/create-lost?uploads",
             Keep_Open => False);
          Serve
@@ -3971,6 +4769,19 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket/object%20key?uploadId=socket-upload",
             "<CompleteMultipartUpload");
          Serve
+           ("", "POST",
+            "/example-bucket/complete-cancel?" &
+              "uploadId=complete-cancel-id",
+            "<CompleteMultipartUpload",
+            Await_Cancellation => True,
+            Cancellation_Kind => Complete_Multipart_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", Complete_Restart_XML), "POST",
+            "/example-bucket/complete-restart?" &
+              "uploadId=complete-restart-id",
+            "<CompleteMultipartUpload");
+         Serve
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True), "DELETE",
             "/example-bucket/object%20key?uploadId=socket-upload");
@@ -3985,6 +4796,17 @@ procedure S3_HTTP_Socket_Corpus is
                Omit_Content_Length => True),
             "DELETE",
             "/example-bucket/object%20key?uploadId=socket-upload");
+         Serve
+           ("", "DELETE",
+            "/example-bucket/abort-cancel?uploadId=abort-cancel-id",
+            Await_Cancellation => True,
+            Cancellation_Kind => Abort_Multipart_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE",
+            "/example-bucket/abort-restart?uploadId=abort-restart-id");
          Serve
            (HTTP_Response
               ("200 OK", Versions_Complete_XML,
@@ -4100,6 +4922,57 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket?max-keys=1&" &
               "prefix=scoped-payer%2F&versions");
+         Serve
+           (HTTP_Response
+              ("401 Unauthorized",
+               "<Error><Code>InvalidAccessKeyId</Code>" &
+                 "<Message>invalid identity</Message></Error>"),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchBucket</Code>" &
+                 "<Message>missing bucket</Message></Error>"),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>InvalidArgument</Code>" &
+                 "<Message>invalid request</Message></Error>"),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           (HTTP_Response
+              ("503 Service Unavailable",
+               "<Error><Code>SlowDown</Code>" &
+                 "<Message>retry later</Message></Error>"),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>UnclassifiedListObjectVersionsError</Code>" &
+                 "<Message>unknown</Message></Error>"),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
+         Serve
+           ("", "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions",
+            Await_Cancellation => True,
+            Cancellation_Kind => List_Object_Versions_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("example-bucket", "normalized/")),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=normalized%2F&versions");
          Serve
            (HTTP_Response ("200 OK", Versions_Paged_First_XML),
             "GET", "/example-bucket?encoding-type=url&max-keys=1&" &
@@ -6639,13 +7512,17 @@ procedure S3_HTTP_Socket_Corpus is
            (False, Ada.Exceptions.Exception_Information (Occurrence));
    end Raw_S3_Server;
 
-   procedure Run_Client is
+   procedure Run_Client (Round : Positive) is
+      use type Flyology.IO.Descriptor;
+
       Port       : Sockets.Port;
       HTTP       : aliased HTTP_Client.Client (Capacity => 1);
+      Changed_HTTP : aliased HTTP_Client.Client (Capacity => 1);
       Parameters : Low_Level.List_Objects_V2_Parameters;
       Identity   : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+      Lost_Copy_Payload : constant String := "copy-reconciled";
    begin
       State.Wait_Ready (Port);
       Parameters.Max_Keys := 2;
@@ -7441,6 +8318,7 @@ procedure S3_HTTP_Socket_Corpus is
          end Run_Lost_Put_Reconciliation;
       begin
          HTTP_Client.Configure (HTTP, Origin);
+         HTTP_Client.Configure (Changed_HTTP, Origin);
          declare
             --  Test-reference geometry: two tokens cover one retained request
             --  and one response destination. A 96-byte block holds every
@@ -7483,6 +8361,126 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "scoped PutObject success/ownership mismatch";
                end if;
+            end;
+
+            Buffers.Copy_From
+              (Payload_Buffer, Bytes ("scoped-put-cancel-body"));
+            declare
+               --  Five slots are the derived composed stack: publication
+               --  parent, HTTP exchange, transient transport child,
+               --  admission readiness, and drain-ack readiness. This is test
+               --  capacity, not product policy.
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  Put_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Put_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Put_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Put_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid PutObject cancellation client round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with
+                    "stale PutObject cancellation readiness";
+               end if;
+               declare
+                  Set : aliased Operations.Completion_Set (5);
+                  Parameters : Low_Level.Put_Object_Parameters;
+                  Operation : Conditional_Put_Operation :=
+                    Put_Object
+                      (Set'Access, HTTP'Access, Origin, "example-bucket",
+                       "scoped-put-cancel", Parameters, Payload_Buffer,
+                       SigV4.SHA256_Hex ("scoped-put-cancel-body"), Identity,
+                       HTTP_Client.Deadline_After (5.0), Token => null);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Set'Access, Admission_FD, Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Set'Access, Drain_FD, Flyology.IO.For_Read);
+                  Completed_Batch :
+                    Operations.Completion_Batch (Set.Capacity);
+                  Result : Conditional_Put_Result;
+               begin
+                  if Buffers.Has_Buffer (Payload_Buffer) then
+                     raise Program_Error with
+                       "cancelled PutObject did not move its input token";
+                  end if;
+                  Operations.Wait_Some (Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Operation)
+                  then
+                     raise Program_Error with
+                       "PutObject did not remain active through admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Operation);
+                  Operations.Wait_All (Set);
+                  Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Put_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
+                    or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                    or else Result.Admission /= HTTP_Client.Possibly_Admitted
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                    or else Buffer_String (Payload_Buffer) /=
+                      "scoped-put-cancel-body"
+                  then
+                     raise Program_Error with
+                       "admitted PutObject cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "PutObject transport drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  Put_Object
+                    (Client         => HTTP'Access,
+                     Origin         => Origin,
+                     Bucket         => "example-bucket",
+                     Key            => "scoped-put-restart",
+                     Parameters     => Parameters,
+                     Payload_Buffer => Payload_Buffer,
+                     Payload_SHA256 =>
+                       SigV4.SHA256_Hex ("scoped-put-cancel-body"),
+                     Identity       => Identity,
+                     Deadline       => HTTP_Client.Deadline_After (5.0),
+                     Token          => null,
+                     Operation      => Operation);
+                  Operations.Wait_All (Set);
+                  Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Put_Response_Available
+                    or else Result.Disposition /= Published
+                    or else Result.Failure /= No_Failure
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Response.Kind /= Low_Level.Object_Put
+                    or else US.To_String
+                      (Result.Response.Result.Entity_Tag) /=
+                        """scoped-put-restart"""
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                    or else Buffer_String (Payload_Buffer) /=
+                      "scoped-put-cancel-body"
+                  then
+                     raise Program_Error with
+                       "same-object PutObject restart after cancellation " &
+                       "mismatch";
+                  end if;
+               end;
             end;
 
             Buffers.Copy_From
@@ -7964,6 +8962,164 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
+               Parameters : Low_Level.Create_Bucket_Parameters :=
+                 (others => <>);
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               Parameters.Configuration.Location_Constraint :=
+                 US.To_Unbounded_String ("us-west-2");
+               if Round = 1 then
+                  Create_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Create_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Create_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Create_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid CreateBucket cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with "stale CreateBucket readiness";
+               end if;
+               declare
+                  --  Five slots cover the CreateBucket parent, HTTP child,
+                  --  transport child, admission, and drain readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : Create_Bucket_Operation := Create
+                    (Cancel_Set'Access, HTTP'Access, Origin,
+                     "create-cancel", Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0), "us-west-2");
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : Create_Bucket_Result;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "CreateBucket did not remain active through admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Create_Bucket_Exchange_Failed
+                    or else Cancel_Result.Disposition /=
+                      Bucket_Creation_Outcome_Unknown
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /=
+                      HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted CreateBucket cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "CreateBucket drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  Create
+                    (HTTP'Access, Origin, "create-cancel-restart",
+                     Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0), "us-west-2",
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Create_Bucket_Response_Available
+                    or else Cancel_Result.Disposition /=
+                      Bucket_Creation_Completed
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Bucket_Created
+                    or else US.To_String
+                      (Cancel_Result.Response.Result.Location) /=
+                        "/create-cancel-restart"
+                  then
+                     raise Program_Error with
+                       "same-operation CreateBucket restart mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Create_Parameters : Low_Level.Create_Bucket_Parameters :=
+                 (others => <>);
+               Head_Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (others => <>);
+            begin
+               Create_Parameters.Configuration.Location_Constraint :=
+                 US.To_Unbounded_String ("us-west-2");
+               declare
+                  Before : constant Head_Bucket_Result := Buckets.Head
+                    (HTTP, Origin, "create-lost", Head_Parameters, Identity,
+                     Timeout => 5.0);
+               begin
+                  if Before.Kind /= Head_Bucket_Response_Available
+                    or else Before.Response.Kind /=
+                      Low_Level.Head_Bucket_Rejected
+                    or else Before.Response.Status /= 404
+                  then
+                     raise Program_Error with
+                       "lost-response CreateBucket priming HEAD mismatch";
+                  end if;
+               end;
+               declare
+                  Lost : constant Create_Bucket_Result := Buckets.Create
+                    (HTTP, Origin, "create-lost", Create_Parameters,
+                     Identity, Region => "us-west-2", Timeout => 5.0);
+               begin
+                  if Lost.Kind /= Create_Bucket_Exchange_Failed
+                    or else Lost.Disposition /=
+                      Bucket_Creation_Outcome_Unknown
+                    or else Lost.Admission /= HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "lost CreateBucket response was conclusive";
+                  end if;
+               end;
+               declare
+                  After : constant Head_Bucket_Result := Buckets.Head
+                    (HTTP, Origin, "create-lost", Head_Parameters, Identity,
+                     Timeout => 5.0);
+               begin
+                  if After.Kind /= Head_Bucket_Response_Available
+                    or else After.Failure /= No_Failure
+                    or else After.Response.Kind /= Low_Level.Bucket_Found
+                    or else US.To_String
+                      (After.Response.Result.Bucket_Region) /= "us-west-2"
+                  then
+                     raise Program_Error with
+                       "lost-response CreateBucket reconciliation mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
                Stop : aliased Flyology.Cancellation.Token;
                Cancelled : Boolean := False;
                Timed_Out : Boolean := False;
@@ -8078,6 +9234,161 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
+               Parameters : constant Low_Level.Delete_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  Delete_Bucket_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Delete_Bucket_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Delete_Bucket_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Delete_Bucket_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid DeleteBucket cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with "stale DeleteBucket readiness";
+               end if;
+               declare
+                  --  Five slots cover the DeleteBucket parent, HTTP child,
+                  --  transport child, admission, and drain readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : Delete_Bucket_Operation :=
+                    Buckets.Delete
+                      (Cancel_Set'Access, HTTP'Access, Origin,
+                       "delete-bucket-cancel", Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : Delete_Bucket_Result;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "DeleteBucket did not remain active through admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Delete_Bucket_Exchange_Failed
+                    or else Cancel_Result.Disposition /=
+                      Bucket_Deletion_Outcome_Unknown
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /=
+                      HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted DeleteBucket cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "DeleteBucket drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  Buckets.Delete
+                    (HTTP'Access, Origin, "delete-bucket-cancel-restart",
+                     Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Delete_Bucket_Response_Available
+                    or else Cancel_Result.Disposition /=
+                      Bucket_Deletion_Completed
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Bucket_Deleted
+                  then
+                     raise Program_Error with
+                       "same-operation DeleteBucket restart mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Delete_Parameters : constant
+                 Low_Level.Delete_Bucket_Parameters :=
+                   (Expected_Bucket_Owner =>
+                      US.To_Unbounded_String ("123456789012"));
+               Head_Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+            begin
+               declare
+                  Before : constant Head_Bucket_Result := Buckets.Head
+                    (HTTP, Origin, "delete-bucket-lost", Head_Parameters,
+                     Identity, Timeout => 5.0);
+               begin
+                  if Before.Kind /= Head_Bucket_Response_Available
+                    or else Before.Failure /= No_Failure
+                    or else Before.Response.Kind /= Low_Level.Bucket_Found
+                  then
+                     raise Program_Error with
+                       "lost-response DeleteBucket priming HEAD mismatch";
+                  end if;
+               end;
+               declare
+                  Lost : constant Delete_Bucket_Result := Buckets.Delete
+                    (HTTP, Origin, "delete-bucket-lost", Delete_Parameters,
+                     Identity, Timeout => 5.0);
+               begin
+                  if Lost.Kind /= Delete_Bucket_Exchange_Failed
+                    or else Lost.Disposition /=
+                      Bucket_Deletion_Outcome_Unknown
+                    or else Lost.Admission /= HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "lost DeleteBucket response was conclusive";
+                  end if;
+               end;
+               declare
+                  After : constant Head_Bucket_Result := Buckets.Head
+                    (HTTP, Origin, "delete-bucket-lost", Head_Parameters,
+                     Identity, Timeout => 5.0);
+               begin
+                  if After.Kind /= Head_Bucket_Response_Available
+                    or else After.Response.Kind /=
+                      Low_Level.Head_Bucket_Rejected
+                    or else After.Response.Status /= 404
+                  then
+                     raise Program_Error with
+                       "lost-response DeleteBucket reconciliation mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
                Parameters : constant
                  Low_Level.Get_Bucket_Location_Parameters :=
                    (Expected_Bucket_Owner =>
@@ -8159,6 +9470,176 @@ procedure S3_HTTP_Socket_Corpus is
                   then
                      raise Program_Error with
                        "composed GetBucketLocation restart mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Parameters : constant
+                 Low_Level.Get_Bucket_Location_Parameters :=
+                   (Expected_Bucket_Owner =>
+                      US.To_Unbounded_String ("123456789012"));
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Get_Bucket_Location_Result :=
+                    Buckets.Get_Location
+                      (HTTP,
+                       Origin,
+                       "get-location-cancelled",
+                       Parameters,
+                       Identity,
+                       Timeout => 5.0,
+                       Token => Stop'Access);
+               begin
+                  if Result.Kind /= Get_Bucket_Location_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission GetBucketLocation cancellation " &
+                       "mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Parameters : constant
+                 Low_Level.Get_Bucket_Location_Parameters :=
+                   (Expected_Bucket_Owner =>
+                      US.To_Unbounded_String ("123456789012"));
+               Cancel_Token        : aliased Flyology.Cancellation.Token;
+               Changed_Token       : aliased Flyology.Cancellation.Token;
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  Get_Location_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Get_Location_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Get_Location_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Get_Location_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid GetBucketLocation cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with
+                    "stale GetBucketLocation readiness";
+               end if;
+               declare
+                  --  Five slots cover the location parent, HTTP child,
+                  --  transport child, admission readiness, and drain
+                  --  readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : Get_Bucket_Location_Operation :=
+                    Get_Location
+                      (Cancel_Set'Access,
+                       HTTP'Access,
+                       Origin,
+                       "get-location-cancel",
+                       Parameters,
+                       Identity,
+                       HTTP_Client.Deadline_After (5.0),
+                       Token => Cancel_Token'Access);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : Get_Bucket_Location_Result;
+                  Changed_Owner_Rejected : Boolean := False;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "GetBucketLocation did not remain active through " &
+                       "admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       Get_Bucket_Location_Exchange_Failed
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /=
+                      HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted GetBucketLocation cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "GetBucketLocation drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  begin
+                     Get_Location
+                       (HTTP'Access,
+                        Origin,
+                        "get-location-cancel-restart",
+                        Parameters,
+                        Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Changed_Token'Access,
+                        Operation => Cancel_Operation);
+                  exception
+                     when Program_Error =>
+                        Changed_Owner_Rejected := True;
+                  end;
+                  if not Changed_Owner_Rejected then
+                     raise Program_Error with
+                       "GetBucketLocation accepted changed retained owner";
+                  end if;
+                  Get_Location
+                    (HTTP'Access,
+                     Origin,
+                     "get-location-cancel-restart",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       Get_Bucket_Location_Response_Available
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Bucket_Location_Found
+                    or else US.To_String
+                      (Cancel_Result.Response.Result.Location_Constraint) /=
+                        "EU"
+                  then
+                     raise Program_Error with
+                       "same-operation GetBucketLocation restart mismatch";
                   end if;
                end;
             end;
@@ -8310,6 +9791,147 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
+               Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Cancel_Token        : aliased Flyology.Cancellation.Token;
+               Changed_Token       : aliased Flyology.Cancellation.Token;
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  Head_Bucket_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Head_Bucket_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Head_Bucket_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Head_Bucket_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid HeadBucket cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with "stale HeadBucket readiness";
+               end if;
+               declare
+                  --  Five slots cover the HeadBucket parent, HTTP child,
+                  --  transport child, admission readiness, and drain
+                  --  readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : Head_Bucket_Operation :=
+                    Head
+                      (Cancel_Set'Access,
+                       HTTP'Access,
+                       Origin,
+                       "head-bucket-cancel",
+                       Parameters,
+                       Identity,
+                       HTTP_Client.Deadline_After (5.0),
+                       Token => Cancel_Token'Access);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : Head_Bucket_Result;
+                  Changed_Owner_Rejected : Boolean := False;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "HeadBucket did not remain active through admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Head_Bucket_Exchange_Failed
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted HeadBucket cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "HeadBucket drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  begin
+                     Head
+                       (HTTP'Access,
+                        Origin,
+                        "head-bucket-cancel-restart",
+                        Parameters,
+                        Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Changed_Token'Access,
+                        Operation => Cancel_Operation);
+                  exception
+                     when Error : Program_Error =>
+                        if Ada.Exceptions.Exception_Message (Error) =
+                          "HeadBucket restart changed a retained owner"
+                        then
+                           Changed_Owner_Rejected := True;
+                        else
+                           raise;
+                        end if;
+                  end;
+                  if not Changed_Owner_Rejected then
+                     raise Program_Error with
+                       "HeadBucket accepted changed retained owner";
+                  end if;
+                  Head
+                    (HTTP'Access,
+                     Origin,
+                     "head-bucket-cancel-restart",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       Head_Bucket_Response_Available
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Bucket_Found
+                    or else US.To_String
+                      (Cancel_Result.Response.Result.Bucket_Region) /=
+                        "us-west-2"
+                  then
+                     raise Program_Error with
+                       "same-operation HeadBucket restart mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
                Parameters : Low_Level.Delete_Object_Parameters :=
                  (others => <>);
             begin
@@ -8397,9 +10019,115 @@ procedure S3_HTTP_Socket_Corpus is
                    Corrupt_Or_Invalid_Response
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                then
-                  raise Program_Error with
-                    "scoped DeleteObject accepted duplicate output metadata";
+                     raise Program_Error with
+                       "scoped DeleteObject accepted duplicate output " &
+                       "metadata";
                end if;
+            end;
+
+            declare
+               --  Five slots are the derived composed stack: deletion
+               --  parent, HTTP exchange, transient transport child,
+               --  admission readiness, and drain-ack readiness. This is
+               --  test capacity, not product policy.
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  Delete_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Delete_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  Delete_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Delete_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid DeleteObject cancellation client round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with
+                    "stale DeleteObject cancellation readiness";
+               end if;
+               declare
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Parameters : constant
+                    Low_Level.Delete_Object_Parameters := (others => <>);
+                  Cancel_Operation : Delete_Operation := Delete
+                    (Cancel_Set'Access, HTTP'Access, Origin,
+                     "example-bucket", "delete-cancel", Cancel_Parameters,
+                     Identity, HTTP_Client.Deadline_After (5.0));
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : Delete_Result;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "DeleteObject did not remain active through " &
+                       "admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Delete_Exchange_Failed
+                    or else Cancel_Result.Disposition /=
+                      Deletion_Outcome_Unknown
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /=
+                      HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted DeleteObject cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "DeleteObject transport drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  Delete
+                    (HTTP'Access, Origin, "example-bucket",
+                     "delete-restart", Cancel_Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= Delete_Response_Available
+                    or else Cancel_Result.Disposition /= Deletion_Completed
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Object_Deleted
+                  then
+                     raise Program_Error with
+                       "same-object DeleteObject restart after " &
+                       "cancellation mismatch";
+                  end if;
+               end;
             end;
 
             declare
@@ -8796,6 +10524,137 @@ procedure S3_HTTP_Socket_Corpus is
                     "composed ListBuckets restart mismatch";
                end if;
             end;
+            declare
+               Cancel_Token        : aliased Flyology.Cancellation.Token;
+               Changed_Token       : aliased Flyology.Cancellation.Token;
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  List_Buckets_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  List_Buckets_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  List_Buckets_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  List_Buckets_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid ListBuckets cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with "stale ListBuckets readiness";
+               end if;
+               declare
+                  --  Five slots cover the ListBuckets parent, HTTP child,
+                  --  transport child, admission readiness, and drain
+                  --  readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : List_Buckets_Operation :=
+                    List_Page
+                      (Cancel_Set'Access,
+                       HTTP'Access,
+                       Origin,
+                       Bucket_Parameters,
+                       Identity,
+                       HTTP_Client.Deadline_After (5.0),
+                       Token => Cancel_Token'Access);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : List_Buckets_Result;
+                  Changed_Owner_Rejected : Boolean := False;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "ListBuckets did not remain active through admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /= List_Buckets_Exchange_Failed
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted ListBuckets cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "ListBuckets drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  begin
+                     List_Page
+                       (HTTP'Access,
+                        Origin,
+                        Bucket_Parameters,
+                        Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Changed_Token'Access,
+                        Operation => Cancel_Operation);
+                  exception
+                     when Error : Program_Error =>
+                        if Ada.Exceptions.Exception_Message (Error) =
+                          "ListBuckets restart changed a retained owner"
+                        then
+                           Changed_Owner_Rejected := True;
+                        else
+                           raise;
+                        end if;
+                  end;
+                  if not Changed_Owner_Rejected then
+                     raise Program_Error with
+                       "ListBuckets accepted changed retained owner";
+                  end if;
+                  List_Page
+                    (HTTP'Access,
+                     Origin,
+                     Bucket_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       List_Buckets_Response_Available
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Buckets_Listed
+                  then
+                     raise Program_Error with
+                       "same-operation ListBuckets restart mismatch";
+                  end if;
+               end;
+            end;
          end;
          declare
             V1_Parameters : Low_Level.List_Objects_Parameters;
@@ -9146,6 +11005,208 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
+            procedure Require_Normalized_List_Objects_Failure
+              (Expected : Failure_Reason;
+               Status   : Flyology.HTTP.Status_Code;
+               Code     : String;
+               Context  : String)
+            is
+               Result : constant List_Objects_Result :=
+                 Objects.List_V1_Page
+                   (HTTP, Origin, "example-bucket", V1_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= List_Objects_Response_Available
+                 or else Result.Failure /= Expected
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Rejected
+                 or else Result.Response.Status /= Status
+                 or else US.To_String (Result.Response.Error.Code) /= Code
+               then
+                  raise Program_Error with Context;
+               end if;
+            end Require_Normalized_List_Objects_Failure;
+         begin
+            Require_Normalized_List_Objects_Failure
+              (Authentication_Failed, 401, "InvalidAccessKeyId",
+               "ListObjects authentication mapping mismatch");
+            Require_Normalized_List_Objects_Failure
+              (Authorization_Failed, 403, "AccessDenied",
+               "ListObjects authorization mapping mismatch");
+            Require_Normalized_List_Objects_Failure
+              (Not_Found, 404, "NoSuchBucket",
+               "ListObjects absence mapping mismatch");
+            Require_Normalized_List_Objects_Failure
+              (Invalid_Request, 400, "InvalidArgument",
+               "ListObjects invalid-request mapping mismatch");
+            Require_Normalized_List_Objects_Failure
+              (Unavailable_Or_Retryable, 503, "SlowDown",
+               "ListObjects retryable mapping mismatch");
+            Require_Normalized_List_Objects_Failure
+              (Corrupt_Or_Invalid_Response, 400,
+               "UnclassifiedListObjectsError",
+               "ListObjects fallback mapping mismatch");
+         end;
+         declare
+            Cancel_Token        : aliased Flyology.Cancellation.Token;
+            Changed_Token       : aliased Flyology.Cancellation.Token;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            if Round = 1 then
+               List_V1_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_V1_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               List_V1_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_V1_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid ListObjects cancellation round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale ListObjects cancellation readiness";
+            end if;
+            declare
+               --  Five slots cover the ListObjects parent, HTTP child,
+               --  transport child, admission readiness, and drain readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Cancel_Operation : List_Objects_Operation :=
+                 List_V1_Page
+                   (Cancel_Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "example-bucket",
+                    V1_Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0),
+                    Token => Cancel_Token'Access);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access,
+                    Admission_FD,
+                    Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Cancel_Result : List_Objects_Result;
+               Changed_Client_Rejected : Boolean := False;
+               Changed_Token_Rejected  : Boolean := False;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Cancel_Operation)
+               then
+                  raise Program_Error with
+                    "ListObjects did not remain active through admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= List_Objects_Exchange_Failed
+                 or else Cancel_Result.Failure /= Client_API.Cancelled
+                 or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted ListObjects cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "ListObjects drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               begin
+                  List_V1_Page
+                    (Changed_HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     V1_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Cancel_Operation);
+               exception
+                  when Error : Program_Error =>
+                     if Ada.Exceptions.Exception_Message (Error) =
+                       "ListObjects restart changed a retained owner"
+                     then
+                        Changed_Client_Rejected := True;
+                     else
+                        raise;
+                     end if;
+               end;
+               if not Changed_Client_Rejected then
+                  raise Program_Error with
+                    "ListObjects accepted changed retained HTTP client";
+               end if;
+               begin
+                  List_V1_Page
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     V1_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Changed_Token'Access,
+                     Operation => Cancel_Operation);
+               exception
+                  when Error : Program_Error =>
+                     if Ada.Exceptions.Exception_Message (Error) =
+                       "ListObjects restart changed a retained owner"
+                     then
+                        Changed_Token_Rejected := True;
+                     else
+                        raise;
+                     end if;
+               end;
+               if not Changed_Token_Rejected then
+                  raise Program_Error with
+                    "ListObjects accepted changed retained cancellation " &
+                    "token";
+               end if;
+               List_V1_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  V1_Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Token => Cancel_Token'Access,
+                  Operation => Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= List_Objects_Response_Available
+                 or else Cancel_Result.Failure /= No_Failure
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Cancel_Result.Response.Kind /= Low_Level.Listed
+                 or else US.To_String
+                   (Cancel_Result.Response.Result.Request_Charged) /=
+                     "requester"
+               then
+                  raise Program_Error with
+                    "same-object ListObjects restart mismatch";
+               end if;
+            end;
+         end;
+         declare
             Result : constant Low_Level.List_Objects_V2_Outcome :=
               Low_Level.Execute_List_Objects_V2
                 (HTTP, Prepared, Timeout => 5.0);
@@ -9231,6 +11292,148 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with "socket error result mismatch";
             end if;
+         end;
+         declare
+            procedure Require_Normalized_List_Objects_V2_Failure
+              (Expected : Failure_Reason;
+               Status   : Flyology.HTTP.Status_Code;
+               Code     : String;
+               Context  : String)
+            is
+               Result : constant List_Objects_V2_Result :=
+                 Objects.List_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= List_Objects_V2_Response_Available
+                 or else Result.Failure /= Expected
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Rejected
+                 or else Result.Response.Status /= Status
+                 or else US.To_String (Result.Response.Error.Code) /= Code
+               then
+                  raise Program_Error with Context;
+               end if;
+            end Require_Normalized_List_Objects_V2_Failure;
+         begin
+            Require_Normalized_List_Objects_V2_Failure
+              (Authentication_Failed, 401, "InvalidAccessKeyId",
+               "ListObjectsV2 authentication mapping mismatch");
+            Require_Normalized_List_Objects_V2_Failure
+              (Authorization_Failed, 403, "AccessDenied",
+               "ListObjectsV2 authorization mapping mismatch");
+            Require_Normalized_List_Objects_V2_Failure
+              (Not_Found, 404, "NoSuchBucket",
+               "ListObjectsV2 absence mapping mismatch");
+            Require_Normalized_List_Objects_V2_Failure
+              (Invalid_Request, 400, "InvalidArgument",
+               "ListObjectsV2 invalid-request mapping mismatch");
+            Require_Normalized_List_Objects_V2_Failure
+              (Unavailable_Or_Retryable, 503, "SlowDown",
+               "ListObjectsV2 retryable mapping mismatch");
+            Require_Normalized_List_Objects_V2_Failure
+              (Corrupt_Or_Invalid_Response, 400,
+               "UnclassifiedListObjectsV2Error",
+               "ListObjectsV2 fallback mapping mismatch");
+         end;
+         declare
+            --  Five slots are the derived composed stack: listing parent,
+            --  HTTP exchange, transient transport child, admission readiness,
+            --  and drain-ack readiness. This is test capacity, not product
+            --  policy.
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            if Round = 1 then
+               List_V2_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_V2_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               List_V2_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_V2_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid ListObjectsV2 client round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale ListObjectsV2 cancellation readiness";
+            end if;
+            declare
+               Set : aliased Operations.Completion_Set (5);
+               Operation : List_Objects_V2_Operation :=
+                 List_Page
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Parameters, Identity, HTTP_Client.Deadline_After (5.0),
+                    Token => null);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch :
+                 Operations.Completion_Batch (Set.Capacity);
+               Result : List_Objects_V2_Result;
+            begin
+               Operations.Wait_Some (Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Operation)
+               then
+                  raise Program_Error with
+                    "ListObjectsV2 did not remain active through admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= List_Objects_V2_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
+                 or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted ListObjectsV2 cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "ListObjectsV2 transport drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               List_Page
+                 (Client     => HTTP'Access,
+                  Origin     => Origin,
+                  Bucket     => "example-bucket",
+                  Parameters => Parameters,
+                  Identity   => Identity,
+                  Deadline   => HTTP_Client.Deadline_After (5.0),
+                  Token      => null,
+                  Operation  => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= List_Objects_V2_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else Result.Response.Listing.Key_Count /= 0
+                 or else US.To_String (Result.Response.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "same-object ListObjectsV2 restart mismatch";
+               end if;
+            end;
          end;
          declare
             Raised : Boolean := False;
@@ -9590,6 +11793,151 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "composed ListMultipartUploads continuation mismatch";
             end if;
+            declare
+               Cancellation_Parameters : constant
+                 Low_Level.List_Multipart_Uploads_Parameters :=
+                   (Max_Uploads => 1,
+                    Prefix => US.To_Unbounded_String ("paged/"),
+                    others => <>);
+               Cancel_Token        : aliased Flyology.Cancellation.Token;
+               Changed_Token       : aliased Flyology.Cancellation.Token;
+               Admission_FD        : Flyology.IO.Descriptor;
+               Admission_Requested : Boolean;
+               Drain_FD            : Flyology.IO.Descriptor;
+               Drain_Requested     : Boolean;
+            begin
+               if Round = 1 then
+                  List_Multipart_Uploads_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  List_Multipart_Uploads_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               elsif Round = 2 then
+                  List_Multipart_Uploads_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  List_Multipart_Uploads_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  raise Program_Error with
+                    "invalid ListMultipartUploads cancellation round";
+               end if;
+               if Admission_Requested
+                 or else Drain_Requested
+                 or else Admission_FD < 0
+                 or else Drain_FD < 0
+               then
+                  raise Program_Error with
+                    "stale ListMultipartUploads readiness";
+               end if;
+               declare
+                  --  Five slots cover the listing parent, HTTP child,
+                  --  transport child, admission readiness, and drain
+                  --  readiness.
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Cancel_Operation : List_Multipart_Uploads_Operation :=
+                    List_Multipart_Uploads_Page
+                      (Cancel_Set'Access,
+                       HTTP'Access,
+                       Origin,
+                       "example-bucket",
+                       Cancellation_Parameters,
+                       Identity,
+                       HTTP_Client.Deadline_After (5.0),
+                       Token => Cancel_Token'Access);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access,
+                       Drain_FD,
+                       Flyology.IO.For_Read);
+                  Completed_Batch : Operations.Completion_Batch
+                    (Cancel_Set.Capacity);
+                  Cancel_Result : List_Multipart_Uploads_Result;
+                  Changed_Owner_Rejected : Boolean := False;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                  if Completed_Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Cancel_Operation)
+                  then
+                     raise Program_Error with
+                       "ListMultipartUploads did not remain active through " &
+                       "admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       List_Multipart_Uploads_Exchange_Failed
+                    or else Cancel_Result.Failure /= Client_API.Cancelled
+                    or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted ListMultipartUploads cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "ListMultipartUploads drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  begin
+                     List_Multipart_Uploads_Page
+                       (HTTP'Access,
+                        Origin,
+                        "example-bucket",
+                        Cancellation_Parameters,
+                        Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Changed_Token'Access,
+                        Operation => Cancel_Operation);
+                  exception
+                     when Error : Program_Error =>
+                        if Ada.Exceptions.Exception_Message (Error) =
+                          "ListMultipartUploads restart changed a retained " &
+                          "owner"
+                        then
+                           Changed_Owner_Rejected := True;
+                        else
+                           raise;
+                        end if;
+                  end;
+                  if not Changed_Owner_Rejected then
+                     raise Program_Error with
+                       "ListMultipartUploads accepted changed retained owner";
+                  end if;
+                  List_Multipart_Uploads_Page
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     Cancellation_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Cancel_Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Cancel_Operation, Cancel_Result);
+                  if Cancel_Result.Kind /=
+                       Multipart_Uploads_Response_Available
+                    or else Cancel_Result.Failure /= No_Failure
+                    or else Cancel_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                    or else Cancel_Result.Response.Kind /=
+                      Low_Level.Multipart_Uploads_Listed
+                    or else not
+                      Cancel_Result.Response.Result.Listing.Is_Truncated
+                  then
+                     raise Program_Error with
+                       "same-operation ListMultipartUploads restart mismatch";
+                  end if;
+               end;
+            end;
          end;
          declare
             Parts_Parameters : Low_Level.List_Parts_Parameters :=
@@ -9872,6 +12220,171 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Stop : aliased Flyology.Cancellation.Token;
+            Parameters : constant
+              Low_Level.Get_Bucket_Versioning_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+         begin
+            Stop.Request;
+            declare
+               Result : constant Get_Bucket_Versioning_Result :=
+                 Client_Buckets.Get_Versioning
+                   (HTTP,
+                    Origin,
+                    "get-versioning-cancelled",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0,
+                    Token => Stop'Access);
+            begin
+               if Result.Kind /= Get_Bucket_Versioning_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission GetBucketVersioning cancellation " &
+                    "mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Get_Bucket_Versioning_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Cancel_Token        : aliased Flyology.Cancellation.Token;
+            Changed_Token       : aliased Flyology.Cancellation.Token;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            if Round = 1 then
+               Get_Versioning_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Get_Versioning_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               Get_Versioning_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Get_Versioning_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid GetBucketVersioning cancellation round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale GetBucketVersioning readiness";
+            end if;
+            declare
+               --  Five slots cover the versioning parent, HTTP child,
+               --  transport child, admission readiness, and drain readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Cancel_Operation : Get_Bucket_Versioning_Operation :=
+                 Get_Versioning
+                   (Cancel_Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "get-versioning-cancel",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0),
+                    Token => Cancel_Token'Access);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access,
+                    Admission_FD,
+                    Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access,
+                    Drain_FD,
+                    Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Cancel_Result : Get_Bucket_Versioning_Result;
+               Changed_Owner_Rejected : Boolean := False;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Cancel_Operation)
+               then
+                  raise Program_Error with
+                    "GetBucketVersioning did not remain active through " &
+                    "admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /=
+                    Get_Bucket_Versioning_Exchange_Failed
+                 or else Cancel_Result.Failure /= Client_API.Cancelled
+                 or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted GetBucketVersioning cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "GetBucketVersioning drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               begin
+                  Get_Versioning
+                    (HTTP'Access,
+                     Origin,
+                     "get-versioning-cancel-restart",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Changed_Token'Access,
+                     Operation => Cancel_Operation);
+               exception
+                  when Program_Error =>
+                     Changed_Owner_Rejected := True;
+               end;
+               if not Changed_Owner_Rejected then
+                  raise Program_Error with
+                    "GetBucketVersioning accepted changed retained owner";
+               end if;
+               Get_Versioning
+                 (HTTP'Access,
+                  Origin,
+                  "get-versioning-cancel-restart",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Token => Cancel_Token'Access,
+                  Operation => Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /=
+                    Get_Bucket_Versioning_Response_Available
+                 or else Cancel_Result.Failure /= No_Failure
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Cancel_Result.Response.Kind /=
+                   Low_Level.Bucket_Versioning_Found
+                 or else Cancel_Result.Response.Configuration.Status /=
+                   Flyology.Object_Storage.Versioning_Unconfigured
+               then
+                  raise Program_Error with
+                    "same-operation GetBucketVersioning restart mismatch";
+               end if;
+            end;
+         end;
+         declare
             Parameters : constant
               Low_Level.Put_Bucket_Versioning_Parameters :=
                 (Content_MD5        => US.Null_Unbounded_String,
@@ -9964,6 +12477,172 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "composed PutBucketVersioning restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+            Parameters : constant
+              Low_Level.Put_Bucket_Versioning_Parameters :=
+                (Content_MD5        => US.Null_Unbounded_String,
+                 Checksum_Algorithm => US.Null_Unbounded_String,
+                 MFA                => US.Null_Unbounded_String,
+                 Configuration      =>
+                   (Status => Flyology.Object_Storage.Versioning_Enabled,
+                    MFA_Delete =>
+                      Flyology.Object_Storage.MFA_Delete_Unconfigured),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+         begin
+            Stop.Request;
+            declare
+               Result : constant Put_Bucket_Versioning_Result :=
+                 Client_Buckets.Set_Versioning_Configuration
+                   (HTTP, Origin, "put-versioning-cancelled", Parameters,
+                    Identity, Timeout => 5.0, Token => Stop'Access);
+            begin
+               if Result.Kind /= Put_Bucket_Versioning_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_Versioning_Mutation_Cancelled_Before_Admission
+                 or else Result.Failure /= Client_API.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission PutBucketVersioning cancellation " &
+                    "mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Put_Bucket_Versioning_Parameters :=
+                (Content_MD5        => US.Null_Unbounded_String,
+                 Checksum_Algorithm => US.Null_Unbounded_String,
+                 MFA                => US.Null_Unbounded_String,
+                 Configuration      =>
+                   (Status => Flyology.Object_Storage.Versioning_Enabled,
+                    MFA_Delete =>
+                      Flyology.Object_Storage.MFA_Delete_Unconfigured),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Cancel_Token        : aliased Flyology.Cancellation.Token;
+            Changed_Token       : aliased Flyology.Cancellation.Token;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            if Round = 1 then
+               Put_Versioning_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Put_Versioning_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               Put_Versioning_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Put_Versioning_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid PutBucketVersioning cancellation round";
+            end if;
+            if Admission_Requested or else Drain_Requested
+              or else Admission_FD < 0 or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale PutBucketVersioning readiness";
+            end if;
+            declare
+               --  Five slots cover the versioning parent, HTTP child,
+               --  transport child, admission readiness, and drain readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Cancel_Operation : Put_Bucket_Versioning_Operation :=
+                 Set_Versioning_Configuration
+                   (Cancel_Set'Access, HTTP'Access, Origin,
+                    "put-versioning-cancel", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0),
+                    Token => Cancel_Token'Access);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Cancel_Result : Put_Bucket_Versioning_Result;
+               Changed_Owner_Rejected : Boolean := False;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Cancel_Operation)
+               then
+                  raise Program_Error with
+                    "PutBucketVersioning did not remain active through " &
+                    "admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= Put_Bucket_Versioning_Exchange_Failed
+                 or else Cancel_Result.Disposition /=
+                   Bucket_Versioning_Mutation_Outcome_Unknown
+                 or else Cancel_Result.Failure /= Client_API.Cancelled
+                 or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted PutBucketVersioning cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "PutBucketVersioning drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               begin
+                  Set_Versioning_Configuration
+                    (HTTP'Access, Origin,
+                     "put-versioning-cancel-restart", Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Changed_Token'Access,
+                     Operation => Cancel_Operation);
+               exception
+                  when Error : Program_Error =>
+                     if Ada.Exceptions.Exception_Message (Error) =
+                       "PutBucketVersioning restart changed a retained owner"
+                     then
+                        Changed_Owner_Rejected := True;
+                     else
+                        raise;
+                     end if;
+               end;
+               if not Changed_Owner_Rejected then
+                  raise Program_Error with
+                    "PutBucketVersioning accepted changed retained owner";
+               end if;
+               Set_Versioning_Configuration
+                 (HTTP'Access, Origin, "put-versioning-cancel-restart",
+                  Parameters, Identity, HTTP_Client.Deadline_After (5.0),
+                  Token => Cancel_Token'Access,
+                  Operation => Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /=
+                    Put_Bucket_Versioning_Response_Available
+                 or else Cancel_Result.Disposition /=
+                   Bucket_Versioning_Mutation_Completed
+                 or else Cancel_Result.Failure /= No_Failure
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Cancel_Result.Response.Kind /=
+                   Low_Level.Bucket_Versioning_Updated
+               then
+                  raise Program_Error with
+                    "same-operation PutBucketVersioning restart mismatch";
                end if;
             end;
          end;
@@ -10342,6 +13021,31 @@ procedure S3_HTTP_Socket_Corpus is
                            raise Program_Error with
                              "generation-bound completed object mismatch";
                         end if;
+                     end;
+                     declare
+                        List_Parameters : Low_Level.List_Parts_Parameters;
+                     begin
+                        List_Parameters.Upload_ID :=
+                          US.To_Unbounded_String ("lost-upload-id");
+                        declare
+                           Listed : constant List_Parts_Result :=
+                             Transfers.List_Parts_Page
+                               (HTTP, Origin, "example-bucket",
+                                "lost-upload", List_Parameters, Identity,
+                                Timeout => 5.0);
+                        begin
+                           if Listed.Kind /= List_Parts_Response_Available
+                             or else Listed.Failure /= Not_Found
+                             or else Listed.Response.Kind /=
+                               Low_Level.List_Parts_Rejected
+                             or else Listed.Response.Status /= 404
+                             or else US.To_String
+                               (Listed.Response.Error.Code) /= "NoSuchUpload"
+                           then
+                              raise Program_Error with
+                                "completed upload reconciliation mismatch";
+                           end if;
+                        end;
                      end;
                   end;
                end;
@@ -12426,6 +15130,108 @@ procedure S3_HTTP_Socket_Corpus is
          end;
          declare
             Options : Low_Level.Copy_Object_Parameters;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            if Round = 1 then
+               Copy_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Copy_Drain_Native.Wait_Source (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               Copy_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Copy_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid CopyObject cancellation round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
+            then
+               raise Program_Error with "stale CopyObject readiness";
+            end if;
+            declare
+               --  Five slots cover the Copy parent, HTTP child, transient
+               --  transport child, admission readiness, and drain readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Cancel_Operation : Copy_Operation := Copy_Object
+                 (Cancel_Set'Access, HTTP'Access, Origin, "source-bucket",
+                  "source-key", "example-bucket", "copy-cancel", Options,
+                  Identity, HTTP_Client.Deadline_After (5.0));
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Cancel_Result : Copy_Result;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Cancel_Operation)
+               then
+                  raise Program_Error with
+                    "CopyObject did not remain active through admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= Copy_Exchange_Failed
+                 or else Cancel_Result.Disposition /= Outcome_Unknown
+                 or else Cancel_Result.Failure /= Client_API.Cancelled
+                 or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted CopyObject cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "CopyObject drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               Copy_Object
+                 (HTTP'Access,
+                  Origin,
+                  "source-bucket",
+                  "source-key",
+                  "example-bucket",
+                  "copy-cancel-restart",
+                  Options,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= Copy_Response_Available
+                 or else Cancel_Result.Disposition /= Published
+                 or else Cancel_Result.Failure /= No_Failure
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Cancel_Result.Response.Kind /=
+                   Low_Level.Object_Copied
+                 or else US.To_String
+                   (Cancel_Result.Response.Result.Copy_Result.Entity_Tag) /=
+                     """high-level-copy"""
+               then
+                  raise Program_Error with
+                    "same-operation CopyObject restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Options : Low_Level.Copy_Object_Parameters;
             --  Copy parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
             Operation : Copy_Operation := Copy_Object
@@ -12487,6 +15293,61 @@ procedure S3_HTTP_Socket_Corpus is
                     "invalid complete CopyObject response was accepted";
                end if;
             end loop;
+         end;
+         declare
+            Options : Low_Level.Copy_Object_Parameters;
+            Head_Parameters : Low_Level.Head_Object_Parameters;
+            Head_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "copy-lost", Head_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+         begin
+            declare
+               Before : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Head_Prepared, Timeout => 5.0);
+            begin
+               if Before.Kind /= Low_Level.Head_Object_Rejected
+                 or else Before.Status /= 404
+               then
+                  raise Program_Error with
+                    "lost-response CopyObject priming HEAD mismatch";
+               end if;
+            end;
+            declare
+               Lost : constant Copy_Result := Transfers.Copy_Object
+                 (HTTP, Origin, "source-bucket", "source-key",
+                  "example-bucket", "copy-lost", Options, Identity,
+                  Timeout => 5.0);
+            begin
+               if Lost.Kind /= Copy_Exchange_Failed
+                 or else Lost.Disposition /= Outcome_Unknown
+                 or else Lost.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "lost CopyObject response was classified conclusively";
+               end if;
+            end;
+            declare
+               After : constant Objects.Whole_Get_Outcome :=
+                 Objects.Get_Whole
+                   (HTTP, Origin, "example-bucket", "copy-lost",
+                    Lost_Copy_Payload'Length, Identity,
+                    Expected_Entity_Tag => """copy-lost-generation""",
+                    Timeout => 5.0);
+            begin
+               if After.Kind /= Objects.Whole_Object_Read
+                 or else After.Status /= 200
+                 or else US.To_String (After.Result.Entity_Tag) /=
+                   """copy-lost-generation"""
+                 or else Flyology.Bytes.To_Byte_String
+                   (After.Object_Bytes) /= Lost_Copy_Payload
+               then
+                  raise Program_Error with
+                    "lost-response CopyObject reconciliation mismatch";
+               end if;
+            end;
          end;
          declare
             Result : constant Transfers.Copy_Outcome :=
@@ -13304,21 +16165,149 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
-            Create_Parameters : Low_Level.Create_Multipart_Parameters;
-            List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
-            Result : constant Create_Multipart_Result :=
-              Transfers.Create_Multipart_Upload
-                (HTTP, Origin, "example-bucket", "create-lost",
-                 Create_Parameters, Identity, Timeout => 5.0);
+            Parameters : Low_Level.Create_Multipart_Parameters;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
          begin
-            if Result.Kind /= Create_Multipart_Exchange_Failed
-              or else Result.Disposition /= Creation_Outcome_Unknown
-              or else Result.Admission /= HTTP_Client.Possibly_Admitted
+            if Round = 1 then
+               Create_Multipart_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Create_Multipart_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               Create_Multipart_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Create_Multipart_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid CreateMultipartUpload cancellation round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
             then
                raise Program_Error with
-                 "lost CreateMultipartUpload was classified conclusively";
+                 "stale CreateMultipartUpload readiness";
             end if;
+            declare
+               --  Five slots cover the initiation parent, HTTP child,
+               --  transient transport child, admission readiness, and drain
+               --  readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Cancel_Operation : Create_Multipart_Operation :=
+                 Create_Multipart_Upload
+                   (Cancel_Set'Access, HTTP'Access, Origin,
+                    "example-bucket", "create-multipart-cancel",
+                    Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Cancel_Result : Create_Multipart_Result;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Cancel_Operation)
+               then
+                  raise Program_Error with
+                    "CreateMultipartUpload did not remain active through " &
+                    "admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= Create_Multipart_Exchange_Failed
+                 or else Cancel_Result.Disposition /= Creation_Outcome_Unknown
+                 or else Cancel_Result.Failure /= Client_API.Cancelled
+                 or else Cancel_Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted CreateMultipartUpload cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "CreateMultipartUpload drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               Create_Multipart_Upload
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "create-multipart-cancel-restart",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Cancel_Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Cancel_Operation, Cancel_Result);
+               if Cancel_Result.Kind /= Create_Multipart_Response_Available
+                 or else Cancel_Result.Disposition /= Multipart_Upload_Created
+                 or else Cancel_Result.Failure /= No_Failure
+                 or else Cancel_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Cancel_Result.Response.Kind /= Low_Level.Created
+                 or else US.To_String
+                   (Cancel_Result.Response.Result.Bucket) /=
+                     "example-bucket"
+                 or else US.To_String
+                   (Cancel_Result.Response.Result.Key) /=
+                     "create-multipart-cancel-restart"
+                 or else US.To_String
+                   (Cancel_Result.Response.Result.Upload_ID) /=
+                     "create-multipart-restarted"
+               then
+                  raise Program_Error with
+                    "same-operation CreateMultipartUpload restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Create_Parameters : Low_Level.Create_Multipart_Parameters;
+            List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+         begin
             List_Parameters.Prefix := US.To_Unbounded_String ("create-lost");
+            declare
+               Before : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Transfers.List_Multipart_Uploads_Page
+                   (HTTP, Origin, "example-bucket", List_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Before.Kind /= Low_Level.Multipart_Uploads_Listed
+                 or else Natural (Before.Result.Listing.Uploads.Length) /= 0
+               then
+                  raise Program_Error with
+                    "lost-response CreateMultipartUpload priming list " &
+                    "mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Create_Multipart_Result :=
+                 Transfers.Create_Multipart_Upload
+                   (HTTP, Origin, "example-bucket", "create-lost",
+                    Create_Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Create_Multipart_Exchange_Failed
+                 or else Result.Disposition /= Creation_Outcome_Unknown
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "lost CreateMultipartUpload was classified conclusively";
+               end if;
+            end;
             declare
                Listed : constant Low_Level.List_Multipart_Uploads_Outcome :=
                  Transfers.List_Multipart_Uploads_Page
@@ -13512,6 +16501,118 @@ procedure S3_HTTP_Socket_Corpus is
                     "composed embedded multipart error mismatch";
                end if;
                declare
+                  --  Five slots are the completion parent, HTTP exchange,
+                  --  transient transport child, admission readiness, and
+                  --  drain-ack readiness. This is test capacity only.
+                  Admission_FD        : Flyology.IO.Descriptor;
+                  Admission_Requested : Boolean;
+                  Drain_FD            : Flyology.IO.Descriptor;
+                  Drain_Requested     : Boolean;
+               begin
+                  if Round = 1 then
+                     Complete_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Complete_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  elsif Round = 2 then
+                     Complete_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Complete_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     raise Program_Error with
+                       "invalid CompleteMultipartUpload cancellation round";
+                  end if;
+                  if Admission_Requested
+                    or else Drain_Requested
+                    or else Admission_FD < 0
+                    or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale CompleteMultipartUpload readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Cancel_Operation : Complete_Multipart_Operation :=
+                       Complete_Multipart_Upload
+                         (Cancel_Set'Access, HTTP'Access, Origin,
+                          "example-bucket", "complete-cancel",
+                          "complete-cancel-id", Completion, Parameters,
+                          Identity, HTTP_Client.Deadline_After (5.0));
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Completed_Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Cancel_Result : Multipart_Completion_Result;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Completed_Batch);
+                     if Completed_Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Cancel_Operation)
+                     then
+                        raise Program_Error with
+                          "CompleteMultipartUpload did not remain active " &
+                          "through admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Cancel_Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Cancel_Operation, Cancel_Result);
+                     if Cancel_Result.Kind /=
+                       Complete_Multipart_Exchange_Failed
+                       or else Cancel_Result.Disposition /=
+                         Completion_Outcome_Unknown
+                       or else Cancel_Result.Failure /= Client_API.Cancelled
+                       or else Cancel_Result.HTTP_Result /=
+                         HTTP_Client.Cancelled
+                       or else Cancel_Result.Admission /=
+                         HTTP_Client.Possibly_Admitted
+                     then
+                        raise Program_Error with
+                          "admitted CompleteMultipartUpload cancellation " &
+                          "mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "CompleteMultipartUpload drain was not " &
+                          "acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     Complete_Multipart_Upload
+                       (HTTP'Access, Origin, "example-bucket",
+                        "complete-restart", "complete-restart-id",
+                        Completion, Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Operation => Cancel_Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Cancel_Operation, Cancel_Result);
+                     if Cancel_Result.Kind /=
+                       Complete_Multipart_Response_Available
+                       or else Cancel_Result.Disposition /=
+                         Multipart_Completed
+                       or else Cancel_Result.Failure /= No_Failure
+                       or else Cancel_Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Cancel_Result.Response.Kind /=
+                         Low_Level.Completed
+                       or else US.To_String
+                         (Cancel_Result.Response.Result.Entity_Tag) /=
+                           """complete-restarted"""
+                     then
+                        raise Program_Error with
+                          "same-operation CompleteMultipartUpload restart " &
+                          "mismatch";
+                     end if;
+                  end;
+               end;
+               declare
                   Stop : aliased Flyology.Cancellation.Token;
                begin
                   Stop.Request;
@@ -13608,6 +16709,124 @@ procedure S3_HTTP_Socket_Corpus is
                        "composed AbortMultipartUpload physical header " &
                        "validation mismatch";
                   end if;
+                  declare
+                     --  Five slots are the derived composed stack: abort
+                     --  parent, HTTP exchange, transient transport child,
+                     --  admission readiness, and drain-ack readiness. This
+                     --  is test capacity, not product policy.
+                     Admission_FD        : Flyology.IO.Descriptor;
+                     Admission_Requested : Boolean;
+                     Drain_FD            : Flyology.IO.Descriptor;
+                     Drain_Requested     : Boolean;
+                  begin
+                     if Round = 1 then
+                        Abort_Admission_Native.Wait_Source
+                          (Admission_FD, Admission_Requested);
+                        Abort_Drain_Native.Wait_Source
+                          (Drain_FD, Drain_Requested);
+                     elsif Round = 2 then
+                        Abort_Admission_Lightweight.Wait_Source
+                          (Admission_FD, Admission_Requested);
+                        Abort_Drain_Lightweight.Wait_Source
+                          (Drain_FD, Drain_Requested);
+                     else
+                        raise Program_Error with
+                          "invalid AbortMultipartUpload cancellation round";
+                     end if;
+                     if Admission_Requested
+                       or else Drain_Requested
+                       or else Admission_FD < 0
+                       or else Drain_FD < 0
+                     then
+                        raise Program_Error with
+                          "stale AbortMultipartUpload cancellation " &
+                          "readiness";
+                     end if;
+                     declare
+                        Cancel_Set : aliased Operations.Completion_Set (5);
+                        Cancel_Operation : Abort_Multipart_Operation :=
+                          Abort_Multipart_Upload
+                            (Cancel_Set'Access, HTTP'Access, Origin,
+                             "example-bucket", "abort-cancel",
+                             "abort-cancel-id", Abort_Parameters, Identity,
+                             HTTP_Client.Deadline_After (5.0));
+                        Admission_Ready : Flyology.IO.Readiness_Operation :=
+                          Flyology.IO.Wait
+                            (Cancel_Set'Access, Admission_FD,
+                             Flyology.IO.For_Read);
+                        Drain_Ready : Flyology.IO.Readiness_Operation :=
+                          Flyology.IO.Wait
+                            (Cancel_Set'Access, Drain_FD,
+                             Flyology.IO.For_Read);
+                        Completed_Batch : Operations.Completion_Batch
+                          (Cancel_Set.Capacity);
+                     begin
+                        Operations.Wait_Some
+                          (Cancel_Set, Completed_Batch);
+                        if Completed_Batch.Count = 0
+                          or else not Operations.Is_Terminal
+                            (Admission_Ready)
+                          or else not Operations.Is_Active (Drain_Ready)
+                          or else not Operations.Is_Active
+                            (Cancel_Operation)
+                        then
+                           raise Program_Error with
+                             "AbortMultipartUpload did not remain active " &
+                             "through admission";
+                        end if;
+                        Flyology.IO.Finish (Admission_Ready);
+                        Operations.Cancel (Cancel_Operation);
+                        Operations.Wait_All (Cancel_Set);
+                        Finish (Cancel_Operation, Abort_Result);
+                        if Abort_Result.Kind /=
+                          Abort_Multipart_Exchange_Failed
+                          or else Abort_Result.Disposition /=
+                            Abort_Outcome_Unknown
+                          or else Abort_Result.Failure /=
+                            Client_API.Cancelled
+                          or else Abort_Result.HTTP_Result /=
+                            HTTP_Client.Cancelled
+                          or else Abort_Result.Admission /=
+                            HTTP_Client.Possibly_Admitted
+                        then
+                           raise Program_Error with
+                             "admitted AbortMultipartUpload cancellation " &
+                             "mismatch";
+                        end if;
+                        if not Operations.Is_Terminal (Drain_Ready) then
+                           raise Program_Error with
+                             "AbortMultipartUpload transport drain was not " &
+                             "acknowledged";
+                        end if;
+                        Flyology.IO.Finish (Drain_Ready);
+                        Abort_Multipart_Upload
+                          (HTTP'Access,
+                           Origin,
+                           "example-bucket",
+                           "abort-restart",
+                           "abort-restart-id",
+                           Abort_Parameters,
+                           Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Operation => Cancel_Operation);
+                        Operations.Wait_All (Cancel_Set);
+                        Finish (Cancel_Operation, Abort_Result);
+                        if Abort_Result.Kind /=
+                          Abort_Multipart_Response_Available
+                          or else Abort_Result.Disposition /=
+                            Multipart_Aborted
+                          or else Abort_Result.Failure /= No_Failure
+                          or else Abort_Result.Admission /=
+                            HTTP_Client.Response_Observed
+                          or else Abort_Result.Response.Kind /=
+                            Low_Level.Aborted
+                        then
+                           raise Program_Error with
+                             "same-object AbortMultipartUpload restart " &
+                             "after cancellation mismatch";
+                        end if;
+                     end;
+                  end;
                end;
             end;
          end;
@@ -13973,6 +17192,219 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "pre-admission ListObjectVersions cancellation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+
+            procedure Require_Normalized_List_Versions_Failure
+              (Expected : Failure_Reason;
+               Status   : Flyology.HTTP.Status_Code;
+               Code     : String;
+               Context  : String)
+            is
+               Result : constant List_Object_Versions_Result :=
+                 Objects.List_Versions_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= Expected
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Rejected
+                 or else Result.Response.Status /= Status
+                 or else US.To_String (Result.Response.Error.Code) /= Code
+               then
+                  raise Program_Error with Context;
+               end if;
+            end Require_Normalized_List_Versions_Failure;
+         begin
+            Parameters.Prefix := US.To_Unbounded_String ("normalized/");
+            Parameters.Has_Prefix := True;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            Require_Normalized_List_Versions_Failure
+              (Authentication_Failed, 401, "InvalidAccessKeyId",
+               "ListObjectVersions authentication mapping mismatch");
+            Require_Normalized_List_Versions_Failure
+              (Authorization_Failed, 403, "AccessDenied",
+               "ListObjectVersions authorization mapping mismatch");
+            Require_Normalized_List_Versions_Failure
+              (Not_Found, 404, "NoSuchBucket",
+               "ListObjectVersions absence mapping mismatch");
+            Require_Normalized_List_Versions_Failure
+              (Invalid_Request, 400, "InvalidArgument",
+               "ListObjectVersions invalid-request mapping mismatch");
+            Require_Normalized_List_Versions_Failure
+              (Unavailable_Or_Retryable, 503, "SlowDown",
+               "ListObjectVersions retryable mapping mismatch");
+            Require_Normalized_List_Versions_Failure
+              (Corrupt_Or_Invalid_Response, 400,
+               "UnclassifiedListObjectVersionsError",
+               "ListObjectVersions fallback mapping mismatch");
+         end;
+         declare
+            Parameters          : Low_Level.List_Object_Versions_Parameters;
+            Cancel_Token        : aliased Flyology.Cancellation.Token;
+            Changed_Token       : aliased Flyology.Cancellation.Token;
+            Admission_FD        : Flyology.IO.Descriptor;
+            Admission_Requested : Boolean;
+            Drain_FD            : Flyology.IO.Descriptor;
+            Drain_Requested     : Boolean;
+         begin
+            Parameters.Prefix := US.To_Unbounded_String ("normalized/");
+            Parameters.Has_Prefix := True;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            if Round = 1 then
+               List_Versions_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_Versions_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               List_Versions_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               List_Versions_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid ListObjectVersions cancellation round";
+            end if;
+            if Admission_Requested
+              or else Drain_Requested
+              or else Admission_FD < 0
+              or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale ListObjectVersions cancellation readiness";
+            end if;
+            declare
+               --  Five slots cover the listing parent, HTTP child,
+               --  transport child, admission readiness, and drain readiness.
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Operation : List_Object_Versions_Operation :=
+                 List_Versions_Page
+                   (Cancel_Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "example-bucket",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0),
+                    Token => Cancel_Token'Access);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Completed_Batch : Operations.Completion_Batch
+                 (Cancel_Set.Capacity);
+               Result : List_Object_Versions_Result;
+               Changed_Client_Rejected : Boolean := False;
+               Changed_Token_Rejected  : Boolean := False;
+            begin
+               Operations.Wait_Some (Cancel_Set, Completed_Batch);
+               if Completed_Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Operation)
+               then
+                  raise Program_Error with
+                    "ListObjectVersions did not remain active through " &
+                    "admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Operation, Result);
+               if Result.Kind /= List_Object_Versions_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
+                 or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "admitted ListObjectVersions cancellation mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "ListObjectVersions drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               begin
+                  List_Versions_Page
+                    (Changed_HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Operation);
+               exception
+                  when Error : Program_Error =>
+                     if Ada.Exceptions.Exception_Message (Error) =
+                       "ListObjectVersions restart changed a retained owner"
+                     then
+                        Changed_Client_Rejected := True;
+                     else
+                        raise;
+                     end if;
+               end;
+               if not Changed_Client_Rejected then
+                  raise Program_Error with
+                    "ListObjectVersions accepted changed retained HTTP " &
+                    "client";
+               end if;
+               begin
+                  List_Versions_Page
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Token => Changed_Token'Access,
+                     Operation => Operation);
+               exception
+                  when Error : Program_Error =>
+                     if Ada.Exceptions.Exception_Message (Error) =
+                       "ListObjectVersions restart changed a retained owner"
+                     then
+                        Changed_Token_Rejected := True;
+                     else
+                        raise;
+                     end if;
+               end;
+               if not Changed_Token_Rejected then
+                  raise Program_Error with
+                    "ListObjectVersions accepted changed retained " &
+                    "cancellation token";
+               end if;
+               List_Versions_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Token => Cancel_Token'Access,
+                  Operation => Operation);
+               Operations.Wait_All (Cancel_Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else Result.Response.Result.Listing.Is_Truncated
+                 or else US.To_String
+                   (Result.Response.Result.Listing.Prefix) /= "normalized/"
+               then
+                  raise Program_Error with
+                    "same-object ListObjectVersions restart mismatch";
                end if;
             end;
          end;
@@ -22890,13 +26322,14 @@ procedure S3_HTTP_Socket_Corpus is
               ("DeleteBucketCors accepted oversized error body",
                Small_Limits => True);
          end;
+         HTTP_Client.Shutdown (Changed_HTTP);
          HTTP_Client.Shutdown (HTTP);
       end;
    end Run_Client;
 
-   procedure Run_And_Report is
+   procedure Run_And_Report (Round : Positive) is
    begin
-      Run_Client;
+      Run_Client (Round);
       Clients.Report (True);
    exception
       when Occurrence : others =>
@@ -22965,7 +26398,7 @@ begin
    Transfers_Testing.Check_List_Parts_Result_Corpus;
    Transfers_Testing.Check_List_Multipart_Uploads_Result_Corpus;
    Transfers_Testing.Check_Copy_Result_Corpus;
-   Run_And_Report;
+   Run_And_Report (1);
    declare
       task Lightweight_Client is
          pragma Task_Info (Flyology.Lightweight_Task);
@@ -22973,7 +26406,7 @@ begin
 
       task body Lightweight_Client is
       begin
-         Run_And_Report;
+         Run_And_Report (2);
       end Lightweight_Client;
    begin
       null;

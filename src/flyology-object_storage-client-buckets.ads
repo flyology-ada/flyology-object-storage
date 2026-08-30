@@ -926,8 +926,16 @@ package Flyology.Object_Storage.Client.Buckets is
       Result    : out Delete_Bucket_Tagging_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Result kind for one bounded ListBuckets page.
+   --  @enum Page_Available A modeled bucket page is available
+   --  @enum List_Rejected The service returned a structured S3 rejection
    type List_Outcome_Kind is (Page_Available, List_Rejected);
 
+   --  One modeled bucket page or a structured S3 rejection.
+   --  @field Kind Selects the page or rejection variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Page Complete modeled bucket page
+   --  @field Error Structured S3 rejection
    type List_Outcome
      (Kind : List_Outcome_Kind := List_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -995,8 +1003,17 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Buckets_Result;
 
+   --  Result kind for one CreateBucket convenience response.
+   --  @enum Creation_Completed Modeled creation response headers are available
+   --  @enum Create_Rejected The service returned a structured S3 rejection
    type Create_Outcome_Kind is (Creation_Completed, Create_Rejected);
 
+   --  Modeled creation response headers or a structured S3 rejection.
+   --  @field Kind Selects the creation or rejection variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Location Modeled bucket location response value
+   --  @field Bucket_ARN Modeled bucket ARN response value
+   --  @field Error Structured S3 rejection
    type Create_Outcome
      (Kind : Create_Outcome_Kind := Create_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -1062,8 +1079,15 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Create_Outcome;
 
+   --  Result kind for one synchronous delete convenience response.
+   --  @enum Deletion_Completed Complete modeled success response is available
+   --  @enum Delete_Rejected The service returned a structured S3 rejection
    type Delete_Outcome_Kind is (Deletion_Completed, Delete_Rejected);
 
+   --  Complete modeled delete response or a structured S3 rejection.
+   --  @field Kind Selects the completion or rejection variant
+   --  @field Status HTTP status returned by the completed exchange
+   --  @field Error Structured S3 rejection
    type Delete_Outcome
      (Kind : Delete_Outcome_Kind := Delete_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -1602,6 +1626,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove one named analytics configuration.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose analytics configuration is removed
+   --  @param Identifier Analytics configuration identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed deletion or structured S3 rejection
    function Delete_Analytics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
@@ -1612,6 +1647,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove the complete default encryption configuration.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose default encryption configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed deletion or structured S3 rejection
    function Delete_Encryption
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -2282,6 +2327,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Tiering_Result;
 
    --  Remove one named intelligent-tiering configuration.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose intelligent-tiering policy is removed
+   --  @param Identifier Intelligent-tiering configuration identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed deletion or structured S3 rejection
    function Delete_Intelligent_Tiering_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
@@ -10810,6 +10866,16 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Read one directory-bucket page by waiting on the same owner-driven
    --  state machine used by composable callers. The wrapper does not start a
    --  hidden continuation request.
+   --  @param Client Configured control-endpoint client retained through drain
+   --  @param Origin Caller-selected S3 Express control endpoint
+   --  @param Parameters Complete modeled cursor and page-size presence
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Collection_Limit Caller-selected maximum decoded bucket count
+   --  @return Typed modeled page or bounded exchange failure
    function List_Directory_Buckets
      (Client           : aliased in out Flyology.HTTP.Client.Client;
       Origin           : Flyology.HTTP.Origin;
@@ -10890,6 +10956,19 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Start or restart one bucket access-control policy replacement. Operation
    --  is last so overload resolution preserves the provider-centric
    --  vocabulary.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket access-control policy value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketAcl controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @param Operation Reusable owner-driven operation restarted
    procedure Set_ACL
      (Client     : not null access Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -11002,6 +11081,19 @@ package Flyology.Object_Storage.Client.Buckets is
 
    --  Start or restart one inventory configuration replacement. Operation is
    --  last so overload resolution preserves the provider-centric vocabulary.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Inventory configuration value serialized before admission
+   --  @param Parameters Complete modeled non-resource
+   --  PutBucketInventoryConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @param Operation Reusable owner-driven operation restarted
    procedure Set_Inventory_Configuration
      (Client     : not null access Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -11129,6 +11221,20 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Start or restart one bucket logging configuration replacement. Operation
    --  is last so overload resolution preserves the provider-centric
    --  vocabulary.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket logging configuration value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketLogging
+   --  controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @param Operation Reusable owner-driven operation restarted
    procedure Set_Logging
      (Client     : not null access Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -11242,6 +11348,20 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Start or restart one bucket website configuration replacement. Operation
    --  is last so overload resolution preserves the provider-centric
    --  vocabulary.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Bucket website configuration value serialized before
+   --  admission
+   --  @param Parameters Complete modeled non-resource PutBucketWebsite
+   --  controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @param Operation Reusable owner-driven operation restarted
    procedure Set_Website
      (Client     : not null access Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;

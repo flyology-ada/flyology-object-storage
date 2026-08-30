@@ -25,6 +25,7 @@ reset_fixtures() {
   cp "$SOURCE_DIR/upload-part-certainty.tsv" "$WORK_DIR/upload.tsv"
   cp "$SOURCE_DIR/complete-multipart-certainty.tsv" "$WORK_DIR/complete.tsv"
   cp "$SOURCE_DIR/abort-multipart-certainty.tsv" "$WORK_DIR/abort.tsv"
+  cp "$SOURCE_DIR/copy-certainty.tsv" "$WORK_DIR/copy.tsv"
 }
 
 expect_rejection() {
@@ -33,6 +34,7 @@ expect_rejection() {
       "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" "$WORK_DIR/delete.tsv" \
       "$WORK_DIR/create.tsv" "$WORK_DIR/upload.tsv" \
       "$WORK_DIR/complete.tsv" "$WORK_DIR/abort.tsv" \
+      "$WORK_DIR/copy.tsv" \
       >"$WORK_DIR/stdout" 2>"$WORK_DIR/stderr"; then
     printf '%s\n' "verifier accepted invalid fixture: $label" >&2
     exit 1
@@ -48,7 +50,7 @@ reset_fixtures
   "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" \
   "$WORK_DIR/delete.tsv" "$WORK_DIR/create.tsv" \
   "$WORK_DIR/upload.tsv" "$WORK_DIR/complete.tsv" \
-  "$WORK_DIR/abort.tsv" >/dev/null
+  "$WORK_DIR/abort.tsv" "$WORK_DIR/copy.tsv" >/dev/null
 
 reset_fixtures
 awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
@@ -205,5 +207,25 @@ awk -F '\t' 'BEGIN { OFS = "\t" } $4 == "NoSuchUpload" { $5 = "Definitely_Not_Ab
   "$WORK_DIR/abort.tsv" >"$WORK_DIR/mutated.tsv"
 mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/abort.tsv"
 expect_rejection "modeled abort rejection treated as conclusive"
+
+reset_fixtures
+awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
+  "$WORK_DIR/copy.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/copy.tsv"
+expect_rejection "duplicate CopyObject input tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $4 == "ObjectNotInActiveTierError" { $6 = "Authorization_Failed" }
+  { print }' "$WORK_DIR/copy.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/copy.tsv"
+expect_rejection "misclassified CopyObject modeled error"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $5 == "Outcome_Unknown" && !done { $7 = "no"; done = 1 }
+  { print }' "$WORK_DIR/copy.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/copy.tsv"
+expect_rejection "unknown CopyObject outcome without reconciliation"
 
 printf '%s\n' "composable client fixture verifier self-tests: OK"

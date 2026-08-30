@@ -444,6 +444,16 @@ def _list_directory_provider_spec() -> str:
    --  Read one directory-bucket page by waiting on the same owner-driven
    --  state machine used by composable callers. The wrapper does not start a
    --  hidden continuation request.
+   --  @param Client Configured control-endpoint client retained through drain
+   --  @param Origin Caller-selected S3 Express control endpoint
+   --  @param Parameters Complete modeled cursor and page-size presence
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Collection_Limit Caller-selected maximum decoded bucket count
+   --  @return Typed modeled page or bounded exchange failure
    function List_Directory_Buckets
      (Client           : aliased in out Flyology.HTTP.Client.Client;
       Origin           : Flyology.HTTP.Origin;
@@ -2831,10 +2841,29 @@ def _generated_mutation_provider_spec(
             "serialized body remains owned through typed Finish and is never "
             "replayed."
         )
-        start_comment = ada_comment(
-            f"Start or restart one {item.label} replacement. Operation is "
-            "last so overload resolution preserves the provider-centric "
-            "vocabulary."
+        start_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Start or restart one {item.label} replacement. Operation "
+                "is last so overload resolution preserves the "
+                "provider-centric vocabulary.",
+                "@param Client HTTP client retained through terminal drain",
+                "@param Origin Exact HTTP origin used for routing and signing",
+                "@param Bucket Required exact target bucket",
+                f"@param Value {item.label.capitalize()} value serialized "
+                "before admission",
+                "@param Parameters Complete modeled non-resource "
+                f"{item.operation} controls",
+                "@param Identity Credentials borrowed only while signing "
+                "the request",
+                "@param Deadline Absolute admission, exchange, and drain "
+                "limit",
+                "@param Region Exact SigV4 signing region",
+                "@param Style Caller-selected S3 addressing style",
+                "@param Limits Caller-selected bounded XML limits",
+                "@param Token Optional cancellation source retained to drain",
+                "@param Operation Reusable owner-driven operation restarted",
+            )
         )
         sync_comment = ada_comment(
             f"Replace one {item.label} by waiting on the same state machine "

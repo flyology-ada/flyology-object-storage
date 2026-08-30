@@ -12,6 +12,7 @@ CREATE_FIXTURE=${6:-"$PROJECT_DIR/tests/corpora/composable-client/create-multipa
 UPLOAD_FIXTURE=${7:-"$PROJECT_DIR/tests/corpora/composable-client/upload-part-certainty.tsv"}
 COMPLETE_FIXTURE=${8:-"$PROJECT_DIR/tests/corpora/composable-client/complete-multipart-certainty.tsv"}
 ABORT_FIXTURE=${9:-"$PROJECT_DIR/tests/corpora/composable-client/abort-multipart-certainty.tsv"}
+COPY_FIXTURE=${10:-"$PROJECT_DIR/tests/corpora/composable-client/copy-certainty.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -49,6 +50,10 @@ if [ ! -f "$ABORT_FIXTURE" ]; then
   printf '%s\n' "missing AbortMultipartUpload fixture: $ABORT_FIXTURE" >&2
   exit 1
 fi
+if [ ! -f "$COPY_FIXTURE" ]; then
+  printf '%s\n' "missing CopyObject fixture: $COPY_FIXTURE" >&2
+  exit 1
+fi
 
 awk -F '\t' '
 function fail(message) {
@@ -62,6 +67,11 @@ function exact_complete(status, code, publication, reason) {
     $6 == reason
 }
 
+function modeled_invalid_request(code) {
+  return code == "InvalidRequest" || code == "InvalidWriteOffset" ||
+    code == "TooManyParts" || code == "EncryptionTypeMismatch"
+}
+
 BEGIN {
   split("Response_Complete Pre_Admission_Rejected Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Response_Invalid Response_Body_Too_Large Response_Sink_Failed", values, " ")
   for (i in values) allowed_http[values[i]] = 1
@@ -69,7 +79,7 @@ BEGIN {
   for (i in values) allowed_admission[values[i]] = 1
   split("200 400 401 403 404 409 412 429 500 502 503 504 none incomplete invalid oversized overflow-or-fault", values, " ")
   for (i in values) allowed_status[values[i]] = 1
-  split("none InvalidRequest InvalidAccessKeyId AccessDenied NoSuchBucket ConditionalRequestConflict PreconditionFailed SlowDown InternalError BadGateway RequestTimeout missing malformed not-applicable", values, " ")
+  split("none InvalidRequest InvalidWriteOffset TooManyParts EncryptionTypeMismatch InvalidAccessKeyId AccessDenied NoSuchBucket ConditionalRequestConflict PreconditionFailed SlowDown InternalError BadGateway RequestTimeout missing malformed not-applicable", values, " ")
   for (i in values) allowed_code[values[i]] = 1
   split("Published Precondition_Failed Definitely_Not_Published Outcome_Unknown Cancelled_Before_Publication", values, " ")
   for (i in values) allowed_publication[values[i]] = 1
@@ -145,8 +155,9 @@ NR == 1 {
                       "Definitely_Not_Published", "Authorization_Failed"))
     fail("authorization rejection requires exact modeled S3 semantics")
   if ($6 == "Invalid_Request" && $1 == "Response_Complete" &&
-      !exact_complete("400", "InvalidRequest",
-                      "Definitely_Not_Published", "Invalid_Request"))
+      !($2 == "Response_Observed" && $3 == "400" &&
+        modeled_invalid_request($4) &&
+        $5 == "Definitely_Not_Published" && $6 == "Invalid_Request"))
     fail("service invalid request requires exact modeled S3 semantics")
   if ($6 == "Not_Found" &&
       !exact_complete("404", "NoSuchBucket",
@@ -180,13 +191,13 @@ END {
   for (i in required)
     if (!(required[i] in result_seen))
       fail("missing HTTP result coverage for " required[i])
-  split("200:none 400:InvalidRequest 401:InvalidAccessKeyId 403:AccessDenied 404:NoSuchBucket 409:ConditionalRequestConflict 412:PreconditionFailed 429:SlowDown 500:InternalError 502:BadGateway 503:SlowDown 504:RequestTimeout 400:missing 403:missing 404:missing 412:missing 500:malformed", required, " ")
+  split("200:none 400:InvalidRequest 400:InvalidWriteOffset 400:TooManyParts 400:EncryptionTypeMismatch 401:InvalidAccessKeyId 403:AccessDenied 404:NoSuchBucket 409:ConditionalRequestConflict 412:PreconditionFailed 429:SlowDown 500:InternalError 502:BadGateway 503:SlowDown 504:RequestTimeout 400:missing 403:missing 404:missing 412:missing 500:malformed", required, " ")
   for (i in required) {
     split(required[i], pair, ":")
     if (!(pair[1] SUBSEP pair[2] in semantic_seen))
       fail("missing exact status/code coverage for " required[i])
   }
-  if (NR - 1 < 41) fail("Put fixture is unexpectedly small")
+  if (NR - 1 < 44) fail("Put fixture is unexpectedly small")
   exit failed
 }
 ' "$PUT_FIXTURE"
@@ -800,5 +811,53 @@ END {
   exit failed
 }
 ' "$ABORT_FIXTURE"
+
+awk -F '\t' '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+
+NR == 1 {
+  if (NF != 8 || $1 != "http_result" || $2 != "admission" ||
+      $3 != "status" || $4 != "s3_code" || $5 != "publication" ||
+      $6 != "failure_reason" || $7 != "reconcile" || $8 != "note")
+    fail("unexpected CopyObject fixture header")
+  next
+}
+
+{
+  if (NF != 8) fail("expected 8 tab-separated fields, got " NF)
+  if ($8 == "") fail("CopyObject qualification note must not be empty")
+  key = $1 SUBSEP $2 SUBSEP $3 SUBSEP $4
+  if (key in seen) fail("duplicate CopyObject input tuple")
+  seen[key] = 1
+  if (($5 == "Outcome_Unknown") != ($7 == "yes"))
+    fail("CopyObject reconciliation does not match publication certainty")
+  if ($5 == "Published" &&
+      !($1 == "Response_Complete" && $2 == "Response_Observed" &&
+        $3 == "200" && $4 == "none" && $6 == "No_Failure"))
+    fail("CopyObject Published requires exact complete success")
+  if ($5 == "Precondition_Failed" &&
+      !($1 == "Response_Complete" && $2 == "Response_Observed" &&
+        $3 == "412" && $4 == "PreconditionFailed" &&
+        $6 == "No_Failure"))
+    fail("CopyObject precondition disposition requires exact semantics")
+  if ($4 == "ObjectNotInActiveTierError" &&
+      !($1 == "Response_Complete" && $2 == "Response_Observed" &&
+        $3 == "403" && $5 == "Definitely_Not_Published" &&
+        $6 == "Invalid_Request" && $7 == "no"))
+    fail("CopyObject inactive-tier error is not classified exactly")
+}
+
+END {
+  if (NR != 51) fail("CopyObject fixture must contain exactly 50 rows")
+  modeled = "Response_Complete" SUBSEP "Response_Observed" SUBSEP "403" \
+    SUBSEP "ObjectNotInActiveTierError"
+  if (!(modeled in seen))
+    fail("missing modeled CopyObject inactive-tier error")
+  exit failed
+}
+' "$COPY_FIXTURE"
 
 printf '%s\n' "composable client fixtures: OK"

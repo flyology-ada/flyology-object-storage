@@ -111,6 +111,171 @@ list_directory_buckets = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+list_objects_v1 = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-objects-v1-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-objects-v1-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+list_object_versions = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-object-versions-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_list_object_versions_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-object-versions-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+list_multipart_uploads = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-multipart-uploads-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-multipart-uploads-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+list_objects_v2 = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-objects-v2-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-objects-v2-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+put_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-object-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+abort_multipart_upload = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-abort-multipart-upload-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-abort-multipart-upload-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+complete_multipart_upload = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-complete-multipart-upload-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-complete-multipart-upload-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+copy_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-copy-object-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-copy-object-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+create_bucket = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-bucket-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-create-bucket-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+create_multipart_upload = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-multipart-upload-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-create-multipart-upload-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+delete_bucket = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-delete-bucket-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+delete_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-object-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-delete-object-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+get_bucket_location = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-location-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-location-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+get_bucket_versioning = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-versioning-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-versioning-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+head_bucket = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-head-bucket-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-head-bucket-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+list_buckets = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-buckets-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-buckets-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+put_bucket_versioning = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-versioning-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-bucket-versioning-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_analytics_configuration = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketAnalyticsConfiguration"],
@@ -267,18 +432,22 @@ tier = "core"
 provider = "transfers"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "bodyless_rest_xml_and_singleton_headers"
+public_name = "Abort_Multipart_Upload"
+absence = "no dedicated absence variant; NoSuchBucket, NoSuchKey, and NoSuchUpload remain structured typed rejections with unknown abort outcome"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 204 reports Multipart_Aborted; definite non-admission reports Definitely_Not_Aborted, pre-admission cancellation reports Abort_Cancelled_Before_Admission, and every rejection or possible admission reports Abort_Outcome_Unknown; no automatic replay"
+reconciliation = "read-only ListParts for the exact bucket, key, and upload identifier before any retry or completion decision"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket, access-point, Outposts, and Requester Pays server capabilities are not claimed", "the Flyology server applies IfMatchInitiatedTime atomically to general-purpose uploads as an explicit extension; no directory-bucket compatibility claim is inferred", "abort is cleanup and cannot roll back an object already published by completion"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/abort-multipart-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/abort-multipart-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "abort_multipart_upload"
+ada_symbols = ["Prepare_Abort_Multipart_Upload", "Decode_Abort_Multipart_Complete_Response", "Execute_Abort_Multipart_Upload", "Abort_Multipart_Operation", "Abort_Multipart_Upload", "Finish"]
 
 [[operation]]
 name = "CompleteMultipartUpload"
@@ -286,18 +455,22 @@ tier = "core"
 provider = "transfers"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Complete_Multipart_Upload"
+absence = "no dedicated absence variant; NoSuchBucket, NoSuchKey, and NoSuchUpload are structured typed rejections but remain publication-unknown after admission"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 success document reports Multipart_Completed; definite non-admission reports Definitely_Not_Completed, pre-admission cancellation reports Completion_Cancelled_Before_Admission, and every complete rejection, embedded HTTP-200 S3 error, or possible or incomplete admission reports Completion_Outcome_Unknown; no automatic replay"
+reconciliation = "generation-bound HeadObject or whole Get for the exact bucket and key plus read-only ListParts for the exact upload identifier before caller-selected retry, re-initiation, or abort"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket, access-point, and Outposts routing are not claimed", "Requester Pays and server-side encryption including SSE-C remain explicit typed server capability exclusions", "trailer manifests, inner aws-chunked framing, and HTTP/2 or HTTP/3 server qualification are outside the profile", "completion or abort cannot roll back an already-published object"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/complete-multipart-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/complete-multipart-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "complete_multipart_upload"
+ada_symbols = ["Prepare_Complete_Multipart_Upload", "Decode_Complete_Multipart_Complete_Response", "Execute_Complete_Multipart_Upload", "Complete_Multipart_Operation", "Complete_Multipart_Upload", "Finish"]
 
 [[operation]]
 name = "CopyObject"
@@ -305,18 +478,22 @@ tier = "core"
 provider = "transfers"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "strict_bodyless_rest_xml_and_singleton_headers"
+public_name = "Copy_Object"
+absence = "no dedicated absence variant; exact NoSuchBucket and NoSuchKey responses are bounded structured rejections proving destination nonpublication"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 CopyObjectResult reports Published; exact PreconditionFailed reports Precondition_Failed; exact recognized non-mutating rejections report Definitely_Not_Published; pre-admission cancellation reports Cancelled_Before_Publication; possible or incomplete admission, retryable responses, embedded HTTP-200 errors, and malformed or oversized responses report Outcome_Unknown; no automatic replay"
+reconciliation = "generation-bound HeadObject or whole Get for the exact destination bucket and key before caller-selected retry; the caller must preserve and re-evaluate the exact source selector and source conditions"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket, access-point, Outposts, multi-region access point, acceleration, and cross-region routing are not claimed", "ACLs beyond private, grants, encryption including SSE-C and KMS, Requester Pays, Object Lock, non-STANDARD storage classes, and unsupported annotation controls remain explicit typed server capability exclusions", "inner aws-chunked framing and HTTP/2 or HTTP/3 server qualification are outside the profile", "ordinary CopyObject is bounded to the maintained single-copy size; larger copies require multipart UploadPartCopy", "copy cannot roll back an already-published destination"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/copy-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/copy-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "copy_object"
+ada_symbols = ["Prepare_Copy_Object", "Decode_Copy_Object_Complete_Response", "Execute_Copy_Object", "Copy_Operation", "Copy_Object", "Finish"]
 
 [[operation]]
 name = "CreateBucket"
@@ -324,18 +501,22 @@ tier = "core"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "strict_rest_xml_request_and_singleton_headers"
+public_name = "Create"
+absence = "not applicable; the request creates a new named bucket and exact conflict responses remain structured typed rejections"
+errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 reports Bucket_Creation_Completed; exact recognized non-mutating rejections or definite non-admission report Bucket_Definitely_Not_Created; pre-admission cancellation reports Bucket_Creation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed responses report Bucket_Creation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected HeadBucket for the exact bucket name, ownership context, and intended location before retry"
+exclusions = ["the server qualification covers authenticated path-style general-purpose bucket creation only; directory-bucket, access-point, and Outposts routing are not claimed", "initial tags, public or grant ACLs, Object Lock, non-enforced ownership, and explicit bucket namespace selection remain typed server capability exclusions", "cross-region redirect handling and virtual-hosted creation are not qualified", "creation cannot roll back an already-created bucket"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tools/verify-create-bucket-preparation.py", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "create_bucket"
+ada_symbols = ["Prepare_Create_Bucket", "Decode_Create_Bucket_Complete_Response", "Execute_Create_Bucket", "Create_Bucket_Operation", "Create", "Finish"]
 
 [[operation]]
 name = "CreateBucketMetadataConfiguration"
@@ -381,18 +562,22 @@ tier = "core"
 provider = "transfers"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "strict_bodyless_rest_xml_and_singleton_headers"
+public_name = "Create_Multipart_Upload"
+absence = "no dedicated absence variant; exact NoSuchBucket is a structured typed rejection proving that this request did not create a multipart upload"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 initiation result reports Multipart_Upload_Created; exact modeled non-creating rejections or definite non-admission report Definitely_Not_Created; pre-admission cancellation reports Creation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, malformed or oversized responses, and cancellation after admission report Creation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected ListMultipartUploads for the exact bucket and key before any retry; concurrent indistinguishable initiations require a caller-provided uniqueness invariant or remain unknown"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket, access-point, and Outposts routing are not claimed", "the qualified server profile supports durable content-type and checksum initiation policy while authenticated ACL, metadata, tagging, encryption, storage, payer, redirect, and Object Lock policies remain explicit typed capability exclusions", "lost initiation cannot be uniquely reconciled when concurrent requests for the same bucket and key are indistinguishable", "initiation cannot roll back an upload already created by the service"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/create-multipart-certainty.tsv", "tests/corpora/create-multipart-upload/members.tsv", "tests/corpora/create-multipart-upload/vectors.tsv", "tools/verify-create-multipart-upload-preparation.py", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/create-multipart-certainty.tsv", "tests/corpora/create-multipart-upload/members.tsv", "tests/corpora/create-multipart-upload/vectors.tsv", "tools/verify-create-multipart-upload-preparation.py", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "create_multipart_upload"
+ada_symbols = ["Prepare_Create_Multipart_Upload", "Decode_Create_Multipart_Complete_Response", "Execute_Create_Multipart_Upload", "Create_Multipart_Operation", "Create_Multipart_Upload", "Finish"]
 
 [[operation]]
 name = "CreateSession"
@@ -419,18 +604,22 @@ tier = "core"
 provider = "buckets"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "bodyless_rest_xml_and_singleton_headers"
+public_name = "Delete"
+absence = "no dedicated absence variant; exact NoSuchBucket is a structured typed rejection confirming current bucket absence and proving this request did not delete it"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 204 reports Bucket_Deletion_Completed; exact recognized non-applying rejections or definite non-admission report Bucket_Definitely_Not_Deleted; pre-admission cancellation reports Bucket_Deletion_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Deletion_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected HeadBucket for the exact bucket name and expected-owner context before any retry; current absence ends deletion work, while a present or ownership-ambiguous result requires caller policy"
+exclusions = ["server qualification is limited to authenticated path-style general-purpose bucket requests; directory-bucket/S3 Express control endpoints, access-point, and Outposts routing are not claimed", "DeleteBucket performs no recursive cleanup; objects, retained versions, delete markers, and blocking multipart state must be removed through their own operations", "deletion cannot roll back an already-deleted bucket or prevent concurrent recreation"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tools/verify-delete-bucket-preparation.py", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "delete_bucket"
+ada_symbols = ["Prepare_Delete_Bucket", "Decode_Delete_Bucket_Response", "Execute_Delete_Bucket", "Delete_Bucket_Operation", "Delete", "Finish"]
 
 [[operation]]
 name = "DeleteBucketAnalyticsConfiguration"
@@ -704,18 +893,22 @@ tier = "core"
 provider = "objects"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "bodyless_rest_xml_and_singleton_headers"
+public_name = "Delete"
+absence = "an unconditioned missing current object is idempotent success; recognized exact NoSuchBucket, NoSuchKey, and NoSuchVersion S3 rejections are structured conclusive non-deletion results"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 204 reports Deletion_Completed; a recognized exact S3 rejection or definite non-admission reports Definitely_Not_Deleted, pre-admission cancellation reports Deletion_Cancelled_Before_Admission, and every other possibly admitted or incomplete outcome reports Deletion_Outcome_Unknown; no automatic replay"
+reconciliation = "generation-bound HeadObject for the exact bucket, key, and selected version or generation predicate before retry"
+exclusions = ["directory-bucket endpoint and session behavior and directory-only time and size predicates are outside the qualified server profile", "access-point, Object Lambda, and Outposts routing are not claimed", "Requester Pays and true governance-retention bypass remain explicit server capability exclusions", "durable retained-generation deletion outside the supported memory, pure-files, and SQLite profiles is not claimed", "deletion cannot roll back an already-published mutation"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/corpora/composable-client/delete-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-objects-testing.adb", "tests/corpora/composable-client/delete-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "delete_object"
+ada_symbols = ["Prepare_Delete_Object", "Decode_Delete_Object_Complete_Response", "Execute_Delete_Object", "Delete_Operation", "Delete", "Finish"]
 
 [[operation]]
 name = "DeleteObjectAnnotation"
@@ -1282,17 +1475,21 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Get_Location"
+absence = "no dedicated absence variant; exact NoSuchBucket remains a bounded structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["qualification covers caller-supplied origins for general-purpose buckets; directory-bucket and S3 Express endpoint selection is not claimed", "access-point, Object Lambda, and Outposts endpoint discovery or rewriting is not claimed", "cross-region redirect following is not qualified"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tools/verify-get-bucket-location-preparation.py", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+qualification = "get_bucket_location"
+ada_symbols = ["Prepare_Get_Bucket_Location", "Decode_Get_Bucket_Location_Response", "Execute_Get_Bucket_Location", "Get_Bucket_Location_Operation", "Get_Location", "Finish"]
 
 [[operation]]
 name = "GetBucketLogging"
@@ -1873,17 +2070,21 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Get_Versioning"
+absence = "a 200 response with omitted Status and MFADelete is a successful Versioning_Unconfigured snapshot; no dedicated absence variant exists and exact NoSuchBucket remains a bounded structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["qualification covers caller-supplied origins for general-purpose buckets; directory-bucket and S3 Express endpoint selection is not claimed", "access-point, Object Lambda, and Outposts endpoint discovery or rewriting is not claimed", "cross-region redirect following is not qualified", "the read reports configured versioning and MFA Delete state but does not authorize or perform either mutation"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_bucket_versioning"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+ada_symbols = ["Prepare_Get_Bucket_Versioning", "Decode_Get_Bucket_Versioning_Response", "Execute_Get_Bucket_Versioning", "Get_Bucket_Versioning_Operation", "Get_Versioning", "Finish"]
 
 [[operation]]
 name = "GetBucketWebsite"
@@ -2199,17 +2400,21 @@ provider = "buckets"
 family = "response_head_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Head"
+absence = "no dedicated absence variant; a complete bodyless 404 is normalized to Not_Found without claiming that status conclusively proves bucket absence"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["qualification covers caller-supplied origins for general-purpose buckets; directory-bucket and S3 Express endpoint selection is not claimed", "access-point, Object Lambda, and Outposts endpoint discovery or rewriting is not claimed", "cross-region redirect following is not qualified"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tools/verify-head-bucket-preparation.py", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+qualification = "head_bucket"
+ada_symbols = ["Prepare_Head_Bucket", "Decode_Head_Bucket_Complete_Response", "Execute_Head_Bucket", "Head_Bucket_Operation", "Head", "Finish"]
 
 [[operation]]
 name = "HeadObject"
@@ -2608,18 +2813,22 @@ tier = "core"
 provider = "buckets"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_bounded_rest_xml_and_singleton_headers"
+public_name = "List_Page"
+absence = "no dedicated absence variant and no ListBuckets-specific absence classification; a completed non-200 response remains a structured typed S3 rejection"
+errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+reconciliation = "not applicable; every bounded page is an independent service snapshot, continuation tokens remain opaque, and no request or cross-page snapshot is retried automatically"
+exclusions = ["the pinned operation excludes directory buckets; no directory-bucket compatibility is claimed", "the caller supplies the exact service origin and signing region; when BucketRegion is present it must match that regional endpoint, and endpoint discovery or rewriting is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-server-slice.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-buckets.ads", "src/flyology-object_storage-s3-buckets.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tools/verify-list-buckets-preparation.py", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-s3-buckets.ads", "src/flyology-object_storage-s3-buckets.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-server-slice.sh", "docs/qualification/list-buckets.md"] }
+decision_status = "reviewed"
+qualification = "list_buckets"
+ada_symbols = ["Prepare_List_Buckets", "Decode_List_Buckets_Complete_Response", "Execute_List_Buckets", "List_Buckets_Operation", "List_Page", "Finish"]
 
 [[operation]]
 name = "ListDirectoryBuckets"
@@ -2715,18 +2924,22 @@ tier = "core"
 provider = "transfers"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_paginated_rest_xml_and_singleton_headers"
+public_name = "List_Multipart_Uploads_Page"
+absence = "no dedicated absence variant; a well-formed bounded 404 NoSuchBucket response is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["directory-bucket endpoint, session, and marker-order semantics are outside the qualified general-purpose path claim", "server-side configured Requester Pays accounting is not claimed; exact client RequestPayer and RequestCharged handling remains covered", "SeaweedFS 4.43 is excluded from the positive external lane because its exact-limit response omits required NextKeyMarker and initiation metadata"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage.adb", "src/flyology-object_storage-s3-multipart_uploads.ads", "src/flyology-object_storage-s3-multipart_uploads.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-s3-multipart_uploads.ads", "src/flyology-object_storage-s3-multipart_uploads.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/list-multipart-uploads/members.tsv", "tests/corpora/list-multipart-uploads/vectors.tsv", "tools/verify-list-multipart-uploads-preparation.py", "docs/qualification/list-multipart-uploads-preparation.md", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "list_multipart_uploads"
+ada_symbols = ["Prepare_List_Multipart_Uploads", "Decode_List_Multipart_Uploads_Complete_Response", "Execute_List_Multipart_Uploads", "List_Multipart_Uploads_Operation", "List_Multipart_Uploads_Page", "Finish"]
 
 [[operation]]
 name = "ListObjectAnnotations"
@@ -2834,18 +3047,22 @@ tier = "core"
 provider = "objects"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_paginated_rest_xml_and_singleton_headers"
+public_name = "List_Versions_Page"
+absence = "no dedicated absence variant; a well-formed bounded 404 NoSuchBucket response is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["directory-bucket endpoint and session semantics are outside the qualified general-purpose bucket claim", "access-point, Object Lambda, and S3 on Outposts ARN and hostname routing are not claimed", "server-side configured Requester Pays accounting is not claimed; exact client RequestPayer and RequestCharged handling remains covered", "the local server accepts RestoreStatus request syntax but supports no archival restore state and emits no RestoreStatus result", "no automatic pagination, automatic retry, or cross-page snapshot-consistency claim", "external-server interoperability is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-versions.ads", "src/flyology-object_storage-s3-versions.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_list_object_versions_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-s3-versions.ads", "src/flyology-object_storage-s3-versions.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/list-object-versions/members.tsv", "tests/corpora/list-object-versions/vectors.tsv", "tools/verify-list-object-versions-preparation.py", "docs/qualification/list-object-versions.md", "tests/src/s3_list_object_versions_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "list_object_versions"
+ada_symbols = ["Prepare_List_Object_Versions", "Decode_List_Object_Versions_Complete_Response", "Execute_List_Object_Versions", "List_Object_Versions_Operation", "List_Versions_Page", "Finish"]
 
 [[operation]]
 name = "ListObjects"
@@ -2853,18 +3070,22 @@ tier = "core"
 provider = "objects"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "paginated_rest_xml_and_singleton_headers"
+public_name = "List_V1_Page"
+absence = "no dedicated absence variant; a well-formed bounded 404 NoSuchBucket response is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["directory-bucket, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "FetchOwner is not a pinned ListObjects v1 request member", "the local server accepts RestoreStatus request syntax but supports no archival restore state and emits no RestoreStatus result", "the local server validates requester-pays syntax but makes no billing or x-amz-request-charged emission claim", "no object-version-history, automatic pagination, automatic retry, or cross-page snapshot-consistency claim", "the RustFS, SeaweedFS, and MinIO strict no-delimiter continuation subcase is excluded because those providers emit a non-modeled NextMarker; their basic ListObjects v1 path remains separately evidenced"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "list_objects_v1"
+ada_symbols = ["Prepare_List_Objects", "Decode_List_Objects_Complete_Response", "Execute_List_Objects", "List_Objects_Operation", "List_V1_Page", "Finish"]
 
 [[operation]]
 name = "ListObjectsV2"
@@ -2872,9 +3093,10 @@ tier = "core"
 provider = "objects"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "paginated_rest_xml_and_singleton_headers"
+public_name = "List_Page"
+absence = "no dedicated absence variant; a well-formed bounded 404 NoSuchBucket response is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
 exclusions = []
@@ -2882,8 +3104,11 @@ coverage = { backend = "covered", client = "covered", server = "covered", corpus
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "list_objects_v2"
+ada_symbols = ["Prepare_List_Objects_V2", "Decode_List_Objects_V2_Complete_Response", "Execute_List_Objects_V2", "List_Objects_V2_Operation", "List_Page", "Finish"]
 
 [[operation]]
 name = "ListParts"
@@ -3685,17 +3910,21 @@ provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+public_name = "Set_Versioning_Configuration"
+absence = "not applicable; the operation updates an existing bucket and exact NoSuchBucket remains a bounded structured rejection proving the requested configuration was not applied"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 reports Bucket_Versioning_Mutation_Completed; exact recognized non-mutating rejections report Bucket_Versioning_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Versioning_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Versioning_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Versioning for the exact bucket and expected owner, comparing each field explicitly present in the serialized mutation; Versioning_Unconfigured and MFA_Delete_Unconfigured preserve that field and are not comparison targets before retry"
+exclusions = ["directory buckets are unsupported by the pinned model", "qualification covers caller-supplied origins for general-purpose buckets; automatic S3 Express control-endpoint, access-point, and Outposts routing is not claimed", "the model-documented propagation interval and downstream object-version publication or listing behavior are not qualified", "external-provider compatibility is not claimed by the maintained in-process server and socket evidence", "a completed update cannot be rolled back by client cancellation"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_bucket_versioning"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+ada_symbols = ["Prepare_Put_Bucket_Versioning", "Decode_Put_Bucket_Versioning_Response", "Execute_Put_Bucket_Versioning", "Put_Bucket_Versioning_Operation", "Set_Versioning_Configuration", "Finish"]
 
 [[operation]]
 name = "PutBucketWebsite"
@@ -3728,18 +3957,22 @@ tier = "core"
 provider = "objects"
 family = "streaming_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+codec = "streaming_request_and_headers"
+public_name = "Put_Object"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected generation-bound Get_Whole before any retry"
+exclusions = ["directory-bucket and S3 Express endpoint and session semantics are outside the qualified server profile", "only STANDARD storage class is accepted as a validated no-op; other modeled storage classes are rejected", "the server explicitly rejects ACL and grant controls, write offsets, server-side encryption, SSE-C, KMS and bucket-key controls, requester-pays, Object Lock, and inner aws-chunked signature-chain controls", "the composable surface owns a bounded complete-object buffer; the established one-shot borrowed-source overload remains synchronous"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/corpora/composable-client/put-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/flyology-object_storage-client-objects-testing.adb", "tests/corpora/composable-client/put-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "put_object"
+ada_symbols = ["Prepare_Put_Object", "Decode_Put_Object_Complete_Response", "Execute_Put_Object", "Conditional_Put_Operation", "Put_Object", "Finish"]
 
 [[operation]]
 name = "PutObjectAcl"

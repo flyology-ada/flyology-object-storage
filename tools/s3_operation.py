@@ -1682,20 +1682,31 @@ def qualification_plan(
     commands = registry.qualification.get(qualification)
     if commands is None:
         raise Audit_Error(f"unknown qualification lane: {qualification}")
-    if len(operations) > 1:
-        lane_operations = {
-            name
-            for name, entry in registry.operations.items()
-            if entry.get("qualification") == qualification
-        }
-        if set(operations) != lane_operations:
-            omitted = sorted(lane_operations - set(operations))
-            extra = sorted(set(operations) - lane_operations)
-            raise Audit_Error(
-                "batch must name the complete reviewed qualification lane; "
-                f"omitted={omitted}, extra={extra}"
-            )
-    return qualification, commands
+    lane_operations = {
+        name
+        for name, entry in registry.operations.items()
+        if entry.get("qualification") == qualification
+    }
+    if set(operations) != lane_operations:
+        omitted = sorted(lane_operations - set(operations))
+        extra = sorted(set(operations) - lane_operations)
+        raise Audit_Error(
+            "batch must name the complete reviewed qualification lane; "
+            f"omitted={omitted}, extra={extra}"
+        )
+    result = [list(command) for command in commands]
+    documentation = [
+        command
+        for command in result
+        if command and command[0] == "./tools/build-api-docs.sh"
+    ]
+    if len(documentation) != 1:
+        raise Audit_Error(
+            "qualification lane must contain exactly one documentation gate"
+        )
+    for operation in operations:
+        documentation[0].extend(("--operation", operation))
+    return qualification, result
 
 
 def camel_to_ada(name: str) -> str:

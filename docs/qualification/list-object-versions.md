@@ -1,9 +1,10 @@
 # ListObjectVersions qualification
 
-This record qualifies the bounded synchronous client, strict wire codecs,
-authenticated memory, pure-files, and SQLite server routes, and the memory,
-pure-files, and SQLite backend state machines for `ListObjectVersions`. The
-memory slice
+This record defines the reviewed evidence boundary for the bounded synchronous
+and composable clients, strict wire codecs, authenticated memory, pure-files,
+and SQLite server routes, and the memory, pure-files, and SQLite backend state
+machines for `ListObjectVersions`. The focused lane establishes qualification
+only when every registered command completes successfully. The memory slice
 includes enabled and suspended delete markers, permanent selected-generation
 removal, and delimiter/common-prefix pagination. The SQLite slice additionally
 qualifies durable ordinary PUT,
@@ -105,15 +106,18 @@ The direct corpus covers every one of the ten pinned checksum algorithms, both
 checksum types, values above 32 bits and at signed 64-bit maximum, one-past
 overflow, exact and one-past document/depth/element/text limits, combined page
 count bounds, complete nested projection, malformed structure, typed errors,
-and exact signed request projection. The raw-loopback corpus adds 15 exchanges
+and exact signed request projection. The raw-loopback corpus adds 23 exchanges
 per caller for complete fragmented success, AWS-compatible empty echoes,
-structured rejection with request IDs, duplicate physical headers, every
-prepared-response binding class, malformed XML, and an oversized response. It
-also follows a URL-encoded two-page response using the wrapper's logical
-paired cursor and rejects a malformed encoded continuation marker. The same
-sequence runs from a native caller and a Flyology lightweight caller, including
-an omitted `max-keys` request bound to the modeled 1000 default, and the root
-gate repeats the executable three times.
+structured rejection with request IDs, all six reviewed failure-normalization
+classes, duplicate physical headers, every prepared-response binding class,
+malformed XML, and an oversized response. It also follows a URL-encoded
+two-page response using the wrapper's logical paired cursor and rejects a
+malformed encoded continuation marker. After admitted cancellation, the peer
+must drain before typed `Finish`; changed HTTP-client and cancellation-token
+owners are rejected before a same-object restart succeeds. The same sequence
+runs from a native caller and a Flyology lightweight caller, including an
+omitted `max-keys` request bound to the modeled 1000 default, and the root gate
+repeats the executable three times.
 
 ## Coverage boundary
 
@@ -183,6 +187,20 @@ lane repeats the retained lifecycle before and after reopening the same root;
 external interoperability is not claimed.
 
 ## Gate evidence
+
+The maintained focused command is:
+
+```sh
+FLYOLOGY_S3_SERVICE_MODEL=/path/to/service-2.json \
+  UV_CACHE_DIR=/path/to/uv-cache \
+  uv run --python 3.13 -- \
+  tools/s3-operation.py qualify ListObjectVersions
+```
+
+It owns the inventory verifier, warning-strict build, direct and raw socket
+corpora, 116-operation coverage gate, fresh selected-operation GNATdoc site,
+pinned-model repository gate, and final diff check. Historical evidence below
+does not replace a clean current run of that lane.
 
 The warning-strict root gate passed 41/41 AUnit tests with zero failed
 assertions or unexpected errors, the 126-case files crash matrix, 320 checksum

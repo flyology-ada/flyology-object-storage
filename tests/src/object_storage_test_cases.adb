@@ -11145,7 +11145,10 @@ package body Object_Storage_Test_Cases is
       declare
          Parameters : Low_Level.List_Multipart_Uploads_Parameters;
 
-         procedure Require_Rejected (Message : String) is
+         procedure Require_Rejected
+           (Message : String;
+            Bucket  : String := "example-bucket")
+         is
             Raised : Boolean := False;
          begin
             begin
@@ -11153,7 +11156,7 @@ package body Object_Storage_Test_Cases is
                   Ignored : constant Low_Level.Prepared_Request :=
                     Low_Level.Prepare_List_Multipart_Uploads
                       (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
-                       Low_Level.Path_Style, "example-bucket", Parameters,
+                       Low_Level.Path_Style, Bucket, Parameters,
                        Identity, "us-east-1", "20130524T000000Z");
                   pragma Unreferenced (Ignored);
                begin
@@ -11173,6 +11176,10 @@ package body Object_Storage_Test_Cases is
          Parameters.Request_Payer := US.To_Unbounded_String ("owner");
          Require_Rejected
            ("ListMultipartUploads accepted invalid requester payer");
+         Parameters.Request_Payer := US.Null_Unbounded_String;
+         Require_Rejected
+           ("ListMultipartUploads accepted directory bucket",
+            "directory--usw2-az1--x-s3");
       end;
 
       declare

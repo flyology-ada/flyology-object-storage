@@ -4206,7 +4206,9 @@ package body Flyology.Object_Storage.Client.Transfers is
         (Value.Status = 400
          and then Code in "InvalidArgument" | "InvalidRequest")
         or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
-        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 403
+           and then Code in "AccessDenied" | "ObjectNotInActiveTierError")
         or else
           (Value.Status = 404
            and then Code in "NoSuchBucket" | "NoSuchKey")
@@ -4224,6 +4226,9 @@ package body Flyology.Object_Storage.Client.Transfers is
          then Authentication_Failed
          elsif Value.Status = 403 and then Code = "AccessDenied"
          then Authorization_Failed
+         elsif Value.Status = 403
+           and then Code = "ObjectNotInActiveTierError"
+         then Invalid_Request
          elsif Value.Status = 404
            and then Code in "NoSuchBucket" | "NoSuchKey"
          then Not_Found

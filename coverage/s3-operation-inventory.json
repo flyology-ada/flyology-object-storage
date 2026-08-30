@@ -16,21 +16,37 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-transfers.ads",
+          "src/flyology-object_storage-client-transfers.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/abort-multipart-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/abort-multipart-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_server_application_corpus.adb"
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "bodyless_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -53,26 +69,37 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-transfers.ads",
+          "src/flyology-object_storage-client-transfers.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/complete-multipart-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/complete-multipart-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
           "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -95,22 +122,35 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-transfers.ads",
+          "src/flyology-object_storage-client-transfers.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/copy-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/copy-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -133,24 +173,34 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tools/verify-create-bucket-preparation.py",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
-          "tests/scripts/run-s3-implementation.sh"
+          "tests/scripts/run-s3-implementation.sh",
+          "tests/scripts/run-s3-server-slice.sh",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -229,21 +279,43 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-transfers.ads",
+          "src/flyology-object_storage-client-transfers.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/create-multipart-certainty.tsv",
+          "tests/corpora/create-multipart-upload/members.tsv",
+          "tests/corpora/create-multipart-upload/vectors.tsv",
+          "tools/verify-create-multipart-upload-preparation.py",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
+          "tests/corpora/composable-client/create-multipart-certainty.tsv",
+          "tests/corpora/create-multipart-upload/members.tsv",
+          "tests/corpora/create-multipart-upload/vectors.tsv",
+          "tools/verify-create-multipart-upload-preparation.py",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_server_application_corpus.adb"
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -295,25 +367,34 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_delete_bucket_configurations_corpus.adb",
-          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tools/verify-delete-bucket-preparation.py",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_delete_bucket_configurations_corpus.adb",
-          "tests/src/s3_delete_bucket_cors_corpus.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_server_application_corpus.adb"
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/run-s3-implementation.sh",
+          "tests/scripts/run-s3-server-slice.sh",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
+          "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "bodyless_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -788,11 +869,21 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.ads",
+          "src/flyology-object_storage-client-objects.adb",
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
+          "tests/corpora/composable-client/delete-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_delete_object_annotation_corpus.adb",
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
+          "tests/corpora/composable-client/delete-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tools/test-composable-client-fixtures-verifier.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
@@ -803,13 +894,14 @@
           "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "bodyless_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -1314,21 +1406,29 @@
           "tests/src/object_storage_test_cases.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tools/verify-get-bucket-location-preparation.py",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -1739,20 +1839,28 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2184,21 +2292,29 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tools/verify-head-bucket-preparation.py",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "response_head_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2401,24 +2517,36 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_create_session_tls_corpus.adb",
+          "src/flyology-object_storage-s3-buckets.ads",
+          "src/flyology-object_storage-s3-buckets.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tools/verify-list-buckets-preparation.py",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_create_session_tls_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
-          "tests/scripts/run-s3-server-slice.sh"
+          "tests/scripts/run-s3-server-slice.sh",
+          "docs/qualification/list-buckets.md"
         ],
         "server": [
+          "src/flyology-object_storage-s3-buckets.ads",
+          "src/flyology-object_storage-s3-buckets.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2480,22 +2608,40 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage.adb",
+          "src/flyology-object_storage-s3-multipart_uploads.ads",
+          "src/flyology-object_storage-s3-multipart_uploads.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-transfers.ads",
+          "src/flyology-object_storage-client-transfers.adb",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/corpora/list-multipart-uploads/members.tsv",
+          "tests/corpora/list-multipart-uploads/vectors.tsv",
+          "tools/verify-list-multipart-uploads-preparation.py",
+          "docs/qualification/list-multipart-uploads-preparation.md",
+          "tests/src/flyology-object_storage-client-transfers-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
+          "tests/scripts/test-rustfs.sh",
           "tests/scripts/test-seaweedfs.sh"
         ],
         "server": [
+          "src/flyology-object_storage-s3-multipart_uploads.ads",
+          "src/flyology-object_storage-s3-multipart_uploads.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2553,23 +2699,36 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_list_object_versions_corpus.adb"
+          "src/flyology-object_storage-s3-versions.ads",
+          "src/flyology-object_storage-s3-versions.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.ads",
+          "src/flyology-object_storage-client-objects.adb",
+          "tests/src/s3_list_object_versions_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/corpora/list-object-versions/members.tsv",
+          "tests/corpora/list-object-versions/vectors.tsv",
+          "tools/verify-list-object-versions-preparation.py",
+          "docs/qualification/list-object-versions.md",
+          "tests/src/s3_list_object_versions_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_list_object_versions_corpus.adb",
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-s3-versions.ads",
+          "src/flyology-object_storage-s3-versions.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2592,6 +2751,8 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
@@ -2609,7 +2770,7 @@
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -2631,6 +2792,8 @@
           "tests/src/object_storage_test_cases.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
@@ -2645,7 +2808,7 @@
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -3335,20 +3498,28 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
@@ -3407,18 +3578,21 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_object_legal_hold_corpus.adb",
-          "tests/src/s3_put_object_lock_configuration_corpus.adb",
-          "tests/src/s3_put_object_retention_corpus.adb"
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.adb",
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
+          "tests/corpora/composable-client/put-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
+          "tests/corpora/composable-client/put-certainty.tsv",
+          "tools/verify-composable-client-fixtures.sh",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_implementation_corpus.adb",
-          "tests/src/s3_put_object_legal_hold_corpus.adb",
-          "tests/src/s3_put_object_lock_configuration_corpus.adb",
-          "tests/src/s3_put_object_retention_corpus.adb",
           "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/test-minio.sh",
           "tests/scripts/test-rustfs.sh",
           "tests/scripts/test-seaweedfs.sh"
         ],
@@ -3429,7 +3603,7 @@
       },
       "family": "streaming_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",
