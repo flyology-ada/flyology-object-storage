@@ -211,6 +211,16 @@ create_multipart_upload = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+create_bucket_metadata_table_configuration = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-bucket-metadata-table-configuration-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_create_bucket_metadata_table_configuration_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-create-bucket-metadata-table-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_bucket = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -755,17 +765,21 @@ provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+public_name = "Create_Metadata_Table_Configuration"
+absence = "successful completion applies the requested bucket metadata-table configuration and returns no success payload; exact NoSuchBucket remains a bounded structured rejection proving the requested mutation was not applied"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 response with an empty or XML-whitespace body reports Metadata_Table_Configuration_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Metadata_Table_Configuration_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Metadata_Table_Configuration_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, non-whitespace success content, and malformed or oversized responses report Metadata_Table_Configuration_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Metadata_Table_Configuration may observe the current modeled configuration response or structured rejection before a retry, but does not prove that the lost mutation caused the observation or upgrade mutation certainty; no automatic replay"
+exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 200 with an empty or XML-whitespace response body; no other success status or non-whitespace payload tolerance is claimed", "request admission requires Content-MD5 over the exact serialized body and an optional modeled SDK checksum algorithm is bound to those same bytes", "a current Get_Metadata_Table_Configuration observation does not establish causation or authorize automatic replay", "backend persistence, authenticated server routing, and external-provider behavior are not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "create_bucket_metadata_table_configuration"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "src/flyology-object_storage-s3-metadata_tables.ads", "src/flyology-object_storage-s3-metadata_tables.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-create-bucket-metadata-table-configuration-preparation.py", "docs/qualification/create-bucket-metadata-table-configuration.md", "tests/corpora/create-bucket-metadata-table-configuration/members.tsv", "tests/corpora/create-bucket-metadata-table-configuration/vectors.tsv", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Create_Bucket_Metadata_Table_Configuration", "Execute_Create_Bucket_Metadata_Table_Configuration", "Create_Bucket_Metadata_Table_Configuration_Operation", "Create_Metadata_Table_Configuration", "Finish"]
 
 [[operation]]
 name = "CreateMultipartUpload"

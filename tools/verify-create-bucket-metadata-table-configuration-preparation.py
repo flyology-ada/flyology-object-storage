@@ -4,14 +4,20 @@
 from __future__ import annotations
 
 import csv
+import copy
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "tests/corpora/create-bucket-metadata-table-configuration"
 MODEL = ROOT / "src/flyology-object_storage-s3-model.adb"
 LOCK = ROOT / "coverage/corpora.lock.toml"
+REGISTRY = ROOT / "coverage/s3-operations.toml"
+QUALIFICATION = (
+    ROOT / "docs/qualification/create-bucket-metadata-table-configuration.md"
+)
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
@@ -39,6 +45,36 @@ VECTOR_HEADER = ["id", "direction", "layer", "category", "member_refs",
                  "stimulus", "expected_contract"]
 LOCATION = {"URI_Location": "uri-label", "Header_Location": "header",
             "Body_Location": "body", "Query_Location": "query"}
+CERTAINTY = (
+    "only a complete validated 200 response with an empty or XML-whitespace "
+    "body reports Metadata_Table_Configuration_Mutation_Completed; an exact "
+    "recognized non-mutating rejection or definite non-admission reports "
+    "Metadata_Table_Configuration_Mutation_Definitely_Not_Applied; "
+    "pre-admission cancellation reports "
+    "Metadata_Table_Configuration_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, non-whitespace "
+    "success content, and malformed or oversized responses report "
+    "Metadata_Table_Configuration_Mutation_Outcome_Unknown; no automatic "
+    "replay"
+)
+RECONCILIATION = (
+    "caller-selected Get_Metadata_Table_Configuration may observe the "
+    "current modeled configuration response or structured rejection before "
+    "a retry, but does not prove that the lost mutation caused the "
+    "observation or upgrade mutation certainty; no automatic replay"
+)
+LANE = [
+    ["uv", "run", "--python", "3.13", "--",
+     "tools/verify-create-bucket-metadata-table-configuration-preparation.py"],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_create_bucket_metadata_table_configuration_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    ["./tools/build-api-docs.sh",
+     "/private/tmp/fos-create-bucket-metadata-table-gnatdoc"],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 
 def fail(message: str) -> None:
@@ -109,6 +145,91 @@ def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
                        for row in rows):
         fail(f"{path}: empty or surplus field")
     return rows
+
+
+def registry_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "CreateBucketMetadataTableConfiguration"
+    ]
+    if len(matches) != 1:
+        fail("CreateBucketMetadataTableConfiguration is not unique")
+    return matches[0]
+
+
+def verify_registry(data: dict[str, object]) -> None:
+    entry = registry_entry(data)
+    expected = {
+        "public_name": "Create_Metadata_Table_Configuration",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "create_bucket_metadata_table_configuration",
+        "codec": "empty_response",
+        "certainty": CERTAINTY,
+        "reconciliation": RECONCILIATION,
+        "coverage": {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Create_Bucket_Metadata_Table_Configuration",
+            "Execute_Create_Bucket_Metadata_Table_Configuration",
+            "Create_Bucket_Metadata_Table_Configuration_Operation",
+            "Create_Metadata_Table_Configuration",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"CreateBucketMetadataTableConfiguration changed: {key}")
+    if "exact HTTP 200" not in entry["exclusions"][2]:
+        fail("CreateBucketMetadataTableConfiguration success changed")
+    if "Content-MD5" not in entry["exclusions"][3]:
+        fail("CreateBucketMetadataTableConfiguration checksum changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("CreateBucketMetadataTableConfiguration reconcile changed")
+    if data["qualification"].get(
+        "create_bucket_metadata_table_configuration"
+    ) != LANE:
+        fail("CreateBucketMetadataTableConfiguration lane changed")
+
+
+def verify_registry_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Create_Metadata_Configuration"),
+        (
+            "broadened success",
+            "certainty",
+            CERTAINTY.replace("validated 200", "validated 200 or 204"),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Metadata_Table_Configuration proves mutation completion",
+        ),
+        (
+            "cross-operation symbol",
+            "ada_symbols",
+            ["Prepare_Create_Bucket_Metadata_Configuration"],
+        ),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = registry_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
 
 
 def main() -> int:
@@ -206,6 +327,19 @@ def main() -> int:
                   "x-amz-sdk-checksum-algorithm"):
         if token not in source:
             fail(f"typed implementation lacks {token}")
+    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    verify_registry(registry)
+    verify_registry_negatives(registry)
+    qualification = " ".join(
+        QUALIFICATION.read_text(encoding="utf-8").split()
+    )
+    for fact in (
+        "reviewed operation as `missing / covered /",
+        "does not prove that the lost mutation caused",
+        "Repository-wide qualification remains blocked",
+    ):
+        if fact not in qualification:
+            fail(f"qualification record lacks {fact}")
     print("CreateBucketMetadataTableConfiguration preparation: 8 modeled "
           f"members, 10 exact checksum values, {len(vectors)} vectors")
     return 0

@@ -85,7 +85,8 @@ cancelled-before-admission, or outcome-unknown certainty. Any exception or
 failure after possible admission, retryable service response, unknown response,
 or certainty mismatch remains outcome-unknown. Callers reconcile read-only
 through `GetBucketMetadataTableConfiguration`; no form automatically retries
-the mutation.
+the mutation. That current observation does not prove that the lost mutation
+caused the observed state or upgrade mutation certainty.
 
 ## Corpus and coverage boundary
 
@@ -107,10 +108,11 @@ retryable, and unknown service-response families. The
 common root gate runs the entire sequence under native and Flyology lightweight
 task owners.
 
-The machine ledger records the operation as `missing / covered / missing /
-covered`. Client and corpus qualification do not manufacture backend state or
-a server route; those require separate persistence, routing, and independent
-black-box evidence.
+The machine ledger records the reviewed operation as `missing / covered /
+missing / covered` with its exact public name, certainty, reconciliation,
+symbols, evidence, and dedicated qualification lane. Client and corpus review
+does not manufacture backend state or a server route; those require separate
+persistence, routing, and independent black-box evidence.
 
 ## Formal boundary
 
@@ -131,10 +133,10 @@ The pinned operation verifier reported all eight modeled members, all ten
 checksum values, and all 13 reciprocal vectors. The 116-operation coverage
 verifier and its negative oracle were green.
 
-GNATdoc produced a nonempty API index and a 43,997-line diagnostic log. The
-index contains the destination type, serializer, public prepare/execute
-declarations, limited operation, and provider overloads; those declarations
-emitted no targeted warning. The sole exact-operation-name warning belongs to
-the preexisting generated model enumeration, and the log contains no internal
-error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel
-diagnostic.
+GNATdoc produced a nonempty API index. The index contains the destination type,
+serializer, public prepare/execute declarations, limited operation, and
+provider overloads. The focused generated-model documentation slice removed
+the sole exact-operation-name warning: the repository count fell from 35,993
+to 35,992 with no added diagnostic and an unchanged comment-stripped Ada token
+hash. Repository-wide qualification remains blocked by preexisting warnings
+outside this operation's declaration region.
