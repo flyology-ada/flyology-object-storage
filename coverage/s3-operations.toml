@@ -242,6 +242,17 @@ delete_objects = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-object-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_object_tagging = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-object-tagging-preparation.py"],
   ["./tools/verify-composable-client-fixtures.sh"],
@@ -2260,18 +2271,22 @@ tier = "core"
 provider = "objects"
 family = "streaming_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Get_Whole"
 codec = "streaming_bytes"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+absence = "an omitted VersionId selects the current object generation; an explicit nonempty selector must be echoed exactly by a successful response, while a missing object remains a structured not-found rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only; only one complete validated response whose body length, strong entity tag, explicit version selection, requester-pays admission, and whole or single-range geometry all bind to the prepared request exposes bytes; every incomplete or invalid response exposes no bytes and authorizes no mutation replay or certainty upgrade"
+reconciliation = "the exact returned VersionId and strong entity tag identify the observed generation for caller-selected follow-up reads; an omitted VersionId observes the generation current at read time and neither form proves the cause of any prior mutation"
+exclusions = ["response checksum headers are structurally validated and exposed but this client slice does not recompute payload checksum values", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "Get_Range models one range bound to one strong entity tag and does not claim multipart or multi-range response support", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/composable-client/range-get.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tools/verify-get-object-preparation.py", "docs/qualification/get-object.md", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "get_object"
+ada_symbols = ["Prepare_Get_Object", "Decode_Get_Object_Response_Head", "Decode_Get_Object_Complete_Response", "Execute_Get_Object", "Whole_Get_Operation", "Get_Whole", "Range_Get_Operation", "Get_Range", "Finish"]
 
 [[operation]]
 name = "GetObjectAcl"

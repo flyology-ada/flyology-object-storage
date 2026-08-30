@@ -62,7 +62,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketTagging | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketVersioning | Get_Versioning | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketWebsite | Get_Website | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetObject | legacy_preserved | objects | streaming_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObject | Get_Whole | objects | streaming_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAcl | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAnnotation | legacy_preserved | objects | streaming_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetObjectAttributes | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
