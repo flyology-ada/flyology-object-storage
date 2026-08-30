@@ -639,6 +639,14 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
         (Value (Low_Level.Object_Tagging_Rejected, 400, "InvalidTag"),
          Object_Tag_Mutation_Definitely_Not_Applied, Invalid_Request);
       Check_Put_Response
+        (Value (Low_Level.Object_Tagging_Rejected, 400, "InvalidDigest"),
+         Object_Tag_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Put_Response
+        (Value
+           (Low_Level.Object_Tagging_Rejected, 400,
+            "XAmzContentSHA256Mismatch"),
+         Object_Tag_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Put_Response
         (Value (Low_Level.Object_Tagging_Rejected, 404, "NoSuchVersion"),
          Object_Tag_Mutation_Definitely_Not_Applied, Not_Found);
       Check_Put_Response
@@ -661,6 +669,14 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
       Check_Get_Response
         (Value (Low_Level.Object_Tagging_Rejected, 404, "NoSuchKey"),
          Not_Found);
+      Check_Get_Response
+        (Value (Low_Level.Object_Tagging_Rejected, 400, "InvalidDigest"),
+         Corrupt_Or_Invalid_Response);
+      Check_Get_Response
+        (Value
+           (Low_Level.Object_Tagging_Rejected, 400,
+            "XAmzContentSHA256Mismatch"),
+         Corrupt_Or_Invalid_Response);
 
       Check_Delete_Response
         (Value (Low_Level.Tags_Deleted, 204),
@@ -673,6 +689,16 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
          Object_Tag_Mutation_Outcome_Unknown, Unavailable_Or_Retryable);
       Check_Delete_Response
         (Value (Low_Level.Object_Tagging_Rejected, 403),
+         Object_Tag_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (Value (Low_Level.Object_Tagging_Rejected, 400, "InvalidDigest"),
+         Object_Tag_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (Value
+           (Low_Level.Object_Tagging_Rejected, 400,
+            "XAmzContentSHA256Mismatch"),
          Object_Tag_Mutation_Outcome_Unknown,
          Corrupt_Or_Invalid_Response);
 

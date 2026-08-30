@@ -4518,7 +4518,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Object_Annotations_Outcome;
 
-   --  Complete modeled inputs for the three object-tagging operations.
+   --  Complete modeled inputs for PutObjectTagging.
+   --  @field Version_ID Optional exact object-version query value
+   --  @field Checksum_Algorithm Optional modeled request checksum selection
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Request_Payer Optional requester-pays admission value
    type Put_Object_Tagging_Parameters is record
       Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
@@ -4526,43 +4530,94 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Complete modeled inputs for GetObjectTagging.
+   --  @field Version_ID Optional exact object-version query value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Request_Payer Optional requester-pays admission value
    type Get_Object_Tagging_Parameters is record
       Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
       Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Complete modeled inputs for DeleteObjectTagging.
+   --  @field Version_ID Optional exact object-version query value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
    type Delete_Object_Tagging_Parameters is record
       Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exact signed PutObjectTagging request.
+   --  @param Origin Parsed request origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Tags Complete tag set copied during preparation
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used while signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format timestamp
+   --  @return Signed request owning the exact serialized tag document
    function Prepare_Put_Object_Tagging
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket, Key : String; Tags : Object_Tag_Set;
       Parameters : Put_Object_Tagging_Parameters; Identity : Credentials;
       Region, Timestamp : String) return Prepared_Request;
 
+   --  Prepare one exact signed GetObjectTagging request.
+   --  @param Origin Parsed request origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used while signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format timestamp
+   --  @return Signed request for the selected object version
    function Prepare_Get_Object_Tagging
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket, Key : String; Parameters : Get_Object_Tagging_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
 
+   --  Prepare one exact signed DeleteObjectTagging request.
+   --  @param Origin Parsed request origin
+   --  @param Style S3 addressing style
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used while signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format timestamp
+   --  @return Signed nonreplaying request for the selected object version
    function Prepare_Delete_Object_Tagging
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket, Key : String; Parameters : Delete_Object_Tagging_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
 
+   --  Complete modeled object-tagging response value.
+   --  @field Tags Complete decoded tag set, or empty for mutations
+   --  @field Version_ID Exact modeled response version header
    type Object_Tagging_Result is record
       Tags       : Object_Tag_Set;
       Version_ID : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of a completed object-tagging exchange.
+   --  @enum Tags_Put PutObjectTagging completed successfully
+   --  @enum Tags_Gotten GetObjectTagging returned a tag snapshot
+   --  @enum Tags_Deleted DeleteObjectTagging completed successfully
+   --  @enum Object_Tagging_Rejected Service returned a structured rejection
    type Object_Tagging_Outcome_Kind is
      (Tags_Put, Tags_Gotten, Tags_Deleted, Object_Tagging_Rejected);
 
+   --  Typed object-tagging response or structured S3 rejection.
+   --  @field Kind Selects the modeled success or rejection variant
+   --  @field Status Exact completed HTTP status
+   --  @field Result Operation-specific modeled response value
+   --  @field Error Structured S3 rejection
    type Object_Tagging_Outcome
      (Kind : Object_Tagging_Outcome_Kind := Object_Tagging_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -4625,6 +4680,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Object_Tagging_Outcome;
 
+   --  Execute one exact prepared PutObjectTagging request.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed PutObjectTagging request
+   --  @param Timeout Whole synchronous exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or structured S3 rejection
    function Execute_Put_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4632,6 +4694,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Object_Tagging_Outcome;
 
+   --  Execute one exact prepared GetObjectTagging request.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed GetObjectTagging request
+   --  @param Timeout Whole synchronous exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or structured S3 rejection
    function Execute_Get_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4639,6 +4708,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Object_Tagging_Outcome;
 
+   --  Execute one exact prepared DeleteObjectTagging request.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed DeleteObjectTagging request
+   --  @param Timeout Whole synchronous exchange budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or structured S3 rejection
    function Execute_Delete_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -7019,6 +7095,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared PutObjectTagging exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Serialized tag document retained through terminal drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Put_Object_Tagging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -7031,6 +7114,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared GetObjectTagging exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded tag-document sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Object_Tagging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -7041,6 +7130,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared DeleteObjectTagging exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable empty source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Delete_Object_Tagging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -7573,6 +7669,11 @@ private
       Requested_Get_Attributes_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Get_Attributes_Version_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  A successful explicit-version tagging response must echo this exact
+      --  selector. Empty means the request selected the current version, so
+      --  any returned version remains an observation rather than proof.
+      Requested_Object_Tagging_Version_ID :
         Ada.Strings.Unbounded.Unbounded_String;
       --  Derived request/response binding: a charged CopyObject response is
       --  valid only when the exact prepared request admitted requester pays.

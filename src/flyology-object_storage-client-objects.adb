@@ -6654,14 +6654,52 @@ package body Flyology.Object_Storage.Client.Objects is
       end if;
       Flyology.Bytes.Append (Target, Data);
    end Append_Tagging_Response;
+
+   function Tagging_Version_ID
+     (Response  : HTTP_Client.Response;
+      Requested : US.Unbounded_String;
+      Success   : Boolean) return String
+   is
+      Count : constant Natural :=
+        HTTP_Client.Header_Count (Response, "x-amz-version-id");
+      function Text_Safe (Value : String) return Boolean is
+        (for all Item of Value =>
+           Character'Pos (Item) >= 16#20#
+           and then Character'Pos (Item) /= 16#7F#);
+   begin
+      if Count > 1 or else (Success and then Count /= 1) then
+         raise Low_Level.Invalid_Response with
+           "invalid object tagging version header multiplicity";
+      elsif Count = 0 then
+         return "";
+      end if;
+      declare
+         Value : constant String :=
+           HTTP_Client.Header (Response, "x-amz-version-id");
+         Expected : constant String := US.To_String (Requested);
+      begin
+         if Value'Length = 0
+           or else not S3.Deletions.Valid_Version_ID (Value)
+           or else not Text_Safe (Value)
+           or else (Success and then Expected'Length > 0
+                    and then Value /= Expected)
+         then
+            raise Low_Level.Invalid_Response with
+              "object tagging response does not match prepared request";
+         end if;
+         return Value;
+      end;
+   end Tagging_Version_ID;
    --  These exact status/code pairs are the maintained S3 object-tagging
    --  response contract. Unpaired or unknown responses remain ambiguous.
    function Conclusive_Object_Tag_Rejection
-     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
-     ((Status = 400
-       and then Code in "BadDigest" | "InvalidArgument" | "InvalidDigest" |
-         "InvalidRequest" | "InvalidTag" | "MalformedXML" |
-         "XAmzContentSHA256Mismatch")
+     (Status : Flyology.HTTP.Status_Code; Code : String;
+      Put_Request : Boolean) return Boolean is
+     ((Status = 400 and then
+        (Code in "InvalidArgument" | "InvalidRequest"
+         or else (Put_Request and then
+           Code in "BadDigest" | "InvalidDigest" | "InvalidTag" |
+             "MalformedXML" | "XAmzContentSHA256Mismatch")))
       or else (Status = 401 and then Code = "InvalidAccessKeyId")
       or else (Status = 403 and then Code = "AccessDenied")
       or else (Status = 404
@@ -6678,7 +6716,9 @@ package body Flyology.Object_Storage.Client.Objects is
       or else (Status = 504 and then Code = "RequestTimeout"));
 
    function Object_Tag_Response_Failure
-     (Status : Flyology.HTTP.Status_Code; Code : String)
+     (Status : Flyology.HTTP.Status_Code;
+      Code : String;
+      Put_Request : Boolean)
       return Failure_Reason is
      (if Status = 401 and then Code = "InvalidAccessKeyId"
       then Authentication_Failed
@@ -6687,7 +6727,7 @@ package body Flyology.Object_Storage.Client.Objects is
       elsif Status = 404
         and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion"
       then Not_Found
-      elsif Conclusive_Object_Tag_Rejection (Status, Code)
+      elsif Conclusive_Object_Tag_Rejection (Status, Code, Put_Request)
       then Invalid_Request
       elsif Retryable_Object_Tag_Response (Status, Code)
       then Unavailable_Or_Retryable
@@ -6696,10 +6736,16 @@ package body Flyology.Object_Storage.Client.Objects is
    function Object_Tag_Read_Response_Failure
      (Status : Flyology.HTTP.Status_Code; Code : String)
       return Failure_Reason is
-     (if Status = 404
+     (if Status = 401 and then Code = "InvalidAccessKeyId"
+      then Authentication_Failed
+      elsif Status = 403 and then Code = "AccessDenied"
+      then Authorization_Failed
+      elsif Status = 404
        and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion"
       then Not_Found
-      else Object_Tag_Response_Failure (Status, Code));
+      elsif Retryable_Object_Tag_Response (Status, Code)
+      then Unavailable_Or_Retryable
+      else Corrupt_Or_Invalid_Response);
 
    function Failed_Object_Tag_Mutation_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
@@ -6721,7 +6767,7 @@ package body Flyology.Object_Storage.Client.Objects is
         (if Value.Kind = Low_Level.Object_Tagging_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Object_Tag_Rejection (Value.Status, Code);
+        Conclusive_Object_Tag_Rejection (Value.Status, Code, True);
    begin
       return
         (Kind => Put_Object_Tagging_Response_Available,
@@ -6738,7 +6784,7 @@ package body Flyology.Object_Storage.Client.Objects is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Tags_Put
             then No_Failure
-            else Object_Tag_Response_Failure (Value.Status, Code)),
+            else Object_Tag_Response_Failure (Value.Status, Code, True)),
          Admission => Admission,
          Response => Value);
    end Normalize_Put_Object_Tagging_Response;
@@ -6853,7 +6899,9 @@ package body Flyology.Object_Storage.Client.Objects is
               (Low_Level.Decode_Put_Object_Tagging_Response
                  (HTTP_Client.Status (Response),
                   Flyology.Bytes.To_Byte_String (Item.Response_Data),
-                  HTTP_Client.Header (Response, "x-amz-version-id"),
+                  Tagging_Version_ID
+                    (Response, Item.Requested_Version_ID,
+                     HTTP_Client.Status (Response) = 200),
                   HTTP_Client.Header (Response, "x-amz-request-id"),
                   HTTP_Client.Header (Response, "x-amz-id-2")),
                HTTP_Client.Certainty (HTTP_Result));
@@ -6941,6 +6989,7 @@ package body Flyology.Object_Storage.Client.Objects is
       Operation.Prepared := Low_Level.Prepare_Put_Object_Tagging
         (Origin, Style, Bucket, Key, Tags, Parameters, Identity, Region,
          Timestamp);
+      Operation.Requested_Version_ID := Parameters.Version_ID;
       Operation.Deadline := Deadline;
       Operation.Source_Position := 0;
       Flyology.Bytes.Clear (Operation.Response_Data);
@@ -7098,7 +7147,9 @@ package body Flyology.Object_Storage.Client.Objects is
               (Low_Level.Decode_Get_Object_Tagging_Response
                  (HTTP_Client.Status (Response),
                   Flyology.Bytes.To_Byte_String (Item.Response_Data),
-                  HTTP_Client.Header (Response, "x-amz-version-id"),
+                  Tagging_Version_ID
+                    (Response, Item.Requested_Version_ID,
+                     HTTP_Client.Status (Response) = 200),
                   HTTP_Client.Header (Response, "x-amz-request-id"),
                   HTTP_Client.Header (Response, "x-amz-id-2")),
                HTTP_Client.Certainty (HTTP_Result));
@@ -7185,6 +7236,7 @@ package body Flyology.Object_Storage.Client.Objects is
       Operation.Prepared := Low_Level.Prepare_Get_Object_Tagging
         (Origin, Style, Bucket, Key, Parameters, Identity, Region,
          Timestamp);
+      Operation.Requested_Version_ID := Parameters.Version_ID;
       Operation.Deadline := Deadline;
       Flyology.Bytes.Clear (Operation.Response_Data);
       Operation.Response_Limit := Natural'Min
@@ -7253,7 +7305,7 @@ package body Flyology.Object_Storage.Client.Objects is
         (if Value.Kind = Low_Level.Object_Tagging_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Object_Tag_Rejection (Value.Status, Code);
+        Conclusive_Object_Tag_Rejection (Value.Status, Code, False);
    begin
       return
         (Kind => Delete_Object_Tagging_Response_Available,
@@ -7270,7 +7322,7 @@ package body Flyology.Object_Storage.Client.Objects is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Tags_Deleted
             then No_Failure
-            else Object_Tag_Response_Failure (Value.Status, Code)),
+            else Object_Tag_Response_Failure (Value.Status, Code, False)),
          Admission => Admission,
          Response => Value);
    end Normalize_Delete_Object_Tagging_Response;
@@ -7386,7 +7438,9 @@ package body Flyology.Object_Storage.Client.Objects is
               (Low_Level.Decode_Delete_Object_Tagging_Response
                  (HTTP_Client.Status (Response),
                   Flyology.Bytes.To_Byte_String (Item.Response_Data),
-                  HTTP_Client.Header (Response, "x-amz-version-id"),
+                  Tagging_Version_ID
+                    (Response, Item.Requested_Version_ID,
+                     HTTP_Client.Status (Response) = 204),
                   HTTP_Client.Header (Response, "x-amz-request-id"),
                   HTTP_Client.Header (Response, "x-amz-id-2")),
                HTTP_Client.Certainty (HTTP_Result));
@@ -7473,6 +7527,7 @@ package body Flyology.Object_Storage.Client.Objects is
       Operation.Prepared := Low_Level.Prepare_Delete_Object_Tagging
         (Origin, Style, Bucket, Key, Parameters, Identity, Region,
          Timestamp);
+      Operation.Requested_Version_ID := Parameters.Version_ID;
       Operation.Deadline := Deadline;
       Operation.Source_Position := 0;
       Flyology.Bytes.Clear (Operation.Response_Data);

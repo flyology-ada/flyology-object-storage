@@ -26,6 +26,7 @@ reset_fixtures() {
   cp "$SOURCE_DIR/complete-multipart-certainty.tsv" "$WORK_DIR/complete.tsv"
   cp "$SOURCE_DIR/abort-multipart-certainty.tsv" "$WORK_DIR/abort.tsv"
   cp "$SOURCE_DIR/copy-certainty.tsv" "$WORK_DIR/copy.tsv"
+  cp "$SOURCE_DIR/object-tagging-certainty.tsv" "$WORK_DIR/tagging.tsv"
 }
 
 expect_rejection() {
@@ -34,7 +35,7 @@ expect_rejection() {
       "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" "$WORK_DIR/delete.tsv" \
       "$WORK_DIR/create.tsv" "$WORK_DIR/upload.tsv" \
       "$WORK_DIR/complete.tsv" "$WORK_DIR/abort.tsv" \
-      "$WORK_DIR/copy.tsv" \
+      "$WORK_DIR/copy.tsv" "$WORK_DIR/tagging.tsv" \
       >"$WORK_DIR/stdout" 2>"$WORK_DIR/stderr"; then
     printf '%s\n' "verifier accepted invalid fixture: $label" >&2
     exit 1
@@ -45,12 +46,24 @@ expect_rejection() {
   fi
 }
 
+install_tagging_mutation() {
+  original=$1
+  candidate=$2
+  label=$3
+  if cmp -s "$original" "$candidate"; then
+    printf '%s\n' "object-tagging mutation changed no row: $label" >&2
+    exit 1
+  fi
+  mv "$candidate" "$original"
+}
+
 reset_fixtures
 "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
   "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" \
   "$WORK_DIR/delete.tsv" "$WORK_DIR/create.tsv" \
   "$WORK_DIR/upload.tsv" "$WORK_DIR/complete.tsv" \
-  "$WORK_DIR/abort.tsv" "$WORK_DIR/copy.tsv" >/dev/null
+  "$WORK_DIR/abort.tsv" "$WORK_DIR/copy.tsv" \
+  "$WORK_DIR/tagging.tsv" >/dev/null
 
 reset_fixtures
 awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
@@ -227,5 +240,76 @@ awk -F '\t' 'BEGIN { OFS = "\t" }
   { print }' "$WORK_DIR/copy.tsv" >"$WORK_DIR/mutated.tsv"
 mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/copy.tsv"
 expect_rejection "unknown CopyObject outcome without reconciliation"
+
+reset_fixtures
+awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
+  "$WORK_DIR/tagging.tsv" >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "duplicate exact tuple"
+expect_rejection "duplicate object-tagging input tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $1 == "GetObjectTagging" && !done {
+    $6 = "Object_Tag_Mutation_Completed"; done = 1
+  }
+  { print }' "$WORK_DIR/tagging.tsv" >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "Get mutation certainty"
+expect_rejection "GetObjectTagging mutation certainty"
+
+reset_fixtures
+awk -F '\t' 'NR != 2' "$WORK_DIR/tagging.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "missing exact tuple"
+expect_rejection "missing exact object-tagging tuple"
+
+reset_fixtures
+awk '1; END { print "UnknownTagging\tCancelled\tNot_Admitted\tnone\tnone\t" \
+  "not-applicable\tCancelled\tno\texplicit-or-omitted\tunknown" }' \
+  "$WORK_DIR/tagging.tsv" >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "extra unknown tuple"
+expect_rejection "extra unknown object-tagging tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $2 == "Connection_Failed" && !done { $3 = "Possibly_Admitted"; done = 1 }
+  { print } END { if (!done) exit 2 }' "$WORK_DIR/tagging.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "invalid admission pairing"
+expect_rejection "invalid object-tagging admission pairing"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $2 == "Timed_Out" && !done { $7 = "Cancelled"; done = 1 }
+  { print } END { if (!done) exit 2 }' "$WORK_DIR/tagging.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "wrong failure reason"
+expect_rejection "wrong object-tagging failure reason"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $6 == "Object_Tag_Mutation_Outcome_Unknown" && !done {
+    $6 = "Object_Tag_Mutation_Definitely_Not_Applied"; $8 = "no"; done = 1
+  } { print } END { if (!done) exit 2 }' "$WORK_DIR/tagging.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "wrong disposition relation"
+expect_rejection "wrong object-tagging disposition relation"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" }
+  $1 == "DeleteObjectTagging" && $5 == "InvalidDigest" && !done {
+    $6 = "Object_Tag_Mutation_Definitely_Not_Applied";
+    $7 = "Invalid_Request"; $8 = "no"; done = 1
+  } { print } END { if (!done) exit 2 }' "$WORK_DIR/tagging.tsv" \
+  >"$WORK_DIR/mutated.tsv"
+install_tagging_mutation "$WORK_DIR/tagging.tsv" \
+  "$WORK_DIR/mutated.tsv" "Put-only code leakage"
+expect_rejection "Put-only object-tagging code leakage"
 
 printf '%s\n' "composable client fixture verifier self-tests: OK"

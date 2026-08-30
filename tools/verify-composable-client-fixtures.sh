@@ -13,6 +13,7 @@ UPLOAD_FIXTURE=${7:-"$PROJECT_DIR/tests/corpora/composable-client/upload-part-ce
 COMPLETE_FIXTURE=${8:-"$PROJECT_DIR/tests/corpora/composable-client/complete-multipart-certainty.tsv"}
 ABORT_FIXTURE=${9:-"$PROJECT_DIR/tests/corpora/composable-client/abort-multipart-certainty.tsv"}
 COPY_FIXTURE=${10:-"$PROJECT_DIR/tests/corpora/composable-client/copy-certainty.tsv"}
+TAGGING_FIXTURE=${11:-"$PROJECT_DIR/tests/corpora/composable-client/object-tagging-certainty.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -52,6 +53,10 @@ if [ ! -f "$ABORT_FIXTURE" ]; then
 fi
 if [ ! -f "$COPY_FIXTURE" ]; then
   printf '%s\n' "missing CopyObject fixture: $COPY_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$TAGGING_FIXTURE" ]; then
+  printf '%s\n' "missing object-tagging fixture: $TAGGING_FIXTURE" >&2
   exit 1
 fi
 
@@ -859,5 +864,141 @@ END {
   exit failed
 }
 ' "$COPY_FIXTURE"
+
+awk -F '\t' '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+function add_expected(row) { expected[row] = 1 }
+function disposition(op, result, admission) {
+  if (op == "GetObjectTagging") return "not-applicable"
+  if (admission != "Not_Admitted")
+    return "Object_Tag_Mutation_Outcome_Unknown"
+  if (result == "Cancelled")
+    return "Object_Tag_Mutation_Cancelled_Before_Admission"
+  return "Object_Tag_Mutation_Definitely_Not_Applied"
+}
+function note(op, admission) {
+  if (op == "GetObjectTagging")
+    return "read failure upgrades no mutation certainty"
+  if (admission == "Not_Admitted")
+    return "failure occurred before possible admission"
+  return "possibly admitted mutation is never replayed"
+}
+function add_failure(op, encoded, item, value, reconcile) {
+  split(encoded, item, ":")
+  value = disposition(op, item[2], item[3])
+  reconcile = (value == "Object_Tag_Mutation_Outcome_Unknown" ? "yes" : "no")
+  add_expected(op "\t" item[2] "\t" item[3] "\t" item[4] "\t" item[5] \
+    "\t" value "\t" item[6] "\t" reconcile \
+    "\texplicit-or-omitted\t" note(op, item[3]))
+}
+BEGIN {
+  split("PutObjectTagging GetObjectTagging DeleteObjectTagging", ops, " ")
+  failure_text = "x:Pre_Admission_Rejected:Not_Admitted:none:none:"
+  failure_text = failure_text "Invalid_Request "
+  failure_text = failure_text "x:Cancelled:Not_Admitted:none:none:Cancelled "
+  failure_text = failure_text "x:Cancelled:Possibly_Admitted:none:none:"
+  failure_text = failure_text "Cancelled "
+  failure_text = failure_text "x:Timed_Out:Not_Admitted:none:none:Timed_Out "
+  failure_text = failure_text "x:Timed_Out:Possibly_Admitted:none:none:"
+  failure_text = failure_text "Timed_Out "
+  failure_text = failure_text "x:Client_Unavailable:Not_Admitted:none:none:"
+  failure_text = failure_text "Client_Unavailable "
+  failure_text = failure_text "x:Connection_Failed:Not_Admitted:none:none:"
+  failure_text = failure_text "Connection_Failed "
+  failure_text = failure_text "x:Transport_Failed:Not_Admitted:none:none:"
+  failure_text = failure_text "Transport_Failed "
+  failure_text = failure_text "x:Transport_Failed:Possibly_Admitted:none:none:"
+  failure_text = failure_text "Transport_Failed "
+  failure_text = failure_text "x:Request_Source_Failed:Not_Admitted:none:none:"
+  failure_text = failure_text "Request_Source_Failed "
+  failure_text = failure_text "x:Request_Source_Failed:Possibly_Admitted:"
+  failure_text = failure_text "none:none:Request_Source_Failed "
+  failure_text = failure_text "x:Response_Invalid:Response_Observed:invalid:"
+  failure_text = failure_text "malformed:Corrupt_Or_Invalid_Response "
+  failure_text = failure_text "x:Response_Body_Too_Large:Response_Observed:"
+  failure_text = failure_text "oversized:none:Corrupt_Or_Invalid_Response "
+  failure_text = failure_text "x:Response_Sink_Failed:Response_Observed:"
+  failure_text = failure_text "overflow-or-fault:none:"
+  failure_text = failure_text "Corrupt_Or_Invalid_Response"
+  split(failure_text, failures, " ")
+  for (o in ops)
+    for (i in failures)
+      if (!(ops[o] == "GetObjectTagging" && i == 11))
+        add_failure(ops[o], failures[i])
+  add_expected("PutObjectTagging\tResponse_Complete\tResponse_Observed\t200" \
+    "\tnone\tObject_Tag_Mutation_Completed\tNo_Failure\tno" \
+    "\texplicit-version\texact same-version response proves completion," \
+    " not causal tag-state proof")
+  add_expected("PutObjectTagging\tResponse_Complete\tResponse_Observed\t200" \
+    "\tnone\tObject_Tag_Mutation_Completed\tNo_Failure\tno" \
+    "\tomitted-version\tcurrent-version response proves completion," \
+    " not target-version identity")
+  add_expected("GetObjectTagging\tResponse_Complete\tResponse_Observed\t200" \
+    "\tnone\tnot-applicable\tNo_Failure\tno\texplicit-version" \
+    "\texact same-version current-state observation, not causal proof")
+  add_expected("GetObjectTagging\tResponse_Complete\tResponse_Observed\t200" \
+    "\tnone\tnot-applicable\tNo_Failure\tno\tomitted-version" \
+    "\tcurrent-version observation only, with no mutation certainty")
+  add_expected("DeleteObjectTagging\tResponse_Complete\tResponse_Observed" \
+    "\t204\tnone\tObject_Tag_Mutation_Completed\tNo_Failure\tno" \
+    "\texplicit-version\texact same-version response proves completion," \
+    " not causal tag-state proof")
+  add_expected("DeleteObjectTagging\tResponse_Complete\tResponse_Observed" \
+    "\t204\tnone\tObject_Tag_Mutation_Completed\tNo_Failure\tno" \
+    "\tomitted-version\tcurrent-version response proves completion," \
+    " not target-version identity")
+  add_expected("PutObjectTagging\tResponse_Complete\tResponse_Observed\t400" \
+    "\tInvalidDigest\tObject_Tag_Mutation_Definitely_Not_Applied" \
+    "\tInvalid_Request\tno\texplicit-or-omitted" \
+    "\tput checksum rejection is conclusive")
+  add_expected("GetObjectTagging\tResponse_Complete\tResponse_Observed\t400" \
+    "\tInvalidDigest\tnot-applicable\tCorrupt_Or_Invalid_Response\tno" \
+    "\texplicit-or-omitted" \
+    "\tput-only checksum error is not a read contract")
+  add_expected("DeleteObjectTagging\tResponse_Complete\tResponse_Observed" \
+    "\t400\tInvalidDigest\tObject_Tag_Mutation_Outcome_Unknown" \
+    "\tCorrupt_Or_Invalid_Response\tyes\texplicit-or-omitted" \
+    "\tput-only checksum error is not delete evidence")
+}
+NR == 1 {
+  if (NF != 10 || $1 != "operation" || $2 != "http_result" ||
+      $3 != "admission" || $4 != "status" || $5 != "s3_code" ||
+      $6 != "disposition" || $7 != "failure_reason" ||
+      $8 != "reconcile" || $9 != "selection" || $10 != "note")
+    fail("unexpected object-tagging fixture header")
+  next
+}
+{
+  if (NF != 10 || $9 == "" || $10 == "")
+    fail("invalid object-tagging fixture row")
+  if ($1 != "PutObjectTagging" && $1 != "GetObjectTagging" &&
+      $1 != "DeleteObjectTagging") fail("unknown object-tagging operation")
+  key = $0
+  if (key in seen) fail("duplicate object-tagging input tuple")
+  seen[key] = 1
+  if (!(key in expected)) fail("unexpected object-tagging tuple")
+  operation[$1] = 1
+  if ($1 == "GetObjectTagging" && $6 != "not-applicable")
+    fail("GetObjectTagging acquired mutation certainty")
+  if (($6 == "Object_Tag_Mutation_Outcome_Unknown") != ($8 == "yes"))
+    fail("object-tagging reconciliation does not match certainty")
+  if ($5 == "InvalidDigest" && $1 != "PutObjectTagging" &&
+      $7 == "Invalid_Request")
+    fail("put-only checksum rejection leaked to another operation")
+}
+END {
+  if (!("PutObjectTagging" in operation) ||
+      !("GetObjectTagging" in operation) ||
+      !("DeleteObjectTagging" in operation))
+    fail("missing object-tagging operation")
+  for (key in expected)
+    if (!(key in seen)) fail("missing exact object-tagging tuple")
+  if (NR != 51) fail("object-tagging fixture must contain exactly 50 rows")
+  exit failed
+}
+' "$TAGGING_FIXTURE"
 
 printf '%s\n' "composable client fixtures: OK"

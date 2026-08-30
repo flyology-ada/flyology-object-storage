@@ -17504,22 +17504,99 @@ package body Object_Storage_Test_Cases is
         (Key => US.To_Unbounded_String ("team"),
          Value => US.To_Unbounded_String ("storage"));
       Parameters.Expected_Bucket_Owner := US.To_Unbounded_String ("owner");
+      Parameters.Version_ID := US.To_Unbounded_String ("version +/=");
+      Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+      Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
       declare
          Prepared : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_Put_Object_Tagging
              (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
               Low_Level.Path_Style, "example-bucket", "key with space", Tags,
               Parameters, Identity, "us-east-1", "20130524T000000Z");
+         Document : constant String :=
+           Flyology.Object_Storage.S3.Tagging.Serialize (Tags);
+         SHA256_Digest : constant String :=
+           Flyology.Object_Storage.S3.Checksums.Encode_Base64
+             (Flyology.Object_Storage.S3.Checksums.Compute
+                (Flyology.Object_Storage.S3.Core.SHA256,
+                 Flyology.Bytes.To_Array
+                   (Flyology.Bytes.From_Byte_String (Document))));
+         MD5_Digest : constant String :=
+           Flyology.Object_Storage.S3.Checksums.Encode_Base64
+             (Flyology.Object_Storage.S3.Checksums.Compute
+                (Flyology.Object_Storage.S3.Core.MD5,
+                 Flyology.Bytes.To_Array
+                   (Flyology.Bytes.From_Byte_String (Document))));
+         Canonical : constant String :=
+           Low_Level.Canonical_Request (Prepared);
       begin
          Assert
            (Low_Level.Target (Prepared) =
-              "/example-bucket/key%20with%20space?tagging"
+              "/example-bucket/key%20with%20space?tagging&versionId=" &
+              "version%20%2B%2F%3D"
             and then Ada.Strings.Fixed.Index
               (Low_Level.Signed_Headers (Prepared), "content-md5") /= 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared),
+               "x-amz-checksum-sha256") /= 0
+            and then Ada.Strings.Fixed.Index
+              (Canonical,
+               "x-amz-sdk-checksum-algorithm:SHA256") /= 0
+            and then Ada.Strings.Fixed.Index
+              (Canonical,
+               "x-amz-checksum-sha256:" & SHA256_Digest & ASCII.LF) /= 0
+            and then Ada.Strings.Fixed.Index
+              (Canonical, "content-md5:" & MD5_Digest & ASCII.LF) /= 0
             and then Ada.Strings.Fixed.Index
               (Low_Level.Canonical_Request (Prepared),
                "x-amz-expected-bucket-owner:owner") /= 0,
             "typed PutObjectTagging projection and signing");
+      end;
+      declare
+         Get_Parameters : Low_Level.Get_Object_Tagging_Parameters;
+         Delete_Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+      begin
+         Get_Parameters.Version_ID := US.To_Unbounded_String ("selected");
+         Delete_Parameters.Version_ID :=
+           US.To_Unbounded_String ("selected");
+         declare
+            Get_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Tagging
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "key",
+                 Get_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Delete_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Object_Tagging
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "key",
+                 Delete_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Get_Canonical : constant String :=
+              Low_Level.Canonical_Request (Get_Prepared);
+            Delete_Canonical : constant String :=
+              Low_Level.Canonical_Request (Delete_Prepared);
+         begin
+            Assert
+              (Low_Level.Target (Get_Prepared) =
+                 "/example-bucket/key?tagging&versionId=selected"
+               and then Low_Level.Target (Delete_Prepared) =
+                 "/example-bucket/key?tagging&versionId=selected"
+               and then Ada.Strings.Fixed.Index
+                 (Get_Canonical, "content-md5:") = 0
+               and then Ada.Strings.Fixed.Index
+                 (Get_Canonical, "x-amz-checksum-") = 0
+               and then Ada.Strings.Fixed.Index
+                 (Get_Canonical, "x-amz-sdk-checksum-algorithm:") = 0
+               and then Ada.Strings.Fixed.Index
+                 (Delete_Canonical, "content-md5:") = 0
+               and then Ada.Strings.Fixed.Index
+                 (Delete_Canonical, "x-amz-checksum-") = 0
+               and then Ada.Strings.Fixed.Index
+                 (Delete_Canonical,
+                  "x-amz-sdk-checksum-algorithm:") = 0,
+               "Get/Delete object tagging acquired Put checksum behavior");
+         end;
       end;
    end Check_Low_Level_Object_Tagging;
 

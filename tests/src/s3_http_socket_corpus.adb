@@ -802,6 +802,18 @@ procedure S3_HTTP_Socket_Corpus is
    Put_Versioning_Drain_Native : aliased Flyology.Cancellation.Token;
    Put_Versioning_Drain_Lightweight :
      aliased Flyology.Cancellation.Token;
+   Put_Tagging_Admission_Native : aliased Flyology.Cancellation.Token;
+   Put_Tagging_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Put_Tagging_Drain_Native : aliased Flyology.Cancellation.Token;
+   Put_Tagging_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   Get_Tagging_Admission_Native : aliased Flyology.Cancellation.Token;
+   Get_Tagging_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Get_Tagging_Drain_Native : aliased Flyology.Cancellation.Token;
+   Get_Tagging_Drain_Lightweight : aliased Flyology.Cancellation.Token;
+   Delete_Tagging_Admission_Native : aliased Flyology.Cancellation.Token;
+   Delete_Tagging_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Delete_Tagging_Drain_Native : aliased Flyology.Cancellation.Token;
+   Delete_Tagging_Drain_Lightweight : aliased Flyology.Cancellation.Token;
 
    type Cancellation_Exchange is
      (List_Objects_V2_Cancellation,
@@ -820,7 +832,10 @@ procedure S3_HTTP_Socket_Corpus is
       List_Multipart_Uploads_Cancellation,
       Head_Bucket_Cancellation,
       Get_Bucket_Versioning_Cancellation,
-      Put_Bucket_Versioning_Cancellation);
+      Put_Bucket_Versioning_Cancellation,
+      Put_Object_Tagging_Cancellation,
+      Get_Object_Tagging_Cancellation,
+      Delete_Object_Tagging_Cancellation);
 
    protected type Client_Results is
       procedure Report (Passed : Boolean; Detail : String := "");
@@ -1670,6 +1685,24 @@ procedure S3_HTTP_Socket_Corpus is
                         else
                            Put_Versioning_Drain_Lightweight.Request;
                         end if;
+                     when Put_Object_Tagging_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Put_Tagging_Drain_Native.Request;
+                        else
+                           Put_Tagging_Drain_Lightweight.Request;
+                        end if;
+                     when Get_Object_Tagging_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Get_Tagging_Drain_Native.Request;
+                        else
+                           Get_Tagging_Drain_Lightweight.Request;
+                        end if;
+                     when Delete_Object_Tagging_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Delete_Tagging_Drain_Native.Request;
+                        else
+                           Delete_Tagging_Drain_Lightweight.Request;
+                        end if;
                   end case;
                end Request_Drain;
             begin
@@ -1780,6 +1813,24 @@ procedure S3_HTTP_Socket_Corpus is
                      else
                         Put_Versioning_Admission_Lightweight.Request;
                      end if;
+                  when Put_Object_Tagging_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Put_Tagging_Admission_Native.Request;
+                     else
+                        Put_Tagging_Admission_Lightweight.Request;
+                     end if;
+                  when Get_Object_Tagging_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Get_Tagging_Admission_Native.Request;
+                     else
+                        Get_Tagging_Admission_Lightweight.Request;
+                     end if;
+                  when Delete_Object_Tagging_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Delete_Tagging_Admission_Native.Request;
+                     else
+                        Delete_Tagging_Admission_Lightweight.Request;
+                     end if;
                end case;
                begin
                   Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
@@ -1848,6 +1899,18 @@ procedure S3_HTTP_Socket_Corpus is
                         when Put_Bucket_Versioning_Cancellation =>
                            raise Program_Error with
                              "PutBucketVersioning cancel peer sent data " &
+                             "before drain";
+                        when Put_Object_Tagging_Cancellation =>
+                           raise Program_Error with
+                             "PutObjectTagging cancel peer sent data " &
+                             "before drain";
+                        when Get_Object_Tagging_Cancellation =>
+                           raise Program_Error with
+                             "GetObjectTagging cancel peer sent data " &
+                             "before drain";
+                        when Delete_Object_Tagging_Cancellation =>
+                           raise Program_Error with
+                             "DeleteObjectTagging cancel peer sent data " &
                              "before drain";
                      end case;
                   end if;
@@ -3941,7 +4004,44 @@ procedure S3_HTTP_Socket_Corpus is
                Omit_Content_Length => True),
             "DELETE", "/example-bucket/typed-tagged?tagging");
          Serve
-           (HTTP_Response ("200 OK", ""),
+           ("", "PUT", "/example-bucket/tag-put-cancel?tagging",
+            "<Tagging", Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==",
+            Await_Cancellation => True,
+            Cancellation_Kind => Put_Object_Tagging_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-version-id: tag-put-cancel-restart-version" & CRLF),
+            "PUT", "/example-bucket/tag-put-cancel?tagging", "<Tagging",
+            Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
+         Serve
+           ("", "GET", "/example-bucket/tag-get-cancel?tagging",
+            Await_Cancellation => True,
+            Cancellation_Kind => Get_Object_Tagging_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+               "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
+               "</TagSet></Tagging>",
+               "x-amz-version-id: tag-get-cancel-restart-version" & CRLF),
+            "GET", "/example-bucket/tag-get-cancel?tagging");
+         Serve
+           ("", "DELETE", "/example-bucket/tag-delete-cancel?tagging",
+            Await_Cancellation => True,
+            Cancellation_Kind => Delete_Object_Tagging_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: tag-delete-cancel-restart-version" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-cancel?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-version-id: convenient-put" & CRLF),
             "PUT", "/example-bucket/convenient-tagged?tagging", "<Tagging",
             Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
          Serve
@@ -3949,12 +4049,99 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK",
                "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
                "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
-               "</TagSet></Tagging>"),
+               "</TagSet></Tagging>",
+               "x-amz-version-id: convenient-get" & CRLF),
             "GET", "/example-bucket/convenient-tagged?tagging");
          Serve
            (HTTP_Response
-              ("204 No Content", "", Omit_Content_Length => True),
+              ("204 No Content", "",
+               "x-amz-version-id: convenient-delete" & CRLF,
+               Omit_Content_Length => True),
             "DELETE", "/example-bucket/convenient-tagged?tagging");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/example-bucket/tag-put-missing?tagging", "<Tagging",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-version-id: duplicate" & CRLF &
+               "x-amz-version-id: duplicate" & CRLF),
+            "PUT", "/example-bucket/tag-put-duplicate?tagging", "<Tagging",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-version-id: wrong-put" & CRLF),
+            "PUT", "/example-bucket/tag-put-mismatch?tagging&" &
+              "versionId=expected-put", "<Tagging",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-version-id: bad" &
+               Character'Val (1) & "put" & CRLF),
+            "PUT", "/example-bucket/tag-put-control?tagging", "<Tagging",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-version-id: bad" &
+               Character'Val (127) & "put" & CRLF),
+            "PUT", "/example-bucket/tag-put-del?tagging", "<Tagging",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", Tagging_XML),
+            "GET", "/example-bucket/tag-get-missing?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", Tagging_XML,
+               "x-amz-version-id: duplicate" & CRLF &
+               "x-amz-version-id: duplicate" & CRLF),
+            "GET", "/example-bucket/tag-get-duplicate?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", Tagging_XML,
+               "x-amz-version-id: wrong-get" & CRLF),
+            "GET", "/example-bucket/tag-get-mismatch?tagging&" &
+              "versionId=expected-get");
+         Serve
+           (HTTP_Response
+              ("200 OK", Tagging_XML, "x-amz-version-id: bad" &
+               Character'Val (1) & "get" & CRLF),
+            "GET", "/example-bucket/tag-get-control?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", Tagging_XML, "x-amz-version-id: bad" &
+               Character'Val (127) & "get" & CRLF),
+            "GET", "/example-bucket/tag-get-del?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-missing?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: duplicate" & CRLF &
+               "x-amz-version-id: duplicate" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-duplicate?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: wrong-delete" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-mismatch?tagging&" &
+              "versionId=expected-delete");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-version-id: bad" &
+               Character'Val (1) & "delete" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-control?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-version-id: bad" &
+               Character'Val (127) & "delete" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/tag-delete-del?tagging");
          Serve
            (HTTP_Response
               ("204 No Content", "",
@@ -13509,6 +13696,8 @@ procedure S3_HTTP_Socket_Corpus is
             --  active transport child are the only simultaneous operations.
             Set : aliased Flyology.Operations.Completion_Set (3);
          begin
+            --  An omitted selector observes the version returned by the
+            --  completed exchange; it does not establish causal mutation.
             Tags.Length := 1;
             Tags.Items (1) :=
               (Key => US.To_Unbounded_String ("team"),
@@ -13655,6 +13844,409 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
+               procedure Run_Put_Tagging_Cancellation is
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+               begin
+                  if Round = 1 then
+                     Put_Tagging_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Put_Tagging_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Put_Tagging_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Put_Tagging_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale PutObjectTagging cancellation readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Put_Object_Tagging_Operation :=
+                       Put_Tags
+                         (Cancel_Set'Access, HTTP'Access, Origin,
+                          "example-bucket", "tag-put-cancel", Tags,
+                          Put_Parameters, Identity,
+                          HTTP_Client.Deadline_After (5.0),
+                          Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Put_Object_Tagging_Result;
+                     HTTP_Rejected, Token_Rejected : Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "PutObjectTagging did not remain active through " &
+                          "admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Put_Object_Tagging_Exchange_Failed
+                       or else Result.Disposition /=
+                         Object_Tag_Mutation_Outcome_Unknown
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                       or else Result.Admission /=
+                         HTTP_Client.Possibly_Admitted
+                     then
+                        raise Program_Error with
+                          "admitted PutObjectTagging cancellation mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "PutObjectTagging drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Put_Tags
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           "tag-put-cancel", Tags, Put_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "PutObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     begin
+                        Put_Tags
+                          (HTTP'Access, Origin, "example-bucket",
+                           "tag-put-cancel", Tags, Put_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "PutObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     if not HTTP_Rejected or else not Token_Rejected then
+                        raise Program_Error with
+                          "PutObjectTagging accepted a changed owner";
+                     end if;
+                     Put_Tags
+                       (HTTP'Access, Origin, "example-bucket",
+                        "tag-put-cancel", Tags, Put_Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Put_Object_Tagging_Response_Available
+                       or else Result.Disposition /=
+                         Object_Tag_Mutation_Completed
+                       or else Result.Failure /= No_Failure
+                       or else Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Result.Response.Kind /= Low_Level.Tags_Put
+                       or else Result.Response.Status /= 200
+                       or else US.To_String
+                         (Result.Response.Result.Version_ID) /=
+                           "tag-put-cancel-restart-version"
+                     then
+                        raise Program_Error with
+                          "same-object PutObjectTagging restart mismatch";
+                     end if;
+                  end;
+               end Run_Put_Tagging_Cancellation;
+
+               procedure Run_Get_Tagging_Cancellation is
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+               begin
+                  if Round = 1 then
+                     Get_Tagging_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Get_Tagging_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Get_Tagging_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Get_Tagging_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale GetObjectTagging cancellation readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Get_Object_Tagging_Operation :=
+                       Get_Tags
+                         (Cancel_Set'Access, HTTP'Access, Origin,
+                          "example-bucket", "tag-get-cancel",
+                          Get_Parameters, Identity,
+                          HTTP_Client.Deadline_After (5.0),
+                          Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Get_Object_Tagging_Result;
+                     HTTP_Rejected, Token_Rejected : Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "GetObjectTagging did not remain active through " &
+                          "admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Get_Object_Tagging_Exchange_Failed
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                       or else Result.Admission /=
+                         HTTP_Client.Possibly_Admitted
+                     then
+                        raise Program_Error with
+                          "admitted GetObjectTagging cancellation mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "GetObjectTagging drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Get_Tags
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           "tag-get-cancel", Get_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "GetObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     begin
+                        Get_Tags
+                          (HTTP'Access, Origin, "example-bucket",
+                           "tag-get-cancel", Get_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "GetObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     if not HTTP_Rejected or else not Token_Rejected then
+                        raise Program_Error with
+                          "GetObjectTagging accepted a changed owner";
+                     end if;
+                     Get_Tags
+                       (HTTP'Access, Origin, "example-bucket",
+                        "tag-get-cancel", Get_Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Get_Object_Tagging_Response_Available
+                       or else Result.Failure /= No_Failure
+                       or else Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Result.Response.Kind /= Low_Level.Tags_Gotten
+                       or else Result.Response.Status /= 200
+                       or else Result.Response.Result.Tags /= Tags
+                       or else US.To_String
+                         (Result.Response.Result.Version_ID) /=
+                           "tag-get-cancel-restart-version"
+                     then
+                        raise Program_Error with
+                          "same-object GetObjectTagging restart mismatch";
+                     end if;
+                  end;
+               end Run_Get_Tagging_Cancellation;
+
+               procedure Run_Delete_Tagging_Cancellation is
+                  Cancel_Token : aliased Flyology.Cancellation.Token;
+                  Changed_Token : aliased Flyology.Cancellation.Token;
+                  Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+                  Admission_Requested, Drain_Requested : Boolean;
+               begin
+                  if Round = 1 then
+                     Delete_Tagging_Admission_Native.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Delete_Tagging_Drain_Native.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  else
+                     Delete_Tagging_Admission_Lightweight.Wait_Source
+                       (Admission_FD, Admission_Requested);
+                     Delete_Tagging_Drain_Lightweight.Wait_Source
+                       (Drain_FD, Drain_Requested);
+                  end if;
+                  if Admission_Requested or else Drain_Requested
+                    or else Admission_FD < 0 or else Drain_FD < 0
+                  then
+                     raise Program_Error with
+                       "stale DeleteObjectTagging cancellation readiness";
+                  end if;
+                  declare
+                     Cancel_Set : aliased Operations.Completion_Set (5);
+                     Operation : Delete_Object_Tagging_Operation :=
+                       Delete_Tags
+                         (Cancel_Set'Access, HTTP'Access, Origin,
+                          "example-bucket", "tag-delete-cancel",
+                          Delete_Parameters, Identity,
+                          HTTP_Client.Deadline_After (5.0),
+                          Token => Cancel_Token'Access);
+                     Admission_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Admission_FD,
+                          Flyology.IO.For_Read);
+                     Drain_Ready : Flyology.IO.Readiness_Operation :=
+                       Flyology.IO.Wait
+                         (Cancel_Set'Access, Drain_FD,
+                          Flyology.IO.For_Read);
+                     Batch : Operations.Completion_Batch
+                       (Cancel_Set.Capacity);
+                     Result : Delete_Object_Tagging_Result;
+                     HTTP_Rejected, Token_Rejected : Boolean := False;
+                  begin
+                     Operations.Wait_Some (Cancel_Set, Batch);
+                     if Batch.Count = 0
+                       or else not Operations.Is_Terminal (Admission_Ready)
+                       or else not Operations.Is_Active (Drain_Ready)
+                       or else not Operations.Is_Active (Operation)
+                     then
+                        raise Program_Error with
+                          "DeleteObjectTagging did not remain active " &
+                          "through admission";
+                     end if;
+                     Flyology.IO.Finish (Admission_Ready);
+                     Operations.Cancel (Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /= Delete_Object_Tagging_Exchange_Failed
+                       or else Result.Disposition /=
+                         Object_Tag_Mutation_Outcome_Unknown
+                       or else Result.Failure /= Client_API.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                       or else Result.Admission /=
+                         HTTP_Client.Possibly_Admitted
+                     then
+                        raise Program_Error with
+                          "admitted DeleteObjectTagging cancellation " &
+                          "mismatch";
+                     end if;
+                     if not Operations.Is_Terminal (Drain_Ready) then
+                        raise Program_Error with
+                          "DeleteObjectTagging drain was not acknowledged";
+                     end if;
+                     Flyology.IO.Finish (Drain_Ready);
+                     begin
+                        Delete_Tags
+                          (Changed_HTTP'Access, Origin, "example-bucket",
+                           "tag-delete-cancel", Delete_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Cancel_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           HTTP_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "DeleteObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     begin
+                        Delete_Tags
+                          (HTTP'Access, Origin, "example-bucket",
+                           "tag-delete-cancel", Delete_Parameters, Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Token => Changed_Token'Access,
+                           Operation => Operation);
+                     exception
+                        when Error : Program_Error =>
+                           Token_Rejected :=
+                             Ada.Exceptions.Exception_Message (Error) =
+                               "DeleteObjectTagging restart changed a " &
+                               "retained owner";
+                     end;
+                     if not HTTP_Rejected or else not Token_Rejected then
+                        raise Program_Error with
+                          "DeleteObjectTagging accepted a changed owner";
+                     end if;
+                     Delete_Tags
+                       (HTTP'Access, Origin, "example-bucket",
+                        "tag-delete-cancel", Delete_Parameters, Identity,
+                        HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                     Operations.Wait_All (Cancel_Set);
+                     Finish (Operation, Result);
+                     if Result.Kind /=
+                         Delete_Object_Tagging_Response_Available
+                       or else Result.Disposition /=
+                         Object_Tag_Mutation_Completed
+                       or else Result.Failure /= No_Failure
+                       or else Result.Admission /=
+                         HTTP_Client.Response_Observed
+                       or else Result.Response.Kind /= Low_Level.Tags_Deleted
+                       or else Result.Response.Status /= 204
+                       or else US.To_String
+                         (Result.Response.Result.Version_ID) /=
+                           "tag-delete-cancel-restart-version"
+                     then
+                        raise Program_Error with
+                          "same-object DeleteObjectTagging restart mismatch";
+                     end if;
+                  end;
+               end Run_Delete_Tagging_Cancellation;
+            begin
+               Run_Put_Tagging_Cancellation;
+               Run_Get_Tagging_Cancellation;
+               Run_Delete_Tagging_Cancellation;
+            end;
+            declare
                Put_Result : constant Objects.Tagging_Outcome :=
                  Objects.Put_Tags
                    (HTTP, Origin, "example-bucket", "convenient-tagged",
@@ -13669,13 +14261,211 @@ procedure S3_HTTP_Socket_Corpus is
                     Identity, Timeout => 5.0);
             begin
                if Put_Result.Kind /= Objects.Tags_Replaced
+                 or else US.To_String
+                   (Put_Result.Result.Version_ID) /= "convenient-put"
                  or else Get_Result.Kind /= Objects.Tags_Read
                  or else Get_Result.Result.Tags /= Tags
+                 or else US.To_String
+                   (Get_Result.Result.Version_ID) /= "convenient-get"
                  or else Delete_Result.Kind /= Objects.Tags_Cleared
+                 or else US.To_String
+                   (Delete_Result.Result.Version_ID) /= "convenient-delete"
                then
                   raise Program_Error with
                     "convenient object tagging socket flow mismatch";
                end if;
+            end;
+            declare
+               type Tagging_Operation_Kind is
+                 (Put_Tagging, Get_Tagging, Delete_Tagging);
+               type Invalid_Version_Kind is
+                 (Missing, Duplicate, Mismatch, Control, Delete_Control);
+
+               function Name (Kind : Tagging_Operation_Kind) return String is
+                 (case Kind is
+                    when Put_Tagging => "put",
+                    when Get_Tagging => "get",
+                    when Delete_Tagging => "delete");
+
+               function Suffix (Invalid : Invalid_Version_Kind)
+                 return String is
+                 (case Invalid is
+                    when Missing => "missing",
+                    when Duplicate => "duplicate",
+                    when Mismatch => "mismatch",
+                    when Control => "control",
+                    when Delete_Control => "del");
+
+               procedure Require_Invalid_Version
+                 (Kind : Tagging_Operation_Kind;
+                  Invalid : Invalid_Version_Kind)
+               is
+                  Key : constant String :=
+                    "tag-" & Name (Kind) & "-" & Suffix (Invalid);
+                  Selected : constant String :=
+                    (if Invalid = Mismatch
+                     then "expected-" & Name (Kind) else "");
+                  Put_Params : Low_Level.Put_Object_Tagging_Parameters;
+                  Get_Params : Low_Level.Get_Object_Tagging_Parameters;
+                  Delete_Params :
+                    Low_Level.Delete_Object_Tagging_Parameters;
+                  Rejected : Boolean := False;
+               begin
+                  Put_Params.Version_ID := US.To_Unbounded_String (Selected);
+                  Get_Params.Version_ID := US.To_Unbounded_String (Selected);
+                  Delete_Params.Version_ID :=
+                    US.To_Unbounded_String (Selected);
+                  if Invalid in Missing | Duplicate then
+                     begin
+                        case Kind is
+                           when Put_Tagging =>
+                              declare
+                                 Prepared : constant
+                                   Low_Level.Prepared_Request :=
+                                     Low_Level.Prepare_Put_Object_Tagging
+                                       (Origin, Low_Level.Path_Style,
+                                        "example-bucket", Key, Tags,
+                                        Put_Params, Identity, "us-east-1",
+                                        "20130524T000000Z");
+                                 Ignored : constant
+                                   Low_Level.Object_Tagging_Outcome :=
+                                     Low_Level.Execute_Put_Object_Tagging
+                                       (HTTP, Prepared, Timeout => 5.0);
+                                 pragma Unreferenced (Ignored);
+                              begin
+                                 null;
+                              end;
+                           when Get_Tagging =>
+                              declare
+                                 Prepared : constant
+                                   Low_Level.Prepared_Request :=
+                                     Low_Level.Prepare_Get_Object_Tagging
+                                       (Origin, Low_Level.Path_Style,
+                                        "example-bucket", Key, Get_Params,
+                                        Identity, "us-east-1",
+                                        "20130524T000000Z");
+                                 Ignored : constant
+                                   Low_Level.Object_Tagging_Outcome :=
+                                     Low_Level.Execute_Get_Object_Tagging
+                                       (HTTP, Prepared, Timeout => 5.0);
+                                 pragma Unreferenced (Ignored);
+                              begin
+                                 null;
+                              end;
+                           when Delete_Tagging =>
+                              declare
+                                 Prepared : constant
+                                   Low_Level.Prepared_Request :=
+                                     Low_Level.Prepare_Delete_Object_Tagging
+                                       (Origin, Low_Level.Path_Style,
+                                        "example-bucket", Key,
+                                        Delete_Params, Identity,
+                                        "us-east-1", "20130524T000000Z");
+                                 Ignored : constant
+                                   Low_Level.Object_Tagging_Outcome :=
+                                     Low_Level.Execute_Delete_Object_Tagging
+                                       (HTTP, Prepared, Timeout => 5.0);
+                                 pragma Unreferenced (Ignored);
+                              begin
+                                 null;
+                              end;
+                        end case;
+                     exception
+                        when Low_Level.Invalid_Response =>
+                           Rejected := True;
+                     end;
+                  else
+                     declare
+                        Invalid_Set : aliased
+                          Flyology.Operations.Completion_Set (3);
+                     begin
+                        case Kind is
+                           when Put_Tagging =>
+                              declare
+                                 Operation : Put_Object_Tagging_Operation :=
+                                   Put_Tags
+                                     (Invalid_Set'Access, HTTP'Access,
+                                      Origin, "example-bucket", Key, Tags,
+                                      Put_Params, Identity,
+                                      HTTP_Client.Deadline_After (5.0));
+                                 Result : Put_Object_Tagging_Result;
+                              begin
+                                 Operations.Wait_All (Invalid_Set);
+                                 Finish (Operation, Result);
+                                 Rejected :=
+                                   Result.Kind =
+                                     Put_Object_Tagging_Exchange_Failed
+                                   and then Result.Disposition =
+                                     Object_Tag_Mutation_Outcome_Unknown
+                                   and then Result.Failure =
+                                     Corrupt_Or_Invalid_Response
+                                   and then Result.Admission =
+                                     HTTP_Client.Response_Observed
+                                   and then Result.HTTP_Result =
+                                     HTTP_Client.Response_Invalid;
+                              end;
+                           when Get_Tagging =>
+                              declare
+                                 Operation : Get_Object_Tagging_Operation :=
+                                   Get_Tags
+                                     (Invalid_Set'Access, HTTP'Access,
+                                      Origin, "example-bucket", Key,
+                                      Get_Params, Identity,
+                                      HTTP_Client.Deadline_After (5.0));
+                                 Result : Get_Object_Tagging_Result;
+                              begin
+                                 Operations.Wait_All (Invalid_Set);
+                                 Finish (Operation, Result);
+                                 Rejected :=
+                                   Result.Kind =
+                                     Get_Object_Tagging_Exchange_Failed
+                                   and then Result.Failure =
+                                     Corrupt_Or_Invalid_Response
+                                   and then Result.Admission =
+                                     HTTP_Client.Response_Observed
+                                   and then Result.HTTP_Result =
+                                     HTTP_Client.Response_Invalid;
+                              end;
+                           when Delete_Tagging =>
+                              declare
+                                 Operation :
+                                   Delete_Object_Tagging_Operation :=
+                                     Delete_Tags
+                                       (Invalid_Set'Access, HTTP'Access,
+                                        Origin, "example-bucket", Key,
+                                        Delete_Params, Identity,
+                                        HTTP_Client.Deadline_After (5.0));
+                                 Result : Delete_Object_Tagging_Result;
+                              begin
+                                 Operations.Wait_All (Invalid_Set);
+                                 Finish (Operation, Result);
+                                 Rejected :=
+                                   Result.Kind =
+                                     Delete_Object_Tagging_Exchange_Failed
+                                   and then Result.Disposition =
+                                     Object_Tag_Mutation_Outcome_Unknown
+                                   and then Result.Failure =
+                                     Corrupt_Or_Invalid_Response
+                                   and then Result.Admission =
+                                     HTTP_Client.Response_Observed
+                                   and then Result.HTTP_Result =
+                                     HTTP_Client.Response_Invalid;
+                              end;
+                        end case;
+                     end;
+                  end if;
+                  if not Rejected then
+                     raise Program_Error with
+                       Name (Kind) & " object tagging accepted " &
+                       Suffix (Invalid) & " version response";
+                  end if;
+               end Require_Invalid_Version;
+            begin
+               for Kind in Tagging_Operation_Kind loop
+                  for Invalid in Invalid_Version_Kind loop
+                     Require_Invalid_Version (Kind, Invalid);
+                  end loop;
+               end loop;
             end;
             declare
                Stop : aliased Flyology.Cancellation.Token;
