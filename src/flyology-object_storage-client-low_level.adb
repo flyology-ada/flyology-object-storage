@@ -5279,6 +5279,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Result.Requested_Get_Attributes_Request_Payer :=
            Parameters.Request_Payer;
          Result.Requested_Get_Attributes_Version_ID := Parameters.Version_ID;
+         Result.Requested_Get_Attributes_Selection := Parameters.Attributes;
+         Result.Requested_Get_Attributes_Has_Max_Parts :=
+           Parameters.Has_Max_Parts;
+         Result.Requested_Get_Attributes_Max_Parts := Parameters.Max_Parts;
+         Result.Requested_Get_Attributes_Has_Part_Marker :=
+           Parameters.Has_Part_Number_Marker;
+         Result.Requested_Get_Attributes_Part_Marker :=
+           Parameters.Part_Number_Marker;
       end return;
    exception
       when S3.Attributes.Malformed_Attributes | Constraint_Error =>
@@ -5386,6 +5394,92 @@ package body Flyology.Object_Storage.Client.Low_Level is
          then
             raise Invalid_Response with
               "GetObjectAttributes response does not match request";
+         end if;
+         if Outcome.Kind = Object_Attributes_Found then
+            declare
+               Selection : S3.Attributes.Attribute_Selection renames
+                 Prepared.Requested_Get_Attributes_Selection;
+               Value : S3.Attributes.Get_Object_Attributes_Result renames
+                 Outcome.Result.Attributes;
+            begin
+               if (Value.Has_Entity_Tag and then not Selection.Entity_Tag)
+                 or else (Value.Has_Checksum and then not Selection.Checksum)
+                 or else
+                   (Value.Has_Object_Parts and then not Selection.Object_Parts)
+                 or else
+                   (Value.Has_Storage_Class
+                    and then not Selection.Storage_Class)
+                 or else
+                   (Value.Object_Size.Is_Set
+                    and then not Selection.Object_Size)
+               then
+                  raise Invalid_Response with
+                    "GetObjectAttributes returned an unrequested attribute";
+               end if;
+               if Value.Has_Object_Parts then
+                  declare
+                     Page : S3.Attributes.Object_Parts_Result renames
+                       Value.Object_Parts;
+                     Count : constant Natural := Natural (Page.Parts.Length);
+                     Requested_Marker : constant Natural :=
+                       (if
+                          Prepared.Requested_Get_Attributes_Has_Part_Marker
+                        then Natural
+                          (Prepared.Requested_Get_Attributes_Part_Marker)
+                        else 0);
+                     Requested_Maximum : constant Natural :=
+                       (if Prepared.Requested_Get_Attributes_Has_Max_Parts
+                        then Natural
+                          (Prepared.Requested_Get_Attributes_Max_Parts)
+                        else 1_000);
+                  begin
+                     if not Page.Total_Parts_Count.Is_Set
+                       or else not Page.Part_Number_Marker.Is_Set
+                       or else not Page.Max_Parts.Is_Set
+                       or else not Page.Has_Is_Truncated
+                       or else Page.Part_Number_Marker.Value /=
+                         Requested_Marker
+                       or else Page.Max_Parts.Value /= Requested_Maximum
+                       or else Count > Requested_Maximum
+                       or else (Page.Is_Truncated and then Count = 0)
+                       or else
+                         (Page.Is_Truncated /=
+                            Page.Next_Part_Number_Marker.Is_Set)
+                       or else
+                         (Page.Next_Part_Number_Marker.Is_Set
+                          and then Page.Next_Part_Number_Marker.Value <=
+                            Page.Part_Number_Marker.Value)
+                     then
+                        raise Invalid_Response with
+                          "invalid GetObjectAttributes pagination geometry";
+                     end if;
+                     if Count > 0
+                       and then Page.Parts.First_Element.Number.Value <=
+                         Page.Part_Number_Marker.Value
+                     then
+                        raise Invalid_Response with
+                          "invalid GetObjectAttributes part marker";
+                     end if;
+                     if Page.Next_Part_Number_Marker.Is_Set
+                       and then Page.Next_Part_Number_Marker.Value /=
+                         Page.Parts.Last_Element.Number.Value
+                     then
+                        raise Invalid_Response with
+                          "invalid GetObjectAttributes next part marker";
+                     end if;
+                     if Prepared.Requested_Get_Attributes_Has_Max_Parts
+                       and then Requested_Maximum = 0
+                       and then
+                         (Count /= 0
+                          or else Page.Is_Truncated
+                          or else Page.Next_Part_Number_Marker.Is_Set)
+                     then
+                        raise Invalid_Response with
+                          "invalid GetObjectAttributes zero-size page";
+                     end if;
+                  end;
+               end if;
+            end;
          end if;
          return Outcome;
       end;

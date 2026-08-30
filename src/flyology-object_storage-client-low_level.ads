@@ -2113,6 +2113,19 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
+   --  An explicitly present Max_Parts value of zero requests an empty parts
+   --  page while retaining the total count and a terminal pagination shape.
+   --  @field Version_ID Optional exact object-version selector
+   --  @field Max_Parts Requested object-parts page size
+   --  @field Has_Max_Parts Whether Max_Parts is present on the wire
+   --  @field Part_Number_Marker Exclusive completed-part marker
+   --  @field Has_Part_Number_Marker Whether the marker is present
+   --  @field SSE_Customer_Algorithm Optional SSE-C algorithm
+   --  @field SSE_Customer_Key Optional base64 SSE-C key
+   --  @field SSE_Customer_Key_MD5 Required digest for the SSE-C key
+   --  @field Request_Payer Optional requester-pays admission token
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field Attributes Exact requested result groups
    type Get_Object_Attributes_Parameters is record
       Version_ID               : Ada.Strings.Unbounded.Unbounded_String;
       Max_Parts                : S3.Core.Page_Size := 1_000;
@@ -2129,6 +2142,15 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Validate and sign one typed GetObjectAttributes request. Optional
    --  numeric members are emitted only when their presence flag is true.
+   --  @param Origin Exact configured HTTP origin
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Bucket Exact target bucket
+   --  @param Key Exact target object key
+   --  @param Parameters Complete modeled selection and controls
+   --  @param Identity Credentials borrowed only while signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request with retained response-binding facts
    function Prepare_Get_Object_Attributes
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -2141,6 +2163,11 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every member in the pinned output shape. REST/XML members are grouped
    --  in Attributes; the remaining four values are response headers.
+   --  @field Delete_Marker Optional delete-marker response header
+   --  @field Last_Modified Optional last-modified response header
+   --  @field Version_ID Optional selected-version response header
+   --  @field Request_Charged Optional requester-pays response header
+   --  @field Attributes Parsed bounded REST/XML response members
    type Get_Object_Attributes_Result is record
       Delete_Marker   : Optional_Boolean;
       Last_Modified   : Ada.Strings.Unbounded.Unbounded_String;
@@ -2149,9 +2176,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Attributes      : S3.Attributes.Get_Object_Attributes_Result;
    end record;
 
+   --  Shape of a complete GetObjectAttributes response.
+   --  @enum Object_Attributes_Found Modeled response is available
+   --  @enum Get_Object_Attributes_Rejected Structured S3 rejection exists
    type Get_Object_Attributes_Outcome_Kind is
      (Object_Attributes_Found, Get_Object_Attributes_Rejected);
 
+   --  Exact modeled success or bounded structured rejection.
+   --  @field Kind Response classification
+   --  @field Status Exact HTTP status
+   --  @field Result Modeled response headers and REST/XML members
+   --  @field Error Bounded structured provider rejection
    type Get_Object_Attributes_Outcome
      (Kind : Get_Object_Attributes_Outcome_Kind :=
         Get_Object_Attributes_Rejected)
@@ -2167,6 +2202,16 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Decode a bounded REST/XML success or structured S3 error document.
    --  Optional output headers retain their modeled omission semantics.
+   --  @param Status Exact HTTP status
+   --  @param Payload Complete bounded response body
+   --  @param Delete_Marker Optional delete-marker response header
+   --  @param Last_Modified Optional last-modified response header
+   --  @param Version_ID Optional selected-version response header
+   --  @param Request_Charged Optional requester-pays response header
+   --  @param Request_ID Optional provider request diagnostic
+   --  @param Host_ID Optional provider host diagnostic
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
    function Decode_Get_Object_Attributes_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -2196,8 +2241,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Attributes_Outcome;
 
-   --  Execute a matching typed request, bound the complete response body,
+   --  Execute a matching typed request, bind the complete response body,
    --  and decode every modeled output member.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Matching signed GetObjectAttributes request
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
    function Execute_Get_Object_Attributes
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -7884,6 +7935,13 @@ private
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Get_Attributes_Version_ID :
         Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Get_Attributes_Selection :
+        S3.Attributes.Attribute_Selection := (others => False);
+      Requested_Get_Attributes_Has_Max_Parts : Boolean := False;
+      Requested_Get_Attributes_Max_Parts : S3.Core.Page_Size := 0;
+      Requested_Get_Attributes_Has_Part_Marker : Boolean := False;
+      Requested_Get_Attributes_Part_Marker :
+        S3.Attributes.Part_Marker_Value := 0;
       --  Derived GetObject response binding: an explicit version selector
       --  must be echoed by a successful response, and a charged response is
       --  valid only when the exact request admitted requester pays.

@@ -18,6 +18,10 @@ EXPECTED_SHA256 = (
 EXPECTED_OPERATIONS = 116
 EXPECTED_SHAPES = 718
 
+OPERATION_DOCUMENTATION = {
+    "GetObjectAttributes": "Get object attributes operation",
+}
+
 
 def ada_name(value: str, suffix: str) -> str:
     value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", value)
@@ -153,9 +157,22 @@ def generate(model_path: pathlib.Path) -> tuple[str, str]:
         f"   Operation_Count : constant := {len(operations)};",
         f"   Shape_Count : constant := {len(shapes)};",
         "",
-        "   type Operation_Id is",
-        "     (" + operation_literal[operations[0]] + ",",
+        "   --  Identifiers for operations in the pinned S3 model.",
     ]
+    for name in operations:
+        if name in OPERATION_DOCUMENTATION:
+            spec.append(
+                "   --  @enum "
+                + operation_literal[name]
+                + " "
+                + OPERATION_DOCUMENTATION[name]
+            )
+    spec.extend(
+        [
+            "   type Operation_Id is",
+            "     (" + operation_literal[operations[0]] + ",",
+        ]
+    )
     for name in operations[1:-1]:
         spec.append("      " + operation_literal[name] + ",")
     spec.append("      " + operation_literal[operations[-1]] + ");")

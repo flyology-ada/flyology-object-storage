@@ -4039,7 +4039,8 @@ package body Flyology.Object_Storage.Client.Objects is
          elsif Value.Kind = Low_Level.Object_Attributes_Found
          then No_Failure
          elsif Value.Status = 400
-           and then Code in "InvalidArgument" | "InvalidRequest"
+           and then Code in
+             "InvalidArgument" | "InvalidDigest" | "InvalidRequest"
          then Invalid_Request
          elsif Value.Status = 501 and then Code = "NotImplemented"
          then Invalid_Request

@@ -3281,6 +3281,35 @@ procedure S3_Server_Application_Corpus is
       end;
 
       declare
+         Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("attributes", ""));
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("GET", "/test-bucket/multipart-object", Query, "",
+               "x-amz-object-attributes: ObjectParts" & CRLF &
+               "x-amz-max-parts: 0" & CRLF &
+               "x-amz-part-number-marker: 0" & CRLF));
+         Parsed : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Parsed.Has_Object_Parts
+            and then Parsed.Object_Parts.Total_Parts_Count.Is_Set
+            and then Parsed.Object_Parts.Total_Parts_Count.Value = 1
+            and then Parsed.Object_Parts.Part_Number_Marker.Is_Set
+            and then Parsed.Object_Parts.Part_Number_Marker.Value = 0
+            and then Parsed.Object_Parts.Max_Parts.Is_Set
+            and then Parsed.Object_Parts.Max_Parts.Value = 0
+            and then Parsed.Object_Parts.Has_Is_Truncated
+            and then not Parsed.Object_Parts.Is_Truncated
+            and then not Parsed.Object_Parts.Next_Part_Number_Marker.Is_Set
+            and then Parsed.Object_Parts.Parts.Is_Empty,
+            "GetObjectAttributes MaxParts zero behavior mismatch: " &
+            Response);
+      end;
+
+      declare
          Copy_Create : constant String := Run
            (Signed_Query_Body_Request
               ("POST", "/test-bucket/multipart-copy", Create_Query, "",

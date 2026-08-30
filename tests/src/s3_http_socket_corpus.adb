@@ -24,6 +24,7 @@ with Flyology.Object_Storage.Client.Objects.Testing;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.Client.Transfers.Testing;
 with Flyology.Object_Storage.S3.ACL;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
@@ -748,6 +749,10 @@ procedure S3_HTTP_Socket_Corpus is
    Head_Admission_Lightweight    : aliased Flyology.Cancellation.Token;
    Head_Drain_Native             : aliased Flyology.Cancellation.Token;
    Head_Drain_Lightweight        : aliased Flyology.Cancellation.Token;
+   Attributes_Admission_Native   : aliased Flyology.Cancellation.Token;
+   Attributes_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Attributes_Drain_Native       : aliased Flyology.Cancellation.Token;
+   Attributes_Drain_Lightweight  : aliased Flyology.Cancellation.Token;
    Delete_Admission_Native       : aliased Flyology.Cancellation.Token;
    Delete_Admission_Lightweight  : aliased Flyology.Cancellation.Token;
    Delete_Drain_Native           : aliased Flyology.Cancellation.Token;
@@ -835,6 +840,7 @@ procedure S3_HTTP_Socket_Corpus is
       Put_Object_Cancellation,
       Get_Object_Cancellation,
       Head_Object_Cancellation,
+      Get_Object_Attributes_Cancellation,
       Delete_Object_Cancellation,
       Delete_Objects_Cancellation,
       Complete_Multipart_Cancellation,
@@ -1635,6 +1641,12 @@ procedure S3_HTTP_Socket_Corpus is
                         else
                            Head_Drain_Lightweight.Request;
                         end if;
+                     when Get_Object_Attributes_Cancellation =>
+                        if Cancellation_Round = 1 then
+                           Attributes_Drain_Native.Request;
+                        else
+                           Attributes_Drain_Lightweight.Request;
+                        end if;
                      when Delete_Object_Cancellation =>
                         if Cancellation_Round = 1 then
                            Delete_Drain_Native.Request;
@@ -1781,6 +1793,12 @@ procedure S3_HTTP_Socket_Corpus is
                      else
                         Head_Admission_Lightweight.Request;
                      end if;
+                  when Get_Object_Attributes_Cancellation =>
+                     if Cancellation_Round = 1 then
+                        Attributes_Admission_Native.Request;
+                     else
+                        Attributes_Admission_Lightweight.Request;
+                     end if;
                   when Delete_Object_Cancellation =>
                      if Cancellation_Round = 1 then
                         Delete_Admission_Native.Request;
@@ -1909,6 +1927,10 @@ procedure S3_HTTP_Socket_Corpus is
                         when Head_Object_Cancellation =>
                            raise Program_Error with
                              "HeadObject cancel peer sent data before drain";
+                        when Get_Object_Attributes_Cancellation =>
+                           raise Program_Error with
+                             "GetObjectAttributes cancel peer sent data " &
+                             "before drain";
                         when Delete_Object_Cancellation =>
                            raise Program_Error with
                              "DeleteObject cancel peer sent data before " &
@@ -2463,6 +2485,45 @@ procedure S3_HTTP_Socket_Corpus is
         "<Part><PartNumber>2</PartNumber><Size>7</Size></Part>" &
         "</ObjectParts><ObjectSize>14</ObjectSize>" &
         "</GetObjectAttributesResponse>";
+      Attributes_Default_XML : constant String :=
+        "<GetObjectAttributesResponse>" &
+        "<ETag>&quot;socket-attributes&quot;</ETag>" &
+        "<ObjectParts><PartsCount>2</PartsCount>" &
+        "<PartNumberMarker>0</PartNumberMarker>" &
+        "<MaxParts>1000</MaxParts><IsTruncated>false</IsTruncated>" &
+        "<Part><PartNumber>1</PartNumber><Size>7</Size></Part>" &
+        "<Part><PartNumber>2</PartNumber><Size>7</Size></Part>" &
+        "</ObjectParts><ObjectSize>14</ObjectSize>" &
+        "</GetObjectAttributesResponse>";
+      Attributes_Size_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectSize>14</ObjectSize>" &
+        "</GetObjectAttributesResponse>";
+      Attributes_Zero_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectParts>" &
+        "<PartsCount>2</PartsCount><PartNumberMarker>0</PartNumberMarker>" &
+        "<MaxParts>0</MaxParts><IsTruncated>false</IsTruncated>" &
+        "</ObjectParts></GetObjectAttributesResponse>";
+      Attributes_Wrong_Page_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectParts>" &
+        "<PartsCount>2</PartsCount><PartNumberMarker>9</PartNumberMarker>" &
+        "<MaxParts>1</MaxParts><IsTruncated>false</IsTruncated>" &
+        "</ObjectParts></GetObjectAttributesResponse>";
+      Attributes_Wrong_Default_Max_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectParts>" &
+        "<PartsCount>2</PartsCount><PartNumberMarker>0</PartNumberMarker>" &
+        "<MaxParts>1</MaxParts><IsTruncated>false</IsTruncated>" &
+        "</ObjectParts></GetObjectAttributesResponse>";
+      Attributes_Wrong_Default_Marker_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectParts>" &
+        "<PartsCount>2</PartsCount><PartNumberMarker>1</PartNumberMarker>" &
+        "<MaxParts>1000</MaxParts><IsTruncated>false</IsTruncated>" &
+        "</ObjectParts></GetObjectAttributesResponse>";
+      Attributes_Zero_Truncated_XML : constant String :=
+        "<GetObjectAttributesResponse><ObjectParts>" &
+        "<PartsCount>2</PartsCount><PartNumberMarker>0</PartNumberMarker>" &
+        "<MaxParts>0</MaxParts><IsTruncated>true</IsTruncated>" &
+        "<NextPartNumberMarker>1</NextPartNumberMarker>" &
+        "</ObjectParts></GetObjectAttributesResponse>";
       Tagging_XML : constant String :=
         "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
         "<TagSet><Tag><Key>project</Key><Value>flyology</Value></Tag>" &
@@ -4522,10 +4583,15 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Max_Parts => "1", Expected_Part_Marker => "1",
             Fragmented => True);
          Serve
-           (HTTP_Response ("200 OK", Attributes_XML),
+           (HTTP_Response ("200 OK", Attributes_Default_XML),
             "GET", "/example-bucket/convenience-attributes?attributes",
             Expected_Get_Object_Attributes =>
               "ETag,Checksum,ObjectParts,StorageClass,ObjectSize");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Zero_XML),
+            "GET", "/example-bucket/zero-attributes?attributes",
+            Expected_Get_Object_Attributes => "ObjectParts",
+            Expected_Max_Parts => "0", Expected_Part_Marker => "0");
          Serve
            (HTTP_Response
               ("404 Not Found", Error_XML,
@@ -4535,7 +4601,7 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
-              ("200 OK", Attributes_XML,
+              ("200 OK", Attributes_Size_XML,
                "x-amz-version-id: scoped-version" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket/scoped-attributes?attributes&" &
@@ -4544,7 +4610,7 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Get_Object_Attributes => "ObjectSize",
             Fragmented => True);
          Serve
-           (HTTP_Response ("200 OK", Attributes_XML),
+           (HTTP_Response ("200 OK", Attributes_Size_XML),
             "GET", "/example-bucket/scoped-attributes-restart?attributes",
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
@@ -4553,23 +4619,104 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
-              ("200 OK", Attributes_XML,
+              ("200 OK", Attributes_Size_XML,
                "x-amz-version-id: wrong-version" & CRLF),
             "GET", "/example-bucket/scoped-attributes-wrong?attributes&" &
               "versionId=expected-version",
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
-              ("200 OK", Attributes_XML,
+              ("200 OK", Attributes_Size_XML,
                "x-amz-version-id: duplicate" & CRLF &
                "x-amz-version-id: duplicate" & CRLF),
             "GET", "/example-bucket/scoped-attributes-duplicate?attributes",
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
-              ("200 OK", Attributes_XML,
+              ("200 OK", Attributes_Size_XML,
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket/scoped-attributes-payer?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Wrong_Page_XML),
+            "GET", "/example-bucket/scoped-attributes-page?attributes",
+            Expected_Get_Object_Attributes => "ObjectParts",
+            Expected_Max_Parts => "1", Expected_Part_Marker => "1");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Wrong_Default_Max_XML),
+            "GET",
+            "/example-bucket/scoped-attributes-default-max?attributes",
+            Expected_Get_Object_Attributes => "ObjectParts");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Wrong_Default_Marker_XML),
+            "GET",
+            "/example-bucket/scoped-attributes-default-marker?attributes",
+            Expected_Get_Object_Attributes => "ObjectParts");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Zero_Truncated_XML),
+            "GET",
+            "/example-bucket/scoped-attributes-zero-page?attributes",
+            Expected_Get_Object_Attributes => "ObjectParts",
+            Expected_Max_Parts => "0", Expected_Part_Marker => "0");
+         Serve
+           (HTTP_Response ("200 OK", Attributes_XML),
+            "GET",
+            "/example-bucket/scoped-attributes-unrequested?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("401 Unauthorized",
+               "<Error><Code>InvalidAccessKeyId</Code>" &
+                 "<Message>invalid access key</Message></Error>"),
+            "GET", "/example-bucket/normalized-attributes-auth?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", "<Error><Code>AccessDenied</Code>" &
+                 "<Message>denied</Message></Error>"),
+            "GET",
+            "/example-bucket/normalized-attributes-denied?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", "<Error><Code>NoSuchKey</Code>" &
+                 "<Message>missing</Message></Error>"),
+            "GET",
+            "/example-bucket/normalized-attributes-missing?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request", "<Error><Code>InvalidDigest</Code>" &
+                 "<Message>invalid digest</Message></Error>"),
+            "GET",
+            "/example-bucket/normalized-attributes-digest?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("503 Service Unavailable",
+               "<Error><Code>SlowDown</Code>" &
+                 "<Message>retry later</Message></Error>"),
+            "GET", "/example-bucket/normalized-attributes-slow?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>UnclassifiedAttributesError</Code>" &
+                 "<Message>unclassified</Message></Error>"),
+            "GET",
+            "/example-bucket/normalized-attributes-fallback?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           ("", "GET",
+            "/example-bucket/scoped-attributes-cancel?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize",
+            Await_Cancellation => True,
+            Cancellation_Kind => Get_Object_Attributes_Cancellation,
+            Cancellation_Round => Round);
+         Serve
+           (HTTP_Response ("200 OK", Attributes_Size_XML),
+            "GET",
+            "/example-bucket/scoped-attributes-cancel-restart?attributes",
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
@@ -15826,6 +15973,52 @@ procedure S3_HTTP_Socket_Corpus is
          declare
             Parameters : Low_Level.Get_Object_Attributes_Parameters;
          begin
+            Parameters.Attributes.Object_Parts := True;
+            Parameters.Has_Max_Parts := True;
+            Parameters.Max_Parts := 0;
+            Parameters.Has_Part_Number_Marker := True;
+            Parameters.Part_Number_Marker := 0;
+            declare
+               Result : constant Get_Object_Attributes_Result :=
+                 Objects.Get_Attributes
+                   (HTTP, Origin, "example-bucket", "zero-attributes",
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Attributes_Found
+                 or else not Result.Response.Result.Attributes.Has_Object_Parts
+               then
+                  raise Program_Error with
+                    "GetObjectAttributes MaxParts zero mismatch";
+               end if;
+               declare
+                  Page : Flyology.Object_Storage.S3.Attributes.
+                    Object_Parts_Result renames
+                    Result.Response.Result.Attributes.Object_Parts;
+               begin
+                  if not Page.Total_Parts_Count.Is_Set
+                    or else Page.Total_Parts_Count.Value /= 2
+                    or else not Page.Part_Number_Marker.Is_Set
+                    or else Page.Part_Number_Marker.Value /= 0
+                    or else not Page.Max_Parts.Is_Set
+                    or else Page.Max_Parts.Value /= 0
+                    or else not Page.Has_Is_Truncated
+                    or else Page.Is_Truncated
+                    or else Page.Next_Part_Number_Marker.Is_Set
+                    or else not Page.Parts.Is_Empty
+                  then
+                     raise Program_Error with
+                       "GetObjectAttributes MaxParts zero mismatch";
+                  end if;
+               end;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+         begin
             Parameters.Attributes.Object_Size := True;
             declare
                Prepared : constant Low_Level.Prepared_Request :=
@@ -15970,6 +16163,124 @@ procedure S3_HTTP_Socket_Corpus is
                "GetObjectAttributes accepted unrequested payer admission");
          end;
          declare
+            procedure Require_Invalid_Attributes_Page
+              (Key         : String;
+               Maximum     : Flyology.Object_Storage.S3.Core.Page_Size;
+               Marker      : Flyology.Object_Storage.S3.Attributes.
+                 Part_Marker_Value;
+               Selection   : Flyology.Object_Storage.S3.Attributes.
+                 Attribute_Selection;
+               Message     : String;
+               Has_Maximum : Boolean := True;
+               Has_Marker  : Boolean := True)
+            is
+               Parameters : Low_Level.Get_Object_Attributes_Parameters;
+               Set : aliased Operations.Completion_Set (3);
+            begin
+               Parameters.Attributes := Selection;
+               Parameters.Has_Max_Parts :=
+                 Selection.Object_Parts and then Has_Maximum;
+               Parameters.Max_Parts := Maximum;
+               Parameters.Has_Part_Number_Marker :=
+                 Selection.Object_Parts and then Has_Marker;
+               Parameters.Part_Number_Marker := Marker;
+               declare
+                  Operation : Get_Object_Attributes_Operation :=
+                    Get_Attributes
+                      (Set'Access, HTTP'Access, Origin, "example-bucket", Key,
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Result : Get_Object_Attributes_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Finish (Operation, Result);
+                  if Result.Kind /= Get_Object_Attributes_Exchange_Failed
+                    or else Result.Failure /= Corrupt_Or_Invalid_Response
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end;
+            end Require_Invalid_Attributes_Page;
+         begin
+            Require_Invalid_Attributes_Page
+              ("scoped-attributes-page", 1, 1,
+               (Object_Parts => True, others => False),
+               "GetObjectAttributes accepted mismatched page geometry");
+            Require_Invalid_Attributes_Page
+              ("scoped-attributes-default-max", 1, 0,
+               (Object_Parts => True, others => False),
+               "GetObjectAttributes accepted a mismatched default maximum",
+               Has_Maximum => False, Has_Marker => False);
+            Require_Invalid_Attributes_Page
+              ("scoped-attributes-default-marker", 1_000, 1,
+               (Object_Parts => True, others => False),
+               "GetObjectAttributes accepted a mismatched default marker",
+               Has_Maximum => False, Has_Marker => False);
+            Require_Invalid_Attributes_Page
+              ("scoped-attributes-zero-page", 0, 0,
+               (Object_Parts => True, others => False),
+               "GetObjectAttributes accepted a truncated zero-size page");
+            Require_Invalid_Attributes_Page
+              ("scoped-attributes-unrequested", 0, 0,
+               (Object_Size => True, others => False),
+               "GetObjectAttributes accepted unrequested attributes");
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+
+            procedure Require_Normalized_Attributes_Failure
+              (Key      : String;
+               Expected : Failure_Reason;
+               Status   : Flyology.HTTP.Status_Code;
+               Code     : String;
+               Context  : String)
+            is
+               Result : constant Get_Object_Attributes_Result :=
+                 Objects.Get_Attributes
+                   (HTTP, Origin, "example-bucket", Key, Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= Expected
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Attributes_Rejected
+                 or else Result.Response.Status /= Status
+                 or else US.To_String (Result.Response.Error.Code) /= Code
+               then
+                  raise Program_Error with Context;
+               end if;
+            end Require_Normalized_Attributes_Failure;
+         begin
+            Parameters.Attributes.Object_Size := True;
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-auth", Authentication_Failed, 401,
+               "InvalidAccessKeyId",
+               "GetObjectAttributes authentication mapping mismatch");
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-denied", Authorization_Failed, 403,
+               "AccessDenied",
+               "GetObjectAttributes authorization mapping mismatch");
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-missing", Not_Found, 404,
+               "NoSuchKey", "GetObjectAttributes absence mapping mismatch");
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-digest", Invalid_Request, 400,
+               "InvalidDigest",
+               "GetObjectAttributes invalid-digest mapping mismatch");
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-slow", Unavailable_Or_Retryable, 503,
+               "SlowDown", "GetObjectAttributes retryable mapping mismatch");
+            Require_Normalized_Attributes_Failure
+              ("normalized-attributes-fallback",
+               Corrupt_Or_Invalid_Response, 400,
+               "UnclassifiedAttributesError",
+               "GetObjectAttributes fallback mapping mismatch");
+         end;
+         declare
             Stop : aliased Flyology.Cancellation.Token;
             Parameters : Low_Level.Get_Object_Attributes_Parameters;
          begin
@@ -15991,6 +16302,142 @@ procedure S3_HTTP_Socket_Corpus is
                     "pre-admission GetObjectAttributes cancellation mismatch";
                end if;
             end;
+         end;
+         declare
+            procedure Run_Get_Object_Attributes_Cancellation is
+               Parameters : Low_Level.Get_Object_Attributes_Parameters;
+               Cancel_Token : aliased Flyology.Cancellation.Token;
+               Changed_Token : aliased Flyology.Cancellation.Token;
+               Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+               Admission_Requested, Drain_Requested : Boolean;
+            begin
+               Parameters.Attributes.Object_Size := True;
+               if Round = 1 then
+                  Attributes_Admission_Native.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Attributes_Drain_Native.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               else
+                  Attributes_Admission_Lightweight.Wait_Source
+                    (Admission_FD, Admission_Requested);
+                  Attributes_Drain_Lightweight.Wait_Source
+                    (Drain_FD, Drain_Requested);
+               end if;
+               if Admission_Requested or else Drain_Requested
+                 or else Admission_FD < 0 or else Drain_FD < 0
+               then
+                  raise Program_Error with
+                    "stale GetObjectAttributes cancellation readiness";
+               end if;
+               declare
+                  Cancel_Set : aliased Operations.Completion_Set (5);
+                  Operation : Get_Object_Attributes_Operation :=
+                    Get_Attributes
+                      (Cancel_Set'Access, HTTP'Access, Origin,
+                       "example-bucket", "scoped-attributes-cancel",
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0),
+                       Token => Cancel_Token'Access);
+                  Admission_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Admission_FD,
+                       Flyology.IO.For_Read);
+                  Drain_Ready : Flyology.IO.Readiness_Operation :=
+                    Flyology.IO.Wait
+                      (Cancel_Set'Access, Drain_FD,
+                       Flyology.IO.For_Read);
+                  Batch : Operations.Completion_Batch (Cancel_Set.Capacity);
+                  Result : Get_Object_Attributes_Result;
+                  HTTP_Rejected, Token_Rejected : Boolean := False;
+               begin
+                  Operations.Wait_Some (Cancel_Set, Batch);
+                  if Batch.Count = 0
+                    or else not Operations.Is_Terminal (Admission_Ready)
+                    or else not Operations.Is_Active (Drain_Ready)
+                    or else not Operations.Is_Active (Operation)
+                  then
+                     raise Program_Error with
+                       "GetObjectAttributes did not remain active through " &
+                       "admission";
+                  end if;
+                  Flyology.IO.Finish (Admission_Ready);
+                  Operations.Cancel (Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Operation, Result);
+                  if Result.Kind /= Get_Object_Attributes_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
+                    or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                    or else Result.Admission /=
+                      HTTP_Client.Possibly_Admitted
+                  then
+                     raise Program_Error with
+                       "admitted GetObjectAttributes cancellation mismatch";
+                  end if;
+                  if not Operations.Is_Terminal (Drain_Ready) then
+                     raise Program_Error with
+                       "GetObjectAttributes drain was not acknowledged";
+                  end if;
+                  Flyology.IO.Finish (Drain_Ready);
+                  begin
+                     Get_Attributes
+                       (Changed_HTTP'Access, Origin, "example-bucket",
+                        "scoped-attributes-cancel-restart", Parameters,
+                        Identity, HTTP_Client.Deadline_After (5.0),
+                        Token => Cancel_Token'Access,
+                        Operation => Operation);
+                  exception
+                     when Error : Program_Error =>
+                        HTTP_Rejected :=
+                          Ada.Exceptions.Exception_Message (Error) =
+                            "GetObjectAttributes restart changed a " &
+                            "retained owner";
+                  end;
+                  begin
+                     Get_Attributes
+                       (HTTP'Access, Origin, "example-bucket",
+                        "scoped-attributes-cancel-restart", Parameters,
+                        Identity, HTTP_Client.Deadline_After (5.0),
+                        Token => Changed_Token'Access,
+                        Operation => Operation);
+                  exception
+                     when Error : Program_Error =>
+                        Token_Rejected :=
+                          Ada.Exceptions.Exception_Message (Error) =
+                            "GetObjectAttributes restart changed a " &
+                            "retained owner";
+                  end;
+                  if not HTTP_Rejected or else not Token_Rejected then
+                     raise Program_Error with
+                       "GetObjectAttributes accepted a changed retained " &
+                       "owner";
+                  end if;
+                  Get_Attributes
+                    (HTTP'Access, Origin, "example-bucket",
+                     "scoped-attributes-cancel-restart", Parameters,
+                     Identity, HTTP_Client.Deadline_After (5.0),
+                     Token => Cancel_Token'Access,
+                     Operation => Operation);
+                  Operations.Wait_All (Cancel_Set);
+                  Finish (Operation, Result);
+                  if Result.Kind /=
+                    Get_Object_Attributes_Response_Available
+                    or else Result.Failure /= No_Failure
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Response.Kind /=
+                      Low_Level.Object_Attributes_Found
+                    or else Result.Response.Status /= 200
+                    or else not Result.Response.Result.Attributes.Object_Size
+                      .Is_Set
+                    or else Result.Response.Result.Attributes.Object_Size
+                      .Value /= 14
+                  then
+                     raise Program_Error with
+                       "same-object GetObjectAttributes restart mismatch";
+                  end if;
+               end;
+            end Run_Get_Object_Attributes_Cancellation;
+         begin
+            Run_Get_Object_Attributes_Cancellation;
          end;
          declare
             Upload_Path : constant String :=

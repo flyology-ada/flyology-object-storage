@@ -3558,6 +3558,7 @@ package Flyology.Object_Storage.Client.Objects is
       Token : access Flyology.Cancellation.Token := null)
       return Tagging_Outcome;
 
+   --  Synchronous low-level GetObjectAttributes response shape.
    subtype Get_Attributes_Outcome is
      Low_Level.Get_Object_Attributes_Outcome;
 
@@ -4630,10 +4631,12 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Object_Versions_Result;
+   --  @exclude
    function Normalize_Get_Object_Attributes_Response
      (Value     : Low_Level.Get_Object_Attributes_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Object_Attributes_Result;
+   --  @exclude
    function Normalize_Get_Object_Attributes_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
