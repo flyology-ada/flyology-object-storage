@@ -4119,17 +4119,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal legal-hold read
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Get_Legal_Hold_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal legal-hold read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Legal_Hold_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal legal-hold read
    overriding procedure Request_Cancellation
      (Item : in out Get_Legal_Hold_Operation);
    --  @exclude
+   --  @param Item Internal legal-hold read
    overriding procedure Finalize
      (Item : in out Get_Legal_Hold_Operation);
 
@@ -4154,36 +4160,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal legal-hold mutation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Legal_Hold_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Internal legal-hold mutation
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Put_Legal_Hold_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Always true for the memory source
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Legal_Hold_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
    overriding procedure Release_Source
      (Item : in out Put_Legal_Hold_Operation);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Put_Legal_Hold_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Put_Legal_Hold_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
    overriding procedure Request_Cancellation
      (Item : in out Put_Legal_Hold_Operation);
    --  @exclude
+   --  @param Item Internal legal-hold mutation
    overriding procedure Finalize
      (Item : in out Put_Legal_Hold_Operation);
 
@@ -4206,17 +4229,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal retention read
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Get_Retention_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal retention read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Retention_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal retention read
    overriding procedure Request_Cancellation
      (Item : in out Get_Retention_Operation);
    --  @exclude
+   --  @param Item Internal retention read
    overriding procedure Finalize
      (Item : in out Get_Retention_Operation);
 
@@ -4241,36 +4270,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal retention mutation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Retention_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Internal retention mutation
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Put_Retention_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Internal retention mutation
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Always true for the memory source
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Retention_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Internal retention mutation
    overriding procedure Release_Source
      (Item : in out Put_Retention_Operation);
    --  @exclude
+   --  @param Item Internal retention mutation
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Put_Retention_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal retention mutation
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Put_Retention_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal retention mutation
    overriding procedure Request_Cancellation
      (Item : in out Put_Retention_Operation);
    --  @exclude
+   --  @param Item Internal retention mutation
    overriding procedure Finalize
      (Item : in out Put_Retention_Operation);
 
