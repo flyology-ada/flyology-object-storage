@@ -371,12 +371,24 @@ is
           and then Resolve_Range'Result.Length =
             Resolve_Range'Result.Last - Resolve_Range'Result.First + 1);
 
+   --  Maximum entries retained in the bounded user-metadata set.
    Maximum_User_Metadata_Entries : constant := 64;
+
+   --  Maximum byte length of a canonical user-metadata key suffix.
    Maximum_User_Metadata_Key_Bytes : constant := 117;
+
+   --  Aggregate byte budget for user-metadata keys and values.
    Maximum_User_Metadata_Bytes : constant := 2 * 1_024;
+
+   --  Aggregate byte budget for modeled system-metadata names and values.
    Maximum_System_Metadata_Bytes : constant := 2 * 1_024;
+
+   --  Per-value byte limit for modeled system metadata.
    Maximum_System_Metadata_Value_Bytes : constant := 2 * 1_024;
 
+   --  Presence-preserving string metadata value.
+   --  @field Is_Set Whether the metadata value is present
+   --  @field Value Metadata value when present
    type Optional_Metadata_Value is record
       Is_Set : Boolean := False;
       Value  : Ada.Strings.Unbounded.Unbounded_String;
@@ -385,33 +397,56 @@ is
    --  A typed S3 Expires value spanning canonical four-digit years 0001
    --  through 9999; wire parsing and rendering remain in the S3 layer.
    type Metadata_Time is range -62_135_596_800 .. 253_402_300_799;
+
+   --  Presence-preserving typed metadata time.
+   --  @field Is_Set Whether the metadata time is present
+   --  @field Value Metadata time when present
    type Optional_Metadata_Time is record
       Is_Set : Boolean := False;
       Value  : Metadata_Time := 0;
    end record;
 
+   --  One canonical user-metadata entry.
+   --  @field Key Lowercase HTTP token suffix without the x-amz-meta prefix
+   --  @field Value Exact user-metadata value
    type User_Metadata_Entry is record
       Key   : Ada.Strings.Unbounded.Unbounded_String;
       Value : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Number of entries in a bounded user-metadata set.
    subtype User_Metadata_Count is
      Natural range 0 .. Maximum_User_Metadata_Entries;
+
+   --  Index into the fixed-capacity user-metadata array.
    subtype User_Metadata_Index is
      Positive range 1 .. Maximum_User_Metadata_Entries;
+
+   --  Fixed-capacity storage for user-metadata entries.
    type User_Metadata_Array is
      array (User_Metadata_Index) of User_Metadata_Entry;
 
+   --  Bounded collection of user-metadata entries.
+   --  @field Length Number of populated entries
+   --  @field Items Fixed-capacity entry storage
    type User_Metadata_Set is record
       Length : User_Metadata_Count := 0;
       Items  : User_Metadata_Array;
    end record;
 
+   --  User-metadata set with no populated entries.
    Empty_User_Metadata : constant User_Metadata_Set;
 
    --  User-configurable S3 system and user metadata retained with an object.
    --  Content-Type remains in Object_Information for API compatibility and
    --  participates in the same system-metadata byte budget.
+   --  @field Cache_Control Optional Cache-Control value
+   --  @field Content_Disposition Optional Content-Disposition value
+   --  @field Content_Encoding Optional Content-Encoding value
+   --  @field Content_Language Optional Content-Language value
+   --  @field Expires Optional typed Expires value
+   --  @field Website_Redirect_Location Optional website redirect value
+   --  @field User Bounded user-metadata entries
    type Object_Metadata is record
       Cache_Control             : Optional_Metadata_Value;
       Content_Disposition       : Optional_Metadata_Value;
@@ -422,16 +457,27 @@ is
       User                      : User_Metadata_Set;
    end record;
 
+   --  Object metadata with no configured system or user values.
    Empty_Object_Metadata : constant Object_Metadata;
 
    --  Validate exact S3 metadata budgets. User bytes are the UTF-8 bytes of
    --  every key and value. System bytes are the US-ASCII bytes of each
    --  present wire name and value, including Content-Type when nonempty.
    --  User keys are canonical lowercase HTTP token suffixes and unique.
+   --  @param Metadata Candidate modeled metadata
+   --  @param Content_Type Candidate Content-Type value
+   --  @return True when every value and aggregate budget is valid
    function Valid_Object_Metadata
      (Metadata : Object_Metadata; Content_Type : String) return Boolean;
 
    --  Metadata retained with one committed object version.
+   --  @field Size Object body size in bytes
+   --  @field Modified Nonnegative Unix modification time
+   --  @field Entity_Tag Stored unquoted entity tag
+   --  @field Content_Type Stored Content-Type value
+   --  @field Version Storage version identifier
+   --  @field Checksum Stored checksum metadata
+   --  @field Metadata Stored system and user metadata
    type Object_Information is record
       Size          : Byte_Count := 0;
       Modified      : Unix_Time := 0;
@@ -442,35 +488,49 @@ is
       Metadata      : Object_Metadata;
    end record;
 
-   --  One S3 object tag. The wire boundary validates the documented UTF-8
-   --  character repertoire and byte limits before a value reaches a backend.
+   --  Maximum tags retained in one bounded object-tag set.
    Maximum_Object_Tags : constant := 10;
+
+   --  Number of tags in a bounded object tag set.
    subtype Object_Tag_Count is Natural range 0 .. Maximum_Object_Tags;
+
+   --  Index into the fixed-capacity object tag array.
    subtype Object_Tag_Index is Positive range 1 .. Maximum_Object_Tags;
 
+   --  One object-tag key and value pair.
+   --  @field Key Object-tag key bytes
+   --  @field Value Object-tag value bytes
    type Object_Tag is record
       Key   : Ada.Strings.Unbounded.Unbounded_String;
       Value : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Fixed-capacity storage for object tags.
    type Object_Tag_Array is array (Object_Tag_Index) of Object_Tag;
 
    --  Fixed-capacity representation keeps the backend contract bounded and
    --  permits an entire tag set to be copied under one publication boundary.
+   --  @field Length Number of populated tags
+   --  @field Items Fixed-capacity tag storage
    type Object_Tag_Set is record
       Length : Object_Tag_Count := 0;
       Items  : Object_Tag_Array;
    end record;
 
+   --  Object tag set with no populated tags.
    Empty_Object_Tags : constant Object_Tag_Set;
 
    --  Backend-safe byte bounds shared by all protocol adapters. This does not
    --  replace S3's stricter Unicode repertoire validation.
+   --  @param Tags Candidate bounded object tag set
+   --  @return True when each populated tag satisfies backend-safe bounds
    function Valid_Object_Tag_Set (Tags : Object_Tag_Set) return Boolean;
 
    --  Destination validators evaluated against the same publication boundary
    --  that makes a complete object visible. Values use HTTP entity-tag list
    --  syntax; the storage contract remains independent of HTTP request types.
+   --  @field If_Match Optional If-Match destination predicate
+   --  @field If_None_Match Optional If-None-Match destination predicate
    type Write_Conditions is record
       If_Match      : Ada.Strings.Unbounded.Unbounded_String;
       If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
@@ -482,6 +542,11 @@ is
    --  Metadata supplied when committing an object. An empty Entity_Tag asks
    --  the backend to generate the ordinary single-part S3 MD5 entity tag.
    --  This identifier is not a collision-resistant integrity checksum.
+   --  @field Entity_Tag Requested entity tag or empty for backend generation
+   --  @field Content_Type Stored Content-Type value
+   --  @field Metadata Stored system and user metadata
+   --  @field Tags Initial object tag set
+   --  @field Checksum Checksum metadata retained with the object
    type Put_Options is record
       Entity_Tag   : Ada.Strings.Unbounded.Unbounded_String;
       Content_Type : Ada.Strings.Unbounded.Unbounded_String;
@@ -503,6 +568,7 @@ is
    --  @return True for a nonempty key of at most 1,024 bytes without NUL
    function Valid_Object_Key (Value : String) return Boolean;
 
+   --  Maximum decoded Unicode scalar count accepted by tag validation.
    subtype Tag_Character_Limit is Positive range 1 .. 256;
 
    --  Validate one UTF-8 S3 tag scalar using AWS's Unicode character set.
