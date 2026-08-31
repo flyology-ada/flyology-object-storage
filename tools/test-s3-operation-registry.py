@@ -3122,6 +3122,119 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetObjectAttributes lane was accepted")
+    get_object_torrent_symbols = [
+        "Prepare_Get_Object_Torrent",
+        "Decode_Get_Object_Torrent_Response_Head",
+        "Decode_Get_Object_Torrent_Complete_Response",
+        "Execute_Get_Object_Torrent",
+        "Get_Object_Torrent_Operation",
+        "Get_Torrent",
+        "Finish",
+    ]
+
+    def assert_get_object_torrent_registry(candidate):
+        entry = candidate.operations["GetObjectTorrent"]
+        assert entry.get("public_name") == "Get_Torrent"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_object_torrent"
+        assert entry.get("ada_symbols") == get_object_torrent_symbols
+        assert "structured typed rejection" in entry["absence"]
+        assert "no automatic retry" in entry["certainty"]
+        assert "does not prove prior object state" in entry["reconciliation"]
+        assert "no public operation-specific body ceiling" in (
+            entry["exclusions"][1]
+        )
+        assert entry["coverage"] == {
+            "backend": "missing",
+            "client": "covered",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert "tools/verify-get-object-torrent-preparation.py" in (
+            entry["evidence"]["corpus"]
+        )
+
+    def reject_get_object_torrent_registry(candidate, label):
+        try:
+            assert_get_object_torrent_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetObjectTorrent registry accepted")
+
+    assert_get_object_torrent_registry(registry)
+    torrent_mutations = [
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Get_Object_Torrent"),
+        ("automatic retry", "certainty", "read and retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves prior object state",
+        ),
+        ("missing exclusion", "exclusions", ["unbounded body"]),
+    ]
+    for label, key, value in torrent_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["GetObjectTorrent"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_get_object_torrent_registry(candidate, label)
+    cross_torrent_symbol = copy.deepcopy(registry)
+    cross_torrent_symbol.operations["GetObjectTorrent"]["ada_symbols"][0] = (
+        "Prepare_Get_Object_Attributes"
+    )
+    assert cross_torrent_symbol != registry
+    reject_get_object_torrent_registry(
+        cross_torrent_symbol,
+        "cross-operation symbol",
+    )
+    torrent_qualification, torrent_commands = (
+        s3_operation.qualification_plan(registry, ["GetObjectTorrent"])
+    )
+    assert torrent_qualification == "get_object_torrent"
+    assert torrent_commands[:5] == [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-get-object-torrent-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_object_torrent_corpus"],
+        ["@tests", "./bin/s3_get_object_torrent_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert torrent_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-object-torrent-gnatdoc",
+        "--operation",
+        "GetObjectTorrent",
+    ]
+    assert torrent_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    for operations, expected in (
+        (["GetObjectTorrent", "GetObjectTorrent"], "appears more than once"),
+        (
+            ["GetObjectTorrent", "GetObjectAttributes"],
+            "do not share one qualification lane",
+        ),
+    ):
+        try:
+            s3_operation.qualification_plan(registry, operations)
+        except s3_operation.Audit_Error as error:
+            assert expected in str(error)
+        else:
+            raise AssertionError(
+                f"invalid GetObjectTorrent plan {operations} accepted"
+            )
     copy_qualification, copy_commands = s3_operation.qualification_plan(
         registry, ["CopyObject"]
     )

@@ -742,6 +742,16 @@ put_object_lock_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_object_torrent = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-torrent-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_object_torrent_corpus"],
+  ["@tests", "./bin/s3_get_object_torrent_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-object-torrent-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_object_retention = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-retention-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -3140,17 +3150,21 @@ provider = "objects"
 family = "bounded_binary_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 codec = "bounded_bytes_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+public_name = "Get_Torrent"
+absence = "no dedicated absence variant; a well-formed bounded 404 S3 error remains a structured typed rejection, while malformed or unbounded responses are invalid"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read_only; only a complete validated exact 200 response observed exposes exact torrent bytes and modeled headers in caller-owned bounded storage; every incomplete, invalid, cancelled, oversized, or non-observed response exposes no successful body state; no automatic retry"
+reconciliation = "a later GetObjectTorrent observes only the torrent representation current at read time and does not prove prior object state or mutation causality; no automatic retry"
+exclusions = ["torrent generation, persistence, and an authenticated Flyology GetObjectTorrent server route are absent and not claimed", "the caller-owned destination capacity bounds successful torrent bytes while caller-selected XML limits independently bound structured error documents; no public operation-specific body ceiling is introduced", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"], server = [], corpus = ["tools/verify-get-object-torrent-preparation.py", "docs/qualification/get-object-torrent.md", "tests/corpora/get-object-torrent/members.tsv", "tests/corpora/get-object-torrent/vectors.tsv", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "get_object_torrent"
+ada_symbols = ["Prepare_Get_Object_Torrent", "Decode_Get_Object_Torrent_Response_Head", "Decode_Get_Object_Torrent_Complete_Response", "Execute_Get_Object_Torrent", "Get_Object_Torrent_Operation", "Get_Torrent", "Finish"]
 
 [[operation]]
 name = "GetPublicAccessBlock"

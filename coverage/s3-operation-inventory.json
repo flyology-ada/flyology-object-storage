@@ -2588,12 +2588,18 @@
       "evidence": {
         "backend": [],
         "client": [
-          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.ads",
+          "src/flyology-object_storage-client-objects.adb",
           "tests/src/s3_get_object_torrent_corpus.adb",
           "tests/src/s3_get_object_torrent_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_get_object_legal_hold_corpus.adb",
+          "tools/verify-get-object-torrent-preparation.py",
+          "docs/qualification/get-object-torrent.md",
+          "tests/corpora/get-object-torrent/members.tsv",
+          "tests/corpora/get-object-torrent/vectors.tsv",
           "tests/src/s3_get_object_torrent_corpus.adb",
           "tests/src/s3_get_object_torrent_socket_corpus.adb"
         ],
@@ -2601,7 +2607,7 @@
       },
       "family": "bounded_binary_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "absent",
