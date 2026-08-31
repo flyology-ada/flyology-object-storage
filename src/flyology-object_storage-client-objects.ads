@@ -4870,52 +4870,102 @@ private
    --  @exclude
    --  @param Item Internal object metadata read
    overriding procedure Finalize (Item : in out Head_Operation);
+   --  @exclude
+   --  @param Item Internal single-object deletion
+   --  @return Exact request-body length
    overriding function Declared_Length
      (Item : Delete_Operation)
       return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   --  @param Item Internal single-object deletion
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Delete_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   --  @param Item Internal single-object deletion
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
+   --  @exclude
+   --  @param Item Internal single-object deletion
    overriding procedure Release_Source (Item : in out Delete_Operation);
+   --  @exclude
+   --  @param Item Internal single-object deletion
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Delete_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal single-object deletion
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Delete_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal single-object deletion
    overriding procedure Request_Cancellation
      (Item : in out Delete_Operation);
+   --  @exclude
+   --  @param Item Internal single-object deletion
    overriding procedure Finalize (Item : in out Delete_Operation);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
+   --  @return Exact serialized deletion-document length
    overriding function Declared_Length
      (Item : Delete_Objects_Operation)
       return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   --  @param Item Internal multi-object deletion
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Delete_Objects_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Objects_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
    overriding procedure Release_Source
      (Item : in out Delete_Objects_Operation);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Delete_Objects_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Delete_Objects_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
    overriding procedure Request_Cancellation
      (Item : in out Delete_Objects_Operation);
+   --  @exclude
+   --  @param Item Internal multi-object deletion
    overriding procedure Finalize
      (Item : in out Delete_Objects_Operation);
    overriding procedure Write
