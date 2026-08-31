@@ -4246,24 +4246,29 @@
       "coverage": {
         "backend": "missing",
         "client": "partial",
-        "corpus": "missing",
+        "corpus": "covered",
         "server": "missing"
       },
       "evidence": {
         "backend": [],
-        "client": [],
-        "corpus": [],
+        "client": [
+          "src/flyology-object_storage-s3-model.adb",
+          "tools/verify-put-object-annotation-model.py"
+        ],
+        "corpus": [
+          "tools/verify-put-object-annotation-model.py"
+        ],
         "server": []
       },
       "family": "streaming_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
         "backend": "absent",
         "client": "generated",
         "server": "absent",
-        "tests": "absent"
+        "tests": "handwritten"
       },
       "provider": "objects"
     },

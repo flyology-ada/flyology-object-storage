@@ -3229,6 +3229,105 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetObjectAnnotation lane accepted")
 
+    put_object_annotation_certainty = (
+        "mutation model coverage only; no public request-body source, "
+        "checksum binding, response decoder, or runtime evidence exists, "
+        "so this review reports no successful mutation, no admission "
+        "certainty, and no automatic replay"
+    )
+
+    def assert_put_object_annotation_registry(candidate):
+        entry = candidate.operations["PutObjectAnnotation"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_object_annotation"
+        assert entry.get("codec") == (
+            "generated_model_only_streaming_request_and_headers"
+        )
+        assert entry.get("certainty") == put_object_annotation_certainty
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert "no observation, causal proof" in entry["reconciliation"]
+        assert "registry sentinel and not an Ada declaration" in (
+            entry["exclusions"][0]
+        )
+        assert "are inventory only" in entry["exclusions"][1]
+        assert "does not invent public limits" in entry["exclusions"][2]
+        assert entry["evidence"]["client"] == [
+            "src/flyology-object_storage-s3-model.adb",
+            "tools/verify-put-object-annotation-model.py",
+        ]
+        assert candidate.qualification["put_object_annotation"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-put-object-annotation-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_put_object_annotation_registry(candidate, label):
+        try:
+            assert_put_object_annotation_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutObjectAnnotation registry accepted")
+
+    assert_put_object_annotation_registry(registry)
+    invented_put_annotation_api = copy.deepcopy(registry)
+    invented_put_annotation_api.operations[
+        "PutObjectAnnotation"
+    ]["public_name"] = "Put_Annotation"
+    reject_put_object_annotation_registry(
+        invented_put_annotation_api, "invented public API"
+    )
+    full_put_annotation = copy.deepcopy(registry)
+    full_put_annotation.operations[
+        "PutObjectAnnotation"
+    ]["coverage"]["client"] = "covered"
+    reject_put_object_annotation_registry(
+        full_put_annotation, "invented complete client coverage"
+    )
+    replay_put_annotation = copy.deepcopy(registry)
+    replay_put_annotation.operations[
+        "PutObjectAnnotation"
+    ]["certainty"] = "automatically replay after transport failure"
+    reject_put_object_annotation_registry(
+        replay_put_annotation, "automatic replay"
+    )
+    causal_put_annotation = copy.deepcopy(registry)
+    causal_put_annotation.operations[
+        "PutObjectAnnotation"
+    ]["reconciliation"] = "a later read proves mutation causation"
+    reject_put_object_annotation_registry(
+        causal_put_annotation, "causal reconciliation"
+    )
+    bounded_put_annotation = copy.deepcopy(registry)
+    bounded_put_annotation.operations[
+        "PutObjectAnnotation"
+    ]["exclusions"][2] = "the client enforces a one MiB public limit"
+    reject_put_object_annotation_registry(
+        bounded_put_annotation, "invented public limit"
+    )
+    put_annotation_lane, put_annotation_commands = (
+        s3_operation.qualification_plan(registry, ["PutObjectAnnotation"])
+    )
+    assert put_annotation_lane == "put_object_annotation"
+    assert put_annotation_commands == (
+        registry.qualification["put_object_annotation"]
+    )
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectAnnotation", "PutObjectAnnotation"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutObjectAnnotation lane accepted")
+
     head_object_public_name = "Head_Object"
 
     def assert_head_object_registry(candidate):

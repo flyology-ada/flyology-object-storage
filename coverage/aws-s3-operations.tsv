@@ -99,7 +99,7 @@ PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	missing	covered	missing	covered
 PutObject	core	covered	covered	covered	covered
 PutObjectAcl	extended	missing	partial	missing	missing
-PutObjectAnnotation	extended	missing	partial	missing	missing
+PutObjectAnnotation	extended	missing	partial	missing	covered
 PutObjectLegalHold	extended	missing	covered	missing	covered
 PutObjectLockConfiguration	extended	missing	covered	missing	covered
 PutObjectRetention	extended	missing	covered	missing	covered
