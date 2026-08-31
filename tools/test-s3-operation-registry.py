@@ -10486,6 +10486,126 @@ def main() -> None:
             "mixed GetBucketAccelerateConfiguration lane accepted"
         )
 
+    abac_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the "
+        "presence-preserving ABAC status; every incomplete, invalid, or "
+        "non-observed response exposes no ABAC state; the client performs "
+        "no automatic retry"
+    )
+    abac_reconciliation = (
+        "a later GetBucketAbac observes only the bucket ABAC status current "
+        "at read time; it does not prove that a prior mutation caused the "
+        "observed state or authorize automatic replay"
+    )
+    abac_symbols = [
+        "Prepare_Get_Bucket_Abac",
+        "Decode_Get_Bucket_Abac_Response",
+        "Execute_Get_Bucket_Abac",
+        "Get_Bucket_ABAC_Operation",
+        "Get_ABAC",
+        "Finish",
+    ]
+
+    def assert_abac_registry(candidate):
+        entry = candidate.operations["GetBucketAbac"]
+        assert entry.get("public_name") == "Get_ABAC"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_abac"
+        assert entry.get("certainty") == abac_certainty
+        assert entry.get("reconciliation") == abac_reconciliation
+        assert entry.get("ada_symbols") == abac_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "absent, Enabled, or Disabled" in entry["absence"]
+        assert "effective ABAC policy" in entry["exclusions"][3]
+        assert candidate.qualification["get_bucket_abac"][0][-1] == (
+            "tools/verify-get-bucket-controls-preparation.py"
+        )
+
+    def reject_abac_registry(candidate, label):
+        try:
+            assert_abac_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetBucketAbac registry accepted")
+
+    assert_abac_registry(registry)
+    abac_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Get_ABAC_Status"),
+        ("automatic retry", "certainty", "read-only; retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves the prior mutation",
+        ),
+        ("collapsed absence", "absence", "missing Status means Disabled"),
+    ]
+    for label, key, value in abac_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["GetBucketAbac"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_abac_registry(candidate, label)
+    cross_abac_symbol = copy.deepcopy(registry)
+    cross_abac_symbol.operations["GetBucketAbac"]["ada_symbols"][0] = (
+        "Prepare_Put_Bucket_Abac"
+    )
+    assert cross_abac_symbol != registry
+    reject_abac_registry(cross_abac_symbol, "cross-operation")
+    missing_abac_lane = copy.deepcopy(registry)
+    del missing_abac_lane.qualification["get_bucket_abac"]
+    assert missing_abac_lane != registry
+    reject_abac_registry(missing_abac_lane, "missing lane")
+    abac_qualification, abac_commands = s3_operation.qualification_plan(
+        registry, ["GetBucketAbac"]
+    )
+    assert abac_qualification == "get_bucket_abac"
+    assert abac_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert abac_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-abac-gnatdoc",
+        "--operation",
+        "GetBucketAbac",
+    ]
+    assert abac_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketAbac", "GetBucketAbac"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketAbac lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketAbac", "PutBucketAbac"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed GetBucketAbac lane accepted")
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
