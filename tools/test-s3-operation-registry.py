@@ -4837,6 +4837,182 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed LifecycleConfiguration lane accepted")
+    put_bucket_lifecycle_configuration_certainty = (
+        "only a complete validated exact 200 Bucket_Control_Updated response "
+        "observed reports Bucket_Lifecycle_Mutation_Completed; a "
+        "response-observed exact recognized authentication, authorization, "
+        "not-found, invalid-request, checksum, malformed-XML, or "
+        "NotImplemented rejection or definite non-admission reports "
+        "Bucket_Lifecycle_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Lifecycle_Mutation_Cancelled_Before_Admission; every other "
+        "possibly admitted, incomplete, retryable, or corrupt outcome "
+        "reports Bucket_Lifecycle_Mutation_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    put_bucket_lifecycle_configuration_reconciliation = (
+        "a later GetBucketLifecycleConfiguration may observe the bucket "
+        "lifecycle configuration current at read time before a "
+        "caller-selected retry, but it neither proves that the lost mutation "
+        "caused the observed state nor upgrades mutation certainty; no "
+        "automatic replay"
+    )
+    put_bucket_lifecycle_configuration_symbols = [
+        "Prepare_Put_Bucket_Lifecycle_Configuration",
+        "Decode_Put_Bucket_Lifecycle_Configuration_Response",
+        "Execute_Put_Bucket_Lifecycle_Configuration",
+        "Put_Bucket_Lifecycle_Operation",
+        "Set_Lifecycle_Configuration",
+        "Finish",
+    ]
+
+    def assert_put_bucket_lifecycle_configuration_registry(candidate):
+        entry = candidate.operations["PutBucketLifecycleConfiguration"]
+        assert entry.get("public_name") == "Set_Lifecycle_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "put_bucket_lifecycle_configuration"
+        )
+        assert entry.get("codec") == (
+            "strict_rest_xml_request_checksum_and_singleton_headers"
+        )
+        assert entry.get("certainty") == (
+            put_bucket_lifecycle_configuration_certainty
+        )
+        assert entry.get("reconciliation") == (
+            put_bucket_lifecycle_configuration_reconciliation
+        )
+        assert entry.get("ada_symbols") == (
+            put_bucket_lifecycle_configuration_symbols
+        )
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert entry.get("absence") == "not_applicable"
+        assert "1,000-rule ceiling" in entry["exclusions"][1]
+        assert "ten modeled checksum algorithms" in entry["exclusions"][2]
+        assert candidate.qualification[
+            "put_bucket_lifecycle_configuration"
+        ][0][-1] == (
+            "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
+        )
+
+    def reject_put_bucket_lifecycle_configuration_registry(candidate, label):
+        try:
+            assert_put_bucket_lifecycle_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketLifecycleConfiguration registry accepted"
+        )
+
+    assert_put_bucket_lifecycle_configuration_registry(registry)
+    missing_put_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
+    del missing_put_bucket_lifecycle_configuration_name.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["public_name"]
+    reject_put_bucket_lifecycle_configuration_registry(
+        missing_put_bucket_lifecycle_configuration_name, "missing name"
+    )
+    wrong_put_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
+    wrong_put_bucket_lifecycle_configuration_name.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["public_name"] = "Get_Lifecycle_Configuration"
+    reject_put_bucket_lifecycle_configuration_registry(
+        wrong_put_bucket_lifecycle_configuration_name, "wrong name"
+    )
+    replay_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    replay_put_bucket_lifecycle_configuration.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["certainty"] = "automatically replay PutBucketLifecycleConfiguration"
+    reject_put_bucket_lifecycle_configuration_registry(
+        replay_put_bucket_lifecycle_configuration, "automatic replay"
+    )
+    causal_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    causal_put_bucket_lifecycle_configuration.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["reconciliation"] = "the read proves the mutation caused state"
+    reject_put_bucket_lifecycle_configuration_registry(
+        causal_put_bucket_lifecycle_configuration, "causal reconciliation"
+    )
+    checksum_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    checksum_put_bucket_lifecycle_configuration.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["codec"] = "rest_xml_and_headers"
+    reject_put_bucket_lifecycle_configuration_registry(
+        checksum_put_bucket_lifecycle_configuration, "missing checksum"
+    )
+    bounded_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    bounded_put_bucket_lifecycle_configuration.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["exclusions"][1] = "lifecycle rules are limited to 1,000"
+    reject_put_bucket_lifecycle_configuration_registry(
+        bounded_put_bucket_lifecycle_configuration, "invented policy bound"
+    )
+    cross_put_bucket_lifecycle_configuration_symbol = copy.deepcopy(registry)
+    cross_put_bucket_lifecycle_configuration_symbol.operations[
+        "PutBucketLifecycleConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Lifecycle_Configuration"
+    reject_put_bucket_lifecycle_configuration_registry(
+        cross_put_bucket_lifecycle_configuration_symbol,
+        "cross-operation symbol",
+    )
+    put_lifecycle_qualification, put_lifecycle_commands = (
+        s3_operation.qualification_plan(
+            registry, ["PutBucketLifecycleConfiguration"]
+        )
+    )
+    assert put_lifecycle_qualification == "put_bucket_lifecycle_configuration"
+    assert put_lifecycle_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-lifecycle-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_bucket_lifecycle_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert put_lifecycle_commands[4] == ["./tools/verify-coverage.sh"]
+    assert put_lifecycle_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-lifecycle-configuration-gnatdoc",
+        "--operation",
+        "PutBucketLifecycleConfiguration",
+    ]
+    assert put_lifecycle_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketLifecycleConfiguration",
+                "PutBucketLifecycleConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate PutBucketLifecycleConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketLifecycleConfiguration",
+                "GetBucketLifecycleConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed PutBucketLifecycleConfiguration lane accepted"
+        )
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "

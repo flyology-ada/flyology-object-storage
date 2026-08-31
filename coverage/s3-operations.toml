@@ -572,6 +572,16 @@ get_bucket_lifecycle_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_bucket_lifecycle_configuration = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-lifecycle-configuration-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_put_bucket_lifecycle_configuration_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-bucket-lifecycle-configuration-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_bucket_ownership_controls = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-ownership-controls-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -4231,18 +4241,22 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
+codec = "strict_rest_xml_request_checksum_and_singleton_headers"
+public_name = "Set_Lifecycle_Configuration"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated exact 200 Bucket_Control_Updated response observed reports Bucket_Lifecycle_Mutation_Completed; a response-observed exact recognized authentication, authorization, not-found, invalid-request, checksum, malformed-XML, or NotImplemented rejection or definite non-admission reports Bucket_Lifecycle_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Lifecycle_Mutation_Cancelled_Before_Admission; every other possibly admitted, incomplete, retryable, or corrupt outcome reports Bucket_Lifecycle_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "a later GetBucketLifecycleConfiguration may observe the bucket lifecycle configuration current at read time before a caller-selected retry, but it neither proves that the lost mutation caused the observed state nor upgrades mutation certainty; no automatic replay"
+exclusions = ["lifecycle persistence, lifecycle action execution, and an authenticated Flyology PutBucketLifecycleConfiguration server route are absent and not claimed", "the client preserves modeled unbounded signed decimal text, timestamps, enums, lists, and optional fields without inventing the prose-only 1,000-rule ceiling, a public numeric or list bound, or undocumented one-of and action-combination policy", "the caller explicitly selects one of the ten modeled checksum algorithms over the exact immutable serialized body; no body rewind or automatic replay is claimed", "directory-bucket endpoint and session semantics, access-point and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_bucket_lifecycle_configuration"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "src/flyology-object_storage-s3-lifecycle.ads", "src/flyology-object_storage-s3-lifecycle.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-put-bucket-lifecycle-configuration-preparation.py", "docs/qualification/put-bucket-lifecycle-configuration.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Put_Bucket_Lifecycle_Configuration", "Decode_Put_Bucket_Lifecycle_Configuration_Response", "Execute_Put_Bucket_Lifecycle_Configuration", "Put_Bucket_Lifecycle_Operation", "Set_Lifecycle_Configuration", "Finish"]
 
 [[operation]]
 name = "PutBucketLogging"
