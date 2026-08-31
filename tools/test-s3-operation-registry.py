@@ -10729,6 +10729,143 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetBucketPolicyStatus lane accepted")
 
+    request_payment_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the "
+        "presence-preserving payer configuration; every incomplete, "
+        "invalid, or non-observed response exposes no request-payment "
+        "state; the client performs no automatic retry"
+    )
+    request_payment_reconciliation = (
+        "a later GetBucketRequestPayment observes only the bucket "
+        "request-payment configuration current at read time; it does not "
+        "prove that a prior mutation caused the observed state or authorize "
+        "automatic replay"
+    )
+    request_payment_symbols = [
+        "Prepare_Get_Bucket_Request_Payment",
+        "Decode_Get_Bucket_Request_Payment_Response",
+        "Execute_Get_Bucket_Request_Payment",
+        "Get_Bucket_Request_Payment_Operation",
+        "Get_Request_Payment",
+        "Finish",
+    ]
+
+    def assert_request_payment_registry(candidate):
+        entry = candidate.operations["GetBucketRequestPayment"]
+        assert entry.get("public_name") == "Get_Request_Payment"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_request_payment"
+        assert entry.get("certainty") == request_payment_certainty
+        assert entry.get("reconciliation") == request_payment_reconciliation
+        assert entry.get("ada_symbols") == request_payment_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "absent, Requester, or BucketOwner" in entry["absence"]
+        assert "enforcing Requester Pays" in entry["exclusions"][3]
+        assert candidate.qualification["get_bucket_request_payment"][0][
+            -1
+        ] == "tools/verify-get-bucket-controls-preparation.py"
+
+    def reject_request_payment_registry(candidate, label):
+        try:
+            assert_request_payment_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketRequestPayment registry accepted"
+        )
+
+    assert_request_payment_registry(registry)
+    request_payment_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Get_Requester_Pays"),
+        ("automatic retry", "certainty", "read-only; retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves the prior mutation",
+        ),
+        ("collapsed absence", "absence", "missing Payer means BucketOwner"),
+    ]
+    for label, key, value in request_payment_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["GetBucketRequestPayment"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_request_payment_registry(candidate, label)
+    cross_request_payment_symbol = copy.deepcopy(registry)
+    cross_request_payment_symbol.operations["GetBucketRequestPayment"][
+        "ada_symbols"
+    ][0] = "Prepare_Put_Bucket_Request_Payment"
+    assert cross_request_payment_symbol != registry
+    reject_request_payment_registry(
+        cross_request_payment_symbol, "cross-operation"
+    )
+    missing_request_payment_lane = copy.deepcopy(registry)
+    del missing_request_payment_lane.qualification[
+        "get_bucket_request_payment"
+    ]
+    assert missing_request_payment_lane != registry
+    reject_request_payment_registry(
+        missing_request_payment_lane, "missing lane"
+    )
+    request_payment_qualification, request_payment_commands = (
+        s3_operation.qualification_plan(
+            registry, ["GetBucketRequestPayment"]
+        )
+    )
+    assert request_payment_qualification == "get_bucket_request_payment"
+    assert request_payment_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert request_payment_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-request-payment-gnatdoc",
+        "--operation",
+        "GetBucketRequestPayment",
+    ]
+    assert request_payment_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetBucketRequestPayment", "GetBucketRequestPayment"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketRequestPayment lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetBucketRequestPayment", "PutBucketRequestPayment"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError(
+            "mixed GetBucketRequestPayment lane accepted"
+        )
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
