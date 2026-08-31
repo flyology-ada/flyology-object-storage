@@ -5201,19 +5201,39 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Objects_Result;
+   --  @exclude
+   --  @param Value Complete modeled ListObjectsV2 response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal ListObjectsV2 result projection
    function Normalize_List_Objects_V2_Response
      (Value     : Low_Level.List_Objects_V2_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return List_Objects_V2_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal ListObjectsV2 failure projection
    function Normalize_List_Objects_V2_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Objects_V2_Result;
+   --  @exclude
+   --  @param Value Complete modeled ListObjectVersions response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal ListObjectVersions result projection
    function Normalize_List_Object_Versions_Response
      (Value     : Low_Level.List_Object_Versions_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return List_Object_Versions_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal ListObjectVersions failure projection
    function Normalize_List_Object_Versions_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
