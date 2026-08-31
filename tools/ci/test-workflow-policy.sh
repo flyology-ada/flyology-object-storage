@@ -43,8 +43,56 @@ expect_rejection missing-docs-tool \
     "$WORKFLOW"
 
 expect_rejection wrong-uv-version \
-  'integrity and test jobs must install exact uv 0.11.28' \
+  'integrity, test, and docs jobs must install exact uv 0.11.28' \
   sed 's/version: "0.11.28"/version: "0.11.27"/g' "$WORKFLOW"
+
+expect_rejection missing-docs-uv \
+  'integrity, test, and docs jobs must install exact setup-uv v9.0.0' \
+  awk '
+    /uses: astral-sh\/setup-uv@/ { installs++ }
+    installs == 3 && /uses: astral-sh\/setup-uv@/ {
+      sub(/astral-sh\/setup-uv@/, "astral-sh/setup-not-uv@")
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection missing-docs-operation \
+  'docs job must select the stable ListBuckets API once' \
+  sed '/--operation ListBuckets/d' "$WORKFLOW"
+
+expect_rejection relocated-docs-uv \
+  'docs job must install exact setup-uv v9.0.0 once' \
+  awk '
+    /^  test:$/ { job="test" }
+    /^  docs:$/ { job="docs" }
+    job == "test" && !inserted && /- name: Install Alire/ {
+      print "      - name: Install uv"
+      print "        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0"
+      print "        with:"
+      print "          version: \"0.11.28\""
+      inserted=1
+    }
+    job == "docs" && /- name: Install uv/ { skip=4 }
+    skip > 0 { skip--; next }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection relocated-docs-command \
+  'docs job must invoke the maintained GNATdoc wrapper once' \
+  awk '
+    /^  integrity:$/ { job="integrity" }
+    /^  docs:$/ { job="docs" }
+    job == "integrity" && !inserted && /- name: Upload integrity log/ {
+      print "      - name: Build API reference"
+      print "        run: >-"
+      print "          ./tools/build-api-docs.sh \"$PWD/obj/docs/api\""
+      print "          --operation ListBuckets"
+      inserted=1
+    }
+    job == "docs" && /- name: Build API reference/ { skip=4 }
+    skip > 0 { skip--; next }
+    { print }
+  ' "$WORKFLOW"
 
 expect_rejection persisted-credentials \
   'every checkout must disable persisted credentials' \
@@ -56,4 +104,4 @@ expect_rejection persisted-credentials \
     { print }
   ' "$WORKFLOW"
 
-echo "workflow policy negative oracle: 5 unsafe mutations rejected"
+echo "workflow policy negative oracle: 9 unsafe mutations rejected"

@@ -39,9 +39,15 @@ The ordinary CI-equivalent local gates are:
 ./tools/ci/check-repository.sh /path/to/pinned/service-2.json
 ./tools/ci/run-tests.sh
 ./tools/prove.sh
-./tools/build-api-docs.sh
+./tools/build-api-docs.sh "$PWD/obj/docs/api" \
+  --operation ListBuckets
 ./tests/scripts/test-flyology-server.sh memory
 ```
+
+The selected `ListBuckets` API is the stable rendered-API sentinel.  The
+GNATdoc diagnostic classifier still rejects an undocumented association in
+any of the 40 repository-owned public specifications, not only in that
+selected operation.
 
 CI installs Alire 2.1.1, GNAT 16.1.0, and GPRbuild 26.0.1. GNATdoc is pinned
 to 26.0.0. GitHub Actions and Docker images use immutable digests or full
