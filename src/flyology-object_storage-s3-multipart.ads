@@ -230,12 +230,29 @@ package Flyology.Object_Storage.S3.Multipart is
    function Serialize_Copy_Part_Result
      (Value : Copy_Part_Result) return String;
 
+   --  Identity information modeled in a ListParts result body.
+   --  @field ID Modeled identity identifier
+   --  @field Display_Name Modeled identity display name
    type Multipart_Identity is record
       ID           : Ada.Strings.Unbounded.Unbounded_String;
       Display_Name : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    --  Every member in the pinned ListParts Part structure.
+   --  @field Number Part number
+   --  @field Last_Modified Modeled part modification time
+   --  @field Entity_Tag Modeled part entity tag
+   --  @field Size Part size in bytes
+   --  @field Checksum_CRC32 Optional CRC-32 checksum value
+   --  @field Checksum_CRC32C Optional CRC-32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC-64/NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA-1 checksum value
+   --  @field Checksum_SHA256 Optional SHA-256 checksum value
+   --  @field Checksum_SHA512 Optional SHA-512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXH3 64-bit checksum value
+   --  @field Checksum_XXHASH128 Optional XXH3 128-bit checksum value
    type Listed_Part is record
       Number             : Core.Part_Number := Core.Part_Number'First;
       Last_Modified      : Ada.Strings.Unbounded.Unbounded_String;
@@ -253,14 +270,31 @@ package Flyology.Object_Storage.S3.Multipart is
       Checksum_XXHASH128 : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Vector storage for modeled ListParts part entries.
    package Listed_Part_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Listed_Part);
 
+   --  Collection of modeled ListParts part entries.
    subtype Listed_Part_List is Listed_Part_Vectors.Vector;
 
    --  All REST/XML body members in the pinned ListParts output shape.
    --  AbortDate, AbortRuleId, and RequestCharged are HTTP headers handled by
    --  the operation layer.
+   --  @field Bucket Bucket name
+   --  @field Key Object key
+   --  @field Upload_ID Multipart upload identifier
+   --  @field Part_Number_Marker Request marker returned in the result
+   --  @field Next_Part_Number_Marker Marker for the next result page
+   --  @field Max_Parts Requested maximum number of returned parts
+   --  @field Is_Truncated Whether another result page is available
+   --  @field Parts Modeled part entries
+   --  @field Has_Initiator Whether initiator information is present
+   --  @field Initiator Modeled initiator information
+   --  @field Has_Owner Whether owner information is present
+   --  @field Owner Modeled owner information
+   --  @field Storage_Class Optional modeled storage class
+   --  @field Checksum_Algorithm Optional modeled checksum algorithm
+   --  @field Checksum_Type Optional modeled checksum type
    type List_Parts_Result is record
       Bucket                  : Ada.Strings.Unbounded.Unbounded_String;
       Key                     : Ada.Strings.Unbounded.Unbounded_String;
@@ -279,11 +313,18 @@ package Flyology.Object_Storage.S3.Multipart is
       Checksum_Type           : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Parse one bounded ListParts result document.
+   --  @param Document ListParts result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded ListParts result body
    function Parse_List_Parts_Result
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return List_Parts_Result;
 
+   --  Serialize one ListParts result document.
+   --  @param Value ListParts result body to serialize
+   --  @return Namespaced ListParts result XML
    function Serialize_List_Parts_Result
      (Value : List_Parts_Result) return String;
 
