@@ -6696,6 +6696,25 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every non-resource and non-body member in the pinned
    --  CompleteMultipartUpload input shape. Completion supplies the modeled
    --  MultipartUpload body. Mpu_Object_Size preserves absent versus zero.
+   --  @field Checksum_CRC32 Optional CRC-32 checksum value
+   --  @field Checksum_CRC32C Optional CRC-32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC-64/NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA-1 checksum value
+   --  @field Checksum_SHA256 Optional SHA-256 checksum value
+   --  @field Checksum_SHA512 Optional SHA-512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXH3 checksum value
+   --  @field Checksum_XXHASH128 Optional XXH128 checksum value
+   --  @field Checksum_Type Optional modeled checksum type
+   --  @field Mpu_Object_Size Presence-preserving modeled object size
+   --  @field Request_Payer Optional request-payer value
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field If_Match Optional matching entity-tag precondition
+   --  @field If_None_Match Optional nonmatching entity-tag precondition
+   --  @field SSE_Customer_Algorithm Optional customer encryption algorithm
+   --  @field SSE_Customer_Key Optional customer-provided encryption key
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5 value
    type Complete_Multipart_Parameters is record
       Checksum_CRC32       : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_CRC32C      : Ada.Strings.Unbounded.Unbounded_String;
@@ -6718,6 +6737,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       SSE_Customer_Key_MD5   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exactly bound CompleteMultipartUpload request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Upload_ID Multipart upload identifier
+   --  @param Completion Ordered completed-part manifest
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact multipart-completion request
    function Prepare_Complete_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;
       Style     : Addressing_Style;
@@ -6729,6 +6759,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region    : String;
       Timestamp : String) return Prepared_Request;
 
+   --  Prepare one parameterized CompleteMultipartUpload request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Upload_ID Multipart upload identifier
+   --  @param Completion Ordered completed-part manifest
+   --  @param Parameters Complete modeled non-body input
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact multipart-completion request
    function Prepare_Complete_Multipart_Upload
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -6742,6 +6784,27 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  Every member in the pinned CompleteMultipartUpload output shape.
+   --  @field Location Returned object location
+   --  @field Bucket Returned bucket identity
+   --  @field Key Returned object-key identity
+   --  @field Expiration Returned expiration metadata
+   --  @field Entity_Tag Returned entity tag
+   --  @field Checksum_CRC32 Returned CRC-32 checksum
+   --  @field Checksum_CRC32C Returned CRC-32C checksum
+   --  @field Checksum_CRC64NVME Returned CRC-64/NVME checksum
+   --  @field Checksum_SHA1 Returned SHA-1 checksum
+   --  @field Checksum_SHA256 Returned SHA-256 checksum
+   --  @field Checksum_SHA512 Returned SHA-512 checksum
+   --  @field Checksum_MD5 Returned MD5 checksum
+   --  @field Checksum_XXHASH64 Returned XXH64 checksum
+   --  @field Checksum_XXHASH3 Returned XXH3 checksum
+   --  @field Checksum_XXHASH128 Returned XXH128 checksum
+   --  @field Checksum_Type Returned modeled checksum type
+   --  @field Server_Side_Encryption Returned encryption algorithm
+   --  @field Version_ID Returned object-version identifier
+   --  @field SSE_KMS_Key_ID Returned KMS key identifier
+   --  @field Bucket_Key_Enabled Presence-preserving returned bucket-key flag
+   --  @field Request_Charged Returned requester-charge value
    type Complete_Multipart_Result is record
       Location               : Ada.Strings.Unbounded.Unbounded_String;
       Bucket                 : Ada.Strings.Unbounded.Unbounded_String;
@@ -6766,6 +6829,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged        : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Caller-supplied headers for compatibility response decoding.
+   --  @field Expiration Returned expiration metadata
+   --  @field Server_Side_Encryption Returned encryption algorithm
+   --  @field Version_ID Returned object-version identifier
+   --  @field SSE_KMS_Key_ID Returned KMS key identifier
+   --  @field Bucket_Key_Enabled Presence-preserving returned bucket-key flag
+   --  @field Request_Charged Returned requester-charge value
    type Complete_Multipart_Response_Headers is record
       Expiration             : Ada.Strings.Unbounded.Unbounded_String;
       Server_Side_Encryption : Ada.Strings.Unbounded.Unbounded_String;
@@ -6775,9 +6845,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged        : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish completed multipart assembly from structured S3 rejection.
+   --  @enum Completed Complete response metadata was decoded
+   --  @enum Complete_Rejected S3 rejected the operation or embedded an error
    type Complete_Multipart_Outcome_Kind is
      (Completed, Complete_Rejected);
 
+   --  Result of decoding or executing one CompleteMultipartUpload operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Completion metadata on success
+   --  @field Error Structured S3 error on rejection
    type Complete_Multipart_Outcome
      (Kind : Complete_Multipart_Outcome_Kind := Complete_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -6789,6 +6867,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded CompleteMultipartUpload response without headers.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Completion metadata or structured S3 rejection
    function Decode_Complete_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -6814,6 +6899,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Complete_Multipart_Outcome;
 
+   --  Decode one bounded response from caller-supplied modeled headers.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Completion metadata or structured S3 rejection
    function Decode_Complete_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -6823,6 +6916,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Complete_Multipart_Outcome;
 
+   --  Execute one exact prepared CompleteMultipartUpload exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Completion metadata or structured S3 rejection
    function Execute_Complete_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -8670,6 +8770,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared CompleteMultipartUpload exchange.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Exact signed multipart-completion request
+   --  @param Source One-shot request body source retained through drain
+   --  @param Sink Bounded response sink retained through drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Caller-owned HTTP exchange operation
    procedure Complete_Multipart_Upload
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
