@@ -474,6 +474,23 @@ DELETE_PUBLIC_ACCESS_BLOCK_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+GET_PUBLIC_ACCESS_BLOCK_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-public-access-block-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -1696,6 +1713,87 @@ def verify_delete_public_access_block_negatives(
         fail(f"{label}: candidate was accepted")
 
 
+def get_public_access_block_entry(
+    data: dict[str, object],
+) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "GetPublicAccessBlock"
+    ]
+    if len(matches) != 1:
+        fail("GetPublicAccessBlock is not unique")
+    return matches[0]
+
+
+def verify_get_public_access_block_registry(
+    data: dict[str, object],
+) -> None:
+    entry = get_public_access_block_entry(data)
+    expected = {
+        "public_name": "Get_Public_Access_Block",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "get_public_access_block",
+        "codec": "rest_xml_and_headers",
+        "certainty": "read_only",
+        "reconciliation": "not_applicable",
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Get_Public_Access_Block",
+            "Execute_Get_Public_Access_Block",
+            "Get_Public_Access_Block_Operation",
+            "Get_Public_Access_Block",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"GetPublicAccessBlock changed: {key}")
+    if "independent member presence" not in entry["absence"]:
+        fail("GetPublicAccessBlock presence semantics changed")
+    if "NoSuchPublicAccessBlockConfiguration" not in entry["absence"]:
+        fail("GetPublicAccessBlock absence semantics changed")
+    if "exact HTTP 200" not in entry["exclusions"][2]:
+        fail("GetPublicAccessBlock success changed")
+    if "distinct from NoSuchBucket" not in entry["exclusions"][3]:
+        fail("GetPublicAccessBlock not-found boundary changed")
+    if data["qualification"].get(
+        "get_public_access_block"
+    ) != GET_PUBLIC_ACCESS_BLOCK_LANE:
+        fail("GetPublicAccessBlock lane changed")
+
+
+def verify_get_public_access_block_negatives(
+    data: dict[str, object],
+) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Get_Policy"),
+        ("mutation certainty", "certainty", "outcome_unknown"),
+        ("invented reconciliation", "reconciliation", "Get retries itself"),
+        ("cross-operation lane", "qualification", "delete_public_access_block"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = get_public_access_block_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_get_public_access_block_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1799,6 +1897,8 @@ def main() -> int:
     verify_delete_policy_negatives(registry)
     verify_delete_public_access_block_registry(registry)
     verify_delete_public_access_block_negatives(registry)
+    verify_get_public_access_block_registry(registry)
+    verify_get_public_access_block_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1885,8 +1985,8 @@ def main() -> int:
     if model_spec.count(metrics_documentation) != 1:
         fail("DeleteBucketMetricsConfiguration docs changed")
     ownership_controls_documentation = (
-        "@enum Delete_Bucket_Ownership_Controls_Operation Delete bucket "
-        "ownership\n   --    controls"
+        "@enum Delete_Bucket_Ownership_Controls_Operation\n"
+        "   --    Delete bucket ownership controls"
     )
     if model_spec.count(ownership_controls_documentation) != 1:
         fail("DeleteBucketOwnershipControls docs changed")
@@ -2583,10 +2683,55 @@ def main() -> int:
             "possibly admitted exchange",
             "`Get_Public_Access_Block`",
             "neither proves the lost deletion caused the state",
-            "`delete_public_access_block` lane",
+            "`delete_public_access_block` and `get_public_access_block` lanes",
             "repository-wide GNATdoc qualification",
         ],
         "DeletePublicAccessBlock backend and server qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Get_Public_Access_Block_Response",
+            '"NoSuchBucket" | "NoSuchPublicAccessBlockConfiguration"',
+            "function Normalize_Get_Public_Access_Block_Failure",
+            "GetPublicAccessBlock response exceeds the caller-selected limit",
+            "procedure Start_Get_Public_Access_Block",
+            "GetPublicAccessBlock restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "GetPublicAccessBlock provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Public_Access_Block_Certainty_Corpus",
+            "procedure Check_Get",
+            "GetPublicAccessBlock response normalization mismatch",
+            '(404, "NoSuchPublicAccessBlockConfiguration", Not_Found)',
+            "Normalize_Get_Public_Access_Block_Failure",
+        ],
+        "GetPublicAccessBlock certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            "GetPublicAccessBlock socket mismatch",
+            "GetPublicAccessBlock accepted a prepared ABAC request",
+            "composed GetPublicAccessBlock result mismatch",
+            "restarted GetPublicAccessBlock result mismatch",
+        ],
+        "GetPublicAccessBlock socket evidence",
+    )
+    ordered(
+        public_access_block_qualification,
+        [
+            "reviewed `GetPublicAccessBlock` client contract is read-only",
+            "preserves independent presence",
+            "`NoSuchPublicAccessBlockConfiguration`",
+            "remains distinct from `NoSuchBucket`",
+            "`get_public_access_block` lanes",
+        ],
+        "GetPublicAccessBlock qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):

@@ -6064,6 +6064,121 @@ def main() -> None:
         raise AssertionError(
             "mixed DeletePublicAccessBlock lane was accepted"
         )
+    def assert_get_public_access_block_registry(candidate):
+        entry = candidate.operations["GetPublicAccessBlock"]
+        assert entry.get("public_name") == "Get_Public_Access_Block"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_public_access_block"
+        assert entry.get("codec") == "rest_xml_and_headers"
+        assert entry.get("certainty") == "read_only"
+        assert entry.get("reconciliation") == "not_applicable"
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Get_Public_Access_Block",
+            "Execute_Get_Public_Access_Block",
+            "Get_Public_Access_Block_Operation",
+            "Get_Public_Access_Block",
+            "Finish",
+        ]
+        assert "independent member presence" in entry["absence"]
+        assert "NoSuchPublicAccessBlockConfiguration" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][2]
+        assert "distinct from NoSuchBucket" in entry["exclusions"][3]
+        assert (
+            candidate.qualification["get_public_access_block"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_get_public_access_block_registry(candidate, label):
+        try:
+            assert_get_public_access_block_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetPublicAccessBlock registry accepted")
+
+    assert_get_public_access_block_registry(registry)
+    missing_get_public_access_name = copy.deepcopy(registry)
+    del missing_get_public_access_name.operations["GetPublicAccessBlock"][
+        "public_name"
+    ]
+    reject_get_public_access_block_registry(
+        missing_get_public_access_name, "missing public name"
+    )
+    wrong_get_public_access_name = copy.deepcopy(registry)
+    wrong_get_public_access_name.operations["GetPublicAccessBlock"][
+        "public_name"
+    ] = "Get_Policy"
+    reject_get_public_access_block_registry(
+        wrong_get_public_access_name, "wrong public name"
+    )
+    mutation_get_public_access = copy.deepcopy(registry)
+    mutation_get_public_access.operations["GetPublicAccessBlock"][
+        "certainty"
+    ] = "outcome_unknown"
+    reject_get_public_access_block_registry(
+        mutation_get_public_access, "mutation certainty"
+    )
+    reconciled_get_public_access = copy.deepcopy(registry)
+    reconciled_get_public_access.operations["GetPublicAccessBlock"][
+        "reconciliation"
+    ] = "Get retries itself"
+    reject_get_public_access_block_registry(
+        reconciled_get_public_access, "invented reconciliation"
+    )
+    cross_get_public_access_symbol = copy.deepcopy(registry)
+    cross_get_public_access_symbol.operations["GetPublicAccessBlock"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Bucket_Policy"
+    reject_get_public_access_block_registry(
+        cross_get_public_access_symbol, "cross-operation symbol"
+    )
+    get_public_access_qualification, get_public_access_commands = (
+        s3_operation.qualification_plan(registry, ["GetPublicAccessBlock"])
+    )
+    assert get_public_access_qualification == "get_public_access_block"
+    assert get_public_access_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert get_public_access_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-public-access-block-gnatdoc",
+        "--operation",
+        "GetPublicAccessBlock",
+    ]
+    assert get_public_access_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetPublicAccessBlock", "GetPublicAccessBlock"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetPublicAccessBlock lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetPublicAccessBlock", "DeletePublicAccessBlock"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetPublicAccessBlock lane accepted")
     get_versioning_qualification, get_versioning_commands = (
         s3_operation.qualification_plan(registry, ["GetBucketVersioning"])
     )

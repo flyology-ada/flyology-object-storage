@@ -66,10 +66,18 @@ the current bucket configuration or exact
 `NoSuchPublicAccessBlockConfiguration`, but that observation neither proves
 the lost deletion caused the state nor upgrades mutation certainty.
 
-The focused `delete_public_access_block` lane is conditional on every
-maintained command succeeding. It does not claim directory-bucket support,
-account- or organization-level effective-policy interpretation, external
-provider interoperability, or repository-wide GNATdoc qualification.
+The reviewed `GetPublicAccessBlock` client contract is read-only. A complete
+200 response preserves independent presence for all four bucket-level members;
+exact `NoSuchPublicAccessBlockConfiguration` reports an absent bucket-level
+configuration and remains distinct from `NoSuchBucket`. Malformed, oversized,
+or incomplete responses fail closed and do not create a mutation or retry
+claim.
+
+The focused `delete_public_access_block` and `get_public_access_block` lanes
+are each conditional on every maintained command succeeding. They do not
+claim directory-bucket support, account- or organization-level
+effective-policy interpretation, external-provider interoperability, or
+repository-wide GNATdoc qualification.
 
 The shared backend conformance exercises absent buckets, new unconfigured
 buckets, present-empty configurations, every Boolean presence/value form,

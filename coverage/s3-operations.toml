@@ -352,6 +352,17 @@ delete_public_access_block = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_public_access_block = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+  ["@tests", "./bin/s3_server_application_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-public-access-block-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_bucket_lifecycle = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -2734,18 +2745,22 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Get_Public_Access_Block"
+absence = "a complete validated 200 response returns the bucket-level public-access-block configuration with independent member presence; exact NoSuchPublicAccessBlockConfiguration and NoSuchBucket remain distinct bounded structured 404 rejections normalized as not found"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 200 with a bounded valid response document; no other success status or malformed XML tolerance is claimed", "NoSuchPublicAccessBlockConfiguration reports absence of the bucket-level configuration and remains distinct from NoSuchBucket", "account- or organization-level public-access-block settings and effective-policy interpretation are not claimed", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_public_access_block"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/public-access-block.md", "tests/src/object_storage_test_cases.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"] }
+ada_symbols = ["Prepare_Get_Public_Access_Block", "Execute_Get_Public_Access_Block", "Get_Public_Access_Block_Operation", "Get_Public_Access_Block", "Finish"]
 
 [[operation]]
 name = "HeadBucket"
