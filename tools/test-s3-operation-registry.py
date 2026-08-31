@@ -4096,6 +4096,143 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed PutObjectLegalHold lane accepted")
+    get_bucket_encryption_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the "
+        "presence-preserving encryption configuration; every incomplete, "
+        "invalid, or non-observed response exposes no configuration state; "
+        "the client performs no automatic retry"
+    )
+    get_bucket_encryption_reconciliation = (
+        "a later GetBucketEncryption observes only the bucket encryption "
+        "configuration current at read time; it does not prove that a prior "
+        "mutation caused the observed state or authorize automatic replay"
+    )
+    get_bucket_encryption_symbols = [
+        "Prepare_Get_Bucket_Encryption",
+        "Decode_Get_Bucket_Encryption_Response",
+        "Execute_Get_Bucket_Encryption",
+        "Get_Bucket_Encryption_Operation",
+        "Get_Encryption",
+        "Finish",
+    ]
+
+    def assert_get_bucket_encryption_registry(candidate):
+        entry = candidate.operations["GetBucketEncryption"]
+        assert entry.get("public_name") == "Get_Encryption"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_encryption"
+        assert entry.get("certainty") == get_bucket_encryption_certainty
+        assert entry.get("reconciliation") == (
+            get_bucket_encryption_reconciliation
+        )
+        assert entry.get("ada_symbols") == get_bucket_encryption_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "absent optional" in entry["absence"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert candidate.qualification["get_bucket_encryption"][0][-1] == (
+            "tools/verify-get-bucket-encryption-preparation.py"
+        )
+
+    def reject_get_bucket_encryption_registry(candidate, label):
+        try:
+            assert_get_bucket_encryption_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketEncryption registry accepted"
+        )
+
+    assert_get_bucket_encryption_registry(registry)
+    missing_get_bucket_encryption_name = copy.deepcopy(registry)
+    del missing_get_bucket_encryption_name.operations[
+        "GetBucketEncryption"
+    ]["public_name"]
+    reject_get_bucket_encryption_registry(
+        missing_get_bucket_encryption_name, "missing name"
+    )
+    wrong_get_bucket_encryption_name = copy.deepcopy(registry)
+    wrong_get_bucket_encryption_name.operations[
+        "GetBucketEncryption"
+    ]["public_name"] = "Set_Encryption"
+    reject_get_bucket_encryption_registry(
+        wrong_get_bucket_encryption_name, "wrong name"
+    )
+    retry_get_bucket_encryption = copy.deepcopy(registry)
+    retry_get_bucket_encryption.operations[
+        "GetBucketEncryption"
+    ]["certainty"] = "read-only; retry automatically"
+    reject_get_bucket_encryption_registry(
+        retry_get_bucket_encryption, "automatic retry"
+    )
+    causal_get_bucket_encryption = copy.deepcopy(registry)
+    causal_get_bucket_encryption.operations[
+        "GetBucketEncryption"
+    ]["reconciliation"] = "the read proves the prior mutation caused state"
+    reject_get_bucket_encryption_registry(
+        causal_get_bucket_encryption, "causal reconciliation"
+    )
+    server_get_bucket_encryption = copy.deepcopy(registry)
+    server_get_bucket_encryption.operations[
+        "GetBucketEncryption"
+    ]["coverage"]["server"] = "covered"
+    reject_get_bucket_encryption_registry(
+        server_get_bucket_encryption, "invented server coverage"
+    )
+    cross_get_bucket_encryption_symbol = copy.deepcopy(registry)
+    cross_get_bucket_encryption_symbol.operations[
+        "GetBucketEncryption"
+    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Encryption"
+    reject_get_bucket_encryption_registry(
+        cross_get_bucket_encryption_symbol, "cross-operation symbol"
+    )
+    get_bucket_encryption_qualification, encryption_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketEncryption"])
+    )
+    assert get_bucket_encryption_qualification == "get_bucket_encryption"
+    assert encryption_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-encryption-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_encryption_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert encryption_commands[4] == ["./tools/verify-coverage.sh"]
+    assert encryption_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-encryption-gnatdoc",
+        "--operation",
+        "GetBucketEncryption",
+    ]
+    assert encryption_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketEncryption", "GetBucketEncryption"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketEncryption lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketEncryption", "PutBucketEncryption"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed BucketEncryption lane accepted")
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
