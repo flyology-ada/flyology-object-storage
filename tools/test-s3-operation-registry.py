@@ -3957,6 +3957,222 @@ def main() -> None:
     else:
         raise AssertionError("duplicate SelectObjectContent lane accepted")
 
+    update_object_encryption_certainty = (
+        "mutation model coverage only; no public encryption-update request, "
+        "XML serializer, checksum binding, response decoder, or runtime "
+        "evidence exists, so this review reports no accepted or completed "
+        "update, no admission certainty, and no automatic replay"
+    )
+    update_object_encryption_reconciliation = (
+        "the model carries an optional VersionId, but neither explicit nor "
+        "omitted-version request binding nor later HeadObject "
+        "encryption-state decoding is implemented; later observation cannot "
+        "prove causation, upgrade mutation certainty, or authorize automatic "
+        "replay"
+    )
+    update_object_encryption_errors = [
+        "authentication", "authorization", "not_found", "invalid_request",
+        "unavailable_or_retryable", "corrupt_or_invalid_response",
+    ]
+    update_object_encryption_exclusions = [
+        "Not_Exposed is a registry sentinel and not an Ada declaration; no "
+        "Low_Level or Objects UpdateObjectEncryption API, composable "
+        "operation, synchronous wrapper, Finish path, or GNATdoc "
+        "qualification is claimed",
+        "the actual ObjectEncryption union exposes only SSEKMS even though "
+        "surrounding prose also mentions SSES3, and BucketKeyEnabled is "
+        "merely optional despite prose describing false when omitted; this "
+        "review does not invent an SSES3 variant, a public false default, or "
+        "a conflict resolution",
+        "the modeled XML, Content-MD5, required generated-checksum selection, "
+        "VersionId, requester-pays controls, and response header are "
+        "inventory "
+        "only; no serialization, digest computation, signing binding, "
+        "version binding, response validation, or rewind behavior is "
+        "implemented",
+        "the KMS ARN shape, account and organization ownership prose, "
+        "permissions, current-encryption restrictions, Object Lock "
+        "conditions, and sensitive value are service inventory only; no "
+        "client validation, policy, authorization, or logging behavior is "
+        "claimed",
+        "the operation models NoSuchKey, InvalidRequest, and synthetic "
+        "AccessDenied error shapes plus a default HTTP 200 response; no "
+        "status, error, RequestCharged, success, or malformed-response "
+        "decoder is implemented or qualified",
+        "a later HeadObject encryption observation can reflect concurrent or "
+        "already-matching state and cannot prove that a lost update caused "
+        "the observation",
+        "directory buckets and S3 on Outposts are documented as unsupported; "
+        "access-point routing and external-provider behavior are not "
+        "implemented or qualified",
+    ]
+
+    def assert_update_object_encryption_registry(candidate):
+        entry = candidate.operations["UpdateObjectEncryption"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "update_object_encryption"
+        assert entry.get("family") == "rest_xml_mutation"
+        assert entry.get("codec") == (
+            "generated_model_only_object_encryption_xml_and_headers"
+        )
+        assert entry.get("certainty") == update_object_encryption_certainty
+        assert entry.get("reconciliation") == (
+            update_object_encryption_reconciliation
+        )
+        assert entry.get("errors") == update_object_encryption_errors
+        assert entry.get("exclusions") == update_object_encryption_exclusions
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tools/verify-update-object-encryption-model.py",
+            ],
+            "server": [],
+            "corpus": ["tools/verify-update-object-encryption-model.py"],
+        }
+        assert candidate.qualification["update_object_encryption"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-update-object-encryption-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_update_object_encryption_registry(candidate, label):
+        try:
+            assert_update_object_encryption_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} UpdateObjectEncryption registry accepted"
+        )
+
+    assert_update_object_encryption_registry(registry)
+    invented_update_encryption_api = copy.deepcopy(registry)
+    invented_update_encryption_api.operations[
+        "UpdateObjectEncryption"
+    ]["public_name"] = "Update_Encryption"
+    reject_update_object_encryption_registry(
+        invented_update_encryption_api, "invented public API"
+    )
+    full_update_encryption = copy.deepcopy(registry)
+    full_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["coverage"]["client"] = "covered"
+    reject_update_object_encryption_registry(
+        full_update_encryption, "invented complete client coverage"
+    )
+    bodyless_update_encryption = copy.deepcopy(registry)
+    bodyless_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["family"] = "bodyless_mutation"
+    reject_update_object_encryption_registry(
+        bodyless_update_encryption, "missing XML request body"
+    )
+    sse_s3_update_encryption = copy.deepcopy(registry)
+    sse_s3_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][1] += "; the public union includes SSES3"
+    reject_update_object_encryption_registry(
+        sse_s3_update_encryption, "invented SSES3 variant"
+    )
+    defaulted_update_encryption = copy.deepcopy(registry)
+    defaulted_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][1] += "; omitted BucketKeyEnabled defaults to false"
+    reject_update_object_encryption_registry(
+        defaulted_update_encryption, "invented bucket-key default"
+    )
+    checked_update_encryption = copy.deepcopy(registry)
+    checked_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][3] += "; the client validates KMS ownership and ARN"
+    reject_update_object_encryption_registry(
+        checked_update_encryption, "invented KMS policy"
+    )
+    serialized_update_encryption = copy.deepcopy(registry)
+    serialized_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][2] += "; XML, MD5, and checksums bind exact bytes"
+    reject_update_object_encryption_registry(
+        serialized_update_encryption, "invented checksum binding"
+    )
+    versioned_update_encryption = copy.deepcopy(registry)
+    versioned_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["reconciliation"] = "the response proves exact VersionId binding"
+    reject_update_object_encryption_registry(
+        versioned_update_encryption, "invented version binding"
+    )
+    decoded_update_encryption = copy.deepcopy(registry)
+    decoded_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][4] += "; the client decodes success and every error"
+    reject_update_object_encryption_registry(
+        decoded_update_encryption, "invented response decoder"
+    )
+    routed_update_encryption = copy.deepcopy(registry)
+    routed_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][6] += "; directory, Outposts, and access points work"
+    reject_update_object_encryption_registry(
+        routed_update_encryption, "invented endpoint support"
+    )
+    replayed_update_encryption = copy.deepcopy(registry)
+    replayed_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["certainty"] = "automatically replay after transport failure"
+    reject_update_object_encryption_registry(
+        replayed_update_encryption, "automatic replay"
+    )
+    causal_update_encryption = copy.deepcopy(registry)
+    causal_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["reconciliation"] = "HeadObject proves the update caused encryption"
+    reject_update_object_encryption_registry(
+        causal_update_encryption, "causal reconciliation"
+    )
+    missing_update_encryption_model = copy.deepcopy(registry)
+    missing_update_encryption_model.operations[
+        "UpdateObjectEncryption"
+    ]["evidence"]["client"] = []
+    reject_update_object_encryption_registry(
+        missing_update_encryption_model, "missing model evidence"
+    )
+    documented_update_encryption = copy.deepcopy(registry)
+    documented_update_encryption.qualification[
+        "update_object_encryption"
+    ].insert(1, ["./tools/build-api-docs.sh", "/tmp/impossible"])
+    reject_update_object_encryption_registry(
+        documented_update_encryption, "invented GNATdoc gate"
+    )
+    update_encryption_lane, update_encryption_commands = (
+        s3_operation.qualification_plan(registry, ["UpdateObjectEncryption"])
+    )
+    assert update_encryption_lane == "update_object_encryption"
+    assert update_encryption_commands == (
+        registry.qualification["update_object_encryption"]
+    )
+    try:
+        s3_operation.qualification_plan(
+            registry, ["UpdateObjectEncryption", "UpdateObjectEncryption"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate UpdateObjectEncryption lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "

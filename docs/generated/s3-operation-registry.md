@@ -121,7 +121,7 @@ remain inventory-only until their audits gain executable evidence.
 | UpdateBucketMetadataAnnotationTableConfiguration | Set_Metadata_Annotation_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataInventoryTableConfiguration | Set_Metadata_Inventory_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataJournalTableConfiguration | Set_Metadata_Journal_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
-| UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateObjectEncryption | Not_Exposed | objects | rest_xml_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | UploadPart | Upload_Part | transfers | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | UploadPartCopy | Upload_Part_Copy | transfers | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | WriteGetObjectResponse | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |

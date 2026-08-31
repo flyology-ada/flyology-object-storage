@@ -677,6 +677,12 @@ select_object_content = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+update_object_encryption = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-update-object-encryption-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
@@ -5271,18 +5277,21 @@ tier = "extended"
 provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+public_name = "Not_Exposed"
+codec = "generated_model_only_object_encryption_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "mutation model coverage only; no public encryption-update request, XML serializer, checksum binding, response decoder, or runtime evidence exists, so this review reports no accepted or completed update, no admission certainty, and no automatic replay"
+reconciliation = "the model carries an optional VersionId, but neither explicit nor omitted-version request binding nor later HeadObject encryption-state decoding is implemented; later observation cannot prove causation, upgrade mutation certainty, or authorize automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects UpdateObjectEncryption API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the actual ObjectEncryption union exposes only SSEKMS even though surrounding prose also mentions SSES3, and BucketKeyEnabled is merely optional despite prose describing false when omitted; this review does not invent an SSES3 variant, a public false default, or a conflict resolution", "the modeled XML, Content-MD5, required generated-checksum selection, VersionId, requester-pays controls, and response header are inventory only; no serialization, digest computation, signing binding, version binding, response validation, or rewind behavior is implemented", "the KMS ARN shape, account and organization ownership prose, permissions, current-encryption restrictions, Object Lock conditions, and sensitive value are service inventory only; no client validation, policy, authorization, or logging behavior is claimed", "the operation models NoSuchKey, InvalidRequest, and synthetic AccessDenied error shapes plus a default HTTP 200 response; no status, error, RequestCharged, success, or malformed-response decoder is implemented or qualified", "a later HeadObject encryption observation can reflect concurrent or already-matching state and cannot prove that a lost update caused the observation", "directory buckets and S3 on Outposts are documented as unsupported; access-point routing and external-provider behavior are not implemented or qualified"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "update_object_encryption"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-update-object-encryption-model.py"], server = [], corpus = ["tools/verify-update-object-encryption-model.py"] }
 
 [[operation]]
 name = "UploadPart"
