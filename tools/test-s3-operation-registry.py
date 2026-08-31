@@ -6027,6 +6027,133 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketPolicy lane accepted")
+    put_policy_certainty = (
+        "only a complete validated 200 response with an empty or "
+        "whitespace-only body reports Bucket_Policy_Mutation_Completed; an "
+        "exact recognized non-mutating rejection or definite non-admission "
+        "reports Bucket_Policy_Mutation_Definitely_Not_Applied; "
+        "pre-admission cancellation reports "
+        "Bucket_Policy_Mutation_Cancelled_Before_Admission; possible or "
+        "incomplete admission, retryable responses, and malformed or "
+        "oversized responses report Bucket_Policy_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    put_policy_reconciliation = (
+        "caller-selected Get_Policy may observe the current exact policy "
+        "bytes or NoSuchBucketPolicy before a retry, but does not prove that "
+        "the lost replacement caused the observed state or upgrade mutation "
+        "certainty; no automatic replay"
+    )
+
+    def assert_put_policy_registry(candidate):
+        entry = candidate.operations["PutBucketPolicy"]
+        assert entry.get("public_name") == "Set_Policy"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_bucket_policy"
+        assert entry.get("codec") == "empty_response"
+        assert entry.get("certainty") == put_policy_certainty
+        assert entry.get("reconciliation") == put_policy_reconciliation
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Put_Bucket_Policy",
+            "Execute_Put_Bucket_Policy",
+            "Put_Bucket_Policy_Operation",
+            "Set_Policy",
+            "Finish",
+        ]
+        assert "atomically replaces" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][1]
+        assert "Content-MD5" in entry["exclusions"][2]
+        assert "does not establish causation" in entry["exclusions"][4]
+        assert (
+            candidate.qualification["put_bucket_policy"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_put_policy_registry(candidate, label):
+        try:
+            assert_put_policy_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutBucketPolicy registry accepted")
+
+    assert_put_policy_registry(registry)
+    missing_put_policy_name = copy.deepcopy(registry)
+    del missing_put_policy_name.operations["PutBucketPolicy"]["public_name"]
+    reject_put_policy_registry(missing_put_policy_name, "missing public name")
+    wrong_put_policy_name = copy.deepcopy(registry)
+    wrong_put_policy_name.operations["PutBucketPolicy"][
+        "public_name"
+    ] = "Set_Public_Access_Block"
+    reject_put_policy_registry(wrong_put_policy_name, "wrong public name")
+    broadened_put_policy_success = copy.deepcopy(registry)
+    broadened_put_policy_success.operations["PutBucketPolicy"][
+        "certainty"
+    ] = put_policy_certainty.replace("validated 200", "validated 200 or 204")
+    reject_put_policy_registry(
+        broadened_put_policy_success, "broadened success status"
+    )
+    causal_put_policy_reconciliation = copy.deepcopy(registry)
+    causal_put_policy_reconciliation.operations["PutBucketPolicy"][
+        "reconciliation"
+    ] = "Get_Policy proves replacement"
+    reject_put_policy_registry(
+        causal_put_policy_reconciliation, "causal reconciliation"
+    )
+    cross_put_policy_symbol = copy.deepcopy(registry)
+    cross_put_policy_symbol.operations["PutBucketPolicy"][
+        "ada_symbols"
+    ][0] = "Prepare_Put_Public_Access_Block"
+    reject_put_policy_registry(
+        cross_put_policy_symbol, "cross-operation symbol"
+    )
+    put_policy_qualification, put_policy_commands = (
+        s3_operation.qualification_plan(registry, ["PutBucketPolicy"])
+    )
+    assert put_policy_qualification == "put_bucket_policy"
+    assert put_policy_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert put_policy_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-policy-gnatdoc",
+        "--operation",
+        "PutBucketPolicy",
+    ]
+    assert put_policy_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketPolicy", "PutBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutBucketPolicy lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketPolicy", "GetBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketPolicy lane accepted")
     delete_public_access_block_certainty = (
         "only a complete validated 204 response with an exactly empty body "
         "reports Public_Access_Block_Mutation_Completed; an exact recognized "

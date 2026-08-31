@@ -98,3 +98,13 @@ interpretation, policy-enforcement, mutation, or automatic-retry claim. Its
 generated-model documentation evidence is likewise a region-scoped warning
 measurement only; repository-wide and selected GNATdoc qualification remain
 blocked by pre-existing warnings outside that declaration region.
+
+The `PutBucketPolicy` registry lane is independently conditional on every
+maintained command succeeding. It records exact HTTP-200 completion with only
+the established whitespace-only response tolerance, binds Content-MD5 and a
+requested modeled checksum to the exact policy bytes, and preserves unknown
+outcome after possible admission. A later `Get_Policy` observation is
+noncausal and authorizes neither certainty upgrade nor automatic replay. Its
+generated-model documentation evidence is likewise a region-scoped warning
+measurement only; repository-wide and selected GNATdoc qualification remain
+blocked by pre-existing warnings outside that declaration region.

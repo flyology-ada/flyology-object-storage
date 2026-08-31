@@ -456,6 +456,39 @@ GET_POLICY_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+PUT_POLICY_CERTAINTY = (
+    "only a complete validated 200 response with an empty or whitespace-only "
+    "body reports Bucket_Policy_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Bucket_Policy_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports Bucket_Policy_Mutation_Cancelled_Before_Admission; "
+    "possible or incomplete admission, retryable responses, and malformed "
+    "or oversized responses report Bucket_Policy_Mutation_Outcome_Unknown; "
+    "no automatic replay"
+)
+PUT_POLICY_RECONCILIATION = (
+    "caller-selected Get_Policy may observe the current exact policy bytes "
+    "or NoSuchBucketPolicy before a retry, but does not prove that the lost "
+    "replacement caused the observed state or upgrade mutation certainty; "
+    "no automatic replay"
+)
+PUT_POLICY_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-policy-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 DELETE_PUBLIC_ACCESS_BLOCK_CERTAINTY = (
     "only a complete validated 204 response with an exactly empty body "
     "reports Public_Access_Block_Mutation_Completed; an exact recognized "
@@ -1747,6 +1780,85 @@ def verify_get_policy_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def put_policy_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "PutBucketPolicy"
+    ]
+    if len(matches) != 1:
+        fail("PutBucketPolicy is not unique")
+    return matches[0]
+
+
+def verify_put_policy_registry(data: dict[str, object]) -> None:
+    entry = put_policy_entry(data)
+    expected = {
+        "public_name": "Set_Policy",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "put_bucket_policy",
+        "codec": "empty_response",
+        "certainty": PUT_POLICY_CERTAINTY,
+        "reconciliation": PUT_POLICY_RECONCILIATION,
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Put_Bucket_Policy",
+            "Execute_Put_Bucket_Policy",
+            "Put_Bucket_Policy_Operation",
+            "Set_Policy",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"PutBucketPolicy changed: {key}")
+    if "atomically replaces" not in entry["absence"]:
+        fail("PutBucketPolicy replacement semantics changed")
+    if "exact HTTP 200" not in entry["exclusions"][1]:
+        fail("PutBucketPolicy success changed")
+    if "Content-MD5" not in entry["exclusions"][2]:
+        fail("PutBucketPolicy checksum binding changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("PutBucketPolicy reconcile changed")
+    if data["qualification"].get("put_bucket_policy") != PUT_POLICY_LANE:
+        fail("PutBucketPolicy lane changed")
+
+
+def verify_put_policy_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Set_Public_Access_Block"),
+        (
+            "broadened success",
+            "certainty",
+            PUT_POLICY_CERTAINTY.replace(
+                "validated 200", "validated 200 or 204"
+            ),
+        ),
+        ("causal reconciliation", "reconciliation", "Get_Policy proves put"),
+        ("cross-operation lane", "qualification", "get_bucket_policy"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = put_policy_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_put_policy_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def delete_public_access_block_entry(
     data: dict[str, object],
 ) -> dict[str, object]:
@@ -2113,6 +2225,8 @@ def main() -> int:
     verify_delete_policy_negatives(registry)
     verify_get_policy_registry(registry)
     verify_get_policy_negatives(registry)
+    verify_put_policy_registry(registry)
+    verify_put_policy_negatives(registry)
     verify_delete_public_access_block_registry(registry)
     verify_delete_public_access_block_negatives(registry)
     verify_get_public_access_block_registry(registry)
@@ -2218,6 +2332,10 @@ def main() -> int:
         "@enum Get_Bucket_Policy_Operation Get bucket policy"
     ) != 1:
         fail("GetBucketPolicy docs changed")
+    if model_spec.count(
+        "@enum Put_Bucket_Policy_Operation Put bucket policy"
+    ) != 1:
+        fail("PutBucketPolicy docs changed")
     if model_spec.count(
         "@enum Delete_Public_Access_Block_Operation Delete public access block"
     ) != 1:
@@ -2904,6 +3022,53 @@ def main() -> int:
             "region-scoped warning measurement only",
         ],
         "GetBucketPolicy backend and server qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Put_Bucket_Policy_Response",
+            "Bucket_Policy_Mutation_Completed",
+            "Bucket_Policy_Mutation_Definitely_Not_Applied",
+            "function Normalize_Put_Bucket_Policy_Failure",
+            "procedure Start_Put_Bucket_Policy",
+            "PutBucketPolicy restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "PutBucketPolicy provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Bucket_Policy_Certainty_Corpus",
+            "procedure Check_Put_Response",
+            "PutBucketPolicy response normalization mismatch",
+            "Bucket_Policy_Mutation_Definitely_Not_Applied",
+            "Bucket_Policy_Mutation_Outcome_Unknown",
+            "Normalize_Put_Bucket_Policy_Failure",
+        ],
+        "PutBucketPolicy certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            "PutBucketPolicy accepted a prepared ABAC request",
+            "typed PutBucketPolicy response mismatch",
+            "composed PutBucketPolicy first result mismatch",
+            "composed PutBucketPolicy restart mismatch",
+        ],
+        "PutBucketPolicy socket evidence",
+    )
+    ordered(
+        bucket_policy_qualification,
+        [
+            "`PutBucketPolicy` registry lane",
+            "exact HTTP-200 completion",
+            "Content-MD5",
+            "unknown outcome after possible admission",
+            "noncausal",
+            "region-scoped warning measurement only",
+        ],
+        "PutBucketPolicy backend and server qualification prose",
     )
     ordered(
         texts["high-level body"],

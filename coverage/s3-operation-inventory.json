@@ -3585,22 +3585,34 @@
           "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "client": [
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_bucket_controls_corpus.adb"
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tests/src/s3_put_bucket_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tools/verify-delete-bucket-configurations-preparation.py",
+          "docs/qualification/bucket-policy.md",
+          "tests/src/object_storage_test_cases.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tests/src/s3_get_bucket_controls_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb",
           "tests/src/s3_put_bucket_controls_corpus.adb",
-          "tests/src/s3_server_application_corpus.adb"
+          "tests/src/s3_server_application_corpus.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "handwritten",

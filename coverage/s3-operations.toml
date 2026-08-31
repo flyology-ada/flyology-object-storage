@@ -352,6 +352,17 @@ get_bucket_policy = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_bucket_policy = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+  ["@tests", "./bin/s3_server_application_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-bucket-policy-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_public_access_block = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -4233,17 +4244,21 @@ provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+public_name = "Set_Policy"
+absence = "successful completion atomically replaces the exact bucket-policy bytes and returns no prior-state or absence payload; exact NoSuchBucket remains a bounded structured rejection proving the requested replacement was not applied"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 response with an empty or whitespace-only body reports Bucket_Policy_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Policy_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Policy_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Policy_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Policy may observe the current exact policy bytes or NoSuchBucketPolicy before a retry, but does not prove that the lost replacement caused the observed state or upgrade mutation certainty; no automatic replay"
+exclusions = ["automatic S3 Express control-endpoint selection, directory-bucket permission policy, and cross-account restrictions are not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 200 with only the established whitespace-only response tolerance; no other success status or payload tolerance is claimed", "Content-MD5 and a requested modeled generated-checksum header bind the exact policy bytes", "the optional self-access-removal confirmation is transported exactly but does not claim policy interpretation or enforcement", "a current Get_Policy observation, including NoSuchBucketPolicy, does not establish causation or authorize automatic replay", "GetBucketPolicyStatus and authorization enforcement derived from stored policy contents are not claimed", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_bucket_policy"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/bucket-policy.md", "tests/src/object_storage_test_cases.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"] }
+ada_symbols = ["Prepare_Put_Bucket_Policy", "Execute_Put_Bucket_Policy", "Put_Bucket_Policy_Operation", "Set_Policy", "Finish"]
 
 [[operation]]
 name = "PutBucketReplication"
