@@ -5182,6 +5182,182 @@ def main() -> None:
         raise AssertionError(
             "mixed BucketNotificationConfiguration lane accepted"
         )
+    put_bucket_notification_configuration_certainty = (
+        "only a complete validated exact 200 Bucket_Control_Updated response "
+        "observed reports Bucket_Notification_Mutation_Completed; a "
+        "response-observed exact recognized authentication, authorization, "
+        "not-found, invalid-request, malformed-XML, MethodNotAllowed, or "
+        "NotImplemented rejection or definite non-admission reports "
+        "Bucket_Notification_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_Notification_Mutation_Cancelled_Before_Admission; every "
+        "other possibly admitted, incomplete, retryable, or corrupt outcome "
+        "reports Bucket_Notification_Mutation_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    put_bucket_notification_configuration_reconciliation = (
+        "a later GetBucketNotificationConfiguration may observe the bucket "
+        "notification configuration current at read time before a "
+        "caller-selected retry, but it neither proves that the lost mutation "
+        "caused the observed state nor upgrades mutation certainty; no "
+        "automatic replay"
+    )
+    put_bucket_notification_configuration_symbols = [
+        "Prepare_Put_Bucket_Notification_Configuration",
+        "Execute_Put_Bucket_Notification_Configuration",
+        "Put_Bucket_Notification_Operation",
+        "Set_Notification_Configuration",
+        "Finish",
+    ]
+
+    def assert_put_bucket_notification_configuration_registry(candidate):
+        entry = candidate.operations["PutBucketNotificationConfiguration"]
+        assert entry.get("public_name") == "Set_Notification_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "put_bucket_notification_configuration"
+        )
+        assert entry.get("codec") == (
+            "strict_rest_xml_request_and_empty_response"
+        )
+        assert entry.get("certainty") == (
+            put_bucket_notification_configuration_certainty
+        )
+        assert entry.get("reconciliation") == (
+            put_bucket_notification_configuration_reconciliation
+        )
+        assert entry.get("ada_symbols") == (
+            put_bucket_notification_configuration_symbols
+        )
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert entry.get("absence") == "not_applicable"
+        assert "30-event domains" in entry["exclusions"][1]
+        assert "no SDK checksum or Content-MD5" in entry["exclusions"][2]
+        assert candidate.qualification[
+            "put_bucket_notification_configuration"
+        ][0][-1] == (
+            "tools/verify-bucket-notification-configuration-preparation.py"
+        )
+
+    def reject_put_bucket_notification_configuration_registry(
+        candidate, label
+    ):
+        try:
+            assert_put_bucket_notification_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketNotificationConfiguration registry accepted"
+        )
+
+    assert_put_bucket_notification_configuration_registry(registry)
+    missing_put_bucket_notification_configuration_name = copy.deepcopy(
+        registry
+    )
+    del missing_put_bucket_notification_configuration_name.operations[
+        "PutBucketNotificationConfiguration"
+    ]["public_name"]
+    reject_put_bucket_notification_configuration_registry(
+        missing_put_bucket_notification_configuration_name, "missing name"
+    )
+    wrong_put_bucket_notification_configuration_name = copy.deepcopy(registry)
+    wrong_put_bucket_notification_configuration_name.operations[
+        "PutBucketNotificationConfiguration"
+    ]["public_name"] = "Get_Notification_Configuration"
+    reject_put_bucket_notification_configuration_registry(
+        wrong_put_bucket_notification_configuration_name, "wrong name"
+    )
+    replay_put_bucket_notification_configuration = copy.deepcopy(registry)
+    replay_put_bucket_notification_configuration.operations[
+        "PutBucketNotificationConfiguration"
+    ]["certainty"] = "automatically replay PutBucketNotificationConfiguration"
+    reject_put_bucket_notification_configuration_registry(
+        replay_put_bucket_notification_configuration, "automatic replay"
+    )
+    causal_put_bucket_notification_configuration = copy.deepcopy(registry)
+    causal_put_bucket_notification_configuration.operations[
+        "PutBucketNotificationConfiguration"
+    ]["reconciliation"] = "the read proves the mutation caused state"
+    reject_put_bucket_notification_configuration_registry(
+        causal_put_bucket_notification_configuration, "causal reconciliation"
+    )
+    checksum_put_bucket_notification_configuration = copy.deepcopy(registry)
+    checksum_put_bucket_notification_configuration.operations[
+        "PutBucketNotificationConfiguration"
+    ]["exclusions"][2] = "the client adds Content-MD5"
+    reject_put_bucket_notification_configuration_registry(
+        checksum_put_bucket_notification_configuration, "invented checksum"
+    )
+    cross_put_bucket_notification_configuration_symbol = copy.deepcopy(
+        registry
+    )
+    cross_put_bucket_notification_configuration_symbol.operations[
+        "PutBucketNotificationConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Notification"
+    reject_put_bucket_notification_configuration_registry(
+        cross_put_bucket_notification_configuration_symbol,
+        "deprecated-operation symbol",
+    )
+    put_notification_qualification, put_notification_commands = (
+        s3_operation.qualification_plan(
+            registry, ["PutBucketNotificationConfiguration"]
+        )
+    )
+    assert put_notification_qualification == (
+        "put_bucket_notification_configuration"
+    )
+    assert put_notification_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-bucket-notification-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert put_notification_commands[4] == ["./tools/verify-coverage.sh"]
+    assert put_notification_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-notification-configuration-gnatdoc",
+        "--operation",
+        "PutBucketNotificationConfiguration",
+    ]
+    assert put_notification_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketNotificationConfiguration",
+                "PutBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate PutBucketNotificationConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketNotificationConfiguration",
+                "GetBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed PutBucketNotificationConfiguration lane accepted"
+        )
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
