@@ -11375,6 +11375,172 @@ def main() -> None:
     else:
         raise AssertionError("mixed PutBucketReplication lane accepted")
 
+    metadata_table_certainty = (
+        "read_only; only a complete bounded exact 200 response yields modeled "
+        "metadata-table state; malformed, oversized, wrong-status, and "
+        "incomplete exchanges expose no partial state; no automatic retry"
+    )
+    metadata_table_reconciliation = (
+        "a later Get_Metadata_Table_Configuration observes only the "
+        "metadata-table configuration current at read time and does not "
+        "establish prior state or mutation causality; no automatic retry"
+    )
+    metadata_table_symbols = [
+        "Prepare_Get_Bucket_Metadata_Table_Configuration",
+        "Decode_Get_Bucket_Metadata_Table_Configuration_Response",
+        "Execute_Get_Bucket_Metadata_Table_Configuration",
+        "Get_Bucket_Metadata_Table_Configuration_Operation",
+        "Get_Metadata_Table_Configuration",
+        "Finish",
+    ]
+
+    def assert_metadata_table_registry(candidate):
+        entry = candidate.operations[
+            "GetBucketMetadataTableConfiguration"
+        ]
+        assert entry.get("public_name") == (
+            "Get_Metadata_Table_Configuration"
+        )
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "get_bucket_metadata_table_configuration"
+        )
+        assert entry.get("certainty") == metadata_table_certainty
+        assert entry.get("reconciliation") == (
+            metadata_table_reconciliation
+        )
+        assert entry.get("ada_symbols") == metadata_table_symbols
+        assert "empty body preserves optional outer-result absence" in (
+            entry["absence"]
+        )
+        assert "no non-200 response" in entry["absence"]
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "V1 API" in entry["exclusions"][0]
+        assert "exact 405" in entry["exclusions"][0]
+        assert "S3 Express control-endpoint" in entry["exclusions"][1]
+        assert candidate.qualification[
+            "get_bucket_metadata_table_configuration"
+        ][0][-1] == (
+            "tools/verify-get-bucket-metadata-table-configuration-"
+            "preparation.py"
+        )
+
+    def reject_metadata_table_registry(candidate, label):
+        try:
+            assert_metadata_table_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketMetadataTableConfiguration registry accepted"
+        )
+
+    assert_metadata_table_registry(registry)
+    metadata_table_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Get_Metadata_Configuration"),
+        ("automatic retry", "certainty", "read and retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves a prior mutation caused the current state",
+        ),
+        (
+            "collapsed absence",
+            "absence",
+            "all non-200 responses prove the configuration is absent",
+        ),
+        ("missing V1 boundary", "exclusions", ["V2 is equivalent"]),
+    ]
+    for label, key, value in metadata_table_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations[
+            "GetBucketMetadataTableConfiguration"
+        ]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_metadata_table_registry(candidate, label)
+    cross_metadata_table_symbol = copy.deepcopy(registry)
+    cross_metadata_table_symbol.operations[
+        "GetBucketMetadataTableConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Metadata_Configuration"
+    assert cross_metadata_table_symbol != registry
+    reject_metadata_table_registry(
+        cross_metadata_table_symbol, "cross-operation"
+    )
+    missing_metadata_table_lane = copy.deepcopy(registry)
+    del missing_metadata_table_lane.qualification[
+        "get_bucket_metadata_table_configuration"
+    ]
+    assert missing_metadata_table_lane != registry
+    reject_metadata_table_registry(
+        missing_metadata_table_lane, "missing lane"
+    )
+    metadata_table_qualification, metadata_table_commands = (
+        s3_operation.qualification_plan(
+            registry, ["GetBucketMetadataTableConfiguration"]
+        )
+    )
+    assert metadata_table_qualification == (
+        "get_bucket_metadata_table_configuration"
+    )
+    assert metadata_table_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-metadata-table-configuration-"
+            "preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        [
+            "@tests",
+            "./bin/s3_get_bucket_metadata_table_configuration_corpus",
+        ],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert metadata_table_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-metadata-table-configuration-gnatdoc",
+        "--operation",
+        "GetBucketMetadataTableConfiguration",
+    ]
+    assert metadata_table_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketMetadataTableConfiguration",
+                "GetBucketMetadataTableConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketMetadataTableConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketMetadataTableConfiguration",
+                "GetBucketMetadataConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed GetBucketMetadataTableConfiguration lane accepted"
+        )
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
