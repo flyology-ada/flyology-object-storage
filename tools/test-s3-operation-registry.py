@@ -712,6 +712,14 @@ _PAGINATED_DOCUMENTATION = {
         "modeled result classification; this generic owns bounded buffering,",
         "child lifetime, cancellation, drain, restart, and Finish mechanics.",
     ),
+    "formal_associations": (
+        "@formal Result_Type Typed provider result retained for Finish",
+        "@formal Operation_Name Operation name used in diagnostic messages",
+        "@formal Start_Exchange Start the operation-specific child exchange",
+        "@formal Decode_Response Decode one complete page into Result_Type",
+        "@formal Normalize_Failure Map a terminal exchange failure to "
+        "Result_Type",
+    ),
     "formals": (
         ("   type Result_Type is private;",
          "Typed provider result retained for Finish."),
@@ -846,8 +854,15 @@ def _check_paginated_rest_xml_docs(spec: str) -> None:
     package_marker = (
         "package Flyology.Object_Storage.Client.Paginated_REST_XML_Reads is"
     )
+    expected_package = (
+        *_PAGINATED_DOCUMENTATION["package"],
+        *_PAGINATED_DOCUMENTATION["formal_associations"],
+    )
+    assert bounded_leading_comment(lines, "generic", "--  ") == (
+        expected_package
+    ), "Paginated_REST_XML_Reads generic documentation differs"
     assert _paginated_following(lines, package_marker) == (
-        _PAGINATED_DOCUMENTATION["package"]
+        expected_package
     ), "Paginated_REST_XML_Reads package documentation differs"
     for marker, summary in _PAGINATED_DOCUMENTATION["formals"]:
         assert _paginated_leading(lines, marker) == (summary,), (
@@ -870,7 +885,7 @@ def _check_paginated_rest_xml_docs(spec: str) -> None:
     tags = Counter()
     for line in lines:
         match = re.fullmatch(
-            r"\s*--  @(field|param)(?: [^ ]+)(?: .+)", line
+            r"\s*--  @(field|formal|param)(?: [^ ]+)(?: .+)", line
         )
         if match is not None:
             tags[match.group(1)] += 1
@@ -878,7 +893,7 @@ def _check_paginated_rest_xml_docs(spec: str) -> None:
             raise AssertionError(
                 "Paginated_REST_XML_Reads documentation tag is malformed"
             )
-    assert tags == Counter({"field": 1, "param": 19}), (
+    assert tags == Counter({"field": 1, "formal": 10, "param": 19}), (
         "Paginated_REST_XML_Reads tag inventory differs"
     )
     prose = " ".join(
@@ -1522,6 +1537,34 @@ def main() -> None:
     paginated_spec = paginated_path.read_text(encoding="utf-8")
     _check_paginated_rest_xml_docs(paginated_spec)
     for candidate, diagnostic in (
+        (
+            paginated_spec.replace(
+                "--  @formal Result_Type Typed provider result retained "
+                "for Finish\n",
+                "",
+                1,
+            ),
+            "missing Paginated_REST_XML_Reads @formal accepted",
+        ),
+        (
+            paginated_spec.replace(
+                "@formal Result_Type Typed provider result retained for "
+                "Finish",
+                "@formal Wrong Typed provider result retained for Finish",
+                1,
+            ),
+            "wrong Paginated_REST_XML_Reads @formal accepted",
+        ),
+        (
+            paginated_spec.replace(
+                "--  @formal Normalize_Failure Map a terminal exchange "
+                "failure to Result_Type\ngeneric\n",
+                "--  @formal Normalize_Failure Map a terminal exchange "
+                "failure to Result_Type\n\ngeneric\n",
+                1,
+            ),
+            "detached Paginated_REST_XML_Reads generic docs accepted",
+        ),
         (
             paginated_spec.replace(
                 "   --  Typed provider result retained for Finish.\n",

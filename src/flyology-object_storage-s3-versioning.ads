@@ -3,8 +3,13 @@ with Flyology.Object_Storage.S3.XML;
 --  Strict bounded REST/XML codec for bucket-versioning configuration.
 package Flyology.Object_Storage.S3.Versioning is
 
+   --  Raised when a versioning document violates the modeled XML contract.
    Malformed_Configuration : exception;
+
+   --  Maximum versioning-document size accepted by the default limits.
    Maximum_Document_Bytes : constant := 4 * 1_024;
+
+   --  Default bounded parser limits for versioning documents.
    Default_Limits : constant XML.Parse_Limits :=
      (Maximum_Document_Bytes => Maximum_Document_Bytes,
       Maximum_Depth          => 2,

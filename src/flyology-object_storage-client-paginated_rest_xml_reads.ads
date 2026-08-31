@@ -8,6 +8,15 @@ with Flyology.Operations;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.XML;
 
+--  Share owner-driven state for paginated REST/XML read operations.
+--  Provider packages retain request preparation, response decoding, and
+--  modeled result classification; this generic owns bounded buffering,
+--  child lifetime, cancellation, drain, restart, and Finish mechanics.
+--  @formal Result_Type Typed provider result retained for Finish
+--  @formal Operation_Name Operation name used in diagnostic messages
+--  @formal Start_Exchange Start the operation-specific child exchange
+--  @formal Decode_Response Decode one complete page into Result_Type
+--  @formal Normalize_Failure Map a terminal exchange failure to Result_Type
 generic
    --  Typed provider result retained for Finish.
    type Result_Type is private;
@@ -49,6 +58,11 @@ package Flyology.Object_Storage.Client.Paginated_REST_XML_Reads is
    --  Provider packages retain request preparation, response decoding, and
    --  modeled result classification; this generic owns bounded buffering,
    --  child lifetime, cancellation, drain, restart, and Finish mechanics.
+   --  @formal Result_Type Typed provider result retained for Finish
+   --  @formal Operation_Name Operation name used in diagnostic messages
+   --  @formal Start_Exchange Start the operation-specific child exchange
+   --  @formal Decode_Response Decode one complete page into Result_Type
+   --  @formal Normalize_Failure Map a terminal exchange failure to Result_Type
 
    --  Retain one reusable provider lifecycle.
    --  @field Set Completion set that owns the child exchange

@@ -4,6 +4,7 @@ with Flyology.Object_Storage.S3.XML;
 --  Strict REST/XML codecs for small S3 Object Lock documents.
 package Flyology.Object_Storage.S3.Object_Lock is
 
+   --  Raised when an object-lock document violates the modeled XML contract.
    Malformed_Object_Lock : exception;
 
    --  Pinned model contract for ObjectLockLegalHoldStatus.  Absent preserves
