@@ -1829,10 +1829,19 @@
       "evidence": {
         "backend": [],
         "client": [
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "src/flyology-object_storage-s3-notifications.ads",
+          "src/flyology-object_storage-s3-notifications.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
+          "tools/verify-bucket-notification-configuration-preparation.py",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
@@ -1840,7 +1849,7 @@
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "absent",

@@ -5013,6 +5013,175 @@ def main() -> None:
         raise AssertionError(
             "mixed PutBucketLifecycleConfiguration lane accepted"
         )
+    get_bucket_notification_configuration_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the complete current "
+        "notification configuration; every incomplete, invalid, or "
+        "non-observed response exposes no configuration state; the client "
+        "performs no automatic retry"
+    )
+    get_bucket_notification_configuration_reconciliation = (
+        "a later GetBucketNotificationConfiguration observes only the bucket "
+        "notification configuration current at read time; it does not prove "
+        "that a prior mutation caused the observed state or authorize "
+        "automatic replay"
+    )
+    get_bucket_notification_configuration_symbols = [
+        "Prepare_Get_Bucket_Notification_Configuration",
+        "Decode_Get_Bucket_Notification_Configuration_Response",
+        "Execute_Get_Bucket_Notification_Configuration",
+        "Get_Bucket_Notification_Operation",
+        "Get_Notification_Configuration",
+        "Finish",
+    ]
+
+    def assert_get_bucket_notification_configuration_registry(candidate):
+        entry = candidate.operations["GetBucketNotificationConfiguration"]
+        assert entry.get("public_name") == "Get_Notification_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "get_bucket_notification_configuration"
+        )
+        assert entry.get("certainty") == (
+            get_bucket_notification_configuration_certainty
+        )
+        assert entry.get("reconciliation") == (
+            get_bucket_notification_configuration_reconciliation
+        )
+        assert entry.get("ada_symbols") == (
+            get_bucket_notification_configuration_symbols
+        )
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "exact 200 empty notification document" in entry["absence"]
+        assert "30-event domains" in entry["exclusions"][1]
+        assert candidate.qualification[
+            "get_bucket_notification_configuration"
+        ][0][-1] == (
+            "tools/verify-bucket-notification-configuration-preparation.py"
+        )
+
+    def reject_get_bucket_notification_configuration_registry(
+        candidate, label
+    ):
+        try:
+            assert_get_bucket_notification_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketNotificationConfiguration registry accepted"
+        )
+
+    assert_get_bucket_notification_configuration_registry(registry)
+    missing_get_bucket_notification_configuration_name = copy.deepcopy(
+        registry
+    )
+    del missing_get_bucket_notification_configuration_name.operations[
+        "GetBucketNotificationConfiguration"
+    ]["public_name"]
+    reject_get_bucket_notification_configuration_registry(
+        missing_get_bucket_notification_configuration_name, "missing name"
+    )
+    wrong_get_bucket_notification_configuration_name = copy.deepcopy(registry)
+    wrong_get_bucket_notification_configuration_name.operations[
+        "GetBucketNotificationConfiguration"
+    ]["public_name"] = "Get_Notification"
+    reject_get_bucket_notification_configuration_registry(
+        wrong_get_bucket_notification_configuration_name, "deprecated name"
+    )
+    retry_get_bucket_notification_configuration = copy.deepcopy(registry)
+    retry_get_bucket_notification_configuration.operations[
+        "GetBucketNotificationConfiguration"
+    ]["certainty"] = "read-only; retry automatically"
+    reject_get_bucket_notification_configuration_registry(
+        retry_get_bucket_notification_configuration, "automatic retry"
+    )
+    causal_get_bucket_notification_configuration = copy.deepcopy(registry)
+    causal_get_bucket_notification_configuration.operations[
+        "GetBucketNotificationConfiguration"
+    ]["reconciliation"] = "the read proves the mutation caused state"
+    reject_get_bucket_notification_configuration_registry(
+        causal_get_bucket_notification_configuration, "causal reconciliation"
+    )
+    absent_get_bucket_notification_configuration = copy.deepcopy(registry)
+    absent_get_bucket_notification_configuration.operations[
+        "GetBucketNotificationConfiguration"
+    ]["absence"] = "404 NoSuchNotificationConfiguration means absent"
+    reject_get_bucket_notification_configuration_registry(
+        absent_get_bucket_notification_configuration, "invented absence code"
+    )
+    cross_get_bucket_notification_configuration_symbol = copy.deepcopy(
+        registry
+    )
+    cross_get_bucket_notification_configuration_symbol.operations[
+        "GetBucketNotificationConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification"
+    reject_get_bucket_notification_configuration_registry(
+        cross_get_bucket_notification_configuration_symbol,
+        "deprecated-operation symbol",
+    )
+    get_notification_qualification, get_notification_commands = (
+        s3_operation.qualification_plan(
+            registry, ["GetBucketNotificationConfiguration"]
+        )
+    )
+    assert get_notification_qualification == (
+        "get_bucket_notification_configuration"
+    )
+    assert get_notification_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-bucket-notification-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert get_notification_commands[4] == ["./tools/verify-coverage.sh"]
+    assert get_notification_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-notification-configuration-gnatdoc",
+        "--operation",
+        "GetBucketNotificationConfiguration",
+    ]
+    assert get_notification_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketNotificationConfiguration",
+                "GetBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketNotificationConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketNotificationConfiguration",
+                "PutBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError(
+            "mixed BucketNotificationConfiguration lane accepted"
+        )
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
