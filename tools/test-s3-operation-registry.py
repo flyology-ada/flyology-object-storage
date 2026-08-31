@@ -10988,6 +10988,152 @@ def main() -> None:
     else:
         raise AssertionError("mixed PutBucketAbac lane accepted")
 
+    put_accelerate_certainty = (
+        "only a complete validated exact 200 response observed with an empty "
+        "or whitespace-only body reports Acceleration_Mutation_Completed; "
+        "an exact recognized non-mutating rejection or definite "
+        "non-admission reports "
+        "Acceleration_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports Acceleration_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report Acceleration_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    put_accelerate_reconciliation = (
+        "caller-selected Get_Accelerate_Configuration may observe only the "
+        "bucket acceleration configuration current at read time before a "
+        "retry, but does not prove that the lost mutation caused the observed "
+        "state or upgrade mutation certainty; no automatic replay"
+    )
+    put_accelerate_symbols = [
+        "Prepare_Put_Bucket_Accelerate_Configuration",
+        "Execute_Put_Bucket_Accelerate_Configuration",
+        "Put_Bucket_Accelerate_Configuration_Operation",
+        "Set_Accelerate_Configuration",
+        "Finish",
+    ]
+
+    def assert_put_accelerate_registry(candidate):
+        entry = candidate.operations["PutBucketAccelerateConfiguration"]
+        assert entry.get("public_name") == "Set_Accelerate_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "put_bucket_accelerate_configuration"
+        )
+        assert entry.get("certainty") == put_accelerate_certainty
+        assert entry.get("reconciliation") == put_accelerate_reconciliation
+        assert entry.get("ada_symbols") == put_accelerate_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "no Content-MD5 member" in entry["exclusions"][3]
+        assert candidate.qualification[
+            "put_bucket_accelerate_configuration"
+        ][0][-1] == "tools/verify-put-bucket-controls-preparation.py"
+
+    def reject_put_accelerate_registry(candidate, label):
+        try:
+            assert_put_accelerate_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketAccelerateConfiguration registry accepted"
+        )
+
+    assert_put_accelerate_registry(registry)
+    put_accelerate_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Set_Acceleration"),
+        ("automatic retry", "certainty", "retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the GET proves the lost mutation succeeded",
+        ),
+        ("invented MD5", "exclusions", ["Content-MD5 is required"]),
+    ]
+    for label, key, value in put_accelerate_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["PutBucketAccelerateConfiguration"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_put_accelerate_registry(candidate, label)
+    cross_put_accelerate_symbol = copy.deepcopy(registry)
+    cross_put_accelerate_symbol.operations[
+        "PutBucketAccelerateConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Accelerate_Configuration"
+    assert cross_put_accelerate_symbol != registry
+    reject_put_accelerate_registry(
+        cross_put_accelerate_symbol, "cross-operation"
+    )
+    missing_put_accelerate_lane = copy.deepcopy(registry)
+    del missing_put_accelerate_lane.qualification[
+        "put_bucket_accelerate_configuration"
+    ]
+    assert missing_put_accelerate_lane != registry
+    reject_put_accelerate_registry(
+        missing_put_accelerate_lane, "missing lane"
+    )
+    put_accelerate_qualification, put_accelerate_commands = (
+        s3_operation.qualification_plan(
+            registry, ["PutBucketAccelerateConfiguration"]
+        )
+    )
+    assert put_accelerate_qualification == (
+        "put_bucket_accelerate_configuration"
+    )
+    assert put_accelerate_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert put_accelerate_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-accelerate-configuration-gnatdoc",
+        "--operation",
+        "PutBucketAccelerateConfiguration",
+    ]
+    assert put_accelerate_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketAccelerateConfiguration",
+                "PutBucketAccelerateConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate PutBucketAccelerateConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketAccelerateConfiguration",
+                "GetBucketAccelerateConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError(
+            "mixed PutBucketAccelerateConfiguration lane accepted"
+        )
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
