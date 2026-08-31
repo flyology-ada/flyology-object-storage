@@ -4244,6 +4244,156 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed ObjectLockConfiguration lane accepted")
+    put_object_lock_configuration_certainty = (
+        "only a complete validated 200 reports "
+        "Object_Lock_Configuration_Mutation_Completed; an exact recognized "
+        "S3 rejection or definite non-admission reports "
+        "Object_Lock_Configuration_Mutation_Definitely_Not_Applied, "
+        "pre-admission cancellation reports "
+        "Object_Lock_Configuration_Mutation_Cancelled_Before_Admission, and "
+        "every other possibly admitted or incomplete outcome reports "
+        "Object_Lock_Configuration_Mutation_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    put_object_lock_configuration_reconciliation = (
+        "a later GetObjectLockConfiguration may observe the bucket "
+        "configuration current at read time before a caller-selected retry, "
+        "but it neither proves that the lost mutation caused the observed "
+        "state nor upgrades mutation certainty; no automatic replay"
+    )
+    put_object_lock_configuration_symbols = [
+        "Prepare_Put_Object_Lock_Configuration",
+        "Decode_Put_Object_Lock_Configuration_Response",
+        "Execute_Put_Object_Lock_Configuration",
+        "Put_Object_Lock_Configuration_Operation",
+        "Put_Object_Lock_Configuration",
+        "Finish",
+    ]
+
+    def assert_put_object_lock_configuration_registry(candidate):
+        entry = candidate.operations["PutObjectLockConfiguration"]
+        assert entry.get("public_name") == "Put_Object_Lock_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_object_lock_configuration"
+        assert (
+            entry.get("certainty") == put_object_lock_configuration_certainty
+        )
+        assert entry.get("reconciliation") == (
+            put_object_lock_configuration_reconciliation
+        )
+        assert entry.get("ada_symbols") == put_object_lock_configuration_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "no automatic replay" in entry["certainty"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert candidate.qualification[
+            "put_object_lock_configuration"
+        ][0][-1] == "tools/verify-put-object-lock-configuration-preparation.py"
+
+    def reject_put_object_lock_configuration_registry(candidate, label):
+        try:
+            assert_put_object_lock_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutObjectLockConfiguration registry accepted"
+        )
+
+    assert_put_object_lock_configuration_registry(registry)
+    missing_put_object_lock_configuration_name = copy.deepcopy(registry)
+    del missing_put_object_lock_configuration_name.operations[
+        "PutObjectLockConfiguration"
+    ]["public_name"]
+    reject_put_object_lock_configuration_registry(
+        missing_put_object_lock_configuration_name, "missing name"
+    )
+    wrong_put_object_lock_configuration_name = copy.deepcopy(registry)
+    wrong_put_object_lock_configuration_name.operations[
+        "PutObjectLockConfiguration"
+    ]["public_name"] = "Put_Retention"
+    reject_put_object_lock_configuration_registry(
+        wrong_put_object_lock_configuration_name, "wrong name"
+    )
+    retry_put_object_lock_configuration = copy.deepcopy(registry)
+    retry_put_object_lock_configuration.operations[
+        "PutObjectLockConfiguration"
+    ]["certainty"] = "mutation; retry automatically after a lost response"
+    reject_put_object_lock_configuration_registry(
+        retry_put_object_lock_configuration, "automatic retry"
+    )
+    causal_put_object_lock_configuration = copy.deepcopy(registry)
+    causal_put_object_lock_configuration.operations[
+        "PutObjectLockConfiguration"
+    ]["reconciliation"] = "the read proves the prior mutation caused state"
+    reject_put_object_lock_configuration_registry(
+        causal_put_object_lock_configuration, "causal reconciliation"
+    )
+    server_put_object_lock_configuration = copy.deepcopy(registry)
+    server_put_object_lock_configuration.operations[
+        "PutObjectLockConfiguration"
+    ]["coverage"]["server"] = "covered"
+    reject_put_object_lock_configuration_registry(
+        server_put_object_lock_configuration, "invented server coverage"
+    )
+    cross_put_object_lock_configuration_symbol = copy.deepcopy(registry)
+    cross_put_object_lock_configuration_symbol.operations[
+        "PutObjectLockConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Put_Object_Retention"
+    reject_put_object_lock_configuration_registry(
+        cross_put_object_lock_configuration_symbol, "cross-operation symbol"
+    )
+    put_object_lock_configuration_qualification, lock_commands = (
+        s3_operation.qualification_plan(
+            registry, ["PutObjectLockConfiguration"]
+        )
+    )
+    assert (
+        put_object_lock_configuration_qualification
+        == "put_object_lock_configuration"
+    )
+    assert lock_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-object-lock-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_object_lock_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert lock_commands[4] == ["./tools/verify-coverage.sh"]
+    assert lock_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-object-lock-configuration-gnatdoc",
+        "--operation",
+        "PutObjectLockConfiguration",
+    ]
+    assert lock_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutObjectLockConfiguration", "PutObjectLockConfiguration"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate PutObjectLockConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutObjectLockConfiguration", "GetObjectLockConfiguration"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutObjectLockConfiguration lane accepted")
     get_object_retention_certainty = (
         "read-only; only one complete validated 200 Object_Retention_Found "
         "response observed exposes the presence-preserving retention value; "
