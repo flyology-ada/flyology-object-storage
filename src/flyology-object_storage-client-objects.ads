@@ -2666,8 +2666,17 @@ package Flyology.Object_Storage.Client.Objects is
       Result    : out Delete_Object_Tagging_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Outcome selection for one object-listing page.
+   --  @enum Page_Available One decoded listing page is available
+   --  @enum List_Rejected The service rejected the listing request
    type List_Outcome_Kind is (Page_Available, List_Rejected);
 
+   --  One ListObjectsV2 page or a structured S3 rejection.
+   --  @field Kind Selected outcome variant
+   --  @field Status Exact HTTP response status
+   --  @field Page Decoded ListObjectsV2 page
+   --  @field Request_Charged Decoded requester-pays response header
+   --  @field Error Structured S3 error response
    type List_Outcome
      (Kind : List_Outcome_Kind := List_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -2680,6 +2689,13 @@ package Flyology.Object_Storage.Client.Objects is
       end case;
    end record;
 
+   --  One ListObjects v1 page or a structured S3 rejection.
+   --  @field Kind Selected outcome variant
+   --  @field Status Exact HTTP response status
+   --  @field Page Decoded ListObjects v1 page
+   --  @field Has_Next_Marker Whether the next-page marker is available
+   --  @field Request_Charged Decoded requester-pays response header
+   --  @field Error Structured S3 error response
    type List_V1_Outcome
      (Kind : List_Outcome_Kind := List_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -2701,6 +2717,23 @@ package Flyology.Object_Storage.Client.Objects is
    --  operation. When Has_Next_Marker is true, pass Next_Marker as Marker to
    --  continue. The helper derives the marker from the final object when an
    --  S3 response is truncated without delimiter grouping.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Prefix Optional byte prefix filter
+   --  @param Delimiter Optional byte delimiter for CommonPrefixes grouping
+   --  @param Maximum Maximum combined objects and prefixes in this page
+   --  @param Marker Exclusive object-key marker after which listing starts
+   --  @param URL_Encoding Percent-encode returned keys and prefixes
+   --  @param Include_Restore_Status Request RestoreStatus where it exists
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return One typed v1 page or a structured S3 rejection
    function List_V1_Page
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
