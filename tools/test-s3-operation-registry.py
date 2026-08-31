@@ -10192,6 +10192,156 @@ def main() -> None:
         raise AssertionError(
             "mixed CreateBucketMetadataTableConfiguration lane was accepted"
         )
+    delete_object_annotation_certainty = (
+        "only a complete validated exact 204 with an exactly empty body "
+        "reports Annotation_Deletion_Completed; an exact recognized "
+        "non-applying rejection or definite non-admission reports "
+        "Annotation_Deletion_Definitely_Not_Applied, pre-admission "
+        "cancellation reports "
+        "Annotation_Deletion_Cancelled_Before_Admission, and every other "
+        "possibly admitted, incomplete, retryable, malformed, or oversized "
+        "outcome reports Annotation_Deletion_Outcome_Unknown; no automatic "
+        "replay"
+    )
+    delete_object_annotation_reconciliation = (
+        "caller-selected read-only observation using the exact bucket, key, "
+        "annotation name, and explicit version or generation evidence before "
+        "retry; an observation does not prove that the lost deletion caused "
+        "the current state or upgrade mutation certainty"
+    )
+    delete_object_annotation_symbols = [
+        "Prepare_Delete_Object_Annotation",
+        "Decode_Delete_Object_Annotation_Response",
+        "Execute_Delete_Object_Annotation",
+        "Delete_Object_Annotation_Operation",
+        "Delete_Annotation",
+        "Finish",
+    ]
+
+    def assert_delete_object_annotation_registry(candidate):
+        entry = candidate.operations["DeleteObjectAnnotation"]
+        assert entry.get("public_name") == "Delete_Annotation"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "delete_object_annotation"
+        assert entry.get("certainty") == delete_object_annotation_certainty
+        assert entry.get("reconciliation") == (
+            delete_object_annotation_reconciliation
+        )
+        assert entry.get("ada_symbols") == delete_object_annotation_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert entry.get("absence") == "not_applicable"
+        assert "external-provider interoperability" in entry["exclusions"][0]
+        assert "exact HTTP 204" in entry["exclusions"][2]
+        assert candidate.qualification["delete_object_annotation"][0][-1] == (
+            "tools/verify-delete-object-annotation-preparation.py"
+        )
+
+    def reject_delete_object_annotation_registry(candidate, label):
+        try:
+            assert_delete_object_annotation_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} DeleteObjectAnnotation registry accepted"
+        )
+
+    assert_delete_object_annotation_registry(registry)
+    missing_delete_object_annotation_name = copy.deepcopy(registry)
+    del missing_delete_object_annotation_name.operations[
+        "DeleteObjectAnnotation"
+    ]["public_name"]
+    assert missing_delete_object_annotation_name != registry
+    reject_delete_object_annotation_registry(
+        missing_delete_object_annotation_name, "missing name"
+    )
+    wrong_delete_object_annotation_name = copy.deepcopy(registry)
+    wrong_delete_object_annotation_name.operations[
+        "DeleteObjectAnnotation"
+    ]["public_name"] = "Delete_Tags"
+    assert wrong_delete_object_annotation_name != registry
+    reject_delete_object_annotation_registry(
+        wrong_delete_object_annotation_name, "cross-operation name"
+    )
+    replay_delete_object_annotation = copy.deepcopy(registry)
+    replay_delete_object_annotation.operations[
+        "DeleteObjectAnnotation"
+    ]["certainty"] = "automatically replay after admission"
+    assert replay_delete_object_annotation != registry
+    reject_delete_object_annotation_registry(
+        replay_delete_object_annotation, "automatic replay"
+    )
+    causal_delete_object_annotation = copy.deepcopy(registry)
+    causal_delete_object_annotation.operations[
+        "DeleteObjectAnnotation"
+    ]["reconciliation"] = "the observation proves deletion"
+    assert causal_delete_object_annotation != registry
+    reject_delete_object_annotation_registry(
+        causal_delete_object_annotation, "causal reconciliation"
+    )
+    cross_delete_object_annotation_symbol = copy.deepcopy(registry)
+    cross_delete_object_annotation_symbol.operations[
+        "DeleteObjectAnnotation"
+    ]["ada_symbols"][0] = "Prepare_Delete_Object_Tagging"
+    assert cross_delete_object_annotation_symbol != registry
+    reject_delete_object_annotation_registry(
+        cross_delete_object_annotation_symbol, "cross-operation symbol"
+    )
+    missing_delete_object_annotation_lane = copy.deepcopy(registry)
+    del missing_delete_object_annotation_lane.qualification[
+        "delete_object_annotation"
+    ]
+    assert missing_delete_object_annotation_lane != registry
+    reject_delete_object_annotation_registry(
+        missing_delete_object_annotation_lane, "missing lane"
+    )
+    annotation_qualification, annotation_commands = (
+        s3_operation.qualification_plan(registry, ["DeleteObjectAnnotation"])
+    )
+    assert annotation_qualification == "delete_object_annotation"
+    assert annotation_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-object-annotation-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_delete_object_annotation_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert annotation_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-object-annotation-gnatdoc",
+        "--operation",
+        "DeleteObjectAnnotation",
+    ]
+    assert annotation_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["DeleteObjectAnnotation", "DeleteObjectAnnotation"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate DeleteObjectAnnotation lane was accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry, ["DeleteObjectAnnotation", "DeleteObjectTagging"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed DeleteObjectAnnotation lane was accepted")
+
     print("S3 operation registry evidence negative oracles: OK")
 
 

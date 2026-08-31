@@ -499,6 +499,16 @@ delete_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+delete_object_annotation = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-object-annotation-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_delete_object_annotation_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-delete-object-annotation-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 delete_objects = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-objects-preparation.py"],
   ["./tools/verify-composable-client-fixtures.sh"],
@@ -1499,18 +1509,22 @@ tier = "extended"
 provider = "objects"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
+public_name = "Delete_Annotation"
 codec = "rest_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated exact 204 with an exactly empty body reports Annotation_Deletion_Completed; an exact recognized non-applying rejection or definite non-admission reports Annotation_Deletion_Definitely_Not_Applied, pre-admission cancellation reports Annotation_Deletion_Cancelled_Before_Admission, and every other possibly admitted, incomplete, retryable, malformed, or oversized outcome reports Annotation_Deletion_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected read-only observation using the exact bucket, key, annotation name, and explicit version or generation evidence before retry; an observation does not prove that the lost deletion caused the current state or upgrade mutation certainty"
+exclusions = ["backend annotation persistence, authenticated server routing, and external-provider interoperability are not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "success requires exact HTTP 204 with an exactly empty response body; optional modeled response headers must be singleton, nonempty when present, and text-safe", "read-only observation does not establish causation or authorize automatic replay"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-delete-object-annotation-preparation.py", "docs/qualification/delete-object-annotation.md", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "delete_object_annotation"
+ada_symbols = ["Prepare_Delete_Object_Annotation", "Decode_Delete_Object_Annotation_Response", "Execute_Delete_Object_Annotation", "Delete_Object_Annotation_Operation", "Delete_Annotation", "Finish"]
 
 [[operation]]
 name = "DeleteObjectTagging"
