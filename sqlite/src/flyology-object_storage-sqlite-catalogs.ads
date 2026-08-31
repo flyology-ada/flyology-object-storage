@@ -276,6 +276,48 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Transactionally retain one replication document.
+   procedure Put_Bucket_Replication
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional replication snapshot.
+   procedure Get_Bucket_Replication
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove retained replication state.
+   procedure Delete_Bucket_Replication
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
+   --  Transactionally retain one website document.
+   procedure Put_Bucket_Website
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional website snapshot.
+   procedure Get_Bucket_Website
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove retained website state.
+   procedure Delete_Bucket_Website
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
    --  Transactionally replace one query-keyed analytics document.
    --  @param Item Open catalog
    --  @param Bucket Existing bucket name

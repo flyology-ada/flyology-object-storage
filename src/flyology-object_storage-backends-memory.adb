@@ -522,19 +522,15 @@ package body Flyology.Object_Storage.Backends.Memory is
                 (Buckets (Index).Encryption_Document)) -
            Byte_Count
              (Ada.Strings.Unbounded.Length
-                (Buckets (Index).Ownership_Controls_Document)) -
-           Byte_Count
-             (Ada.Strings.Unbounded.Length
-                (Buckets (Index).Configuration_Documents
-                   (Lifecycle_Configuration))) -
-           Byte_Count
-             (Ada.Strings.Unbounded.Length
-                (Buckets (Index).Configuration_Documents
-                   (Logging_Configuration)));
-         Bytes := Bytes - Byte_Count
-           (Ada.Strings.Unbounded.Length
-              (Buckets (Index).Configuration_Metadata
-                 (Lifecycle_Configuration)));
+                (Buckets (Index).Ownership_Controls_Document));
+         for Kind in Singleton_Configuration_Kind loop
+            Bytes := Bytes - Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).Configuration_Documents (Kind))) -
+              Byte_Count
+                (Ada.Strings.Unbounded.Length
+                   (Buckets (Index).Configuration_Metadata (Kind)));
+         end loop;
          for Kind in Named_Configuration_Kind loop
             for Position in
               Buckets (Index).Named_Configurations (Kind).Iterate
@@ -815,7 +811,9 @@ package body Flyology.Object_Storage.Backends.Memory is
            (case Kind is
                when Lifecycle_Configuration =>
                  Valid_Bucket_Lifecycle_Document (Document, Metadata),
-               when Logging_Configuration =>
+               when Logging_Configuration |
+                    Replication_Configuration |
+                    Website_Configuration =>
                  Metadata'Length = 0
                    and then Valid_Bucket_Logging_Document (Document));
       begin
@@ -3198,6 +3196,126 @@ package body Flyology.Object_Storage.Backends.Memory is
             Configured, Result);
       end if;
    end Get_Bucket_Logging;
+
+   overriding procedure Put_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Logging_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_Configuration
+           (Bucket, Replication_Configuration, Document, "", Result);
+      end if;
+   end Put_Bucket_Replication;
+
+   overriding procedure Get_Bucket_Replication
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Configuration
+           (Bucket, Replication_Configuration, Document, Ignored_Metadata,
+            Configured, Result);
+      end if;
+   end Get_Bucket_Replication;
+
+   overriding procedure Delete_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Configuration
+           (Bucket, Replication_Configuration, Result);
+      end if;
+   end Delete_Bucket_Replication;
+
+   overriding procedure Put_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Logging_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_Configuration
+           (Bucket, Website_Configuration, Document, "", Result);
+      end if;
+   end Put_Bucket_Website;
+
+   overriding procedure Get_Bucket_Website
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Configuration
+           (Bucket, Website_Configuration, Document, Ignored_Metadata,
+            Configured, Result);
+      end if;
+   end Get_Bucket_Website;
+
+   overriding procedure Delete_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Configuration
+           (Bucket, Website_Configuration, Result);
+      end if;
+   end Delete_Bucket_Website;
 
    procedure Put_Named_Bucket_Configuration
      (Item       : in out Store;

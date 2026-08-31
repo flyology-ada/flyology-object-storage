@@ -779,6 +779,21 @@ package body Object_Storage_Test_Cases is
         "<TargetBucket>logs</TargetBucket>" &
         "<TargetPrefix>access/</TargetPrefix>" &
         "</LoggingEnabled></BucketLoggingStatus>";
+      Replication_First : constant String :=
+        "<ReplicationConfiguration><Role>replication-role</Role>" &
+        "<Rule><Status>Enabled</Status></Rule>" &
+        "</ReplicationConfiguration>";
+      Replication_Second : constant String :=
+        "<ReplicationConfiguration><Role>replacement-role</Role>" &
+        "<Rule><Status>Disabled</Status></Rule>" &
+        "</ReplicationConfiguration>";
+      Website_First : constant String :=
+        "<WebsiteConfiguration><IndexDocument><Suffix>index.html" &
+        "</Suffix></IndexDocument></WebsiteConfiguration>";
+      Website_Second : constant String :=
+        "<WebsiteConfiguration><RedirectAllRequestsTo><HostName>" &
+        "example.test</HostName></RedirectAllRequestsTo>" &
+        "</WebsiteConfiguration>";
       Analytics : constant String :=
         "<AnalyticsConfiguration><Id>payload-analytics</Id>" &
         "<StorageClassAnalysis><DataExport><OutputSchemaVersion>" &
@@ -956,6 +971,110 @@ package body Object_Storage_Test_Cases is
         (Result = Success and then Configured
          and then US.To_String (Document) = Logging,
          "bucket logging configuration did not round trip");
+
+      Store.Get_Bucket_Replication
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket replication get did not distinguish an absent bucket");
+      Store.Delete_Bucket_Replication
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Not_Found,
+         "bucket replication delete did not distinguish an absent bucket");
+      Store.Get_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "new bucket exposed replication state");
+      Store.Put_Bucket_Replication
+        (Bucket, Replication_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Replication_First,
+         "bucket replication configuration did not round trip");
+      Store.Put_Bucket_Replication
+        (Bucket, Replication_Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Replication_Second,
+         "bucket replication replacement did not preserve exact bytes");
+      Store.Delete_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket replication deletion left visible state");
+      Store.Delete_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket replication deletion was not idempotent");
+
+      Store.Get_Bucket_Website
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket website get did not distinguish an absent bucket");
+      Store.Delete_Bucket_Website
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Not_Found,
+         "bucket website delete did not distinguish an absent bucket");
+      Store.Get_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "new bucket exposed website state");
+      Store.Put_Bucket_Website
+        (Bucket, Website_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Website_First,
+         "bucket website configuration did not round trip");
+      Store.Put_Bucket_Website
+        (Bucket, Website_Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Website_Second,
+         "bucket website replacement did not preserve exact bytes");
+      Store.Delete_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket website deletion left visible state");
+      Store.Delete_Bucket_Website
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket website deletion was not idempotent");
 
       Store.Put_Bucket_Analytics_Configuration
         (Bucket, "query-analytics", Analytics, null,
@@ -1267,6 +1386,31 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, "bucket lifecycle put ignored deadline");
       end;
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Replication
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket replication get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Website
+              (Bucket, Website_First, null, Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket website put ignored deadline");
+      end;
       Store.Put_Bucket_Encryption
         (Bucket, Encryption_First, null, Ada.Real_Time.Time_Last, Result);
       Store.Put_Bucket_Ownership_Controls
@@ -1274,10 +1418,66 @@ package body Object_Storage_Test_Cases is
       Store.Put_Bucket_Lifecycle
         (Bucket, Lifecycle_First, Varies_By_Storage_Class, null,
          Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Replication
+        (Bucket, Replication_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Website
+        (Bucket, Website_First, null, Ada.Real_Time.Time_Last, Result);
       Assert
         (Result = Success,
          "bucket configuration persistence fixtures failed");
    end Exercise_Bucket_Configuration_Documents;
+
+   procedure Exercise_Bucket_Singleton_Configuration_Bounds
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package US renames Ada.Strings.Unbounded;
+      type String_Access is access String;
+      procedure Free is new Ada.Unchecked_Deallocation
+        (String, String_Access);
+      Limit_Bytes : constant Positive := 16 * 1_024 * 1_024;
+      At_Limit    : String_Access :=
+        new String'(1 .. Limit_Bytes => 'r');
+      Over_Limit  : String_Access :=
+        new String'(1 .. Limit_Bytes + 1 => 'w');
+      Document    : US.Unbounded_String;
+      Configured  : Boolean;
+      Result      : Status;
+   begin
+      Store.Put_Bucket_Replication
+        (Bucket, At_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "replication rejected its exact configuration byte limit");
+      Store.Get_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = Limit_Bytes
+         and then US.Element (Document, 1) = 'r'
+         and then US.Element (Document, Limit_Bytes) = 'r',
+         "replication could not read its exact-limit document");
+      Store.Delete_Bucket_Replication
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "replication could not release its exact-limit document");
+      Store.Put_Bucket_Website
+        (Bucket, Over_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Entity_Too_Large,
+         "website accepted an over-limit configuration document");
+      Free (At_Limit);
+      Free (Over_Limit);
+   exception
+      when others =>
+         Free (At_Limit);
+         Free (Over_Limit);
+         raise;
+   end Exercise_Bucket_Singleton_Configuration_Bounds;
 
    procedure Exercise_Bucket_Named_Configuration_Bounds
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
@@ -3634,11 +3834,47 @@ package body Object_Storage_Test_Cases is
             "named configuration byte capacity used count-limit status");
       end;
       declare
+         Accounting_Store : Memory.Store (1, 1, 16);
+      begin
+         Accounting_Store.Create_Bucket
+           ("singleton-accounting", null, Ada.Real_Time.Time_Last, Result);
+         Accounting_Store.Put_Bucket_Replication
+           ("singleton-accounting", "abc", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Accounting_Store.Bytes_Used = 3,
+            "replication document was not charged to byte capacity");
+         Accounting_Store.Put_Bucket_Replication
+           ("singleton-accounting", "r", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Accounting_Store.Bytes_Used = 1,
+            "replication replacement retained obsolete byte capacity");
+         Accounting_Store.Put_Bucket_Website
+           ("singleton-accounting", "ws", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Accounting_Store.Bytes_Used = 3,
+            "website document was not charged independently");
+         Accounting_Store.Delete_Bucket_Replication
+           ("singleton-accounting", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Accounting_Store.Bytes_Used = 2,
+            "replication delete did not release exact byte capacity");
+         Accounting_Store.Delete_Bucket
+           ("singleton-accounting", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Accounting_Store.Bytes_Used = 0,
+            "bucket delete did not release website byte capacity");
+      end;
+      declare
          Boundary_Store : Memory.Store (1, 1, 16 * 1_024 * 1_024);
       begin
          Boundary_Store.Create_Bucket
            ("named-boundary", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "create named-boundary memory bucket");
+         Exercise_Bucket_Singleton_Configuration_Bounds
+           (Boundary_Store, "named-boundary");
          Exercise_Bucket_Named_Configuration_Bounds
            (Boundary_Store, "named-boundary");
       end;
@@ -5145,6 +5381,8 @@ package body Object_Storage_Test_Cases is
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Exercise_Bucket_CORS (Store, "file-bucket");
+         Exercise_Bucket_Singleton_Configuration_Bounds
+           (Store, "file-bucket");
          Exercise_Bucket_Configuration_Documents (Store, "file-bucket");
          Exercise_Bucket_Named_Configuration_Bounds (Store, "file-bucket");
          Exercise_Bucket_Scalar_Controls (Store, "file-bucket");
@@ -5421,6 +5659,25 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Configured
                and then US.To_String (Document)'Length > 0,
                "files logging state did not persist across reopen");
+            Store.Get_Bucket_Replication
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document) =
+                 "<ReplicationConfiguration><Role>replication-role</Role>" &
+                 "<Rule><Status>Enabled</Status></Rule>" &
+                 "</ReplicationConfiguration>",
+               "files replication state did not persist across reopen");
+            Store.Get_Bucket_Website
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document) =
+                 "<WebsiteConfiguration><IndexDocument><Suffix>index.html" &
+                 "</Suffix></IndexDocument></WebsiteConfiguration>",
+               "files website state did not persist across reopen");
             Store.Get_Bucket_Analytics_Configuration
               ("file-bucket", "query-analytics", null,
                Ada.Real_Time.Time_Last, Document, Configured, Result);

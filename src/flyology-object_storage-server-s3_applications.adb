@@ -24,6 +24,7 @@ with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
 with
   Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
+with Flyology.Object_Storage.S3.Generated_Put_Bucket_Website_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
 with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
@@ -37,11 +38,13 @@ with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
+with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
+with Flyology.Object_Storage.S3.Website;
 with Flyology.Object_Storage.S3.Wire_Core;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
@@ -62,6 +65,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Encryption renames S3.Encryption;
    package Generated_Inventory renames
      S3.Generated_Put_Bucket_Inventory_Configuration_XML;
+   package Generated_Website renames
+     S3.Generated_Put_Bucket_Website_XML;
    package Generated_Logging renames
      S3.Generated_Put_Bucket_Logging_XML;
    package IMF_Dates renames S3.IMF_Dates;
@@ -75,9 +80,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Metrics renames S3.Metrics;
    package Model renames S3.Model;
    package Object_Reads renames S3.Object_Reads;
+   package Replication renames S3.Replication;
    package Tagging renames S3.Tagging;
    package Versions renames S3.Versions;
    package Versioning renames S3.Versioning;
+   package Website renames S3.Website;
    package XML renames S3.XML;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
@@ -537,6 +544,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Delete_Bucket_Intelligent_Tiering,
          Put_Bucket_Inventory, Get_Bucket_Inventory,
          Delete_Bucket_Inventory,
+         Put_Bucket_Replication, Get_Bucket_Replication,
+         Delete_Bucket_Replication,
+         Put_Bucket_Website, Get_Bucket_Website, Delete_Bucket_Website,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
@@ -583,6 +593,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          elsif Value in 'A' .. 'F' then
             Character'Pos (Value) - Character'Pos ('A') + 10
          else 16);
+
+      function Valid_Header_Text (Value : String) return Boolean is
+      begin
+         for Item of Value loop
+            if Character'Pos (Item) < 16#20#
+              or else Character'Pos (Item) = 16#7F#
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Header_Text;
 
       function Decode_ACL_Query_Component (Value : String) return String is
          Result : String (1 .. Value'Length);
@@ -943,6 +965,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           ("logging",
            (if Method = "PUT" then "PutBucketLogging"
             else "GetBucketLogging"));
+      Is_Bucket_Replication_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("replication",
+           (if Method = "PUT" then "PutBucketReplication"
+            elsif Method = "GET" then "GetBucketReplication"
+            else "DeleteBucketReplication"));
+      Is_Bucket_Website_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("website",
+           (if Method = "PUT" then "PutBucketWebsite"
+            elsif Method = "GET" then "GetBucketWebsite"
+            else "DeleteBucketWebsite"));
       Analytics_Request : constant Point_Configuration_Query_Result :=
         Parse_Point_Configuration_Query
           (Query_Text, Point_Subresource (Analytics_Family),
@@ -1047,6 +1081,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&logging&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&logging=") /= 0;
+      Has_Singleton_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&replication&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&replication=") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&website&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&website=") /= 0;
       Has_Analytics_Configuration_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&analytics&") /= 0
         or else Ada.Strings.Fixed.Index
@@ -1089,6 +1130,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=PutBucketLogging&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetBucketLogging&") /= 0;
+      Has_Singleton_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketReplication&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketReplication&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketReplication&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketWebsite&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketWebsite&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketWebsite&") /= 0;
       Has_Analytics_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketAnalyticsConfiguration&") /= 0
@@ -1123,6 +1177,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Looks_Like_Bucket_Configuration_Query : constant Boolean :=
         Has_Bucket_Configuration_Query
         or else Has_Bucket_Configuration_Operation_ID;
+      Looks_Like_Singleton_Configuration_Query : constant Boolean :=
+        Has_Singleton_Configuration_Query
+        or else Has_Singleton_Configuration_Operation_ID;
       Looks_Like_Analytics_Configuration_Query : constant Boolean :=
         Has_Analytics_Configuration_Query
         or else Has_Analytics_Configuration_Operation_ID;
@@ -2361,6 +2418,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         and then not
           (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Singleton_Configuration_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Point_Configuration_Query)
         and then not
           (Parsed.Kind = Requests.Bucket_Target
@@ -2428,12 +2489,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then not Is_Bucket_CORS_Query;
          Bucket_Configuration_Query_Invalid :=
            Method in "PUT" | "GET" | "DELETE"
-           and then Looks_Like_Bucket_Configuration_Query
+           and then
+             (Looks_Like_Bucket_Configuration_Query
+              or else Looks_Like_Singleton_Configuration_Query)
            and then not
              (Is_Bucket_Encryption_Query
               or else Is_Bucket_Ownership_Controls_Query
               or else Is_Bucket_Lifecycle_Query
-              or else Is_Bucket_Logging_Query);
+              or else Is_Bucket_Logging_Query
+              or else Is_Bucket_Replication_Query
+              or else Is_Bucket_Website_Query);
          if Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Point_Configuration_Query
            and then not
@@ -2488,6 +2553,66 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Logging
             elsif Method = "GET" and then Is_Bucket_Logging_Query
             then Get_Bucket_Logging
+            elsif Method = "PUT"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Has_Singleton_Configuration_Query
+                 or else Has_Singleton_Configuration_Operation_ID)
+              and then
+                (Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=PutBucketReplication&") /= 0)
+            then Put_Bucket_Replication
+            elsif Method = "GET"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=GetBucketReplication&") /= 0)
+            then Get_Bucket_Replication
+            elsif Method = "DELETE"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&replication=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=DeleteBucketReplication&") /= 0)
+            then Delete_Bucket_Replication
+            elsif Method = "PUT"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Ada.Strings.Fixed.Index (Padded_Query, "&website&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&website=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=PutBucketWebsite&") /= 0)
+            then Put_Bucket_Website
+            elsif Method = "GET"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Ada.Strings.Fixed.Index (Padded_Query, "&website&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&website=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=GetBucketWebsite&") /= 0)
+            then Get_Bucket_Website
+            elsif Method = "DELETE"
+              and then Looks_Like_Singleton_Configuration_Query
+              and then
+                (Ada.Strings.Fixed.Index (Padded_Query, "&website&") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&website=") /= 0
+                 or else Ada.Strings.Fixed.Index
+                   (Padded_Query, "&x-id=DeleteBucketWebsite&") /= 0)
+            then Delete_Bucket_Website
             elsif Method = "PUT"
               and then Looks_Like_Analytics_Configuration_Query
             then Put_Bucket_Analytics
@@ -2742,7 +2867,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
          Put_Bucket_Logging | Put_Bucket_Analytics |
          Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
-         Put_Bucket_Inventory | Put_Bucket_Policy |
+         Put_Bucket_Inventory | Put_Bucket_Replication |
+         Put_Bucket_Website | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -2892,7 +3018,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
         Put_Bucket_Logging | Put_Bucket_Analytics |
         Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
-        Put_Bucket_Inventory | Put_Bucket_Policy |
+        Put_Bucket_Inventory | Put_Bucket_Replication |
+        Put_Bucket_Website | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -5107,6 +5234,242 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            when Inventory_Family =>
                               Store.Delete_Bucket_Inventory_Configuration
                                 (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                        end case;
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Replication | Put_Bucket_Website =>
+               declare
+                  type Singleton_Configuration_Family is
+                    (Replication_Family, Website_Family);
+                  Family : constant Singleton_Configuration_Family :=
+                    (if Operation = Put_Bucket_Replication then
+                       Replication_Family
+                     else Website_Family);
+                  Operation_Name : constant String :=
+                    (if Family = Replication_Family then
+                       "PutBucketReplication"
+                     else "PutBucketWebsite");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Token_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bucket-object-lock-token");
+                  Token : constant String :=
+                    (if Token_Count = 1 then
+                       Apps.Request_Header
+                         (X, "x-amz-bucket-object-lock-token")
+                     else "");
+                  Owner_Accepted : Boolean;
+                  Document : US.Unbounded_String;
+                  Accepted : Boolean;
+               begin
+                  if MD5_Count /= 1 or else SDK_Count /= 1
+                    or else Token_Count > 1
+                    or else
+                      (Family = Website_Family and then Token_Count /= 0)
+                    or else
+                      (Token_Count = 1
+                       and then
+                         (Token'Length = 0
+                          or else not Valid_Header_Text (Token)))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The " & Operation_Name &
+                        " request header group is invalid", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Read_Bucket_Scalar_Control
+                          (Operation_Name, True, True, Auth, Length,
+                           Document, Accepted);
+                        if Accepted then
+                           begin
+                              case Family is
+                                 when Replication_Family =>
+                                    declare
+                                       Canonical : constant String :=
+                                         Replication.Serialize
+                                           (Replication.Parse
+                                              (US.To_String (Document),
+                                               XML.Default_Limits),
+                                            XML.Default_Limits);
+                                    begin
+                                       Store.Put_Bucket_Replication
+                                         (Bucket, Canonical,
+                                          Apps.Cancellation (X),
+                                          Apps.Deadline (X), Result);
+                                    end;
+                                 when Website_Family =>
+                                    declare
+                                       Canonical : constant String :=
+                                         Generated_Website.Serialize
+                                           (Website.Parse
+                                              (US.To_String (Document),
+                                               XML.Default_Limits),
+                                            XML.Default_Limits);
+                                    begin
+                                       Store.Put_Bucket_Website
+                                         (Bucket, Canonical,
+                                          Apps.Cancellation (X),
+                                          Apps.Deadline (X), Result);
+                                    end;
+                              end case;
+                              if Result = Success then
+                                 Apps.Respond (X, 200, "", "");
+                              else
+                                 Send_Backend_Error
+                                   (X, Result, True, Target_Text);
+                              end if;
+                           exception
+                              when Replication.Malformed_Replication |
+                                   Website.Malformed_Website =>
+                                 Send_Error
+                                   (X, 400, "MalformedXML",
+                                    "The XML provided was not well-formed " &
+                                    "or did not validate against the " &
+                                    "published schema", Target_Text);
+                           end;
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Replication | Get_Bucket_Website =>
+               declare
+                  type Singleton_Configuration_Family is
+                    (Replication_Family, Website_Family);
+                  Family : constant Singleton_Configuration_Family :=
+                    (if Operation = Get_Bucket_Replication then
+                       Replication_Family
+                     else Website_Family);
+                  Operation_Name : constant String :=
+                    (if Family = Replication_Family then
+                       "GetBucketReplication"
+                     else "GetBucketWebsite");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Token_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bucket-object-lock-token");
+                  Unexpected_Checksum : constant Boolean :=
+                    Apps.Request_Header_Count (X, "content-md5") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-trailer") > 0
+                    or else Checksum_Value_Header_Count > 0;
+                  Owner_Accepted : Boolean;
+                  Document : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 or else Token_Count > 0
+                    or else Unexpected_Checksum
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " does not define the supplied request header",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        case Family is
+                           when Replication_Family =>
+                              Store.Get_Bucket_Replication
+                                (Bucket, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                           when Website_Family =>
+                              Store.Get_Bucket_Website
+                                (Bucket, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                        end case;
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404,
+                              (if Family = Replication_Family then
+                                 "ReplicationConfigurationNotFoundError"
+                               else "NoSuchWebsiteConfiguration"),
+                              (if Family = Replication_Family then
+                                 "The replication configuration does not " &
+                                 "exist"
+                               else
+                                 "The website configuration does not exist"),
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              US.To_String (Document));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_Replication | Delete_Bucket_Website =>
+               declare
+                  type Singleton_Configuration_Family is
+                    (Replication_Family, Website_Family);
+                  Family : constant Singleton_Configuration_Family :=
+                    (if Operation = Delete_Bucket_Replication then
+                       Replication_Family
+                     else Website_Family);
+                  Operation_Name : constant String :=
+                    (if Family = Replication_Family then
+                       "DeleteBucketReplication"
+                     else "DeleteBucketWebsite");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Token_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bucket-object-lock-token");
+                  Unexpected_Checksum : constant Boolean :=
+                    Apps.Request_Header_Count (X, "content-md5") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-trailer") > 0
+                    or else Checksum_Value_Header_Count > 0;
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 or else Token_Count > 0
+                    or else Unexpected_Checksum
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " does not define the supplied request header",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        case Family is
+                           when Replication_Family =>
+                              Store.Delete_Bucket_Replication
+                                (Bucket, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                           when Website_Family =>
+                              Store.Delete_Bucket_Website
+                                (Bucket, Apps.Cancellation (X),
                                  Apps.Deadline (X), Result);
                         end case;
                         if Result = Success then

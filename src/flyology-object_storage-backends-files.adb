@@ -73,6 +73,10 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one canonical lifecycle document.
    Bucket_Logging_Magic : constant String := "FOSLOG01";
    --  Persisted-format discriminator for one canonical logging document.
+   Bucket_Replication_Magic : constant String := "FOSREP01";
+   --  Persisted-format discriminator for one canonical replication document.
+   Bucket_Website_Magic : constant String := "FOSWEB01";
+   --  Persisted-format discriminator for one canonical website document.
    Bucket_Analytics_Magic : constant String := "FOSANL01";
    --  Persisted-format discriminator for one named analytics configuration.
    Bucket_Metrics_Magic : constant String := "FOSMET01";
@@ -410,6 +414,16 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "logging.fos"));
    --  Persisted files-layout name paired with FOSLOG01.
+
+   function Bucket_Replication_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "replication.fos"));
+   --  Persisted files-layout name paired with FOSREP01.
+
+   function Bucket_Website_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "website.fos"));
+   --  Persisted files-layout name paired with FOSWEB01.
 
    function Bucket_Analytics_Path
      (Item : Store; Bucket, Identifier : String) return String is
@@ -1763,6 +1777,72 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Document := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Logging;
+
+   procedure Write_Bucket_Replication
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
+   begin
+      if not Valid_Bucket_Logging_Document (Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Replication_Magic);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Document);
+   end Write_Bucket_Replication;
+
+   procedure Read_Bucket_Replication
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Replication_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_Replication_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
+        or else SIO.Size (File) /=
+          SIO.Count (Bucket_Replication_Magic'Length + 4 + Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Read_Unbounded_String (File, Length, Document);
+   end Read_Bucket_Replication;
+
+   procedure Write_Bucket_Website
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
+   begin
+      if not Valid_Bucket_Logging_Document (Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Website_Magic);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Document);
+   end Write_Bucket_Website;
+
+   procedure Read_Bucket_Website
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Website_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_Website_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
+        or else SIO.Size (File) /=
+          SIO.Count (Bucket_Website_Magic'Length + 4 + Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Read_Unbounded_String (File, Length, Document);
+   end Read_Bucket_Website;
 
    procedure Write_Named_Bucket_Configuration
      (File       : in out SIO.File_Type;
@@ -4371,6 +4451,94 @@ package body Flyology.Object_Storage.Backends.Files is
          Read_Bucket_Logging'Access, Document, Ignored_Metadata,
          Configured, Result);
    end Get_Bucket_Logging;
+
+   overriding procedure Put_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "", Token, Deadline,
+         "bucket-replication-", Bucket_Replication_Path (Item, Bucket),
+         Write_Bucket_Replication'Access, null,
+         Valid_Bucket_Logging_Document'Access, True, "", Result);
+   end Put_Bucket_Replication;
+
+   overriding procedure Get_Bucket_Replication
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Replication_Path (Item, Bucket),
+         Read_Bucket_Replication'Access, Document, Ignored_Metadata,
+         Configured, Result);
+   end Get_Bucket_Replication;
+
+   overriding procedure Delete_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Replication_Path (Item, Bucket), null, "", Result);
+   end Delete_Bucket_Replication;
+
+   overriding procedure Put_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "", Token, Deadline, "bucket-website-",
+         Bucket_Website_Path (Item, Bucket), Write_Bucket_Website'Access,
+         null, Valid_Bucket_Logging_Document'Access, True, "", Result);
+   end Put_Bucket_Website;
+
+   overriding procedure Get_Bucket_Website
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Website_Path (Item, Bucket), Read_Bucket_Website'Access,
+         Document, Ignored_Metadata, Configured, Result);
+   end Get_Bucket_Website;
+
+   overriding procedure Delete_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Website_Path (Item, Bucket), null, "", Result);
+   end Delete_Bucket_Website;
 
    procedure Put_Named_Bucket_Configuration
      (Item       : in out Store;

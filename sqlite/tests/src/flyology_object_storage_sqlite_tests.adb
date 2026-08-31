@@ -489,6 +489,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -533,6 +535,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -566,6 +570,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -598,6 +604,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -630,6 +638,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -657,6 +667,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -682,6 +694,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
@@ -707,6 +721,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
          "DROP TABLE bucket_intelligent_tiering_configurations;" &
          "DROP TABLE bucket_inventory_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-points-v17',47);" &
@@ -719,6 +735,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V17_Database;
+
+   procedure Create_V18_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_replication_documents;" &
+         "DROP TABLE bucket_website_documents;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-sites-v18',53);" &
+         "PRAGMA user_version=18;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V18_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1621,7 +1660,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1667,7 +1706,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1711,10 +1750,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 18 atomically");
+         "schema-v12 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1768,10 +1807,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 18 atomically");
+         "schema-v13 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1851,10 +1890,10 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 18 atomically");
+         "schema-v14 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1947,10 +1986,10 @@ begin
          "'bucket_logging_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v15 migration did not publish schema 18 atomically");
+         "schema-v15 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2029,10 +2068,10 @@ begin
          "'bucket_metrics_configurations')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v16 migration did not publish schema 18 atomically");
+         "schema-v16 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2108,13 +2147,14 @@ begin
         (Tables, Database,
          "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
          "AND name IN ('bucket_intelligent_tiering_configurations'," &
-         "'bucket_inventory_configurations')");
+         "'bucket_inventory_configurations'," &
+         "'bucket_replication_documents','bucket_website_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 2,
-         "schema-v17 migration did not publish schema 18 atomically");
+         and then Databases.Column (Tables, 0) = 4,
+         "schema-v17 migration did not publish schema 19 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2143,6 +2183,109 @@ begin
       Assert
         (Rejected,
          "schema-v17 migration accepted a partial table publication");
+   end;
+   Delete_Database;
+
+   Create_V18_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Replication : constant String :=
+        "<ReplicationConfiguration><Role>role</Role>" &
+        "<Rule><Status>Enabled</Status></Rule>" &
+        "</ReplicationConfiguration>";
+      Website : constant String :=
+        "<WebsiteConfiguration><IndexDocument><Suffix>index.html" &
+        "</Suffix></IndexDocument></WebsiteConfiguration>";
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Replication
+        (Catalog, "legacy-sites-v18", Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "schema-v18 migration invented replication state");
+      Catalogs.Get_Bucket_Website
+        (Catalog, "legacy-sites-v18", Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "schema-v18 migration invented website state");
+      Catalogs.Put_Bucket_Replication
+        (Catalog, "legacy-sites-v18", Replication, Result);
+      Catalogs.Put_Bucket_Website
+        (Catalog, "legacy-sites-v18", Website, Result);
+      Assert (Result = Success, "schema-v18 migrated writes failed");
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Replication
+        (Catalog, "legacy-sites-v18", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<ReplicationConfiguration><Role>role</Role>" &
+             "<Rule><Status>Enabled</Status></Rule>" &
+             "</ReplicationConfiguration>",
+         "migrated replication state did not survive reopen");
+      Catalogs.Get_Bucket_Website
+        (Catalog, "legacy-sites-v18", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<WebsiteConfiguration><IndexDocument><Suffix>index.html" &
+             "</Suffix></IndexDocument></WebsiteConfiguration>",
+         "migrated website state did not survive reopen");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name IN ('bucket_replication_documents'," &
+         "'bucket_website_documents')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 19
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v18 migration did not publish schema 19 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V18_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_replication_documents (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v18 migration accepted a partial table publication");
    end;
    Delete_Database;
 
@@ -3585,8 +3728,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18,
-         "schema-v1 migration did not publish version 18");
+         and then Databases.Column (Version, 0) = 19,
+         "schema-v1 migration did not publish version 19");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3600,13 +3743,15 @@ begin
          "'bucket_ownership_controls_documents'," &
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
+         "'bucket_replication_documents'," &
+         "'bucket_website_documents'," &
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
          "'bucket_inventory_configurations')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 24,
+         and then Databases.Column (Tables, 0) = 26,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -3672,8 +3817,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18,
-         "schema-v2 migration did not publish version 18");
+         and then Databases.Column (Version, 0) = 19,
+         "schema-v2 migration did not publish version 19");
    end;
    declare
       Tables : Databases.Statement;
@@ -3709,10 +3854,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 18 tables");
+         "schema-v3 migration did not publish schema 19 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3783,8 +3928,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 18,
-            "schema-v4 migration did not publish version 18");
+            and then Databases.Column (Version, 0) = 19,
+            "schema-v4 migration did not publish version 19");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3851,7 +3996,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 18
+            and then Databases.Column (Version, 0) = 19
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -3929,8 +4074,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18,
-         "schema-v6 migration did not publish version 18");
+         and then Databases.Column (Version, 0) = 19,
+         "schema-v6 migration did not publish version 19");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4061,7 +4206,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -4132,7 +4277,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 18
+         and then Databases.Column (Version, 0) = 19
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -4969,6 +5114,116 @@ begin
          Assert
            (Result = Success,
             "SQLite bucket CORS state could not be restored");
+      end;
+      declare
+         Replication_1 : constant String :=
+           "<ReplicationConfiguration><Role>role-one</Role>" &
+           "<Rule><Status>Enabled</Status></Rule>" &
+           "</ReplicationConfiguration>";
+         Replication_2 : constant String :=
+           "<ReplicationConfiguration><Role>role-two</Role>" &
+           "<Rule><Status>Disabled</Status></Rule>" &
+           "</ReplicationConfiguration>";
+         Website_1 : constant String :=
+           "<WebsiteConfiguration><IndexDocument><Suffix>index.html" &
+           "</Suffix></IndexDocument></WebsiteConfiguration>";
+         Website_2 : constant String :=
+           "<WebsiteConfiguration><ErrorDocument><Key>error.html</Key>" &
+           "</ErrorDocument></WebsiteConfiguration>";
+         Observed   : US.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite new bucket unexpectedly had replication state");
+         Store.Get_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite new bucket unexpectedly had website state");
+         Store.Put_Bucket_Replication
+           ("sqlite-bucket", Replication_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Replication_1,
+            "SQLite replication initial write lost exact bytes");
+         Store.Put_Bucket_Replication
+           ("sqlite-bucket", Replication_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Replication_2,
+            "SQLite replication replacement lost exact bytes");
+         Store.Put_Bucket_Website
+           ("sqlite-bucket", Website_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Website_1,
+            "SQLite website initial write lost exact bytes");
+         Store.Put_Bucket_Website
+           ("sqlite-bucket", Website_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Website_2,
+            "SQLite website replacement lost exact bytes");
+         Store.Delete_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite idempotent replication deletion retained state");
+         Store.Delete_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite idempotent website deletion retained state");
+         Store.Delete_Bucket_Replication
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite replication delete lost missing-bucket status");
+         Store.Delete_Bucket_Website
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite website delete lost missing-bucket status");
+         Store.Put_Bucket_Replication
+           ("sqlite-bucket", Replication_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Website
+           ("sqlite-bucket", Website_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite replication/website reopen fixture failed");
       end;
       declare
          Lifecycle_1 : constant String :=
@@ -6560,6 +6815,25 @@ begin
            (Result = Success and then Configured
             and then US.To_String (Document) = Logging,
             "SQLite logging state did not survive reopen");
+         Store.Get_Bucket_Replication
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) =
+              "<ReplicationConfiguration><Role>role-two</Role>" &
+                "<Rule><Status>Disabled</Status></Rule>" &
+                "</ReplicationConfiguration>",
+            "SQLite replication state did not survive reopen");
+         Store.Get_Bucket_Website
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) =
+              "<WebsiteConfiguration><ErrorDocument><Key>error.html</Key>" &
+                "</ErrorDocument></WebsiteConfiguration>",
+            "SQLite website state did not survive reopen");
       end;
       declare
          Analytics : constant String :=

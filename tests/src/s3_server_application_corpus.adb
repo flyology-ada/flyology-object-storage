@@ -28,6 +28,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
 with
   Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
+with Flyology.Object_Storage.S3.Generated_Put_Bucket_Website_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Inventory;
@@ -37,10 +38,12 @@ with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
+with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
+with Flyology.Object_Storage.S3.Website;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
@@ -68,6 +71,8 @@ procedure S3_Server_Application_Corpus is
    package Generated_Inventory renames
      Flyology.Object_Storage.S3.
        Generated_Put_Bucket_Inventory_Configuration_XML;
+   package Generated_Website renames
+     Flyology.Object_Storage.S3.Generated_Put_Bucket_Website_XML;
    package Generated_Logging renames
      Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
    package Intelligent_Tiering renames
@@ -80,12 +85,14 @@ procedure S3_Server_Application_Corpus is
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
+   package Replication renames Flyology.Object_Storage.S3.Replication;
    package XML renames Flyology.Object_Storage.S3.XML;
    package Backends renames Flyology.Object_Storage.Backends;
    package Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
    package Versions renames Flyology.Object_Storage.S3.Versions;
    package Versioning renames Flyology.Object_Storage.S3.Versioning;
+   package Website renames Flyology.Object_Storage.S3.Website;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package MFA renames Flyology.Object_Storage.Server.MFA;
@@ -5579,6 +5586,369 @@ begin
                  ("GET", "/absent-bucket", Get_Payment_Query)),
             "<Code>NoSuchBucket</Code>"),
          "GetBucketRequestPayment did not check bucket existence");
+   end;
+
+   declare
+      Replication_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("replication", ""),
+         SigV4.Pair ("x-id", "PutBucketReplication"));
+      Replication_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("replication", ""),
+         SigV4.Pair ("x-id", "GetBucketReplication"));
+      Replication_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("replication", ""),
+         SigV4.Pair ("x-id", "DeleteBucketReplication"));
+      Website_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("website", ""),
+         SigV4.Pair ("x-id", "PutBucketWebsite"));
+      Website_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("website", ""),
+         SigV4.Pair ("x-id", "GetBucketWebsite"));
+      Website_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("website", ""),
+         SigV4.Pair ("x-id", "DeleteBucketWebsite"));
+      Replication_Document : constant String :=
+        "<ReplicationConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Role>role</Role><Rule><Status>Enabled" &
+        "</Status><Destination><Bucket>arn:aws:s3:::replica</Bucket>" &
+        "</Destination></Rule></ReplicationConfiguration>";
+      Replacement_Replication : constant String :=
+        "<ReplicationConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Role>replacement</Role><Rule><Status>Disabled" &
+        "</Status><Destination><Bucket>arn:aws:s3:::second</Bucket>" &
+        "</Destination></Rule></ReplicationConfiguration>";
+      Website_Document : constant String :=
+        "<WebsiteConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><IndexDocument><Suffix>index.html</Suffix>" &
+        "</IndexDocument></WebsiteConfiguration>";
+      Replacement_Website : constant String :=
+        "<WebsiteConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><ErrorDocument><Key>error.html</Key>" &
+        "</ErrorDocument></WebsiteConfiguration>";
+      Canonical_Replication : constant String :=
+        Replication.Serialize
+          (Replication.Parse (Replication_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Replacement_Replication : constant String :=
+        Replication.Serialize
+          (Replication.Parse
+             (Replacement_Replication, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Website : constant String :=
+        Generated_Website.Serialize
+          (Website.Parse (Website_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Replacement_Website : constant String :=
+        Generated_Website.Serialize
+          (Website.Parse (Replacement_Website, XML.Default_Limits),
+           XML.Default_Limits);
+
+      function Put
+        (Query : SigV4.Name_Value_Array;
+         Document : String;
+         Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Query, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF &
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Document) & CRLF & Extra)));
+
+      function Declared_Oversize
+        (Query : SigV4.Name_Value_Array;
+         Document : String) return String
+      is
+         Payload_Hash : constant String := SigV4.Empty_Payload_Hash;
+         Headers : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("content-md5", Content_MD5 (Document)),
+            SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-checksum-sha256",
+                        Checksum_Value (Core.SHA256, Document)),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair ("x-amz-sdk-checksum-algorithm", "SHA256"));
+         Signing : constant SigV4.Signing_Result :=
+           SigV4.Sign
+             ("PUT", "/test-bucket", Query, Headers, Payload_Hash,
+              Access_Key, Secret_Key, Region, Timestamp);
+         Query_Text : constant String := SigV4.Canonical_Query (Query);
+      begin
+         return
+           "PUT /test-bucket?" & Query_Text & " HTTP/1.1" & CRLF &
+           "Host: " & Host & CRLF &
+           "content-md5: " & Content_MD5 (Document) & CRLF &
+           "x-amz-checksum-sha256: " &
+           Checksum_Value (Core.SHA256, Document) & CRLF &
+           "x-amz-content-sha256: " & Payload_Hash & CRLF &
+           "x-amz-date: " & Timestamp & CRLF &
+           "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+           "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+           "Content-Length: " &
+           Ada.Strings.Fixed.Trim
+             (Natural'Image
+                (XML.Default_Limits.Maximum_Document_Bytes + 1),
+              Ada.Strings.Both) & CRLF &
+           "Connection: close" & CRLF & CRLF;
+      end Declared_Oversize;
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Replication_Get)),
+            "<Code>ReplicationConfigurationNotFoundError</Code>"),
+         "GetBucketReplication did not distinguish absent configuration");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Website_Get)),
+            "<Code>NoSuchWebsiteConfiguration</Code>"),
+         "GetBucketWebsite did not distinguish absent configuration");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Replication_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketReplication confused bucket absence");
+      Require
+        (Has
+           (Put
+              (Replication_Put, Replication_Document,
+               "x-amz-bucket-object-lock-token: token" & CRLF),
+            "200 OK"),
+         "PutBucketReplication rejected valid canonical input");
+      Require
+        (Has (Put (Website_Put, Website_Document), "200 OK"),
+         "PutBucketWebsite rejected valid canonical input");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Replication_Get))) =
+           Canonical_Replication,
+         "GetBucketReplication lost canonical state");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Website_Get))) =
+           Canonical_Website,
+         "GetBucketWebsite lost canonical state");
+      Require
+        (Has
+           (Put
+              (Replication_Put, Replacement_Replication,
+               "x-amz-bucket-object-lock-token: replacement" & CRLF),
+            "200 OK")
+         and then
+           Response_Body
+             (Run
+                (Signed_Query_Request
+                   ("GET", "/test-bucket", Replication_Get))) =
+             Canonical_Replacement_Replication,
+         "PutBucketReplication did not replace canonical state");
+      Require
+        (Has (Put (Website_Put, Replacement_Website), "200 OK")
+         and then
+           Response_Body
+             (Run
+                (Signed_Query_Request
+                   ("GET", "/test-bucket", Website_Get))) =
+             Canonical_Replacement_Website,
+         "PutBucketWebsite did not replace canonical state");
+      Require
+        (Has
+           (Put
+              (Replication_Put, "<ReplicationConfiguration/>",
+               "x-amz-bucket-object-lock-token: token" & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketReplication accepted malformed XML");
+      Require
+        (Has
+           (Put
+              (Website_Put,
+               "<WebsiteConfiguration><IndexDocument/>" &
+               "</WebsiteConfiguration>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketWebsite accepted malformed XML");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Replication_Put,
+                  Replication_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Replication_Document) &
+                  CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketReplication accepted missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Website_Put, Website_Document,
+                  "content-md5: " & Content_MD5 (Website_Document) &
+                  CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketWebsite accepted missing checksum selection");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Website_Put, Website_Document,
+                  "content-md5: " & Content_MD5 (Website_Document) &
+                  CRLF &
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, "different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketWebsite accepted a mismatched checksum");
+      Require
+        (Has
+           (Put
+              (Website_Put, Website_Document,
+               "x-amz-bucket-object-lock-token: token" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketWebsite accepted replication object-lock token");
+      Require
+        (Has
+           (Put
+              (Replication_Put, Replication_Document,
+               "x-amz-bucket-object-lock-token: one" & CRLF &
+               "x-amz-bucket-object-lock-token: two" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketReplication accepted duplicate object-lock token");
+      Require
+        (Has
+           (Put
+              (Replication_Put, Replication_Document,
+               "x-amz-expected-bucket-owner: different-owner" & CRLF &
+               "x-amz-bucket-object-lock-token: token" & CRLF),
+            "403 Forbidden"),
+         "PutBucketReplication ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Website_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketWebsite ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("replication", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketReplication accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("website", ""),
+                   SigV4.Pair ("x-id", "GetBucketReplication")))),
+            "400 Bad Request"),
+         "GetBucketWebsite accepted a cross-family x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("replication", ""),
+                   SigV4.Pair ("x-id", "")))),
+            "400 Bad Request"),
+         "GetBucketReplication accepted an empty x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket",
+                  (SigV4.Pair ("website", ""),
+                   SigV4.Pair ("unexpected", "1")),
+                  "<bad/>", Corrupt_Signature => True)),
+            "403 Forbidden"),
+         "website query validation ran before authentication");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Replication_Put, "<bad/>",
+                  Corrupt_Signature => True)),
+            "403 Forbidden"),
+         "replication body validation ran before authentication");
+      Require
+        (Has
+           (Run (Declared_Oversize (Replication_Put, Replication_Document)),
+            "<Code>EntityTooLarge</Code>"),
+         "PutBucketReplication accepted an oversized document");
+      Require
+        (Has
+           (Run (Declared_Oversize (Website_Put, Website_Document)),
+            "<Code>EntityTooLarge</Code>"),
+         "PutBucketWebsite accepted an oversized document");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Replication_Get, "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketReplication accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("DELETE", "/test-bucket", Website_Delete,
+                  "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteBucketWebsite accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Replication_Delete)),
+            "204 No Content")
+         and then Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Replication_Get)),
+            "<Code>ReplicationConfigurationNotFoundError</Code>")
+         and then Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Replication_Delete)),
+            "204 No Content"),
+         "DeleteBucketReplication lost delete or idempotency behavior");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Website_Delete)),
+            "204 No Content")
+         and then Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Website_Get)),
+            "<Code>NoSuchWebsiteConfiguration</Code>")
+         and then Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Website_Delete)),
+            "204 No Content"),
+         "DeleteBucketWebsite lost delete or idempotency behavior");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Website_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketWebsite confused bucket absence");
    end;
 
    declare

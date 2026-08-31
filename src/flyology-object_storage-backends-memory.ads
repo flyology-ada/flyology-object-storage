@@ -275,6 +275,96 @@ package Flyology.Object_Storage.Backends.Memory is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Retain one bounded replication document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical replication-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory replication snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit replication state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Replication
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove retained in-memory replication state.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Replication
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Retain one bounded website document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical website-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory website snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit website state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Website
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove retained in-memory website state.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Website
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    --  Retain one analytics configuration by its exact request identifier.
    --  @param Item In-memory backend
    --  @param Bucket Existing bucket name
@@ -923,7 +1013,10 @@ package Flyology.Object_Storage.Backends.Memory is
 
 private
    type Singleton_Configuration_Kind is
-     (Lifecycle_Configuration, Logging_Configuration);
+     (Lifecycle_Configuration,
+      Logging_Configuration,
+      Replication_Configuration,
+      Website_Configuration);
    type Configuration_Document_Array is array
      (Singleton_Configuration_Kind) of
        Ada.Strings.Unbounded.Unbounded_String;

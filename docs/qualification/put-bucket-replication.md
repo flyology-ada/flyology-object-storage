@@ -42,5 +42,8 @@ checksum/token/owner signing, XML limits, strict response decoding, complete
 failure/admission normalization, and exact-operation rejection. The signed
 socket corpus exercises low-level, synchronous, limited-constructor, and
 operation-last restart paths in both native and lightweight HTTP profiles.
-This is client and corpus qualification only; it does not claim an Object
-Storage backend, server route, or external provider result.
+Independent Object Storage backend and authenticated server-route evidence
+covers retained replication configuration; no external provider result is
+claimed. The authenticated server validates singleton, nonempty, text-safe
+Object Lock token transport, but the backend stores only the replication
+configuration and does not enforce Object Lock token policy.

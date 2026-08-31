@@ -1003,9 +1003,9 @@ def verify_delete_replication_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_REPLICATION_CERTAINTY,
         "reconciliation": DELETE_REPLICATION_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -1086,9 +1086,9 @@ def verify_delete_website_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_WEBSITE_CERTAINTY,
         "reconciliation": DELETE_WEBSITE_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -2657,7 +2657,7 @@ def main() -> int:
         [
             "removes the bucket replication configuration",
             "ReplicationConfigurationNotFoundError",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Replication_Operation",
             "added none",
             "delete_bucket_replication",
@@ -2708,7 +2708,7 @@ def main() -> int:
             "removes the bucket website configuration",
             "NoSuchWebsiteConfiguration",
             "previously present",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Website_Operation",
             "added none",
             "delete_bucket_website",

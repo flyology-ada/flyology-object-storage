@@ -15,10 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 18 adds exact query-keyed intelligent-tiering and
-   --  inventory documents. Changing this private value or table set requires a
-   --  transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 18;
+   --  Persisted schema 19 adds exact singleton replication and website
+   --  documents after schema 18 added query-keyed intelligent-tiering and
+   --  inventory documents. Changing this private value or table set requires
+   --  a transactional migration; never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 19;
    --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
    --  contracts allow exactly 1,000 query-keyed configurations per bucket and
    --  family. This private mirror keeps catalog enforcement aligned.
@@ -197,6 +198,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      ") WITHOUT ROWID;";
    Bucket_Logging_Schema : constant String :=
      "CREATE TABLE bucket_logging_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Replication_Schema : constant String :=
+     "CREATE TABLE bucket_replication_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Website_Schema : constant String :=
+     "CREATE TABLE bucket_website_documents (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
@@ -1497,13 +1510,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Ownership_Controls_Schema &
          Bucket_Lifecycle_Schema &
          Bucket_Logging_Schema &
+         Bucket_Replication_Schema &
+         Bucket_Website_Schema &
          Bucket_Analytics_Schema &
          Bucket_Metrics_Schema &
          Bucket_Intelligent_Tiering_Schema &
          Bucket_Inventory_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=18;");
+         "PRAGMA user_version=19;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2093,6 +2108,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V17;
 
+   procedure Upgrade_From_V18 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('bucket_replication_documents'," &
+           "'bucket_website_documents')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 18";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Replication_Schema & Bucket_Website_Schema &
+         "PRAGMA user_version=19;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V18;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2141,6 +2184,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 16 => null;
             when 17 => null;
             when 18 => null;
+            when 19 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2189,6 +2233,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V17 (Item);
             Version := 18;
          end if;
+         if Version = 18 then
+            Upgrade_From_V18 (Item);
+            Version := 19;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2211,10 +2259,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_ownership_controls_documents'," &
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
+         "'bucket_replication_documents'," &
+         "'bucket_website_documents'," &
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
-         "'bucket_inventory_configurations')") /= 24
+         "'bucket_inventory_configurations')") /= 26
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2259,6 +2309,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite bucket logging schema is incomplete";
+      elsif not Valid_Bucket_Configuration_Document_Schema
+        (Item, "bucket_replication_documents")
+      then
+         raise Catalog_Error with
+           "SQLite bucket replication schema is incomplete";
+      elsif not Valid_Bucket_Configuration_Document_Schema
+        (Item, "bucket_website_documents")
+      then
+         raise Catalog_Error with
+           "SQLite bucket website schema is incomplete";
       elsif not Valid_Bucket_Point_Configuration_Schema
         (Item, "bucket_analytics_configurations")
       then
@@ -3902,6 +3962,69 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, "bucket_logging_documents", "bucket logging",
          Document, Configured, Result);
    end Get_Bucket_Logging;
+
+   procedure Put_Bucket_Replication
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "bucket_replication_documents",
+         "bucket replication",
+         Backends.Valid_Bucket_Logging_Document'Access, Result);
+   end Put_Bucket_Replication;
+
+   procedure Get_Bucket_Replication
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_replication_documents", "bucket replication",
+         Document, Configured, Result);
+   end Get_Bucket_Replication;
+
+   procedure Delete_Bucket_Replication
+     (Item : in out Catalog; Bucket : String; Result : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_replication_documents", "bucket replication",
+         Result);
+   end Delete_Bucket_Replication;
+
+   procedure Put_Bucket_Website
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "bucket_website_documents",
+         "bucket website", Backends.Valid_Bucket_Logging_Document'Access,
+         Result);
+   end Put_Bucket_Website;
+
+   procedure Get_Bucket_Website
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_website_documents", "bucket website",
+         Document, Configured, Result);
+   end Get_Bucket_Website;
+
+   procedure Delete_Bucket_Website
+     (Item : in out Catalog; Bucket : String; Result : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_website_documents", "bucket website", Result);
+   end Delete_Bucket_Website;
 
    procedure Put_Bucket_Analytics_Configuration
      (Item       : in out Catalog;

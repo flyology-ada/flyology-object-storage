@@ -1241,6 +1241,101 @@ package Flyology.Object_Storage.Backends is
       Configured : out Boolean;
       Result     : out Status) is abstract;
 
+   --  Atomically replace the complete canonical replication document. The
+   --  backend retains configuration state but does not execute replication.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical replication-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Replication
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical replication-document snapshot.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether explicit replication state is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Replication
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove replication state. Deletion is idempotent for an
+   --  existing bucket without a replication configuration.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Replication
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the complete canonical website document. The
+   --  backend retains configuration state but does not serve website
+   --  requests.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical website-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Website
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical website-document snapshot.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether explicit website state is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Website
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove website state. Deletion is idempotent for an
+   --  existing bucket without a website configuration.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Website
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
    --  Atomically replace the complete PublicAccessBlock configuration of an
    --  existing bucket.  A configuration whose four members are absent is a
    --  present empty configuration, not a deletion.
@@ -1906,8 +2001,9 @@ private
      Maximum_Bucket_CORS_Bytes;
    --  Derived from the same established XML resource budget as CORS. This
    --  private value bounds canonical singleton bucket-configuration bytes,
-   --  including encryption, ownership, lifecycle, and logging, without
-   --  exposing a caller-visible resource-policy constant.
+   --  including encryption, ownership, lifecycle, logging, replication, and
+   --  website configuration, without exposing a caller-visible resource
+   --  policy constant.
 
    Maximum_Bucket_Named_Configurations : constant Positive := 1_000;
    --  The pinned S3 point-configuration contracts fix this per-family bucket

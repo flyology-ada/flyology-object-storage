@@ -45,5 +45,6 @@ decoding, high-level response/failure normalization, and wrong prepared
 operation rejection. The signed socket corpus exercises low-level,
 synchronous, limited-constructor, reusable-restart, duplicate-header, and
 bounded-response paths against the native and lightweight HTTP profiles used
-by the maintained suite. This is client and corpus qualification only; it does
-not claim an Object Storage backend, server route, or external provider result.
+by the maintained suite. Independent Object Storage backend and authenticated
+server-route evidence covers retained replication configuration; no external
+provider result is claimed.

@@ -5932,6 +5932,44 @@ def main() -> None:
                 f"{operation} missing server coverage was accepted"
             )
 
+    for operation in (
+        "DeleteBucketReplication",
+        "GetBucketReplication",
+        "PutBucketReplication",
+        "DeleteBucketWebsite",
+        "GetBucketWebsite",
+        "PutBucketWebsite",
+    ):
+        entry = registry.operations[operation]
+        assert_bucket_control_backend_server(entry)
+        exclusions = " ".join(entry["exclusions"])
+        generation_exclusions = " ".join(
+            entry.get("generation", {}).get("intentional_exclusions", [])
+        )
+        assert "backend persistence" not in exclusions
+        assert "authenticated server routing" not in exclusions
+        assert "no backend or server compatibility claim" not in (
+            generation_exclusions
+        )
+        for label, mutate in (
+            (
+                "missing backend evidence",
+                lambda item: item["evidence"].update(backend=[]),
+            ),
+            (
+                "missing server evidence",
+                lambda item: item["evidence"].update(server=[]),
+            ),
+        ):
+            candidate = copy.deepcopy(entry)
+            mutate(candidate)
+            try:
+                assert_bucket_control_backend_server(candidate)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"{operation} {label} was accepted")
+
     for operation in ("GetBucketLogging", "PutBucketLogging"):
         assert "log delivery" in (
             " ".join(registry.operations[operation]["exclusions"])
@@ -9411,9 +9449,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_replication_certainty
         assert entry.get("reconciliation") == delete_replication_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -9561,9 +9599,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_website_certainty
         assert entry.get("reconciliation") == delete_website_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -13830,10 +13868,13 @@ def main() -> None:
         assert entry.get("certainty") == replication_certainty
         assert entry.get("reconciliation") == replication_reconciliation
         assert entry.get("ada_symbols") == replication_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
         assert "required generated checksum" in entry["exclusions"][3]
         assert "prose-only filter-cardinality" in entry["exclusions"][4]
+        assert "does not enforce Object Lock token policy" in (
+            entry["exclusions"][5]
+        )
         assert candidate.qualification["put_bucket_replication"][0][
             -1
         ] == "tools/verify-put-bucket-replication-preparation.py"
@@ -13870,6 +13911,14 @@ def main() -> None:
     ][0] = "Prepare_Get_Bucket_Replication"
     assert cross_replication_symbol != registry
     reject_put_replication_registry(cross_replication_symbol, "cross-operation")
+    invented_token_policy = copy.deepcopy(registry)
+    invented_token_policy.operations["PutBucketReplication"]["exclusions"][
+        5
+    ] = "the authenticated server enforces Object Lock token policy"
+    assert invented_token_policy != registry
+    reject_put_replication_registry(
+        invented_token_policy, "invented Object Lock token policy"
+    )
     missing_replication_lane = copy.deepcopy(registry)
     del missing_replication_lane.qualification["put_bucket_replication"]
     assert missing_replication_lane != registry

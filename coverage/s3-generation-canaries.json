@@ -14,13 +14,16 @@
         }
       },
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-website.adb",
           "src/flyology-object_storage-client-low_level.adb",
@@ -32,7 +35,10 @@
           "tests/generated/s3-signed-socket.json",
           "tests/src/s3_get_bucket_website_qualification.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "findings": [],
       "intentional_human_rules": [
