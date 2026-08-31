@@ -53,6 +53,7 @@ OPERATION_DOCUMENTATION = {
     "PutBucketPolicy": "Put bucket policy",
     "PutPublicAccessBlock": "Put public access block",
     "UploadPart": "Upload multipart upload part",
+    "UploadPartCopy": "Upload multipart part from a source object",
 }
 
 

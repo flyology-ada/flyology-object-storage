@@ -46,6 +46,8 @@ is
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation
    --  @enum Put_Public_Access_Block_Operation Put public access block
    --  @enum Upload_Part_Operation Upload multipart upload part
+   --  @enum Upload_Part_Copy_Operation
+   --    Upload multipart part from a source object
    type Operation_Id is
      (Abort_Multipart_Upload_Operation,
       Complete_Multipart_Upload_Operation,
