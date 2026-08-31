@@ -2852,6 +2852,14 @@ package Flyology.Object_Storage.Client.Objects is
       return List_Objects_V2_Result;
 
    --  One complete typed version-listing page or structured S3 rejection.
+   --  @field Kind Selected outcome variant
+   --  @field Status Exact HTTP response status
+   --  @field Page Decoded ListObjectVersions page
+   --  @field Next_Key_Marker Key component of the next-page cursor
+   --  @field Next_Version_ID_Marker Version component of the next-page cursor
+   --  @field Has_Next_Markers Whether the paired next-page cursor is available
+   --  @field Request_Charged Decoded requester-pays response header
+   --  @field Error Structured S3 error response
    type List_Versions_Outcome
      (Kind : List_Outcome_Kind := List_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
