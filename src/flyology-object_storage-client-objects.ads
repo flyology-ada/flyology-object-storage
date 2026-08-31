@@ -5240,22 +5240,38 @@ private
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Object_Versions_Result;
    --  @exclude
+   --  @param Value Complete modeled GetObjectAttributes response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal GetObjectAttributes result projection
    function Normalize_Get_Object_Attributes_Response
      (Value     : Low_Level.Get_Object_Attributes_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Object_Attributes_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal GetObjectAttributes failure projection
    function Normalize_Get_Object_Attributes_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Object_Attributes_Result;
    --  @exclude
+   --  @param Value Complete modeled GetObjectAcl response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal GetObjectAcl result projection
    function Normalize_Get_Object_ACL_Response
      (Value     : Low_Level.Get_Object_ACL_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Object_ACL_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal GetObjectAcl failure projection
    function Normalize_Get_Object_ACL_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
