@@ -3353,6 +3353,90 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result);
    end Delete_Bucket_Metrics_Configuration;
 
+   overriding procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Intelligent_Tiering_Configuration, Identifier, Document,
+         Token, Deadline, Result);
+   end Put_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Intelligent_Tiering_Configuration, Identifier, Token,
+         Deadline, Document, Configured, Result);
+   end Get_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Delete_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Intelligent_Tiering_Configuration, Identifier, Token,
+         Deadline, Result);
+   end Delete_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Put_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Inventory_Configuration, Identifier, Document,
+         Token, Deadline, Result);
+   end Put_Bucket_Inventory_Configuration;
+
+   overriding procedure Get_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Inventory_Configuration, Identifier, Token, Deadline,
+         Document, Configured, Result);
+   end Get_Bucket_Inventory_Configuration;
+
+   overriding procedure Delete_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Inventory_Configuration, Identifier, Token, Deadline,
+         Result);
+   end Delete_Bucket_Inventory_Configuration;
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

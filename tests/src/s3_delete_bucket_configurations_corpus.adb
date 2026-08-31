@@ -173,6 +173,24 @@ procedure S3_Delete_Bucket_Configurations_Corpus is
            " admitted an invalid required Id");
    end Expect_Invalid_Identifier;
 
+   procedure Expect_Empty_Identifier (Kind : Operation_Kind) is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Prepare
+          (Kind,
+           Flyology.HTTP.Parse_Origin ("https://s3.example.test"),
+           Low_Level.Path_Style, "", Owner);
+      Expected_Query : constant String :=
+        (if Kind = Delete_Bucket_Analytics_Configuration
+         then "?analytics&id"
+         else "?id&" & Subresource (Kind));
+   begin
+      Require
+        (Low_Level.Target (Prepared) = "/example-bucket" & Expected_Query,
+         Operation_Kind'Image (Kind) &
+           " did not preserve a present empty required Id: " &
+           Low_Level.Target (Prepared));
+   end Expect_Empty_Identifier;
+
    procedure Expect_Invalid_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String)
    is
@@ -243,7 +261,7 @@ begin
             Operation_Kind'Image (Kind) & " owner projection mismatch");
       end;
       if Needs_Identifier (Kind) then
-         Expect_Invalid_Identifier (Kind, "");
+         Expect_Empty_Identifier (Kind);
          Expect_Invalid_Identifier
            (Kind, "id" & Character'Val (10));
          declare

@@ -3233,7 +3233,7 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Delete_Bucket_CORS_Outcome;
 
    --  Parameters for a named bodyless bucket-configuration delete.
-   --  @field ID Required generated Id query value
+   --  @field ID Required Id query value, which may be empty
    --  @field Expected_Bucket_Owner Optional owner precondition header
    type Delete_Bucket_Configuration_With_ID_Parameters is record
       ID                    : Ada.Strings.Unbounded.Unbounded_String;
@@ -3244,7 +3244,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Origin Exact HTTP origin used by the caller-owned client
    --  @param Style Path or virtual-hosted bucket addressing
    --  @param Bucket Target bucket
-   --  @param Parameters Required nonempty Id and optional owner precondition
+   --  @param Parameters Required Id and optional owner precondition
    --  @param Identity Credentials borrowed only for signing
    --  @param Region SigV4 signing region
    --  @param Timestamp SigV4 basic-format UTC timestamp
@@ -3274,7 +3274,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Origin Exact HTTP origin used by the caller-owned client
    --  @param Style Path or virtual-hosted bucket addressing
    --  @param Bucket Target bucket
-   --  @param Parameters Required nonempty Id and optional owner precondition
+   --  @param Parameters Required Id and optional owner precondition
    --  @param Identity Credentials borrowed only for signing
    --  @param Region SigV4 signing region
    --  @param Timestamp SigV4 basic-format UTC timestamp
@@ -3289,7 +3289,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Origin Exact HTTP origin used by the caller-owned client
    --  @param Style Path or virtual-hosted bucket addressing
    --  @param Bucket Target bucket
-   --  @param Parameters Required nonempty Id and optional owner precondition
+   --  @param Parameters Required Id and optional owner precondition
    --  @param Identity Credentials borrowed only for signing
    --  @param Region SigV4 signing region
    --  @param Timestamp SigV4 basic-format UTC timestamp
@@ -3347,7 +3347,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Origin Exact HTTP origin used by the caller-owned client
    --  @param Style Path or virtual-hosted bucket addressing
    --  @param Bucket Target bucket
-   --  @param Parameters Required nonempty Id and optional owner precondition
+   --  @param Parameters Required Id and optional owner precondition
    --  @param Identity Credentials borrowed only for signing
    --  @param Region SigV4 signing region
    --  @param Timestamp SigV4 basic-format UTC timestamp

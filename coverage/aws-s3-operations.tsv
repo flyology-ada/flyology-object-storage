@@ -11,8 +11,8 @@ DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 DeleteBucketCors	extended	covered	covered	covered	covered
 DeleteBucketEncryption	extended	covered	covered	covered	covered
-DeleteBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
-DeleteBucketInventoryConfiguration	extended	missing	covered	missing	covered
+DeleteBucketIntelligentTieringConfiguration	extended	covered	covered	covered	covered
+DeleteBucketInventoryConfiguration	extended	covered	covered	covered	covered
 DeleteBucketLifecycle	extended	covered	covered	covered	covered
 DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
@@ -33,8 +33,8 @@ GetBucketAcl	extended	missing	covered	covered	covered
 GetBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	covered	covered	covered	covered
-GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
-GetBucketInventoryConfiguration	extended	missing	covered	missing	covered
+GetBucketIntelligentTieringConfiguration	extended	covered	covered	covered	covered
+GetBucketInventoryConfiguration	extended	covered	covered	covered	covered
 GetBucketLifecycle	extended	covered	covered	covered	covered
 GetBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 GetBucketLocation	core	covered	covered	covered	covered
@@ -82,8 +82,8 @@ PutBucketAcl	extended	missing	covered	missing	covered
 PutBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	covered	covered	covered	covered
-PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
-PutBucketInventoryConfiguration	extended	missing	covered	missing	covered
+PutBucketIntelligentTieringConfiguration	extended	covered	covered	covered	covered
+PutBucketInventoryConfiguration	extended	covered	covered	covered	covered
 PutBucketLifecycle	extended	missing	partial	missing	covered
 PutBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 PutBucketLogging	extended	covered	covered	covered	covered

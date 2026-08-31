@@ -791,6 +791,18 @@ package body Object_Storage_Test_Cases is
         "<MetricsConfiguration><Id>payload-metrics</Id>" &
         "<Filter><Prefix>reports/</Prefix></Filter>" &
         "</MetricsConfiguration>";
+      Intelligent_Tiering : constant String :=
+        "<IntelligentTieringConfiguration><Id>payload-tiering</Id>" &
+        "<Status>Enabled</Status><Tiering><Days>90</Days>" &
+        "<AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering>" &
+        "</IntelligentTieringConfiguration>";
+      Inventory : constant String :=
+        "<InventoryConfiguration><Destination><S3BucketDestination>" &
+        "<Bucket>arn:aws:s3:::reports</Bucket><Format>CSV</Format>" &
+        "</S3BucketDestination></Destination><IsEnabled>true</IsEnabled>" &
+        "<Id>payload-inventory</Id><IncludedObjectVersions>All" &
+        "</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency>" &
+        "</Schedule></InventoryConfiguration>";
       Document   : US.Unbounded_String;
       Transition_Default_Minimum_Object_Size : US.Unbounded_String;
       Configured : Boolean;
@@ -1058,6 +1070,108 @@ package body Object_Storage_Test_Cases is
       Assert
         (Result = Success,
          "bucket analytics empty query identifier was not deletable");
+
+      Store.Put_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "shared-point-id", Intelligent_Tiering, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket Intelligent-Tiering put failed");
+      Store.Get_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Intelligent_Tiering,
+         "bucket Intelligent-Tiering configuration did not round trip");
+      Store.Get_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "payload-tiering", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket Intelligent-Tiering payload Id became the storage key");
+
+      Store.Put_Bucket_Inventory_Configuration
+        (Bucket, "shared-point-id", Inventory, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket inventory put failed");
+      Store.Get_Bucket_Inventory_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Inventory,
+         "bucket inventory configuration did not round trip");
+      Store.Get_Bucket_Inventory_Configuration
+        (Bucket, "payload-inventory", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket inventory payload Id became the storage key");
+      Store.Get_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Intelligent_Tiering,
+         "inventory state crossed the Intelligent-Tiering family boundary");
+
+      Store.Put_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "", "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = 0,
+         "bucket Intelligent-Tiering lost a present empty query identifier");
+      Store.Delete_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket Intelligent-Tiering empty identifier was not deletable");
+
+      Store.Put_Bucket_Inventory_Configuration
+        (Bucket, "", "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Inventory_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = 0,
+         "bucket inventory lost a present empty query identifier");
+      Store.Delete_Bucket_Inventory_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket inventory empty identifier was not deletable");
+
+      Store.Delete_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket Intelligent-Tiering delete was not idempotent");
+      Store.Delete_Bucket_Inventory_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Inventory_Configuration
+        (Bucket, "shared-point-id", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket inventory delete was not idempotent");
+      Store.Put_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "reopen-tiering", Intelligent_Tiering, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Inventory_Configuration
+        (Bucket, "reopen-inventory", Inventory, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "named configuration persistence fixtures failed");
+      Store.Get_Bucket_Inventory_Configuration
+        ("missing-configuration-bucket", "missing", null,
+         Ada.Real_Time.Time_Last, Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured,
+         "bucket inventory get did not distinguish an absent bucket");
 
       Store.Get_Bucket_Lifecycle
         ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
@@ -3491,7 +3605,7 @@ package body Object_Storage_Test_Cases is
          --  Test-reference capacity admits the complete retained singleton
          --  and named-configuration fixture set. Separate stores below pin
          --  byte and per-family count rejection behavior.
-         Configuration_Store : Memory.Store (2, 4, 1_024);
+         Configuration_Store : Memory.Store (2, 4, 4 * 1_024);
       begin
          Configuration_Store.Create_Bucket
            ("configuration-bucket", null, Ada.Real_Time.Time_Last, Result);
@@ -3553,6 +3667,18 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success,
             "analytics count limit incorrectly blocked metrics state");
+         Limit_Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("named-limit", "tiering-independent", "x", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "analytics count limit blocked Intelligent-Tiering state");
+         Limit_Store.Put_Bucket_Inventory_Configuration
+           ("named-limit", "inventory-independent", "x", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "analytics count limit incorrectly blocked inventory state");
       end;
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
@@ -5310,6 +5436,20 @@ package body Object_Storage_Test_Cases is
             Assert
               (Result = Success and then not Configured,
                "files metrics deletion did not persist across reopen");
+            Store.Get_Bucket_Intelligent_Tiering_Configuration
+              ("file-bucket", "reopen-tiering", null,
+               Ada.Real_Time.Time_Last, Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0,
+               "files Intelligent-Tiering state did not persist");
+            Store.Get_Bucket_Inventory_Configuration
+              ("file-bucket", "reopen-inventory", null,
+               Ada.Real_Time.Time_Last, Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0,
+               "files inventory state did not persist across reopen");
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

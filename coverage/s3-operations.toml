@@ -1481,15 +1481,15 @@ absence = "successful completion removes the selected bucket intelligent-tiering
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "only a complete validated 204 response with an exactly empty body reports Intelligent_Tiering_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Intelligent_Tiering_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Intelligent_Tiering_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Intelligent_Tiering_Mutation_Outcome_Unknown; no automatic replay"
 reconciliation = "caller-selected Get_Intelligent_Tiering_Configuration for the same identifier may observe the current configuration or exact NoSuchConfiguration before a retry, but does not prove that the lost deletion caused the observed absence or upgrade mutation certainty; no automatic replay"
-exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 204 with an exactly empty response body; no other success status or payload tolerance is claimed", "successful deletion does not assert that the selected intelligent-tiering configuration was previously present", "a current same-identifier Get_Intelligent_Tiering_Configuration observation, including NoSuchConfiguration, does not establish causation or authorize automatic replay", "backend persistence, authenticated server routing, and external-provider behavior are not claimed"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 204 with an exactly empty response body; no other success status or payload tolerance is claimed", "successful deletion does not assert that the selected intelligent-tiering configuration was previously present", "a current same-identifier Get_Intelligent_Tiering_Configuration observation, including NoSuchConfiguration, does not establish causation or authorize automatic replay", "backend persistence and authenticated server routing are covered for maintained Flyology backends; tier-transition execution and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "delete_bucket_intelligent_tiering"
-evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/delete-bucket-configurations.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/delete-bucket-configurations.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 ada_symbols = ["Prepare_Delete_Bucket_Intelligent_Tiering_Configuration", "Execute_Delete_Bucket_Intelligent_Tiering_Configuration", "Delete_Bucket_Tiering_Operation", "Delete_Intelligent_Tiering_Configuration", "Finish"]
 
 [[operation]]
@@ -1504,15 +1504,15 @@ absence = "successful completion removes the selected bucket inventory configura
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "only a complete validated 204 response with an exactly empty body reports Bucket_Inventory_Configuration_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Inventory_Configuration_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Inventory_Configuration_Mutation_Cancelled_Before_Admission; possible or incomplete admission, retryable responses, and malformed or oversized responses report Bucket_Inventory_Configuration_Mutation_Outcome_Unknown; no automatic replay"
 reconciliation = "caller-selected Get_Inventory_Configuration for the same identifier may observe the current configuration or exact NoSuchConfiguration before a retry, but does not prove that the lost deletion caused the observed absence or upgrade mutation certainty; no automatic replay"
-exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 204 with an exactly empty response body; no other success status or payload tolerance is claimed", "successful deletion does not assert that the selected inventory configuration was previously present", "a current same-identifier Get_Inventory_Configuration observation, including NoSuchConfiguration, does not establish causation or authorize automatic replay", "backend persistence, authenticated server routing, and external-provider behavior are not claimed"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+exclusions = ["directory buckets are unsupported by the pinned operation documentation", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 204 with an exactly empty response body; no other success status or payload tolerance is claimed", "successful deletion does not assert that the selected inventory configuration was previously present", "a current same-identifier Get_Inventory_Configuration observation, including NoSuchConfiguration, does not establish causation or authorize automatic replay", "backend persistence and authenticated server routing are covered for maintained Flyology backends; inventory report generation and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "delete_bucket_inventory"
-evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/delete-bucket-configurations.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tools/verify-delete-bucket-configurations-preparation.py", "docs/qualification/delete-bucket-configurations.md", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
 ada_symbols = ["Prepare_Delete_Bucket_Inventory_Configuration", "Execute_Delete_Bucket_Inventory_Configuration", "Delete_Bucket_Inventory_Configuration_Operation", "Delete_Inventory_Configuration", "Finish"]
 
 [[operation]]
@@ -2082,13 +2082,13 @@ absence = "404 NoSuchBucket or NoSuchConfiguration maps to Not_Found"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+exclusions = ["backend persistence and authenticated server routing are covered for maintained Flyology backends; tier-transition execution and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "shared_family", server = "handwritten", tests = "shared_family" }
 implementation_mode = "shared-family"
 generator_eligible = false
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_intelligent_tiering_configuration_qualification.adb", "tests/src/s3_server_application_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_intelligent_tiering_configuration"
 ada_symbols = ["Prepare_Get_Bucket_Intelligent_Tiering_Configuration", "Execute_Get_Bucket_Intelligent_Tiering_Configuration", "Get_Bucket_Intelligent_Tiering_Operation", "Get_Intelligent_Tiering_Configuration", "Finish"]
@@ -2198,13 +2198,13 @@ absence = "404 NoSuchBucket or NoSuchConfiguration maps to Not_Found"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = ["automatic S3 Express control-endpoint selection; caller-supplied Origin remains authoritative", "cross-field one-of rules absent from the structural service model", "external-provider compatibility"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+exclusions = ["automatic S3 Express control-endpoint selection; caller-supplied Origin remains authoritative", "cross-field one-of rules absent from the structural service model", "backend persistence and authenticated server routing are covered for maintained Flyology backends; inventory report generation and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "shared_family", server = "handwritten", tests = "shared_family" }
 implementation_mode = "shared-family"
 generator_eligible = false
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-inventory.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-inventory.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_inventory_configuration_qualification.adb", "tests/src/s3_server_application_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_inventory_configuration"
 ada_symbols = ["Prepare_Get_Bucket_Inventory_Configuration", "Execute_Get_Bucket_Inventory_Configuration", "Get_Bucket_Inventory_Operation", "Get_Inventory_Configuration", "Finish"]
@@ -4369,16 +4369,16 @@ public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
 public_name = "Set_Intelligent_Tiering_Configuration"
 absence = "not_applicable"
-errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+errors = ["TooManyConfigurations at HTTP 400", "authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
 reconciliation = "caller-selected Get_Intelligent_Tiering_Configuration or List_Intelligent_Tiering_Configurations before any retry"
-exclusions = []
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+exclusions = ["the query id and payload Id remain independent exactly as modeled", "backend persistence and authenticated server routing are covered for maintained Flyology backends; tier-transition execution and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "shared_family", server = "handwritten", tests = "shared_family" }
 implementation_mode = "shared-family"
 generator_eligible = false
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_intelligent_tiering_configuration_corpus.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_intelligent_tiering_configuration_corpus.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb", "tests/src/s3_server_application_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "put_bucket_intelligent_tiering_configuration"
 ada_symbols = ["Prepare_Put_Bucket_Intelligent_Tiering_Configuration", "Execute_Put_Bucket_Intelligent_Tiering_Configuration", "Put_Bucket_Intelligent_Tiering_Operation", "Set_Intelligent_Tiering_Configuration", "Finish"]
@@ -4525,19 +4525,19 @@ public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "strict_generated_rest_xml_request_and_singleton_headers"
 public_name = "Set_Inventory_Configuration"
 absence = "not_applicable"
-errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+errors = ["TooManyConfigurations at HTTP 400", "authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
 reconciliation = "caller-selected Get_Inventory_Configuration or List_Inventory_Configurations before any retry"
-exclusions = ["the pinned model does not require the query id and payload Id to be equal; caller policy may require that check before invocation"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
+exclusions = ["the pinned model does not require the query id and payload Id to be equal; caller policy may require that check before invocation", "backend persistence and authenticated server routing are covered for maintained Flyology backends; inventory report generation and external-provider behavior are not claimed"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "generated", server = "handwritten", tests = "generated" }
 implementation_mode = "generated"
 generator_eligible = true
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.ads", "src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.adb", "src/flyology-object_storage-s3-xml_writers.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb"] }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.ads", "src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.adb", "src/flyology-object_storage-s3-xml_writers.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb", "tests/src/s3_server_application_corpus.adb"] }
 decision_status = "reviewed"
 ada_symbols = ["Put_Bucket_Inventory_Configuration_Parameters", "Prepare_Put_Bucket_Inventory_Configuration", "Execute_Put_Bucket_Inventory_Configuration", "Put_Bucket_Inventory_Configuration_Operation", "Set_Inventory_Configuration", "Finish"]
-generation = { public_result = "Put_Bucket_Inventory_Configuration_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "the pinned model has no equality constraint between query id and payload Id; no additional rule is generated", intentional_exclusions = ["no backend or server compatibility claim", "no provider-specific publication or durability claim"] }
+generation = { public_result = "Put_Bucket_Inventory_Configuration_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "the pinned model has no equality constraint between query id and payload Id; no additional rule is generated", intentional_exclusions = ["no inventory report generation claim", "no external-provider publication or durability claim"] }
 qualification = "generated_bucket_configuration_mutation_batch"
 generated_mutation_qualification = { adapter = "./bin/s3_put_bucket_inventory_configuration_qualification", input_values = { Id = "qualified inventory", ExpectedBucketOwner = "123456789012" }, request_body = "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>", expected_request_headers = {} }
 

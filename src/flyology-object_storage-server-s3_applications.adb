@@ -22,8 +22,12 @@ with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
+with
+  Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
 with Flyology.Object_Storage.S3.IMF_Dates;
+with Flyology.Object_Storage.S3.Intelligent_Tiering;
+with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
@@ -56,9 +60,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
    package Encryption renames S3.Encryption;
+   package Generated_Inventory renames
+     S3.Generated_Put_Bucket_Inventory_Configuration_XML;
    package Generated_Logging renames
      S3.Generated_Put_Bucket_Logging_XML;
    package IMF_Dates renames S3.IMF_Dates;
+   package Intelligent_Tiering renames S3.Intelligent_Tiering;
+   package Inventory renames S3.Inventory;
    package Lifecycle renames S3.Lifecycle;
    package Listings renames S3.Listings;
    package Logging renames S3.Logging;
@@ -525,6 +533,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Analytics, Get_Bucket_Analytics,
          Delete_Bucket_Analytics,
          Put_Bucket_Metrics, Get_Bucket_Metrics, Delete_Bucket_Metrics,
+         Put_Bucket_Intelligent_Tiering, Get_Bucket_Intelligent_Tiering,
+         Delete_Bucket_Intelligent_Tiering,
+         Put_Bucket_Inventory, Get_Bucket_Inventory,
+         Delete_Bucket_Inventory,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
@@ -652,6 +664,55 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Valid : Boolean := False;
          ID    : US.Unbounded_String;
       end record;
+
+      type Point_Configuration_Family is
+        (Analytics_Family, Metrics_Family, Intelligent_Tiering_Family,
+         Inventory_Family);
+
+      function Point_Subresource
+        (Family : Point_Configuration_Family) return String is
+        (case Family is
+            when Analytics_Family           => "analytics",
+            when Metrics_Family             => "metrics",
+            when Intelligent_Tiering_Family => "intelligent-tiering",
+            when Inventory_Family           => "inventory");
+
+      function Point_Operation_ID
+        (Family : Point_Configuration_Family;
+         Request_Method : String) return String
+      is
+      begin
+         case Family is
+            when Analytics_Family =>
+               return
+                 (if Request_Method = "PUT" then
+                    "PutBucketAnalyticsConfiguration"
+                  elsif Request_Method = "GET" then
+                    "GetBucketAnalyticsConfiguration"
+                  else "DeleteBucketAnalyticsConfiguration");
+            when Metrics_Family =>
+               return
+                 (if Request_Method = "PUT" then
+                    "PutBucketMetricsConfiguration"
+                  elsif Request_Method = "GET" then
+                    "GetBucketMetricsConfiguration"
+                  else "DeleteBucketMetricsConfiguration");
+            when Intelligent_Tiering_Family =>
+               return
+                 (if Request_Method = "PUT" then
+                    "PutBucketIntelligentTieringConfiguration"
+                  elsif Request_Method = "GET" then
+                    "GetBucketIntelligentTieringConfiguration"
+                  else "DeleteBucketIntelligentTieringConfiguration");
+            when Inventory_Family =>
+               return
+                 (if Request_Method = "PUT" then
+                    "PutBucketInventoryConfiguration"
+                  elsif Request_Method = "GET" then
+                    "GetBucketInventoryConfiguration"
+                  else "DeleteBucketInventoryConfiguration");
+         end case;
+      end Point_Operation_ID;
 
       function Parse_Point_Configuration_Query
         (Query, Subresource, Operation_ID : String)
@@ -884,16 +945,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             else "GetBucketLogging"));
       Analytics_Request : constant Point_Configuration_Query_Result :=
         Parse_Point_Configuration_Query
-          (Query_Text, "analytics",
-           (if Method = "PUT" then "PutBucketAnalyticsConfiguration"
-            elsif Method = "GET" then "GetBucketAnalyticsConfiguration"
-            else "DeleteBucketAnalyticsConfiguration"));
+          (Query_Text, Point_Subresource (Analytics_Family),
+           Point_Operation_ID (Analytics_Family, Method));
       Metrics_Request : constant Point_Configuration_Query_Result :=
         Parse_Point_Configuration_Query
-          (Query_Text, "metrics",
-           (if Method = "PUT" then "PutBucketMetricsConfiguration"
-            elsif Method = "GET" then "GetBucketMetricsConfiguration"
-            else "DeleteBucketMetricsConfiguration"));
+          (Query_Text, Point_Subresource (Metrics_Family),
+           Point_Operation_ID (Metrics_Family, Method));
+      Intelligent_Tiering_Request : constant
+        Point_Configuration_Query_Result :=
+        Parse_Point_Configuration_Query
+          (Query_Text, Point_Subresource (Intelligent_Tiering_Family),
+           Point_Operation_ID (Intelligent_Tiering_Family, Method));
+      Inventory_Request : constant Point_Configuration_Query_Result :=
+        Parse_Point_Configuration_Query
+          (Query_Text, Point_Subresource (Inventory_Family),
+           Point_Operation_ID (Inventory_Family, Method));
+
+      function Point_Request
+        (Family : Point_Configuration_Family)
+         return Point_Configuration_Query_Result is
+        (case Family is
+            when Analytics_Family           => Analytics_Request,
+            when Metrics_Family             => Metrics_Request,
+            when Intelligent_Tiering_Family => Intelligent_Tiering_Request,
+            when Inventory_Family           => Inventory_Request);
       Is_Legacy_Bucket_Lifecycle_Get_Query : constant Boolean :=
         Method = "GET"
         and then
@@ -980,6 +1055,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Ada.Strings.Fixed.Index (Padded_Query, "&metrics&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&metrics=") /= 0;
+      Has_Intelligent_Tiering_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&intelligent-tiering&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&intelligent-tiering=") /= 0;
+      Has_Inventory_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&inventory&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&inventory=") /= 0;
       Has_Bucket_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketEncryption&") /= 0
@@ -1019,6 +1103,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=GetBucketMetricsConfiguration&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=DeleteBucketMetricsConfiguration&") /= 0;
+      Has_Intelligent_Tiering_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=PutBucketIntelligentTieringConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=GetBucketIntelligentTieringConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=DeleteBucketIntelligentTieringConfiguration&") /= 0;
+      Has_Inventory_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketInventoryConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketInventoryConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketInventoryConfiguration&") /= 0;
       Looks_Like_Bucket_Configuration_Query : constant Boolean :=
         Has_Bucket_Configuration_Query
         or else Has_Bucket_Configuration_Operation_ID;
@@ -1028,9 +1129,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Looks_Like_Metrics_Configuration_Query : constant Boolean :=
         Has_Metrics_Configuration_Query
         or else Has_Metrics_Configuration_Operation_ID;
+      Looks_Like_Intelligent_Tiering_Configuration_Query : constant Boolean :=
+        Has_Intelligent_Tiering_Configuration_Query
+        or else Has_Intelligent_Tiering_Configuration_Operation_ID;
+      Looks_Like_Inventory_Configuration_Query : constant Boolean :=
+        Has_Inventory_Configuration_Query
+        or else Has_Inventory_Configuration_Operation_ID;
       Looks_Like_Point_Configuration_Query : constant Boolean :=
         Looks_Like_Analytics_Configuration_Query
-        or else Looks_Like_Metrics_Configuration_Query;
+        or else Looks_Like_Metrics_Configuration_Query
+        or else Looks_Like_Intelligent_Tiering_Configuration_Query
+        or else Looks_Like_Inventory_Configuration_Query;
       Has_Bucket_Scalar_Control_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&abac&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&abac=") /= 0
@@ -2328,7 +2437,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          if Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Point_Configuration_Query
            and then not
-             (Analytics_Request.Valid or else Metrics_Request.Valid)
+             (Analytics_Request.Valid or else Metrics_Request.Valid
+              or else Intelligent_Tiering_Request.Valid
+              or else Inventory_Request.Valid)
          then
             Bucket_Configuration_Query_Invalid := True;
          end if;
@@ -2395,6 +2506,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             elsif Method = "DELETE"
               and then Looks_Like_Metrics_Configuration_Query
             then Delete_Bucket_Metrics
+            elsif Method = "PUT"
+              and then Looks_Like_Intelligent_Tiering_Configuration_Query
+            then Put_Bucket_Intelligent_Tiering
+            elsif Method = "GET"
+              and then Looks_Like_Intelligent_Tiering_Configuration_Query
+            then Get_Bucket_Intelligent_Tiering
+            elsif Method = "DELETE"
+              and then Looks_Like_Intelligent_Tiering_Configuration_Query
+            then Delete_Bucket_Intelligent_Tiering
+            elsif Method = "PUT"
+              and then Looks_Like_Inventory_Configuration_Query
+            then Put_Bucket_Inventory
+            elsif Method = "GET"
+              and then Looks_Like_Inventory_Configuration_Query
+            then Get_Bucket_Inventory
+            elsif Method = "DELETE"
+              and then Looks_Like_Inventory_Configuration_Query
+            then Delete_Bucket_Inventory
             elsif Method = "PUT" and then Is_Bucket_ABAC_Query
             then Put_Bucket_ABAC
             elsif Method = "GET" and then Is_Bucket_ABAC_Query
@@ -2612,7 +2741,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_CORS | Put_Bucket_Encryption |
          Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
          Put_Bucket_Logging | Put_Bucket_Analytics |
-         Put_Bucket_Metrics | Put_Bucket_Policy |
+         Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
+         Put_Bucket_Inventory | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -2761,7 +2891,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_CORS | Put_Bucket_Encryption |
         Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
         Put_Bucket_Logging | Put_Bucket_Analytics |
-        Put_Bucket_Metrics | Put_Bucket_Policy |
+        Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
+        Put_Bucket_Inventory | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -4711,18 +4842,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   end if;
                end;
 
-            when Put_Bucket_Analytics | Put_Bucket_Metrics =>
+            when Put_Bucket_Analytics | Put_Bucket_Metrics |
+                 Put_Bucket_Intelligent_Tiering | Put_Bucket_Inventory =>
                declare
-                  Is_Analytics : constant Boolean :=
-                    Operation = Put_Bucket_Analytics;
+                  Family : constant Point_Configuration_Family :=
+                    (case Operation is
+                        when Put_Bucket_Analytics => Analytics_Family,
+                        when Put_Bucket_Metrics => Metrics_Family,
+                        when Put_Bucket_Intelligent_Tiering =>
+                          Intelligent_Tiering_Family,
+                        when Put_Bucket_Inventory => Inventory_Family,
+                        when others => raise Program_Error);
                   Operation_Name : constant String :=
-                    (if Is_Analytics then
-                       "PutBucketAnalyticsConfiguration"
-                     else "PutBucketMetricsConfiguration");
+                    Point_Operation_ID (Family, "PUT");
                   Identifier : constant String :=
-                    US.To_String
-                      ((if Is_Analytics then Analytics_Request.ID
-                        else Metrics_Request.ID));
+                    US.To_String (Point_Request (Family).ID);
                   MD5_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "content-md5");
                   Payer_Count : constant Natural :=
@@ -4759,23 +4893,47 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Document : constant String := Read_Document (Source);
                      Canonical : US.Unbounded_String;
                   begin
-                     if Is_Analytics then
-                        Canonical := US.To_Unbounded_String
-                          (Analytics.Serialize
-                             (Analytics.Parse (Document, XML.Default_Limits),
-                              XML.Default_Limits));
-                        Store.Put_Bucket_Analytics_Configuration
-                          (Bucket, Identifier, US.To_String (Canonical),
-                           Apps.Cancellation (X), Apps.Deadline (X), Result);
-                     else
-                        Canonical := US.To_Unbounded_String
-                          (Metrics.Serialize
-                             (Metrics.Parse (Document, XML.Default_Limits),
-                              XML.Default_Limits));
-                        Store.Put_Bucket_Metrics_Configuration
-                          (Bucket, Identifier, US.To_String (Canonical),
-                           Apps.Cancellation (X), Apps.Deadline (X), Result);
-                     end if;
+                     case Family is
+                        when Analytics_Family =>
+                           Canonical := US.To_Unbounded_String
+                             (Analytics.Serialize
+                                (Analytics.Parse
+                                   (Document, XML.Default_Limits),
+                                 XML.Default_Limits));
+                           Store.Put_Bucket_Analytics_Configuration
+                             (Bucket, Identifier, US.To_String (Canonical),
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                        when Metrics_Family =>
+                           Canonical := US.To_Unbounded_String
+                             (Metrics.Serialize
+                                (Metrics.Parse (Document, XML.Default_Limits),
+                                 XML.Default_Limits));
+                           Store.Put_Bucket_Metrics_Configuration
+                             (Bucket, Identifier, US.To_String (Canonical),
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                        when Intelligent_Tiering_Family =>
+                           Canonical := US.To_Unbounded_String
+                             (Intelligent_Tiering.Serialize
+                                (Intelligent_Tiering.Parse
+                                   (Document, XML.Default_Limits),
+                                 XML.Default_Limits));
+                           Store.Put_Bucket_Intelligent_Tiering_Configuration
+                             (Bucket, Identifier, US.To_String (Canonical),
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                        when Inventory_Family =>
+                           Canonical := US.To_Unbounded_String
+                             (Generated_Inventory.Serialize
+                                (Inventory.Parse
+                                   (Document, XML.Default_Limits),
+                                 XML.Default_Limits));
+                           Store.Put_Bucket_Inventory_Configuration
+                             (Bucket, Identifier, US.To_String (Canonical),
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                     end case;
                      if Result = Success then
                         Apps.Respond (X, 200, "", "");
                      else
@@ -4783,7 +4941,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      end if;
                   exception
                      when Analytics.Malformed_Analytics |
-                          Metrics.Malformed_Metrics =>
+                          Metrics.Malformed_Metrics |
+                          Intelligent_Tiering.Malformed_Intelligent_Tiering |
+                          Inventory.Malformed_Inventory =>
                         Send_Error
                           (X, 400, "MalformedXML",
                            "The XML provided was not well-formed or did not " &
@@ -4817,18 +4977,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   end if;
                end;
 
-            when Get_Bucket_Analytics | Get_Bucket_Metrics =>
+            when Get_Bucket_Analytics | Get_Bucket_Metrics |
+                 Get_Bucket_Intelligent_Tiering | Get_Bucket_Inventory =>
                declare
-                  Is_Analytics : constant Boolean :=
-                    Operation = Get_Bucket_Analytics;
+                  Family : constant Point_Configuration_Family :=
+                    (case Operation is
+                        when Get_Bucket_Analytics => Analytics_Family,
+                        when Get_Bucket_Metrics => Metrics_Family,
+                        when Get_Bucket_Intelligent_Tiering =>
+                          Intelligent_Tiering_Family,
+                        when Get_Bucket_Inventory => Inventory_Family,
+                        when others => raise Program_Error);
                   Operation_Name : constant String :=
-                    (if Is_Analytics then
-                       "GetBucketAnalyticsConfiguration"
-                     else "GetBucketMetricsConfiguration");
+                    Point_Operation_ID (Family, "GET");
                   Identifier : constant String :=
-                    US.To_String
-                      ((if Is_Analytics then Analytics_Request.ID
-                        else Metrics_Request.ID));
+                    US.To_String (Point_Request (Family).ID);
                   Payer_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-request-payer");
                   Unexpected_Checksum : constant Boolean :=
@@ -4851,17 +5014,29 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
-                        if Is_Analytics then
-                           Store.Get_Bucket_Analytics_Configuration
-                             (Bucket, Identifier, Apps.Cancellation (X),
-                              Apps.Deadline (X), Document, Configured,
-                              Result);
-                        else
-                           Store.Get_Bucket_Metrics_Configuration
-                             (Bucket, Identifier, Apps.Cancellation (X),
-                              Apps.Deadline (X), Document, Configured,
-                              Result);
-                        end if;
+                        case Family is
+                           when Analytics_Family =>
+                              Store.Get_Bucket_Analytics_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                           when Metrics_Family =>
+                              Store.Get_Bucket_Metrics_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                           when Intelligent_Tiering_Family =>
+                              Store.
+                                Get_Bucket_Intelligent_Tiering_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                           when Inventory_Family =>
+                              Store.Get_Bucket_Inventory_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Document, Configured,
+                                 Result);
+                        end case;
                         if Result /= Success then
                            Send_Backend_Error
                              (X, Result, True, Target_Text);
@@ -4879,18 +5054,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   end if;
                end;
 
-            when Delete_Bucket_Analytics | Delete_Bucket_Metrics =>
+            when Delete_Bucket_Analytics | Delete_Bucket_Metrics |
+                 Delete_Bucket_Intelligent_Tiering |
+                 Delete_Bucket_Inventory =>
                declare
-                  Is_Analytics : constant Boolean :=
-                    Operation = Delete_Bucket_Analytics;
+                  Family : constant Point_Configuration_Family :=
+                    (case Operation is
+                        when Delete_Bucket_Analytics => Analytics_Family,
+                        when Delete_Bucket_Metrics => Metrics_Family,
+                        when Delete_Bucket_Intelligent_Tiering =>
+                          Intelligent_Tiering_Family,
+                        when Delete_Bucket_Inventory => Inventory_Family,
+                        when others => raise Program_Error);
                   Operation_Name : constant String :=
-                    (if Is_Analytics then
-                       "DeleteBucketAnalyticsConfiguration"
-                     else "DeleteBucketMetricsConfiguration");
+                    Point_Operation_ID (Family, "DELETE");
                   Identifier : constant String :=
-                    US.To_String
-                      ((if Is_Analytics then Analytics_Request.ID
-                        else Metrics_Request.ID));
+                    US.To_String (Point_Request (Family).ID);
                   Payer_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-request-payer");
                   Unexpected_Checksum : constant Boolean :=
@@ -4911,15 +5090,25 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
-                        if Is_Analytics then
-                           Store.Delete_Bucket_Analytics_Configuration
-                             (Bucket, Identifier, Apps.Cancellation (X),
-                              Apps.Deadline (X), Result);
-                        else
-                           Store.Delete_Bucket_Metrics_Configuration
-                             (Bucket, Identifier, Apps.Cancellation (X),
-                              Apps.Deadline (X), Result);
-                        end if;
+                        case Family is
+                           when Analytics_Family =>
+                              Store.Delete_Bucket_Analytics_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                           when Metrics_Family =>
+                              Store.Delete_Bucket_Metrics_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                           when Intelligent_Tiering_Family =>
+                              Store.
+                                Delete_Bucket_Intelligent_Tiering_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                           when Inventory_Family =>
+                              Store.Delete_Bucket_Inventory_Configuration
+                                (Bucket, Identifier, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                        end case;
                         if Result = Success then
                            Apps.Respond (X, 204, "", "");
                         else

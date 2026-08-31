@@ -26,7 +26,11 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
+with
+  Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
+with Flyology.Object_Storage.S3.Intelligent_Tiering;
+with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
@@ -61,8 +65,14 @@ procedure S3_Server_Application_Corpus is
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
+   package Generated_Inventory renames
+     Flyology.Object_Storage.S3.
+       Generated_Put_Bucket_Inventory_Configuration_XML;
    package Generated_Logging renames
      Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
+   package Intelligent_Tiering renames
+     Flyology.Object_Storage.S3.Intelligent_Tiering;
+   package Inventory renames Flyology.Object_Storage.S3.Inventory;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Logging renames Flyology.Object_Storage.S3.Logging;
@@ -6862,6 +6872,36 @@ begin
       Metrics_Empty : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("metrics", ""),
          SigV4.Pair ("id", ""));
+      Intelligent_Tiering_ID : constant String := "server tiering";
+      Intelligent_Tiering_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("intelligent-tiering", ""),
+         SigV4.Pair ("id", Intelligent_Tiering_ID));
+      Intelligent_Tiering_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("intelligent-tiering", ""),
+         SigV4.Pair ("id", Intelligent_Tiering_ID),
+         SigV4.Pair
+           ("x-id", "GetBucketIntelligentTieringConfiguration"));
+      Intelligent_Tiering_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("intelligent-tiering", ""),
+         SigV4.Pair ("id", Intelligent_Tiering_ID));
+      Intelligent_Tiering_Empty : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("intelligent-tiering", ""),
+         SigV4.Pair ("id", ""));
+      Inventory_ID : constant String := "server inventory";
+      Inventory_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("inventory", ""),
+         SigV4.Pair ("id", Inventory_ID),
+         SigV4.Pair ("x-id", "PutBucketInventoryConfiguration"));
+      Inventory_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("inventory", ""),
+         SigV4.Pair ("id", Inventory_ID));
+      Inventory_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("inventory", ""),
+         SigV4.Pair ("id", Inventory_ID),
+         SigV4.Pair ("x-id", "DeleteBucketInventoryConfiguration"));
+      Inventory_Empty : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("inventory", ""),
+         SigV4.Pair ("id", ""));
       Analytics_Document : constant String :=
         "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
         "<Id>stored analytics</Id><StorageClassAnalysis/>" &
@@ -6869,6 +6909,19 @@ begin
       Metrics_Document : constant String :=
         "<MetricsConfiguration xmlns=""" & Namespace & """>" &
         "<Id>stored metrics</Id></MetricsConfiguration>";
+      Intelligent_Tiering_Document : constant String :=
+        "<IntelligentTieringConfiguration xmlns=""" & Namespace & """>" &
+        "<Id>stored tiering</Id><Status>Enabled</Status>" &
+        "<Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier>" &
+        "</Tiering></IntelligentTieringConfiguration>";
+      Inventory_Document : constant String :=
+        "<InventoryConfiguration xmlns=""" & Namespace & """>" &
+        "<Destination><S3BucketDestination>" &
+        "<Bucket>arn:aws:s3:::reports</Bucket><Format>CSV</Format>" &
+        "</S3BucketDestination></Destination><IsEnabled>true</IsEnabled>" &
+        "<Id>stored inventory</Id><IncludedObjectVersions>All" &
+        "</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency>" &
+        "</Schedule></InventoryConfiguration>";
       Canonical_Analytics : constant String :=
         Analytics.Serialize
           (Analytics.Parse (Analytics_Document, XML.Default_Limits),
@@ -6876,6 +6929,15 @@ begin
       Canonical_Metrics : constant String :=
         Metrics.Serialize
           (Metrics.Parse (Metrics_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Intelligent_Tiering : constant String :=
+        Intelligent_Tiering.Serialize
+          (Intelligent_Tiering.Parse
+             (Intelligent_Tiering_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Inventory : constant String :=
+        Generated_Inventory.Serialize
+          (Inventory.Parse (Inventory_Document, XML.Default_Limits),
            XML.Default_Limits);
 
       function Put
@@ -6917,6 +6979,34 @@ begin
                  ("GET", "/absent-bucket", Metrics_Get)),
             "<Code>NoSuchBucket</Code>"),
          "GetBucketMetricsConfiguration confused bucket and state absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "GetBucketIntelligentTieringConfiguration did not report absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Intelligent_Tiering_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketIntelligentTieringConfiguration confused bucket absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Inventory_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "GetBucketInventoryConfiguration did not report absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Inventory_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketInventoryConfiguration confused bucket and state absence");
       Require
         (Has (Put (Analytics_Empty, Analytics_Document), "200 OK"),
          "PutBucketAnalyticsConfiguration rejected an empty id");
@@ -6966,6 +7056,56 @@ begin
             "<Code>NoSuchConfiguration</Code>"),
          "empty metrics id remained configured after deletion");
       Require
+        (Has
+           (Put (Intelligent_Tiering_Empty, Intelligent_Tiering_Document),
+            "200 OK"),
+         "PutBucketIntelligentTieringConfiguration rejected an empty id");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Empty))) =
+           Canonical_Intelligent_Tiering,
+         "GetBucketIntelligentTieringConfiguration lost an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Intelligent_Tiering_Empty)),
+            "204 No Content"),
+         "DeleteBucketIntelligentTieringConfiguration rejected an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Empty)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "empty Intelligent-Tiering id remained configured after deletion");
+      Require
+        (Has (Put (Inventory_Empty, Inventory_Document), "200 OK"),
+         "PutBucketInventoryConfiguration rejected an empty id");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Inventory_Empty))) =
+           Canonical_Inventory,
+         "GetBucketInventoryConfiguration lost an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Inventory_Empty)),
+            "204 No Content"),
+         "DeleteBucketInventoryConfiguration rejected an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Inventory_Empty)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "empty inventory id remained configured after deletion");
+      Require
         (Has (Put (Analytics_Put, Analytics_Document), "200 OK"),
          "PutBucketAnalyticsConfiguration rejected valid XML");
       Require
@@ -6987,6 +7127,28 @@ begin
          "GetBucketMetricsConfiguration lost canonical state");
       Require
         (Has
+           (Put (Intelligent_Tiering_Put, Intelligent_Tiering_Document),
+            "200 OK"),
+         "PutBucketIntelligentTieringConfiguration rejected valid XML");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Get))) =
+           Canonical_Intelligent_Tiering,
+         "GetBucketIntelligentTieringConfiguration lost canonical state");
+      Require
+        (Has (Put (Inventory_Put, Inventory_Document), "200 OK"),
+         "PutBucketInventoryConfiguration rejected valid XML");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Inventory_Get))) =
+           Canonical_Inventory,
+         "GetBucketInventoryConfiguration lost canonical state");
+      Require
+        (Has
            (Put
               (Analytics_Put,
                "<AnalyticsConfiguration><Id>bad</Id>" &
@@ -6998,6 +7160,18 @@ begin
            (Put (Metrics_Put, "<MetricsConfiguration/>"),
             "<Code>MalformedXML</Code>"),
          "PutBucketMetricsConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Put
+              (Intelligent_Tiering_Put,
+               "<IntelligentTieringConfiguration/>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketIntelligentTieringConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Put (Inventory_Put, "<InventoryConfiguration/>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketInventoryConfiguration accepted malformed XML");
       Require
         (Has
            (Put
@@ -7014,6 +7188,23 @@ begin
                Checksum_Value (Core.SHA256, Metrics_Document) & CRLF),
             "<Code>InvalidRequest</Code>"),
          "PutBucketMetricsConfiguration accepted checksum controls");
+      Require
+        (Has
+           (Put
+              (Intelligent_Tiering_Put, Intelligent_Tiering_Document,
+               "content-md5: " &
+               Content_MD5 (Intelligent_Tiering_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketIntelligentTieringConfiguration accepted Content-MD5");
+      Require
+        (Has
+           (Put
+              (Inventory_Put, Inventory_Document,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Inventory_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketInventoryConfiguration accepted checksum controls");
       Require
         (Has
            (Put
@@ -7044,6 +7235,21 @@ begin
                "x-amz-expected-bucket-owner: different-owner" & CRLF),
             "403 Forbidden"),
          "PutBucketMetricsConfiguration ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketIntelligentTieringConfiguration ignored expected owner");
+      Require
+        (Has
+           (Put
+              (Inventory_Put, Inventory_Document,
+               "x-amz-expected-bucket-owner: different-owner" & CRLF),
+            "403 Forbidden"),
+         "PutBucketInventoryConfiguration ignored expected owner");
       Require
         (Has
            (Run
@@ -7089,12 +7295,74 @@ begin
          "GetBucketMetricsConfiguration accepted a cross-family x-id");
       Require
         (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("intelligent-tiering", ""),
+                   SigV4.Pair
+                     ("x-id",
+                      "GetBucketIntelligentTieringConfiguration")))),
+            "400 Bad Request"),
+         "GetBucketIntelligentTieringConfiguration accepted a missing id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("inventory", ""),
+                   SigV4.Pair ("id", Inventory_ID),
+                   SigV4.Pair ("id", "duplicate")))),
+            "400 Bad Request"),
+         "GetBucketInventoryConfiguration accepted a duplicate id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("intelligent-tiering", ""),
+                   SigV4.Pair ("id", Intelligent_Tiering_ID),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketIntelligentTieringConfiguration accepted an extra query");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("inventory", ""),
+                   SigV4.Pair ("id", Inventory_ID),
+                   SigV4.Pair
+                     ("x-id",
+                      "GetBucketIntelligentTieringConfiguration")))),
+            "400 Bad Request"),
+         "GetBucketInventoryConfiguration accepted a cross-family x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("intelligent-tiering", ""),
+                   SigV4.Pair ("id", Intelligent_Tiering_ID),
+                   SigV4.Pair ("x-id", "")))),
+            "400 Bad Request"),
+         "GetBucketIntelligentTieringConfiguration accepted an empty x-id");
+      Require
+        (Has
            (Put
               ((SigV4.Pair ("analytics", ""),
                 SigV4.Pair ("x-id", "PutBucketAnalyticsConfiguration")),
                "<bad/>", Corrupt_Signature => True),
             "403 Forbidden"),
          "point-configuration validation ran before authentication");
+      Require
+        (Has
+           (Put
+              ((SigV4.Pair ("intelligent-tiering", ""),
+                SigV4.Pair
+                  ("x-id", "PutBucketIntelligentTieringConfiguration")),
+               "<bad/>", Corrupt_Signature => True),
+            "403 Forbidden"),
+         "Intelligent-Tiering query validation ran before authentication");
       Require
         (Has
            (Run
@@ -7106,6 +7374,33 @@ begin
                      Ada.Strings.Both))),
             "<Code>EntityTooLarge</Code>"),
          "PutBucketAnalyticsConfiguration accepted an oversized document");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Put_Declared_Length_Request
+                 ("/test-bucket", Inventory_Put,
+                  Ada.Strings.Fixed.Trim
+                    (Natural'Image
+                       (XML.Default_Limits.Maximum_Document_Bytes + 1),
+                     Ada.Strings.Both))),
+            "<Code>EntityTooLarge</Code>"),
+         "PutBucketInventoryConfiguration accepted an oversized document");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Get,
+                  "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketIntelligentTieringConfiguration accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("DELETE", "/test-bucket", Inventory_Delete,
+                  "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteBucketInventoryConfiguration accepted a request body");
       declare
          Limit_Bucket : constant String := "configuration-limit-bucket";
          Result       : Flyology.Object_Storage.Status;
@@ -7142,6 +7437,19 @@ begin
             Require
               (Result = Flyology.Object_Storage.Success,
                "metrics limit fixture reached its bound early");
+            Store.Put_Bucket_Intelligent_Tiering_Configuration
+              (Limit_Bucket, Identifier ("tiering-", Index),
+               Canonical_Intelligent_Tiering, null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "Intelligent-Tiering limit fixture reached its bound early");
+            Store.Put_Bucket_Inventory_Configuration
+              (Limit_Bucket, Identifier ("inventory-", Index),
+               Canonical_Inventory, null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "inventory limit fixture reached its bound early");
          end loop;
          declare
             Response : constant String :=
@@ -7175,6 +7483,44 @@ begin
            (Has (Limit_Put ("metrics", "metrics-1", Metrics_Document),
                  "200 OK"),
             "metrics limit rejected replacement of an existing id");
+         declare
+            Response : constant String :=
+              Limit_Put
+                ("intelligent-tiering", "tiering-over-limit",
+                 Intelligent_Tiering_Document);
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has
+                 (Response, "<Code>TooManyConfigurations</Code>"),
+               "PutBucketIntelligentTieringConfiguration lost its modeled " &
+               "limit error");
+         end;
+         Require
+           (Has
+              (Limit_Put
+                 ("intelligent-tiering", "tiering-1",
+                  Intelligent_Tiering_Document),
+               "200 OK"),
+            "Intelligent-Tiering limit rejected replacement of an id");
+         declare
+            Response : constant String :=
+              Limit_Put
+                ("inventory", "inventory-over-limit", Inventory_Document);
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has
+                 (Response, "<Code>TooManyConfigurations</Code>"),
+               "PutBucketInventoryConfiguration lost its modeled limit " &
+               "error");
+         end;
+         Require
+           (Has
+              (Limit_Put
+                 ("inventory", "inventory-1", Inventory_Document),
+               "200 OK"),
+            "inventory limit rejected replacement of an existing id");
          Store.Delete_Bucket
            (Limit_Bucket, null, Ada.Real_Time.Time_Last, Result);
          Require
@@ -7237,6 +7583,63 @@ begin
                  ("DELETE", "/absent-bucket", Metrics_Delete)),
             "<Code>NoSuchBucket</Code>"),
          "DeleteBucketMetricsConfiguration confused bucket absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Intelligent_Tiering_Delete)),
+            "204 No Content"),
+         "DeleteBucketIntelligentTieringConfiguration failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Intelligent_Tiering_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "DeleteBucketIntelligentTieringConfiguration left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Intelligent_Tiering_Delete)),
+            "204 No Content"),
+         "DeleteBucketIntelligentTieringConfiguration was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Intelligent_Tiering_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketIntelligentTieringConfiguration confused bucket " &
+         "absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Inventory_Delete)),
+            "204 No Content"),
+         "DeleteBucketInventoryConfiguration failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Inventory_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "DeleteBucketInventoryConfiguration left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Inventory_Delete)),
+            "204 No Content"),
+         "DeleteBucketInventoryConfiguration was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Inventory_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketInventoryConfiguration confused bucket absence");
    end;
 
    declare

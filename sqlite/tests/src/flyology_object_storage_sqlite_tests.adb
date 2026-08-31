@@ -491,6 +491,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -533,6 +535,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -564,6 +568,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -594,6 +600,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -624,6 +632,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-documents',37);" &
          "PRAGMA user_version=14;");
       Databases.Close (Legacy);
@@ -649,6 +659,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-documents',41);" &
          "PRAGMA user_version=15;");
       Databases.Close (Legacy);
@@ -672,6 +684,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_analytics_configurations;" &
          "DROP TABLE bucket_metrics_configurations;" &
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-points',43);" &
          "PRAGMA user_version=16;");
       Databases.Close (Legacy);
@@ -682,6 +696,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V16_Database;
+
+   procedure Create_V17_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_intelligent_tiering_configurations;" &
+         "DROP TABLE bucket_inventory_configurations;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-points-v17',47);" &
+         "PRAGMA user_version=17;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V17_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1584,7 +1621,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1630,7 +1667,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1674,10 +1711,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 17 atomically");
+         "schema-v12 migration did not publish schema 18 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1731,10 +1768,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 17 atomically");
+         "schema-v13 migration did not publish schema 18 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1814,10 +1851,10 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 17 atomically");
+         "schema-v14 migration did not publish schema 18 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1910,10 +1947,10 @@ begin
          "'bucket_logging_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v15 migration did not publish schema 17 atomically");
+         "schema-v15 migration did not publish schema 18 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1992,12 +2029,121 @@ begin
          "'bucket_metrics_configurations')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v16 migration did not publish schema 17 atomically");
+         "schema-v16 migration did not publish schema 18 atomically");
    end;
    Databases.Close (Database);
+   Delete_Database;
+
+   Create_V17_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Intelligent : constant String :=
+        "<IntelligentTieringConfiguration><Id>payload tier</Id>" &
+        "</IntelligentTieringConfiguration>";
+      Inventory : constant String :=
+        "<InventoryConfiguration><Id>payload inventory</Id>" &
+        "</InventoryConfiguration>";
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "legacy-points-v17", "query tier", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v17 migration invented intelligent-tiering state");
+      Catalogs.Get_Bucket_Inventory_Configuration
+        (Catalog, "legacy-points-v17", "query inventory", Document,
+         Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v17 migration invented inventory state");
+      Catalogs.Put_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "legacy-points-v17", "query tier", Intelligent, Result);
+      Catalogs.Put_Bucket_Inventory_Configuration
+        (Catalog, "legacy-points-v17", "query inventory", Inventory, Result);
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "legacy-points-v17", "query tier", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<IntelligentTieringConfiguration><Id>payload tier</Id>" &
+             "</IntelligentTieringConfiguration>",
+         "migrated intelligent-tiering state did not survive reopen");
+      Catalogs.Get_Bucket_Inventory_Configuration
+        (Catalog, "legacy-points-v17", "query inventory", Document,
+         Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<InventoryConfiguration><Id>payload inventory</Id>" &
+             "</InventoryConfiguration>",
+         "migrated inventory state did not survive reopen");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name IN ('bucket_intelligent_tiering_configurations'," &
+         "'bucket_inventory_configurations')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 18
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v17 migration did not publish schema 18 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V17_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_intelligent_tiering_configurations (" &
+      "bucket_name TEXT NOT NULL COLLATE BINARY," &
+      "configuration_id BLOB NOT NULL," &
+      "document BLOB NOT NULL," &
+      "CHECK(length(configuration_id)+length(document)<=16777216)," &
+      "PRIMARY KEY(bucket_name,configuration_id)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v17 migration accepted a partial table publication");
+   end;
    Delete_Database;
 
    Create_V16_Database;
@@ -2100,7 +2246,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema17 accepted a constraint that rejects empty identifiers");
+         "schema18 accepted a constraint that rejects empty identifiers");
    end;
    Delete_Database;
 
@@ -2128,7 +2274,7 @@ begin
       Databases.Close (Database);
       Assert
         (Rejected,
-         "schema17 accepted a point configuration above the aggregate " &
+         "schema18 accepted a point configuration above the aggregate " &
          "bound");
    exception
       when others =>
@@ -2164,7 +2310,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema17 accepted a non-BLOB point configuration identifier");
+         "schema18 accepted a non-BLOB point configuration identifier");
    end;
    Delete_Database;
 
@@ -2206,6 +2352,49 @@ begin
       Assert
         (Result = Success,
          "SQLite analytics limit leaked into the metrics family");
+   end;
+   Catalogs.Close (Catalog);
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "INSERT INTO buckets(name,created) VALUES('point-limit-new',1);" &
+      "WITH RECURSIVE identifiers(value) AS (" &
+      "VALUES(1) UNION ALL SELECT value+1 FROM identifiers " &
+      "WHERE value<1000) " &
+      "INSERT INTO bucket_intelligent_tiering_configurations(" &
+      "bucket_name,configuration_id,document) " &
+      "SELECT 'point-limit-new',CAST(value AS BLOB),X'7B7D' " &
+      "FROM identifiers;");
+   Databases.Close (Database);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Put_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "point-limit-new", "overflow", "{}", Result);
+      Assert
+        (Result = Configuration_Limit_Exceeded,
+         "SQLite intelligent-tiering accepted a 1001st configuration");
+      Catalogs.Put_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "point-limit-new", "1", "replacement", Result);
+      Catalogs.Get_Bucket_Intelligent_Tiering_Configuration
+        (Catalog, "point-limit-new", "1", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = "replacement",
+         "SQLite intelligent-tiering limit rejected replacement");
+      Catalogs.Put_Bucket_Inventory_Configuration
+        (Catalog, "point-limit-new", "first", "{}", Result);
+      Assert
+        (Result = Success,
+         "SQLite intelligent-tiering limit leaked into inventory");
    end;
    Catalogs.Close (Catalog);
    Delete_Database;
@@ -3396,8 +3585,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17,
-         "schema-v1 migration did not publish version 17");
+         and then Databases.Column (Version, 0) = 18,
+         "schema-v1 migration did not publish version 18");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3412,10 +3601,12 @@ begin
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
          "'bucket_analytics_configurations'," &
-         "'bucket_metrics_configurations')");
+         "'bucket_metrics_configurations'," &
+         "'bucket_intelligent_tiering_configurations'," &
+         "'bucket_inventory_configurations')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 22,
+         and then Databases.Column (Tables, 0) = 24,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -3481,8 +3672,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17,
-         "schema-v2 migration did not publish version 17");
+         and then Databases.Column (Version, 0) = 18,
+         "schema-v2 migration did not publish version 18");
    end;
    declare
       Tables : Databases.Statement;
@@ -3518,10 +3709,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 17 tables");
+         "schema-v3 migration did not publish schema 18 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3592,8 +3783,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 17,
-            "schema-v4 migration did not publish version 17");
+            and then Databases.Column (Version, 0) = 18,
+            "schema-v4 migration did not publish version 18");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3660,7 +3851,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 17
+            and then Databases.Column (Version, 0) = 18
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -3738,8 +3929,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17,
-         "schema-v6 migration did not publish version 17");
+         and then Databases.Column (Version, 0) = 18,
+         "schema-v6 migration did not publish version 18");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3870,7 +4061,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -3941,7 +4132,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 17
+         and then Databases.Column (Version, 0) = 18
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -5271,6 +5462,232 @@ begin
             Ada.Real_Time.Time_Last, Result);
       end;
       declare
+         Intelligent_1 : constant String :=
+           "<IntelligentTieringConfiguration><Id>payload-one</Id>" &
+           "</IntelligentTieringConfiguration>";
+         Intelligent_2 : constant String :=
+           "<IntelligentTieringConfiguration><Id>payload-two</Id>" &
+           "</IntelligentTieringConfiguration>";
+         Inventory : constant String :=
+           "<InventoryConfiguration><Id>payload-inventory</Id>" &
+           "</InventoryConfiguration>";
+         type String_Access is access String;
+         procedure Free is new Ada.Unchecked_Deallocation
+           (String, String_Access);
+         Limit_Bytes : constant Positive := 16 * 1_024 * 1_024;
+         At_Limit    : String_Access :=
+           new String'(1 .. Limit_Bytes => 'x');
+         Over_Limit  : String_Access :=
+           new String'(1 .. Limit_Bytes + 1 => 'y');
+         Observed   : US.Unbounded_String;
+         Configured : Boolean;
+         Cancel     : aliased Flyology.Cancellation.Token;
+
+         procedure Expect_Cancelled
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Cancelled;
+
+         procedure Expect_Timeout
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Timeout;
+
+         procedure Put_Intelligent_Cancelled is
+         begin
+            Store.Put_Bucket_Intelligent_Tiering_Configuration
+              ("sqlite-bucket", "query-tier", Intelligent_1, Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_Intelligent_Cancelled;
+
+         procedure Get_Intelligent_Cancelled is
+         begin
+            Store.Get_Bucket_Intelligent_Tiering_Configuration
+              ("sqlite-bucket", "query-tier", Cancel'Access,
+               Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         end Get_Intelligent_Cancelled;
+
+         procedure Delete_Intelligent_Cancelled is
+         begin
+            Store.Delete_Bucket_Intelligent_Tiering_Configuration
+              ("sqlite-bucket", "query-tier", Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Delete_Intelligent_Cancelled;
+
+         procedure Put_Inventory_Expired is
+         begin
+            Store.Put_Bucket_Inventory_Configuration
+              ("sqlite-bucket", "query-inventory", Inventory, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_Inventory_Expired;
+
+         procedure Get_Inventory_Expired is
+         begin
+            Store.Get_Bucket_Inventory_Configuration
+              ("sqlite-bucket", "query-inventory", null,
+               Ada.Real_Time.Time_First, Observed, Configured, Result);
+         end Get_Inventory_Expired;
+
+         procedure Delete_Inventory_Expired is
+         begin
+            Store.Delete_Bucket_Inventory_Configuration
+              ("sqlite-bucket", "query-inventory", null,
+               Ada.Real_Time.Time_First, Result);
+         end Delete_Inventory_Expired;
+      begin
+         Store.Get_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "query-tier", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Observed) = 0,
+            "SQLite new bucket unexpectedly had intelligent-tiering state");
+         Store.Get_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-inventory", null,
+            Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite new bucket unexpectedly had inventory state");
+         Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "", Intelligent_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Intelligent_1,
+            "SQLite intelligent-tiering rejected an empty query ID");
+         Store.Delete_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "", null, Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "i",
+            At_Limit.all
+              (At_Limit.all'First .. At_Limit.all'Last - 1), null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite inventory rejected the exact aggregate bound");
+         Store.Delete_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "i", null, Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "i", At_Limit.all, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Entity_Too_Large,
+            "SQLite inventory accepted an over-limit aggregate");
+         Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", Over_Limit.all, "", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite intelligent-tiering accepted an over-limit identifier");
+         Store.Get_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", Over_Limit.all, null,
+            Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         Assert
+           (Result = Invalid_Request and then not Configured,
+            "SQLite intelligent-tiering queried an over-limit identifier");
+         Store.Delete_Bucket_Inventory_Configuration
+           ("sqlite-bucket", Over_Limit.all, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite inventory deleted an over-limit identifier");
+         Free (At_Limit);
+         Free (Over_Limit);
+         Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "query-tier", Intelligent_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "query-tier", Intelligent_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "query-tier", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Intelligent_2,
+            "SQLite intelligent-tiering lost query-keyed replacement");
+         Store.Put_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", Inventory, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", null,
+            Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Inventory,
+            "SQLite inventory conflated query ID with payload Id");
+         Store.Put_Bucket_Intelligent_Tiering_Configuration
+           ("missing-bucket", "query-tier", Intelligent_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite intelligent-tiering put lost missing-bucket status");
+         Store.Get_Bucket_Inventory_Configuration
+           ("missing-bucket", "query-inventory", null,
+            Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         Assert
+           (Result = Not_Found and then not Configured,
+            "SQLite inventory get lost missing-bucket status");
+         Store.Delete_Bucket_Intelligent_Tiering_Configuration
+           ("missing-bucket", "query-tier", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite intelligent-tiering delete lost missing-bucket status");
+         Cancel.Request;
+         Expect_Cancelled
+           (Put_Intelligent_Cancelled'Access,
+            "SQLite intelligent-tiering put ignored cancellation");
+         Expect_Cancelled
+           (Get_Intelligent_Cancelled'Access,
+            "SQLite intelligent-tiering get ignored cancellation");
+         Expect_Cancelled
+           (Delete_Intelligent_Cancelled'Access,
+            "SQLite intelligent-tiering delete ignored cancellation");
+         Expect_Timeout
+           (Put_Inventory_Expired'Access,
+            "SQLite inventory put ignored deadline");
+         Expect_Timeout
+           (Get_Inventory_Expired'Access,
+            "SQLite inventory get ignored deadline");
+         Expect_Timeout
+           (Delete_Inventory_Expired'Access,
+            "SQLite inventory delete ignored deadline");
+         Store.Delete_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite inventory repeated deletion was not idempotent");
+         Store.Put_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", Inventory, null,
+            Ada.Real_Time.Time_Last, Result);
+      end;
+      declare
          First : constant String :=
            "{""Version"":""2012-10-17"",""Statement"":[]}";
          Second : constant String :=
@@ -6151,6 +6568,12 @@ begin
          Metrics : constant String :=
            "<MetricsConfiguration><Id>payload-new</Id>" &
            "</MetricsConfiguration>";
+         Intelligent : constant String :=
+           "<IntelligentTieringConfiguration><Id>payload-two</Id>" &
+           "</IntelligentTieringConfiguration>";
+         Inventory : constant String :=
+           "<InventoryConfiguration><Id>payload-inventory</Id>" &
+           "</InventoryConfiguration>";
          Document   : US.Unbounded_String;
          Configured : Boolean;
       begin
@@ -6168,6 +6591,20 @@ begin
            (Result = Success and then Configured
             and then US.To_String (Document) = Metrics,
             "SQLite metrics state did not survive reopen");
+         Store.Get_Bucket_Intelligent_Tiering_Configuration
+           ("sqlite-bucket", "query-tier", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Intelligent,
+            "SQLite intelligent-tiering state did not survive reopen");
+         Store.Get_Bucket_Inventory_Configuration
+           ("sqlite-bucket", "query-tier", null,
+            Ada.Real_Time.Time_Last, Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Inventory,
+            "SQLite inventory state did not survive reopen");
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

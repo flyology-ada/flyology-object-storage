@@ -369,6 +369,108 @@ package Flyology.Object_Storage.Backends.SQLite is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
 
+   --  Replace one intelligent-tiering configuration selected by query ID.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Canonical intelligent-tiering XML bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one intelligent-tiering configuration selected by query ID.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical XML bytes
+   --  @param Configured Whether the selected configuration exists
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one intelligent-tiering configuration selected by query ID.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Replace one inventory configuration selected by its query identifier.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Canonical inventory XML bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one inventory configuration selected by its query identifier.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical XML bytes
+   --  @param Configured Whether the selected configuration exists
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one inventory configuration selected by its query identifier.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

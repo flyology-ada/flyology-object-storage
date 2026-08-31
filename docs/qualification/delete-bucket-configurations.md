@@ -8,10 +8,11 @@ DeleteBucketMetadataConfiguration,
 DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration also have
 provider-owned composable operations and typed synchronous waits that use their
-corresponding state machines. `DeleteBucketLifecycle`,
-`DeleteBucketAnalyticsConfiguration`, and `DeleteBucketMetricsConfiguration`
-now also have independent backend and server coverage; the shared client
-corpus does not manufacture that evidence for the remaining operations.
+corresponding state machines. `DeleteBucketLifecycle`, the analytics and
+metrics point-configuration families, and the Intelligent-Tiering and
+inventory point-configuration families now also have independent backend and
+server coverage; the shared client corpus does not manufacture that evidence
+for the remaining operations.
 `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` have independent coverage in
 [bucket-policy.md](bucket-policy.md) and
@@ -134,6 +135,14 @@ configuration or exact `NoSuchConfiguration` before a retry, but cannot prove
 that the lost deletion caused the observation, upgrade mutation certainty, or
 authorize automatic replay. Completion does not assert prior presence.
 
+For the Intelligent-Tiering and inventory point-configuration families, the
+exact query identifier selects retained canonical XML independently of the
+payload `Id`. An empty identifier remains a complete modeled identifier and
+is retained, read, replaced, and removed as that exact key. The maintained
+backends persist configuration only: they do not execute tier transitions or
+generate inventory reports, and the evidence makes no external-provider
+claim.
+
 For `DeleteBucketMetadataConfiguration`, the pinned operation removes the
 bucket metadata configuration. Only an exact empty 204 proves completion.
 Exact recognized rejections or definite non-admission prove non-application,
@@ -232,14 +241,14 @@ malformed, and one-past bounded response faults against the same internal
 decoder and executor machinery.
 
 The machine ledger records `DeleteBucketEncryption`, `DeleteBucketLifecycle`,
-`DeleteBucketAnalyticsConfiguration`, `DeleteBucketMetricsConfiguration`,
+the analytics/metrics point operations, the six
+Intelligent-Tiering/inventory point operations,
 `DeleteBucketOwnershipControls`, `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
-their independent backend and server evidence. The other six operations
-remain `missing / covered / missing / covered`; the additional replication,
-intelligent-tiering, metadata, metadata-table, website, and inventory
-composable clients do not change those ledger tuples. This client corpus does
-not manufacture their backend persistence or server routes.
+their independent backend and server evidence. Replication, metadata,
+metadata-table, and website remain `missing / covered / missing / covered`;
+their composable clients do not manufacture backend persistence or server
+routes.
 
 `DeleteBucketEncryption`, `DeleteBucketLifecycle`,
 `DeleteBucketReplication`, `DeleteBucketWebsite`,
@@ -253,11 +262,12 @@ not manufacture their backend persistence or server routes.
 `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock`
 have operation-specific reviewed registry lanes. The independent encryption,
-lifecycle, analytics, metrics, ownership-controls, public-access-block, and
-policy records are `covered / covered / covered / covered`, while the other
-lanes remain `missing / covered / missing / covered`. Each lane is conditional
-on every maintained command succeeding and does not convert client evidence
-into directory-bucket or external-provider qualification.
+lifecycle, analytics, metrics, Intelligent-Tiering, inventory,
+ownership-controls, public-access-block, and policy records are
+`covered / covered / covered / covered`, while the other lanes remain
+`missing / covered / missing / covered`. Each lane is conditional on every
+maintained command succeeding and does not convert client evidence into
+directory-bucket or external-provider qualification.
 
 ## Gate evidence
 

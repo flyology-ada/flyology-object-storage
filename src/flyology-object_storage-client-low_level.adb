@@ -8029,7 +8029,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Last : Positive := 1;
    begin
       if not Valid_Bucket_Name (Bucket)
-        or else (Has_ID and then ID_Text'Length = 0)
         or else (not Has_ID and then ID_Text'Length > 0)
         or else not Valid_List_Response_Header_Text (ID_Text)
         or else not Valid_List_Response_Header_Text (Owner_Text)

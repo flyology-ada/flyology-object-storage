@@ -77,6 +77,10 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one named analytics configuration.
    Bucket_Metrics_Magic : constant String := "FOSMET01";
    --  Persisted-format discriminator for one named metrics configuration.
+   Bucket_Intelligent_Tiering_Magic : constant String := "FOSITR01";
+   --  Persisted discriminator for one Intelligent-Tiering configuration.
+   Bucket_Inventory_Magic : constant String := "FOSINV01";
+   --  Persisted-format discriminator for one inventory configuration.
    Bucket_ABAC_Magic : constant String := "FOSABA01";
    --  Persisted-format discriminator for one bucket ABAC state.
    Bucket_Acceleration_Magic : constant String := "FOSACC01";
@@ -418,6 +422,18 @@ package body Flyology.Object_Storage.Backends.Files is
      (Join
         (Configuration_Path (Item, Bucket),
          "metrics-" & GNAT.SHA256.Digest (Identifier) & ".fos"));
+
+   function Bucket_Intelligent_Tiering_Path
+     (Item : Store; Bucket, Identifier : String) return String is
+     (Join
+        (Configuration_Path (Item, Bucket),
+         "intelligent-tiering-" & GNAT.SHA256.Digest (Identifier) & ".fos"));
+
+   function Bucket_Inventory_Path
+     (Item : Store; Bucket, Identifier : String) return String is
+     (Join
+        (Configuration_Path (Item, Bucket),
+         "inventory-" & GNAT.SHA256.Digest (Identifier) & ".fos"));
 
    function Bucket_ABAC_Path
      (Item : Store; Bucket : String) return String is
@@ -1421,7 +1437,8 @@ package body Flyology.Object_Storage.Backends.Files is
          return False;
       end if;
       for Offset in 0 .. Expected'Length - 1 loop
-         if US.Element (Value, Offset + 1) /= Expected (Expected'First + Offset)
+         if US.Element (Value, Offset + 1) /=
+           Expected (Expected'First + Offset)
          then
             return False;
          end if;
@@ -1822,6 +1839,38 @@ package body Flyology.Object_Storage.Backends.Files is
       Read_Named_Bucket_Configuration
         (File, Bucket_Metrics_Magic, Document, Metadata);
    end Read_Bucket_Metrics;
+
+   procedure Write_Bucket_Intelligent_Tiering
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+   begin
+      Write_Named_Bucket_Configuration
+        (File, Bucket_Intelligent_Tiering_Magic, Document, Metadata);
+   end Write_Bucket_Intelligent_Tiering;
+
+   procedure Read_Bucket_Intelligent_Tiering
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String) is
+   begin
+      Read_Named_Bucket_Configuration
+        (File, Bucket_Intelligent_Tiering_Magic, Document, Metadata);
+   end Read_Bucket_Intelligent_Tiering;
+
+   procedure Write_Bucket_Inventory
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+   begin
+      Write_Named_Bucket_Configuration
+        (File, Bucket_Inventory_Magic, Document, Metadata);
+   end Write_Bucket_Inventory;
+
+   procedure Read_Bucket_Inventory
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String) is
+   begin
+      Read_Named_Bucket_Configuration
+        (File, Bucket_Inventory_Magic, Document, Metadata);
+   end Read_Bucket_Inventory;
 
    function Read_Versioning
      (Item : Store; Bucket : String) return Bucket_Versioning_Configuration
@@ -4497,6 +4546,101 @@ package body Flyology.Object_Storage.Backends.Files is
          Bucket_Metrics_Path (Item, Bucket, Identifier),
          Read_Bucket_Metrics'Access, Result);
    end Delete_Bucket_Metrics_Configuration;
+
+   overriding procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Document, Token, Deadline,
+         "bucket-intelligent-tiering-", "intelligent-tiering-",
+         Bucket_Intelligent_Tiering_Path (Item, Bucket, Identifier),
+         Write_Bucket_Intelligent_Tiering'Access,
+         Read_Bucket_Intelligent_Tiering'Access, Result);
+   end Put_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Intelligent_Tiering_Path (Item, Bucket, Identifier),
+         Read_Bucket_Intelligent_Tiering'Access,
+         Document, Configured, Result);
+   end Get_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Delete_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Intelligent_Tiering_Path (Item, Bucket, Identifier),
+         Read_Bucket_Intelligent_Tiering'Access, Result);
+   end Delete_Bucket_Intelligent_Tiering_Configuration;
+
+   overriding procedure Put_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Document, Token, Deadline,
+         "bucket-inventory-", "inventory-",
+         Bucket_Inventory_Path (Item, Bucket, Identifier),
+         Write_Bucket_Inventory'Access, Read_Bucket_Inventory'Access,
+         Result);
+   end Put_Bucket_Inventory_Configuration;
+
+   overriding procedure Get_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Inventory_Path (Item, Bucket, Identifier),
+         Read_Bucket_Inventory'Access, Document, Configured, Result);
+   end Get_Bucket_Inventory_Configuration;
+
+   overriding procedure Delete_Bucket_Inventory_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Inventory_Path (Item, Bucket, Identifier),
+         Read_Bucket_Inventory'Access, Result);
+   end Delete_Bucket_Inventory_Configuration;
 
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;

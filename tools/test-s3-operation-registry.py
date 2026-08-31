@@ -9874,9 +9874,9 @@ def main() -> None:
             == delete_intelligent_tiering_reconciliation
         )
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -10045,9 +10045,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_inventory_certainty
         assert entry.get("reconciliation") == delete_inventory_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -11976,6 +11976,26 @@ def main() -> None:
         "GetBucketMetricsConfiguration": "CloudWatch metrics emission",
         "PutBucketMetricsConfiguration": "CloudWatch metrics emission",
     }
+    promoted_named_configuration_operations = {
+        "DeleteBucketIntelligentTieringConfiguration": (
+            "tier-transition execution", False
+        ),
+        "GetBucketIntelligentTieringConfiguration": (
+            "tier-transition execution", True
+        ),
+        "PutBucketIntelligentTieringConfiguration": (
+            "tier-transition execution", True
+        ),
+        "DeleteBucketInventoryConfiguration": (
+            "inventory report generation", False
+        ),
+        "GetBucketInventoryConfiguration": (
+            "inventory report generation", True
+        ),
+        "PutBucketInventoryConfiguration": (
+            "inventory report generation", False
+        ),
+    }
     point_backend_evidence = {
         "tests/src/object_storage_test_cases.adb",
         "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
@@ -12019,6 +12039,64 @@ def main() -> None:
         ):
             candidate = copy.deepcopy(registry)
             mutate(candidate.operations[operation])
+            try:
+                assert_point_configuration_coverage(
+                    candidate, operation, excluded
+                )
+            except (AssertionError, KeyError, TypeError):
+                pass
+            else:
+                raise AssertionError(
+                    f"{label} accepted for {operation}"
+                )
+    assert set(promoted_named_configuration_operations) == {
+        "DeleteBucketIntelligentTieringConfiguration",
+        "GetBucketIntelligentTieringConfiguration",
+        "PutBucketIntelligentTieringConfiguration",
+        "DeleteBucketInventoryConfiguration",
+        "GetBucketInventoryConfiguration",
+        "PutBucketInventoryConfiguration",
+    }
+    for operation, (excluded, has_socket_cases) in (
+        promoted_named_configuration_operations.items()
+    ):
+        assert_point_configuration_coverage(registry, operation, excluded)
+        entry = registry.operations[operation]
+        assert set(entry["evidence"]["backend"]) == point_backend_evidence
+        assert set(entry["evidence"]["server"]) == point_server_evidence
+        if operation.startswith("PutBucket"):
+            assert any(
+                "query id and payload Id" in item
+                for item in entry["exclusions"]
+            )
+        if has_socket_cases:
+            empty_cases = [
+                case for case in entry["signed_socket"]["case"]
+                if case["id"] == "empty-identifier-success"
+            ]
+            assert len(empty_cases) == 1
+            assert len(empty_cases[0]["exchange"]) == 1
+            exchange = empty_cases[0]["exchange"][0]
+            assert exchange["input_values"]["Id"] == ""
+            if operation.startswith("PutBucket"):
+                assert "<Id></Id>" in exchange["request_body"]
+        for label, mutate in (
+            (
+                "missing backend evidence",
+                lambda item: item["evidence"].update(backend=[]),
+            ),
+            (
+                "missing server coverage",
+                lambda item: item["coverage"].update(server="missing"),
+            ),
+            (
+                "missing execution exclusion",
+                lambda item: item.update(exclusions=[]),
+            ),
+        ):
+            candidate = copy.deepcopy(registry)
+            mutate(candidate.operations[operation])
+            assert candidate.operations[operation] != entry
             try:
                 assert_point_configuration_coverage(
                     candidate, operation, excluded

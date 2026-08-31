@@ -15,13 +15,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 17 adds exact query-keyed analytics and metrics
-   --  documents. Changing this private value or table set requires a
+   --  Persisted schema 18 adds exact query-keyed intelligent-tiering and
+   --  inventory documents. Changing this private value or table set requires a
    --  transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 17;
-   --  The pinned S3 analytics and request-metrics contracts allow exactly
-   --  1,000 query-keyed configurations per bucket and family. This body-only
-   --  mirror keeps transactional catalog enforcement aligned with Backends.
+   Schema_Version : constant Long_Long_Integer := 18;
+   --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
+   --  contracts allow exactly 1,000 query-keyed configurations per bucket and
+   --  family. This private mirror keeps catalog enforcement aligned.
    Maximum_Bucket_Named_Configurations : constant Positive := 1_000;
 
    function Valid_Bucket_Named_Configuration
@@ -212,6 +212,24 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      ") WITHOUT ROWID;";
    Bucket_Metrics_Schema : constant String :=
      "CREATE TABLE bucket_metrics_configurations (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "configuration_id BLOB NOT NULL," &
+     "document BLOB NOT NULL," &
+     "CHECK(length(configuration_id)+length(document)<=16777216)," &
+     "PRIMARY KEY(bucket_name,configuration_id)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Intelligent_Tiering_Schema : constant String :=
+     "CREATE TABLE bucket_intelligent_tiering_configurations (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "configuration_id BLOB NOT NULL," &
+     "document BLOB NOT NULL," &
+     "CHECK(length(configuration_id)+length(document)<=16777216)," &
+     "PRIMARY KEY(bucket_name,configuration_id)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Inventory_Schema : constant String :=
+     "CREATE TABLE bucket_inventory_configurations (" &
      "bucket_name TEXT NOT NULL COLLATE BINARY," &
      "configuration_id BLOB NOT NULL," &
      "document BLOB NOT NULL," &
@@ -1481,9 +1499,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Logging_Schema &
          Bucket_Analytics_Schema &
          Bucket_Metrics_Schema &
+         Bucket_Intelligent_Tiering_Schema &
+         Bucket_Inventory_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=17;");
+         "PRAGMA user_version=18;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2045,6 +2065,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V16;
 
+   procedure Upgrade_From_V17 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('bucket_intelligent_tiering_configurations'," &
+           "'bucket_inventory_configurations')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 17";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Intelligent_Tiering_Schema & Bucket_Inventory_Schema &
+         "PRAGMA user_version=18;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V17;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2092,6 +2140,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 15 => null;
             when 16 => null;
             when 17 => null;
+            when 18 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2136,6 +2185,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V16 (Item);
             Version := 17;
          end if;
+         if Version = 17 then
+            Upgrade_From_V17 (Item);
+            Version := 18;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2159,7 +2212,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
          "'bucket_analytics_configurations'," &
-         "'bucket_metrics_configurations')") /= 22
+         "'bucket_metrics_configurations'," &
+         "'bucket_intelligent_tiering_configurations'," &
+         "'bucket_inventory_configurations')") /= 24
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2214,6 +2269,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite bucket metrics schema is incomplete";
+      elsif not Valid_Bucket_Point_Configuration_Schema
+        (Item, "bucket_intelligent_tiering_configurations")
+      then
+         raise Catalog_Error with
+           "SQLite bucket intelligent-tiering schema is incomplete";
+      elsif not Valid_Bucket_Point_Configuration_Schema
+        (Item, "bucket_inventory_configurations")
+      then
+         raise Catalog_Error with
+           "SQLite bucket inventory schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -3911,6 +3976,81 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, Identifier, "bucket_metrics_configurations",
          "bucket metrics", Result);
    end Delete_Bucket_Metrics_Configuration;
+
+   procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status) is
+   begin
+      Put_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, Document,
+         "bucket_intelligent_tiering_configurations",
+         "bucket intelligent-tiering", Result);
+   end Put_Bucket_Intelligent_Tiering_Configuration;
+
+   procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Point_Configuration
+        (Item, Bucket, Identifier,
+         "bucket_intelligent_tiering_configurations",
+         "bucket intelligent-tiering", Document, Configured, Result);
+   end Get_Bucket_Intelligent_Tiering_Configuration;
+
+   procedure Delete_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status) is
+   begin
+      Delete_Bucket_Point_Configuration
+        (Item, Bucket, Identifier,
+         "bucket_intelligent_tiering_configurations",
+         "bucket intelligent-tiering", Result);
+   end Delete_Bucket_Intelligent_Tiering_Configuration;
+
+   procedure Put_Bucket_Inventory_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status) is
+   begin
+      Put_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, Document,
+         "bucket_inventory_configurations", "bucket inventory", Result);
+   end Put_Bucket_Inventory_Configuration;
+
+   procedure Get_Bucket_Inventory_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_inventory_configurations",
+         "bucket inventory", Document, Configured, Result);
+   end Get_Bucket_Inventory_Configuration;
+
+   procedure Delete_Bucket_Inventory_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status) is
+   begin
+      Delete_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_inventory_configurations",
+         "bucket inventory", Result);
+   end Delete_Bucket_Inventory_Configuration;
 
    procedure Put_Bucket_Policy
      (Item   : in out Catalog;

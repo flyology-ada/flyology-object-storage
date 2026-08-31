@@ -24,6 +24,7 @@ TESTING = (
     "flyology-object_storage-client-buckets-testing.adb"
 )
 SOCKET = ROOT / "tests" / "src" / "s3_http_socket_corpus.adb"
+SERVER_CORPUS = ROOT / "tests" / "src" / "s3_server_application_corpus.adb"
 REGISTRY = ROOT / "coverage" / "s3-operations.toml"
 QUALIFICATION = ROOT / "docs" / "qualification" / (
     "delete-bucket-configurations.md"
@@ -647,6 +648,35 @@ LOCATION = {
     "ExpectedBucketOwner": "Header_Location",
 }
 
+POINT_CONFIGURATION_OPERATIONS = {
+    "DeleteBucketIntelligentTieringConfiguration": (
+        "tier-transition execution", False
+    ),
+    "GetBucketIntelligentTieringConfiguration": (
+        "tier-transition execution", True
+    ),
+    "PutBucketIntelligentTieringConfiguration": (
+        "tier-transition execution", True
+    ),
+    "DeleteBucketInventoryConfiguration": (
+        "inventory report generation", False
+    ),
+    "GetBucketInventoryConfiguration": (
+        "inventory report generation", True
+    ),
+    "PutBucketInventoryConfiguration": (
+        "inventory report generation", False
+    ),
+}
+POINT_BACKEND_EVIDENCE = [
+    "tests/src/object_storage_test_cases.adb",
+    "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+]
+POINT_SERVER_EVIDENCE = [
+    "src/flyology-object_storage-server-s3_applications.adb",
+    "tests/src/s3_server_application_corpus.adb",
+]
+
 
 def fail(message: str) -> None:
     raise ValueError(message)
@@ -659,6 +689,129 @@ def ordered(text: str, markers: list[str], label: str) -> None:
         if position < 0:
             fail(f"{label}: missing ordered marker: {marker}")
         cursor = position + len(marker)
+
+
+def point_configuration_entry(
+    data: dict[str, object], operation: str
+) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == operation
+    ]
+    if len(matches) != 1:
+        fail(f"{operation} registry entry is not unique")
+    return matches[0]
+
+
+def verify_point_configuration_coverage(data: dict[str, object]) -> None:
+    if set(POINT_CONFIGURATION_OPERATIONS) != {
+        "DeleteBucketIntelligentTieringConfiguration",
+        "GetBucketIntelligentTieringConfiguration",
+        "PutBucketIntelligentTieringConfiguration",
+        "DeleteBucketInventoryConfiguration",
+        "GetBucketInventoryConfiguration",
+        "PutBucketInventoryConfiguration",
+    }:
+        fail("point-configuration promotion scope changed")
+    for operation, (excluded_execution, has_socket_cases) in (
+        POINT_CONFIGURATION_OPERATIONS.items()
+    ):
+        entry = point_configuration_entry(data, operation)
+        if entry.get("coverage") != {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }:
+            fail(f"{operation} coverage changed")
+        provenance = entry.get("provenance", {})
+        if provenance.get("backend") != "handwritten":
+            fail(f"{operation} backend provenance changed")
+        if provenance.get("server") != "handwritten":
+            fail(f"{operation} server provenance changed")
+        evidence = entry.get("evidence", {})
+        if evidence.get("backend") != POINT_BACKEND_EVIDENCE:
+            fail(f"{operation} backend evidence changed")
+        if evidence.get("server") != POINT_SERVER_EVIDENCE:
+            fail(f"{operation} server evidence changed")
+        exclusions = entry.get("exclusions", [])
+        if not any(excluded_execution in item for item in exclusions):
+            fail(f"{operation} execution exclusion changed")
+        if not any(
+            "external-provider behavior are not claimed" in item
+            for item in exclusions
+        ):
+            fail(f"{operation} provider boundary changed")
+        if operation.startswith("PutBucket") and not any(
+            "query id and payload Id" in item for item in exclusions
+        ):
+            fail(f"{operation} query/payload identifier boundary changed")
+        if has_socket_cases:
+            cases = entry.get("signed_socket", {}).get("case", [])
+            empty_cases = [
+                case for case in cases
+                if case.get("id") == "empty-identifier-success"
+            ]
+            if len(empty_cases) != 1:
+                fail(f"{operation} empty-identifier model case changed")
+            exchanges = empty_cases[0].get("exchange", [])
+            if len(exchanges) != 1:
+                fail(f"{operation} empty-identifier exchange changed")
+            if exchanges[0].get("input_values", {}).get("Id") != "":
+                fail(f"{operation} empty identifier is not exact")
+            if operation.startswith("PutBucket") and "<Id></Id>" not in (
+                exchanges[0].get("request_body", "")
+            ):
+                fail(f"{operation} empty payload identifier changed")
+
+
+def verify_point_configuration_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        (
+            "missing backend coverage",
+            "DeleteBucketIntelligentTieringConfiguration",
+            lambda entry: entry["coverage"].update(backend="missing"),
+        ),
+        (
+            "missing server path",
+            "GetBucketIntelligentTieringConfiguration",
+            lambda entry: entry["evidence"].update(server=[]),
+        ),
+        (
+            "missing query/payload independence",
+            "PutBucketIntelligentTieringConfiguration",
+            lambda entry: entry.update(exclusions=[]),
+        ),
+        (
+            "missing empty identifier",
+            "GetBucketInventoryConfiguration",
+            lambda entry: entry["signed_socket"].update(case=[]),
+        ),
+        (
+            "wrong empty payload identifier",
+            "PutBucketIntelligentTieringConfiguration",
+            lambda entry: entry["signed_socket"]["case"][0].update(
+                id="empty-identifier-success"
+            ),
+        ),
+        (
+            "cross-operation substitution",
+            "DeleteBucketInventoryConfiguration",
+            lambda entry: entry.update(
+                name="DeleteBucketIntelligentTieringConfiguration"
+            ),
+        ),
+    )
+    for label, operation, mutate in mutations:
+        candidate = copy.deepcopy(data)
+        mutate(point_configuration_entry(candidate, operation))
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_point_configuration_coverage(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
 
 
 def delete_encryption_entry(data: dict[str, object]) -> dict[str, object]:
@@ -1103,9 +1256,9 @@ def verify_intelligent_tiering_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_INTELLIGENT_TIERING_CERTAINTY,
         "reconciliation": DELETE_INTELLIGENT_TIERING_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -1190,9 +1343,9 @@ def verify_inventory_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_INVENTORY_CERTAINTY,
         "reconciliation": DELETE_INVENTORY_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -2199,6 +2352,8 @@ def member_count(model: str, shape: int) -> int:
 
 def main() -> int:
     registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    verify_point_configuration_coverage(registry)
+    verify_point_configuration_negatives(registry)
     verify_delete_encryption_registry(registry)
     verify_delete_encryption_negatives(registry)
     verify_delete_lifecycle_registry(registry)
@@ -2255,6 +2410,7 @@ def main() -> int:
     model_spec = MODEL_SPEC.read_text(encoding="utf-8")
     testing = TESTING.read_text(encoding="utf-8")
     socket = SOCKET.read_text(encoding="utf-8")
+    server_corpus = SERVER_CORPUS.read_text(encoding="utf-8")
     qualification = " ".join(
         QUALIFICATION.read_text(encoding="utf-8").split()
     )
@@ -2265,6 +2421,20 @@ def main() -> int:
         PUBLIC_ACCESS_BLOCK_QUALIFICATION.read_text(
             encoding="utf-8"
         ).split()
+    )
+    ordered(
+        server_corpus,
+        [
+            "PutBucketIntelligentTieringConfiguration rejected an empty id",
+            "GetBucketIntelligentTieringConfiguration lost an empty id",
+            "DeleteBucketIntelligentTieringConfiguration rejected an empty",
+            "empty Intelligent-Tiering id remained configured after deletion",
+            "PutBucketInventoryConfiguration rejected an empty id",
+            "GetBucketInventoryConfiguration lost an empty id",
+            "DeleteBucketInventoryConfiguration rejected an empty id",
+            "empty inventory id remained configured after deletion",
+        ],
+        "Intelligent-Tiering/inventory empty-identifier server evidence",
     )
     if model_spec.count(
         "@enum Delete_Bucket_Encryption_Operation "
@@ -2641,7 +2811,7 @@ def main() -> int:
             "removes the selected intelligent-tiering configuration",
             "NoSuchConfiguration",
             "prior presence",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Intelligent_Tiering_Configuration_Operation",
             "added none",
             "delete_bucket_intelligent_tiering",
@@ -2699,7 +2869,7 @@ def main() -> int:
             "removes the selected inventory configuration",
             "NoSuchConfiguration",
             "prior presence",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Inventory_Configuration_Operation",
             "added none",
             "delete_bucket_inventory",

@@ -897,6 +897,116 @@ package Flyology.Object_Storage.Backends is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status) is abstract;
 
+   --  Atomically replace one Intelligent-Tiering configuration selected by
+   --  the exact request identifier. Identifier and the canonical payload's
+   --  modeled Id remain independent; the backend does not execute tiering.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Validated canonical Intelligent-Tiering bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Return one atomic Intelligent-Tiering configuration snapshot selected
+   --  by the exact request identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove one Intelligent-Tiering configuration. Deletion is
+   --  idempotent for an existing bucket without the selected identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Intelligent_Tiering_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Atomically replace one inventory configuration selected by the exact
+   --  request identifier. Identifier and the canonical payload's modeled Id
+   --  remain independent; the backend does not generate inventory reports.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Validated canonical inventory-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Inventory_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Return one atomic inventory-configuration snapshot selected by the
+   --  exact request identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Inventory_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove one inventory configuration. Deletion is idempotent
+   --  for an existing bucket without the selected identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Inventory_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
    --  Atomically replace the complete canonical CORS document of an existing
    --  bucket.  The backend treats Document as bounded opaque bytes and does
    --  not depend on S3 XML or request types.
@@ -1800,9 +1910,9 @@ private
    --  exposing a caller-visible resource-policy constant.
 
    Maximum_Bucket_Named_Configurations : constant Positive := 1_000;
-   --  The pinned S3 analytics and request-metrics contracts fix this
-   --  per-family bucket limit. It remains private because it is provider wire
-   --  compatibility, not a caller-selected backend capacity.
+   --  The pinned S3 point-configuration contracts fix this per-family bucket
+   --  limit. It remains private because it is provider wire compatibility,
+   --  not a caller-selected backend capacity.
 
    function Valid_Bucket_Named_Configuration
      (Identifier : String; Document : String) return Boolean;
