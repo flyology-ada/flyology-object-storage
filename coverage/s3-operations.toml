@@ -200,6 +200,15 @@ upload_part = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+upload_part_copy = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-upload-part-copy-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-upload-part-copy-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 copy_object = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-copy-object-preparation.py"],
   ["./tools/verify-composable-client-fixtures.sh"],
@@ -4750,18 +4759,22 @@ tier = "core"
 provider = "transfers"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Upload_Part_Copy"
+absence = "no dedicated absence variant; exact NoSuchBucket, NoSuchKey, and NoSuchUpload responses are structured rejections that prove no copied part was published"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 Part_Copied response observed reports Published; exact 412 PreconditionFailed reports Precondition_Failed; recognized complete authentication, authorization, not-found, invalid-request, and NotImplemented rejections or definite non-admission report Definitely_Not_Published; pre-admission cancellation reports Cancelled_Before_Publication; possible or incomplete admission and embedded or retryable errors report Outcome_Unknown; no automatic replay"
+reconciliation = "read-only ListParts for the exact destination bucket, key, upload identifier, and part number before any caller-selected retry or completion decision"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket, access-point, and Outposts routing are not claimed", "the exact x-amz-copy-source value carries any caller-selected source version and all modeled source conditions and byte range are transported without inventing a source-version default", "server-side configured Requester Pays and SSE-C source or destination state are not positively claimed; exact client transport and authenticated validated rejection remain covered", "a ListParts observation does not establish which concurrent writer staged an indistinguishable part; caller serialization or content binding remains required for causal attribution"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/object_storage_test_cases.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-upload-part-copy-preparation.py", "docs/qualification/upload-part-copy.md", "tests/src/object_storage_test_cases.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "upload_part_copy"
+ada_symbols = ["Prepare_Upload_Part_Copy", "Decode_Upload_Part_Copy_Complete_Response", "Execute_Upload_Part_Copy", "Upload_Part_Copy_Operation", "Upload_Part_Copy", "Finish"]
 
 [[operation]]
 name = "WriteGetObjectResponse"

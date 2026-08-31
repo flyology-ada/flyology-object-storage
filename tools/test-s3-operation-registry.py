@@ -3481,6 +3481,119 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed UploadPart lane accepted")
+    upload_part_copy_certainty = (
+        "only a complete validated 200 Part_Copied response observed reports "
+        "Published; exact 412 PreconditionFailed reports Precondition_Failed; "
+        "recognized complete authentication, authorization, not-found, "
+        "invalid-request, and NotImplemented rejections or definite "
+        "non-admission report Definitely_Not_Published; pre-admission "
+        "cancellation reports Cancelled_Before_Publication; possible or "
+        "incomplete admission and embedded or retryable errors report "
+        "Outcome_Unknown; no automatic replay"
+    )
+    upload_part_copy_reconciliation = (
+        "read-only ListParts for the exact destination bucket, key, upload "
+        "identifier, and part number before any caller-selected retry or "
+        "completion decision"
+    )
+    upload_part_copy_symbols = [
+        "Prepare_Upload_Part_Copy",
+        "Decode_Upload_Part_Copy_Complete_Response",
+        "Execute_Upload_Part_Copy",
+        "Upload_Part_Copy_Operation",
+        "Upload_Part_Copy",
+        "Finish",
+    ]
+
+    def assert_upload_part_copy_registry(candidate):
+        entry = candidate.operations["UploadPartCopy"]
+        assert entry.get("public_name") == "Upload_Part_Copy"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "upload_part_copy"
+        assert entry.get("certainty") == upload_part_copy_certainty
+        assert entry.get("reconciliation") == upload_part_copy_reconciliation
+        assert entry.get("ada_symbols") == upload_part_copy_symbols
+        assert "NoSuchUpload" in entry["absence"]
+        assert "caller-selected source version" in entry["exclusions"][1]
+        assert (
+            candidate.qualification["upload_part_copy"][0][-1]
+            == "tools/verify-upload-part-copy-preparation.py"
+        )
+
+    def reject_upload_part_copy_registry(candidate, label):
+        try:
+            assert_upload_part_copy_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} UploadPartCopy registry accepted")
+
+    assert_upload_part_copy_registry(registry)
+    missing_upload_part_copy_name = copy.deepcopy(registry)
+    del missing_upload_part_copy_name.operations["UploadPartCopy"][
+        "public_name"
+    ]
+    reject_upload_part_copy_registry(
+        missing_upload_part_copy_name, "missing name"
+    )
+    wrong_upload_part_copy_name = copy.deepcopy(registry)
+    wrong_upload_part_copy_name.operations["UploadPartCopy"][
+        "public_name"
+    ] = "Upload_Part"
+    reject_upload_part_copy_registry(wrong_upload_part_copy_name, "wrong name")
+    replay_upload_part_copy = copy.deepcopy(registry)
+    replay_upload_part_copy.operations["UploadPartCopy"][
+        "reconciliation"
+    ] = "automatically replay UploadPartCopy"
+    reject_upload_part_copy_registry(
+        replay_upload_part_copy, "automatic replay"
+    )
+    cross_upload_part_copy_symbol = copy.deepcopy(registry)
+    cross_upload_part_copy_symbol.operations["UploadPartCopy"][
+        "ada_symbols"
+    ][0] = "Prepare_Upload_Part"
+    reject_upload_part_copy_registry(
+        cross_upload_part_copy_symbol, "cross-operation symbol"
+    )
+    upload_part_copy_qualification, upload_part_copy_commands = (
+        s3_operation.qualification_plan(registry, ["UploadPartCopy"])
+    )
+    assert upload_part_copy_qualification == "upload_part_copy"
+    assert upload_part_copy_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-upload-part-copy-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert upload_part_copy_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-upload-part-copy-gnatdoc",
+        "--operation",
+        "UploadPartCopy",
+    ]
+    assert upload_part_copy_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["UploadPartCopy", "UploadPartCopy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate UploadPartCopy lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["UploadPartCopy", "UploadPart"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed UploadPartCopy lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",
