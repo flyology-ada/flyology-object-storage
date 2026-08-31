@@ -12300,6 +12300,15 @@ private
      (Item : in out List_Directory_Buckets_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Create_Bucket_Metadata_Configuration_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12312,6 +12321,11 @@ private
       return Create_Bucket_Metadata_Configuration_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Create_Bucket_Metadata_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12342,40 +12356,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Create_Bucket_Metadata_Configuration_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Create_Bucket_Metadata_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Create_Bucket_Metadata_Configuration_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Create_Bucket_Metadata_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Create_Bucket_Metadata_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Create_Bucket_Metadata_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Create_Bucket_Metadata_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Create_Bucket_Metadata_Configuration_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Set_Metadata_Inventory_Table_Configuration_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12388,6 +12428,11 @@ private
       return Set_Metadata_Inventory_Table_Configuration_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Set_Metadata_Inventory_Table_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12420,40 +12465,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Set_Metadata_Inventory_Table_Configuration_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Set_Metadata_Inventory_Table_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Set_Metadata_Inventory_Table_Configuration_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Set_Metadata_Inventory_Table_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Set_Metadata_Journal_Table_Configuration_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12466,6 +12537,11 @@ private
       return Set_Metadata_Journal_Table_Configuration_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Set_Metadata_Journal_Table_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12498,40 +12574,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Set_Metadata_Journal_Table_Configuration_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Set_Metadata_Journal_Table_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Set_Metadata_Journal_Table_Configuration_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Set_Metadata_Journal_Table_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Set_Metadata_Journal_Table_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Set_Metadata_Annotation_Table_Configuration_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12544,6 +12646,11 @@ private
       return Set_Metadata_Annotation_Table_Configuration_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Set_Metadata_Annotation_Table_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12579,16 +12686,26 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Set_Metadata_Annotation_Table_Configuration_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Set_Metadata_Annotation_Table_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out
         Set_Metadata_Annotation_Table_Configuration_Operation;
@@ -12596,24 +12713,40 @@ private
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Set_Metadata_Annotation_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Set_Metadata_Annotation_Table_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Set_Metadata_Annotation_Table_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Set_Metadata_Annotation_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Set_Metadata_Annotation_Table_Configuration_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Put_Bucket_ACL_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12626,6 +12759,11 @@ private
       return Put_Bucket_ACL_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Put_Bucket_ACL_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12656,40 +12794,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_ACL_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_ACL_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_ACL_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Put_Bucket_ACL_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Put_Bucket_ACL_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Put_Bucket_ACL_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_ACL_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Put_Bucket_ACL_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Put_Bucket_Inventory_Configuration_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12702,6 +12866,11 @@ private
       return Put_Bucket_Inventory_Configuration_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Put_Bucket_Inventory_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12732,40 +12901,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_Inventory_Configuration_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_Inventory_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_Inventory_Configuration_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Put_Bucket_Inventory_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Put_Bucket_Inventory_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Put_Bucket_Inventory_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_Inventory_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Put_Bucket_Inventory_Configuration_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Put_Bucket_Logging_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12778,6 +12973,11 @@ private
       return Put_Bucket_Logging_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Put_Bucket_Logging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12808,40 +13008,66 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_Logging_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_Logging_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_Logging_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Put_Bucket_Logging_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Put_Bucket_Logging_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Put_Bucket_Logging_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_Logging_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Put_Bucket_Logging_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed mutation response or bounded exchange failure
    function Decode_Put_Bucket_Website_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12854,6 +13080,11 @@ private
       return Put_Bucket_Website_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded generated mutation exchange failure
    function Normalize_Put_Bucket_Website_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -12884,36 +13115,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_Website_Operation) return
       Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Destination request-body buffer
+   --  @param Last Final destination element written
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_Website_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Required Required request-source wait kind
+   --  @param Descriptor Resulting wait descriptor
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_Website_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Release_Source
      (Item : in out Put_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out Put_Bucket_Website_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out Put_Bucket_Website_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven generated bucket mutation operation
    overriding procedure Finalize
      (Item : in out Put_Bucket_Website_Operation);
 --  END S3 OPERATION GENERATOR: BUCKETS_PRIVATE
