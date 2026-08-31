@@ -35,6 +35,7 @@ is
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
    --  @enum Delete_Bucket_Website_Operation Delete bucket website
    --  @enum Delete_Public_Access_Block_Operation Delete public access block
+   --  @enum Get_Bucket_Policy_Operation Get bucket policy
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
    --  @enum Get_Public_Access_Block_Operation Get public access block
