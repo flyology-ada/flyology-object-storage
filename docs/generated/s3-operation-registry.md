@@ -117,7 +117,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutPublicAccessBlock | Set_Public_Access_Block | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | RenameObject | Not_Exposed | objects | bodyless_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | RestoreObject | Not_Exposed | objects | rest_xml_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
-| SelectObjectContent | legacy_preserved | objects | event_stream_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| SelectObjectContent | Not_Exposed | objects | event_stream_read | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | UpdateBucketMetadataAnnotationTableConfiguration | Set_Metadata_Annotation_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataInventoryTableConfiguration | Set_Metadata_Inventory_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataJournalTableConfiguration | Set_Metadata_Journal_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |

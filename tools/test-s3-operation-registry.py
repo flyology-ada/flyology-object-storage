@@ -3742,6 +3742,221 @@ def main() -> None:
     else:
         raise AssertionError("duplicate RestoreObject lane accepted")
 
+    select_object_content_certainty = (
+        "read model coverage only; no public Select request serializer, "
+        "accepted query, event-stream decoder, complete End event, result "
+        "sink, resume path, or runtime evidence exists, so this review "
+        "exposes no selected records and claims no automatic replay"
+    )
+    select_object_content_reconciliation = (
+        "a partial or interrupted event stream is not an implemented "
+        "resumable observation; a fresh request would start a new query "
+        "against potentially changed current-object data and cannot "
+        "continue, prove, or upgrade the earlier result"
+    )
+    select_object_content_errors = [
+        "authentication", "authorization", "not_found", "invalid_request",
+        "unavailable_or_retryable", "corrupt_or_invalid_response",
+    ]
+    select_object_content_exclusions = [
+        "Not_Exposed is a registry sentinel and not an Ada declaration; no "
+        "Low_Level or Objects SelectObjectContent API, composable operation, "
+        "synchronous wrapper, Finish path, or GNATdoc qualification is "
+        "claimed",
+        "the modeled SQL, CSV/JSON/Parquet serializers, progress and scan "
+        "range, SSE-C headers, expected owner, and XML request are inventory "
+        "only; no request serialization, cross-field validation, SSE-C key "
+        "or MD5 binding, HTTPS enforcement, range validation, or default is "
+        "implemented",
+        "the Records, Stats, Progress, Cont, and End variants are structural "
+        "inventory only; no event-stream prelude, header, message CRC, "
+        "unknown-event, error-frame, truncation, End-required completion, or "
+        "split-record reconstruction policy is implemented",
+        "no caller-owned sink, backpressure, per-frame or aggregate bound, "
+        "cancellation drain, typed Finish, owner retention, same-object "
+        "restart, or task-lifetime behavior is claimed",
+        "the operation models no error shapes; documentation-only special "
+        "errors, modeled default HTTP 200, in-stream errors, success "
+        "completion, and malformed response behavior are not decoded or "
+        "qualified",
+        "S3 Select is documented as unavailable to new customers; exposure "
+        "policy, directory-bucket and Outposts exclusions, access-point "
+        "routing, and external-provider behavior are not implemented or "
+        "qualified",
+        "the request models no VersionId; this review claims no "
+        "selected-version binding, stable snapshot, continuation, or causal "
+        "relationship across a later reissued query",
+    ]
+
+    def assert_select_object_content_registry(candidate):
+        entry = candidate.operations["SelectObjectContent"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "select_object_content"
+        assert entry.get("family") == "event_stream_read"
+        assert entry.get("codec") == (
+            "generated_model_only_select_xml_and_event_stream"
+        )
+        assert entry.get("certainty") == select_object_content_certainty
+        assert entry.get("reconciliation") == (
+            select_object_content_reconciliation
+        )
+        assert entry.get("errors") == select_object_content_errors
+        assert entry.get("exclusions") == select_object_content_exclusions
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tools/verify-select-object-content-model.py",
+            ],
+            "server": [],
+            "corpus": ["tools/verify-select-object-content-model.py"],
+        }
+        assert candidate.qualification["select_object_content"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-select-object-content-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_select_object_content_registry(candidate, label):
+        try:
+            assert_select_object_content_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} SelectObjectContent registry accepted"
+        )
+
+    assert_select_object_content_registry(registry)
+    invented_select_api = copy.deepcopy(registry)
+    invented_select_api.operations[
+        "SelectObjectContent"
+    ]["public_name"] = "Select_Content"
+    reject_select_object_content_registry(invented_select_api, "invented API")
+    full_select_client = copy.deepcopy(registry)
+    full_select_client.operations[
+        "SelectObjectContent"
+    ]["coverage"]["client"] = "covered"
+    reject_select_object_content_registry(
+        full_select_client, "invented complete client coverage"
+    )
+    nonstreaming_select = copy.deepcopy(registry)
+    nonstreaming_select.operations[
+        "SelectObjectContent"
+    ]["family"] = "bounded_document_read"
+    reject_select_object_content_registry(
+        nonstreaming_select, "missing event stream"
+    )
+    serialized_select = copy.deepcopy(registry)
+    serialized_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][1] += "; the client validates and serializes every query"
+    reject_select_object_content_registry(
+        serialized_select, "invented request serializer"
+    )
+    encrypted_select = copy.deepcopy(registry)
+    encrypted_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][1] += "; the client derives and binds SSE-C MD5"
+    reject_select_object_content_registry(
+        encrypted_select, "invented SSE-C binding"
+    )
+    ranged_select = copy.deepcopy(registry)
+    ranged_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][1] += "; the client enforces ScanRange defaults"
+    reject_select_object_content_registry(
+        ranged_select, "invented scan-range policy"
+    )
+    decoded_select = copy.deepcopy(registry)
+    decoded_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][2] += "; the client validates every frame and CRC"
+    reject_select_object_content_registry(
+        decoded_select, "invented event decoder"
+    )
+    aggregated_select = copy.deepcopy(registry)
+    aggregated_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][3] += "; the client reconstructs bounded records"
+    reject_select_object_content_registry(
+        aggregated_select, "invented sink and record aggregation"
+    )
+    successful_select = copy.deepcopy(registry)
+    successful_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][4] += "; End proves a successful query"
+    reject_select_object_content_registry(
+        successful_select, "invented success decoder"
+    )
+    replayed_select = copy.deepcopy(registry)
+    replayed_select.operations[
+        "SelectObjectContent"
+    ]["certainty"] = "resume or automatically replay an interrupted stream"
+    reject_select_object_content_registry(
+        replayed_select, "invented resume or replay"
+    )
+    versioned_select = copy.deepcopy(registry)
+    versioned_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][6] += "; the query binds an exact VersionId"
+    reject_select_object_content_registry(
+        versioned_select, "invented version binding"
+    )
+    available_select = copy.deepcopy(registry)
+    available_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][5] += "; Select is supported for every caller"
+    reject_select_object_content_registry(
+        available_select, "invented service availability"
+    )
+    routed_select = copy.deepcopy(registry)
+    routed_select.operations[
+        "SelectObjectContent"
+    ]["exclusions"][5] += "; directory, Outposts, and access points work"
+    reject_select_object_content_registry(
+        routed_select, "invented endpoint support"
+    )
+    causal_select = copy.deepcopy(registry)
+    causal_select.operations[
+        "SelectObjectContent"
+    ]["reconciliation"] = "a reissued query continues and proves the result"
+    reject_select_object_content_registry(
+        causal_select, "causal query continuation"
+    )
+    missing_select_model = copy.deepcopy(registry)
+    missing_select_model.operations[
+        "SelectObjectContent"
+    ]["evidence"]["client"] = []
+    reject_select_object_content_registry(
+        missing_select_model, "missing model evidence"
+    )
+    select_lane, select_commands = s3_operation.qualification_plan(
+        registry, ["SelectObjectContent"]
+    )
+    assert select_lane == "select_object_content"
+    assert select_commands == registry.qualification["select_object_content"]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["SelectObjectContent", "SelectObjectContent"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate SelectObjectContent lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "

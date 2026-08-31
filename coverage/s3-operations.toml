@@ -671,6 +671,12 @@ restore_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+select_object_content = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-select-object-content-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
@@ -5168,18 +5174,21 @@ tier = "extended"
 provider = "objects"
 family = "event_stream_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_request_and_event_stream"
+public_name = "Not_Exposed"
+codec = "generated_model_only_select_xml_and_event_stream"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read model coverage only; no public Select request serializer, accepted query, event-stream decoder, complete End event, result sink, resume path, or runtime evidence exists, so this review exposes no selected records and claims no automatic replay"
+reconciliation = "a partial or interrupted event stream is not an implemented resumable observation; a fresh request would start a new query against potentially changed current-object data and cannot continue, prove, or upgrade the earlier result"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects SelectObjectContent API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled SQL, CSV/JSON/Parquet serializers, progress and scan range, SSE-C headers, expected owner, and XML request are inventory only; no request serialization, cross-field validation, SSE-C key or MD5 binding, HTTPS enforcement, range validation, or default is implemented", "the Records, Stats, Progress, Cont, and End variants are structural inventory only; no event-stream prelude, header, message CRC, unknown-event, error-frame, truncation, End-required completion, or split-record reconstruction policy is implemented", "no caller-owned sink, backpressure, per-frame or aggregate bound, cancellation drain, typed Finish, owner retention, same-object restart, or task-lifetime behavior is claimed", "the operation models no error shapes; documentation-only special errors, modeled default HTTP 200, in-stream errors, success completion, and malformed response behavior are not decoded or qualified", "S3 Select is documented as unavailable to new customers; exposure policy, directory-bucket and Outposts exclusions, access-point routing, and external-provider behavior are not implemented or qualified", "the request models no VersionId; this review claims no selected-version binding, stable snapshot, continuation, or causal relationship across a later reissued query"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "select_object_content"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-select-object-content-model.py"], server = [], corpus = ["tools/verify-select-object-content-model.py"] }
 
 [[operation]]
 name = "UpdateBucketMetadataAnnotationTableConfiguration"
