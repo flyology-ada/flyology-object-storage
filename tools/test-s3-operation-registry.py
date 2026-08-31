@@ -3229,6 +3229,139 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetObjectAnnotation lane accepted")
 
+    put_object_acl_certainty = (
+        "mutation model coverage only; no public ACL source, grant-header "
+        "builder, checksum binding, response decoder, or runtime evidence "
+        "exists, so this review reports no successful mutation, no "
+        "admission certainty, and no automatic replay"
+    )
+    put_object_acl_reconciliation = (
+        "the model carries an optional VersionId and ACL controls, but no "
+        "implemented request, response, or ACL-state binding path exists; "
+        "this review claims no selected-version mutation, later ACL "
+        "observation, causal proof, certainty upgrade, or automatic replay"
+    )
+
+    def assert_put_object_acl_registry(candidate):
+        entry = candidate.operations["PutObjectAcl"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_object_acl"
+        assert entry.get("codec") == (
+            "generated_model_only_acl_xml_and_headers"
+        )
+        assert entry.get("certainty") == put_object_acl_certainty
+        assert entry.get("reconciliation") == put_object_acl_reconciliation
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert "registry sentinel and not an Ada declaration" in (
+            entry["exclusions"][0]
+        )
+        assert "are inventory only" in entry["exclusions"][1]
+        assert "structural inventory only" in entry["exclusions"][2]
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tools/verify-put-object-acl-model.py",
+            ],
+            "server": [],
+            "corpus": ["tools/verify-put-object-acl-model.py"],
+        }
+        assert candidate.qualification["put_object_acl"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-put-object-acl-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_put_object_acl_registry(candidate, label):
+        try:
+            assert_put_object_acl_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutObjectAcl registry accepted")
+
+    assert_put_object_acl_registry(registry)
+    invented_put_object_acl_api = copy.deepcopy(registry)
+    invented_put_object_acl_api.operations[
+        "PutObjectAcl"
+    ]["public_name"] = "Put_ACL"
+    reject_put_object_acl_registry(
+        invented_put_object_acl_api, "invented public API"
+    )
+    full_put_object_acl = copy.deepcopy(registry)
+    full_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["coverage"]["client"] = "covered"
+    reject_put_object_acl_registry(
+        full_put_object_acl, "invented complete client coverage"
+    )
+    validated_put_object_acl = copy.deepcopy(registry)
+    validated_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["exclusions"][2] = "the client enforces every ACL permission"
+    reject_put_object_acl_registry(
+        validated_put_object_acl, "invented ACL validation"
+    )
+    checksum_put_object_acl = copy.deepcopy(registry)
+    checksum_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["exclusions"][1] = "the client computes the required checksum"
+    reject_put_object_acl_registry(
+        checksum_put_object_acl, "invented checksum binding"
+    )
+    version_put_object_acl = copy.deepcopy(registry)
+    version_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["reconciliation"] = "the response proves exact version mutation"
+    reject_put_object_acl_registry(
+        version_put_object_acl, "invented version binding"
+    )
+    replay_put_object_acl = copy.deepcopy(registry)
+    replay_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["certainty"] = "automatically replay after transport failure"
+    reject_put_object_acl_registry(
+        replay_put_object_acl, "automatic replay"
+    )
+    causal_put_object_acl = copy.deepcopy(registry)
+    causal_put_object_acl.operations[
+        "PutObjectAcl"
+    ]["reconciliation"] = "a later ACL read proves mutation causation"
+    reject_put_object_acl_registry(
+        causal_put_object_acl, "causal reconciliation"
+    )
+    missing_put_object_acl_model = copy.deepcopy(registry)
+    missing_put_object_acl_model.operations[
+        "PutObjectAcl"
+    ]["evidence"]["client"] = []
+    reject_put_object_acl_registry(
+        missing_put_object_acl_model, "missing model evidence"
+    )
+    put_object_acl_lane, put_object_acl_commands = (
+        s3_operation.qualification_plan(registry, ["PutObjectAcl"])
+    )
+    assert put_object_acl_lane == "put_object_acl"
+    assert put_object_acl_commands == registry.qualification["put_object_acl"]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectAcl", "PutObjectAcl"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutObjectAcl lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "

@@ -653,6 +653,12 @@ get_object_annotation = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_object_acl = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-acl-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
@@ -4946,18 +4952,21 @@ tier = "extended"
 provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+public_name = "Not_Exposed"
+codec = "generated_model_only_acl_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "mutation model coverage only; no public ACL source, grant-header builder, checksum binding, response decoder, or runtime evidence exists, so this review reports no successful mutation, no admission certainty, and no automatic replay"
+reconciliation = "the model carries an optional VersionId and ACL controls, but no implemented request, response, or ACL-state binding path exists; this review claims no selected-version mutation, later ACL observation, causal proof, certainty upgrade, or automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects PutObjectAcl API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled XML access-control policy, canned ACL, explicit grant headers, checksum controls, and requester-pays response are inventory only; no ACL-control exclusivity, XML serialization, header encoding, digest generation, signing binding, singleton response validation, or body rewind is implemented", "the nested owner, grantee, grant, permission, and canned-ACL shapes are structural inventory only; no grantee resolution, permission enforcement, email-grantee support, version targeting, Object Ownership behavior, or ACL persistence policy is claimed", "backend ACL storage, an authenticated Flyology PutObjectAcl server route, and external-provider behavior are absent and not claimed", "directory-bucket endpoint and session semantics, access-point, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_object_acl"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-put-object-acl-model.py"], server = [], corpus = ["tools/verify-put-object-acl-model.py"] }
 
 [[operation]]
 name = "PutObjectAnnotation"

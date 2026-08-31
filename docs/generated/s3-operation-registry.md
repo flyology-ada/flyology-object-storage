@@ -108,7 +108,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketVersioning | Set_Versioning_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketWebsite | Set_Website | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | PutObject | Put_Object | objects | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutObjectAcl | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutObjectAcl | Not_Exposed | objects | rest_xml_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | PutObjectAnnotation | Not_Exposed | objects | streaming_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | PutObjectLegalHold | Put_Legal_Hold | objects | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutObjectLockConfiguration | Put_Object_Lock_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
