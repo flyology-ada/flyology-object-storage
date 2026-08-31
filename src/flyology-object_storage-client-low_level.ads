@@ -601,6 +601,13 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every member of the pinned ListBuckets request shape. Presence flags
    --  preserve omission independently from default or empty scalar values.
+   --  @field Max_Buckets Requested page maximum when present
+   --  @field Has_Max_Buckets Whether Max_Buckets is present
+   --  @field Continuation_Token Opaque page cursor when present
+   --  @field Has_Continuation_Token Whether presence includes an empty token
+   --  @field Prefix Bucket-name prefix when present
+   --  @field Has_Prefix Whether presence includes an empty prefix
+   --  @field Bucket_Region Optional bucket-region filter
    type List_Buckets_Parameters is record
       Max_Buckets        : S3.Buckets.Max_Buckets_Value := 10_000;
       Has_Max_Buckets    : Boolean := False;
@@ -611,6 +618,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket_Region      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one bodyless ListBuckets request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style S3 addressing style
+   --  @param Parameters Presence-preserving page controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared ListBuckets request
    function Prepare_List_Buckets
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -619,9 +634,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Terminal ListBuckets response classification.
+   --  @enum Buckets_Listed The decoded bucket page is present
+   --  @enum List_Buckets_Rejected A structured S3 rejection is present
    type List_Buckets_Outcome_Kind is
      (Buckets_Listed, List_Buckets_Rejected);
 
+   --  Completed ListBuckets response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful decoded bucket page
+   --  @field Error Structured S3 rejection
    type List_Buckets_Outcome
      (Kind : List_Buckets_Outcome_Kind := List_Buckets_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -633,6 +656,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded ListBuckets HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier for an S3 rejection
+   --  @param Host_ID Optional host identifier for an S3 rejection
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed bucket page or structured S3 rejection
    function Decode_List_Buckets_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -657,6 +687,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Buckets_Outcome;
 
+   --  Execute one prepared ListBuckets request and bind its response.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared ListBuckets request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed bucket page or structured S3 rejection
    function Execute_List_Buckets
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -666,6 +703,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       return List_Buckets_Outcome;
 
    --  Every input member in the pinned CreateBucket request shape.
+   --  @field ACL Optional canned access-control policy
+   --  @field Configuration Complete create-bucket configuration
+   --  @field Grant_Full_Control Optional full-control grant header
+   --  @field Grant_Read Optional read grant header
+   --  @field Grant_Read_ACP Optional access-control read grant header
+   --  @field Grant_Write Optional write grant header
+   --  @field Grant_Write_ACP Optional access-control write grant header
+   --  @field Object_Lock_Enabled Optional object-lock enablement flag
+   --  @field Object_Ownership Optional object-ownership selector
+   --  @field Bucket_Namespace Optional bucket-namespace selector
    type Create_Bucket_Parameters is record
       ACL                     : Ada.Strings.Unbounded.Unbounded_String;
       Configuration           : S3.Buckets.Create_Bucket_Configuration;
@@ -679,6 +726,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket_Namespace        : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one CreateBucket request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Exact bucket name to create
+   --  @param Parameters Configuration and optional request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared request with its serialized one-shot body
    function Prepare_Create_Bucket
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -689,14 +745,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  Every output member in the pinned CreateBucket response shape.
+   --  @field Location Optional Location response-header value
+   --  @field Bucket_ARN Optional bucket-ARN response-header value
    type Create_Bucket_Result is record
       Location   : Ada.Strings.Unbounded.Unbounded_String;
       Bucket_ARN : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Terminal CreateBucket response classification.
+   --  @enum Bucket_Created The modeled creation result is present
+   --  @enum Create_Bucket_Rejected A structured S3 rejection is present
    type Create_Bucket_Outcome_Kind is
      (Bucket_Created, Create_Bucket_Rejected);
 
+   --  Completed CreateBucket response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful creation metadata
+   --  @field Error Structured S3 rejection
    type Create_Bucket_Outcome
      (Kind : Create_Bucket_Outcome_Kind := Create_Bucket_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -708,6 +774,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one CreateBucket status, whitespace-only success body, and
+   --  modeled header set.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled CreateBucket response headers
+   --  @param Request_ID Optional request identifier for an S3 rejection
+   --  @param Host_ID Optional host identifier for an S3 rejection
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Modeled creation result or structured S3 rejection
    function Decode_Create_Bucket_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -731,6 +806,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Bucket_Outcome;
 
+   --  Execute one prepared CreateBucket request with its owned one-shot body.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared CreateBucket request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Modeled creation result or structured S3 rejection
    function Execute_Create_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -739,10 +821,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Bucket_Outcome;
 
+   --  Modeled GetBucketLocation input outside the bucket path.
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
    type Get_Bucket_Location_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one bodyless GetBucketLocation request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose location is requested
+   --  @param Parameters Optional request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared GetBucketLocation request
    function Prepare_Get_Bucket_Location
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -752,13 +845,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Successful GetBucketLocation result.
+   --  @field Location_Constraint Parsed legacy constraint including empty text
    type Get_Bucket_Location_Result is record
       Location_Constraint : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Terminal GetBucketLocation response classification.
+   --  @enum Bucket_Location_Found The decoded location is present
+   --  @enum Get_Bucket_Location_Rejected An S3 rejection is present
    type Get_Bucket_Location_Outcome_Kind is
      (Bucket_Location_Found, Get_Bucket_Location_Rejected);
 
+   --  Completed GetBucketLocation response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful location result
+   --  @field Error Structured S3 rejection
    type Get_Bucket_Location_Outcome
      (Kind : Get_Bucket_Location_Outcome_Kind :=
        Get_Bucket_Location_Rejected)
@@ -772,6 +875,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded GetBucketLocation HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier for an S3 rejection
+   --  @param Host_ID Optional host identifier for an S3 rejection
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Modeled location or structured S3 rejection
    function Decode_Get_Bucket_Location_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -780,6 +890,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Location_Outcome;
 
+   --  Execute one prepared GetBucketLocation request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared GetBucketLocation request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Modeled location or structured S3 rejection
    function Execute_Get_Bucket_Location
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
