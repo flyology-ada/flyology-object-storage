@@ -2945,7 +2945,9 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Object_Versions_Result;
 
+   --  Complete PutObject response or structured S3 rejection.
    subtype Complete_Put_Outcome is Low_Level.Put_Object_Outcome;
+   --  Conditional PutObject response or structured S3 rejection.
    subtype Conditional_Put_Outcome is Complete_Put_Outcome;
 
    --  Semantically bounded, backend-neutral controls supported by the
@@ -2954,6 +2956,13 @@ package Flyology.Object_Storage.Client.Objects is
    --  Checksum, when present, must be a direct
    --  Full_Object_Checksum with one canonical encoded digest. Tags and
    --  metadata retain the shared backend limits.
+   --  @field Content_MD5 Optional Content-MD5 header value
+   --  @field Content_Type Optional object media type
+   --  @field Metadata Complete object metadata map
+   --  @field Tags Complete object tag set
+   --  @field Checksum Optional full-object checksum information
+   --  @field Conditions Conditional request headers
+   --  @field Expected_Bucket_Owner Optional owner precondition
    type Complete_Put_Options is record
       Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
       Content_Type          : Ada.Strings.Unbounded.Unbounded_String;
@@ -2964,6 +2973,7 @@ package Flyology.Object_Storage.Client.Objects is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Default complete-object PUT controls with no optional values.
    Default_Complete_Put_Options : constant Complete_Put_Options :=
      (Content_MD5           => Ada.Strings.Unbounded.Null_Unbounded_String,
       Content_Type          => Ada.Strings.Unbounded.Null_Unbounded_String,
@@ -3122,6 +3132,21 @@ package Flyology.Object_Storage.Client.Objects is
    --  exactly matches Expected_Entity_Tag. Pass the quoted ETag returned by
    --  Put_If_Absent, Put_If_Matches, Get_Whole, or HeadObject unchanged.
    --  Source and exception certainty follow Put_If_Absent.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination object key
+   --  @param Expected_Entity_Tag Exact strong opaque generation validator
+   --  @param Source One-shot complete request body, borrowed for this call
+   --  @param Payload_SHA256 Exact lowercase body digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Content_Type Optional object content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Blocking HTTP exchange budget
+   --  @param Token Optional cancellation source
+   --  @return Complete PutObject result or structured S3 rejection
    function Put_If_Matches
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
