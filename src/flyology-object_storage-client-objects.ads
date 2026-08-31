@@ -4968,44 +4968,84 @@ private
    --  @param Item Internal multi-object deletion
    overriding procedure Finalize
      (Item : in out Delete_Objects_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjects read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out List_Objects_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal ListObjects read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out List_Objects_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ListObjects read
    overriding procedure Request_Cancellation
      (Item : in out List_Objects_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjects read
    overriding procedure Finalize
      (Item : in out List_Objects_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjectsV2 read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out List_Objects_V2_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal ListObjectsV2 read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out List_Objects_V2_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ListObjectsV2 read
    overriding procedure Request_Cancellation
      (Item : in out List_Objects_V2_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjectsV2 read
    overriding procedure Finalize
      (Item : in out List_Objects_V2_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out List_Object_Versions_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out List_Object_Versions_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions read
    overriding procedure Request_Cancellation
      (Item : in out List_Object_Versions_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions read
    overriding procedure Finalize
      (Item : in out List_Object_Versions_Operation);
+   --  @exclude
+   --  @param Item Internal object-attributes read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Get_Object_Attributes_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal object-attributes read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Object_Attributes_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal object-attributes read
    overriding procedure Request_Cancellation
      (Item : in out Get_Object_Attributes_Operation);
+   --  @exclude
+   --  @param Item Internal object-attributes read
    overriding procedure Finalize
      (Item : in out Get_Object_Attributes_Operation);
 
