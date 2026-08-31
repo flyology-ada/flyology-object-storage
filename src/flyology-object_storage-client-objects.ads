@@ -5123,29 +5123,60 @@ private
    overriding procedure Finalize
      (Item : in out List_Object_Annotations_Operation);
 
+   --  @exclude
+   --  @param Value Complete modeled ListObjects response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal ListObjects result projection
    function Normalize_List_Objects_Response
      (Value     : Low_Level.List_Objects_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return List_Objects_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal ListObjects failure projection
    function Normalize_List_Objects_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Objects_Result;
+   --  @exclude
+   --  @param Value Complete modeled PutObject response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal PutObject result projection
    function Normalize_Put_Response
      (Value     : Low_Level.Put_Object_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Conditional_Put_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Required Required response-body length
+   --  @param Detail Failure detail
+   --  @return Internal PutObject failure projection
    function Normalize_Put_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Required  : Flyology.HTTP.Client.Length_Requirement := (others => <>);
       Detail    : String := "") return Conditional_Put_Result;
+   --  @exclude
+   --  @param Value Complete modeled DeleteObject response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal DeleteObject result projection
    function Normalize_Delete_Response
      (Value     : Low_Level.Delete_Object_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal DeleteObject failure projection
    function Normalize_Delete_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
