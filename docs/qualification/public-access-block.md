@@ -57,6 +57,20 @@ Bodyless operations reject a request body before backend access.
 
 ## Evidence and coverage boundary
 
+The reviewed `DeletePublicAccessBlock` client contract accepts only a complete
+empty 204 response as mutation completion. Exact recognized rejections and
+definite non-admission prove non-application; a possibly admitted exchange,
+retryable response, or malformed response remains outcome-unknown and is
+never replayed automatically. A later `Get_Public_Access_Block` can observe
+the current bucket configuration or exact
+`NoSuchPublicAccessBlockConfiguration`, but that observation neither proves
+the lost deletion caused the state nor upgrades mutation certainty.
+
+The focused `delete_public_access_block` lane is conditional on every
+maintained command succeeding. It does not claim directory-bucket support,
+account- or organization-level effective-policy interpretation, external
+provider interoperability, or repository-wide GNATdoc qualification.
+
 The shared backend conformance exercises absent buckets, new unconfigured
 buckets, present-empty configurations, every Boolean presence/value form,
 canonical replacement, deletion, idempotence, cancellation, and deadlines on

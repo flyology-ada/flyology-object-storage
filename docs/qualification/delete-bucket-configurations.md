@@ -247,11 +247,14 @@ routes.
 `DeleteBucketMetadataTableConfiguration`, and
 `DeleteBucketMetricsConfiguration`, and
 `DeleteBucketOwnershipControls`, and
-`DeleteBucketPolicy`
+`DeleteBucketPolicy`, and
+`DeletePublicAccessBlock`
 have operation-specific reviewed registry lanes, but their ledger tuples remain
+unchanged: the independent public-access-block backend/server record remains
+`covered / covered / covered / covered`, while the other lanes remain
 `missing / covered / missing / covered`. Each lane is conditional on every
 maintained command succeeding and does not convert client evidence into
-backend, server, directory-bucket, or external-provider qualification.
+directory-bucket or external-provider qualification.
 
 ## Gate evidence
 

@@ -31,6 +31,9 @@ QUALIFICATION = ROOT / "docs" / "qualification" / (
 BUCKET_POLICY_QUALIFICATION = (
     ROOT / "docs" / "qualification" / "bucket-policy.md"
 )
+PUBLIC_ACCESS_BLOCK_QUALIFICATION = (
+    ROOT / "docs" / "qualification" / "public-access-block.md"
+)
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
@@ -432,6 +435,41 @@ DELETE_POLICY_LANE = [
     [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-delete-bucket-policy-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
+DELETE_PUBLIC_ACCESS_BLOCK_CERTAINTY = (
+    "only a complete validated 204 response with an exactly empty body "
+    "reports Public_Access_Block_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Public_Access_Block_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports "
+    "Public_Access_Block_Mutation_Cancelled_Before_Admission; possible or "
+    "incomplete admission, retryable responses, and malformed or oversized "
+    "responses report Public_Access_Block_Mutation_Outcome_Unknown; no "
+    "automatic replay"
+)
+DELETE_PUBLIC_ACCESS_BLOCK_RECONCILIATION = (
+    "caller-selected Get_Public_Access_Block may observe the current bucket "
+    "public-access-block configuration or exact "
+    "NoSuchPublicAccessBlockConfiguration before a retry, but does not prove "
+    "that the lost deletion caused the observed absence or upgrade mutation "
+    "certainty; no automatic replay"
+)
+DELETE_PUBLIC_ACCESS_BLOCK_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_delete_bucket_configurations_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-delete-public-access-block-gnatdoc",
     ],
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
@@ -1567,6 +1605,97 @@ def verify_delete_policy_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def delete_public_access_block_entry(
+    data: dict[str, object],
+) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "DeletePublicAccessBlock"
+    ]
+    if len(matches) != 1:
+        fail("DeletePublicAccessBlock is not unique")
+    return matches[0]
+
+
+def verify_delete_public_access_block_registry(
+    data: dict[str, object],
+) -> None:
+    entry = delete_public_access_block_entry(data)
+    expected = {
+        "public_name": "Delete_Public_Access_Block",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "delete_public_access_block",
+        "codec": "empty_response",
+        "certainty": DELETE_PUBLIC_ACCESS_BLOCK_CERTAINTY,
+        "reconciliation": DELETE_PUBLIC_ACCESS_BLOCK_RECONCILIATION,
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Delete_Public_Access_Block",
+            "Execute_Delete_Public_Access_Block",
+            "Delete_Public_Access_Block_Operation",
+            "Delete_Public_Access_Block",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"DeletePublicAccessBlock changed: {key}")
+    if "removes the bucket public-access-block" not in entry["absence"]:
+        fail("DeletePublicAccessBlock semantics changed")
+    if "exact HTTP 204" not in entry["exclusions"][2]:
+        fail("DeletePublicAccessBlock success changed")
+    if "previously present" not in entry["exclusions"][3]:
+        fail("DeletePublicAccessBlock presence changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("DeletePublicAccessBlock reconcile changed")
+    if data["qualification"].get(
+        "delete_public_access_block"
+    ) != DELETE_PUBLIC_ACCESS_BLOCK_LANE:
+        fail("DeletePublicAccessBlock lane changed")
+
+
+def verify_delete_public_access_block_negatives(
+    data: dict[str, object],
+) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Delete_Policy"),
+        (
+            "broadened success",
+            "certainty",
+            DELETE_PUBLIC_ACCESS_BLOCK_CERTAINTY.replace(
+                "validated 204", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Public_Access_Block proves deletion",
+        ),
+        ("cross-operation lane", "qualification", "delete_bucket_policy"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = delete_public_access_block_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_delete_public_access_block_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1668,6 +1797,8 @@ def main() -> int:
     verify_ownership_controls_negatives(registry)
     verify_delete_policy_registry(registry)
     verify_delete_policy_negatives(registry)
+    verify_delete_public_access_block_registry(registry)
+    verify_delete_public_access_block_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1695,6 +1826,11 @@ def main() -> int:
     )
     bucket_policy_qualification = " ".join(
         BUCKET_POLICY_QUALIFICATION.read_text(encoding="utf-8").split()
+    )
+    public_access_block_qualification = " ".join(
+        PUBLIC_ACCESS_BLOCK_QUALIFICATION.read_text(
+            encoding="utf-8"
+        ).split()
     )
     if model_spec.count(
         "@enum Delete_Bucket_Encryption_Operation "
@@ -1758,6 +1894,10 @@ def main() -> int:
         "@enum Delete_Bucket_Policy_Operation Delete bucket policy"
     ) != 1:
         fail("DeleteBucketPolicy docs changed")
+    if model_spec.count(
+        "@enum Delete_Public_Access_Block_Operation Delete public access block"
+    ) != 1:
+        fail("DeletePublicAccessBlock docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -2390,6 +2530,63 @@ def main() -> int:
             "region-scoped warning measurement only",
         ],
         "DeleteBucketPolicy backend and server qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Conclusive_Public_Access_Block_Rejection",
+            "function Normalize_Delete_Public_Access_Block_Response",
+            "Public_Access_Block_Mutation_Completed",
+            "Public_Access_Block_Mutation_Definitely_Not_Applied",
+            "function Normalize_Delete_Public_Access_Block_Failure",
+            "procedure Start_Delete_Public_Access_Block",
+            "DeletePublicAccessBlock restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "DeletePublicAccessBlock provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Public_Access_Block_Certainty_Corpus",
+            "procedure Check_Delete",
+            "Public_Access_Block_Mutation_Completed, No_Failure",
+            '(404, "NoSuchBucket",',
+            "Public_Access_Block_Mutation_Definitely_Not_Applied",
+            "for Admission in",
+            "Normalize_Delete_Public_Access_Block_Failure",
+        ],
+        "DeletePublicAccessBlock certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            '"DeletePublicAccessBlock"',
+            "composed DeletePublicAccessBlock result mismatch",
+            "restarted DeletePublicAccessBlock result mismatch",
+            "DeletePublicAccessBlock accepted a policy request",
+        ],
+        "DeletePublicAccessBlock socket evidence",
+    )
+    ordered(
+        qualification,
+        [
+            "`DeletePublicAccessBlock`",
+            "covered / covered / covered / covered",
+        ],
+        "DeletePublicAccessBlock family qualification prose",
+    )
+    ordered(
+        public_access_block_qualification,
+        [
+            "complete empty 204 response",
+            "possibly admitted exchange",
+            "`Get_Public_Access_Block`",
+            "neither proves the lost deletion caused the state",
+            "`delete_public_access_block` lane",
+            "repository-wide GNATdoc qualification",
+        ],
+        "DeletePublicAccessBlock backend and server qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):
