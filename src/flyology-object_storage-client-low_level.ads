@@ -3636,6 +3636,14 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Prepare one exactly bound GetBucketAccelerateConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner and requester-pays request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact acceleration request
    function Prepare_Get_Bucket_Accelerate_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Accelerate_Parameters;
@@ -3885,6 +3893,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Existing API-policy classification: 500 is only the deterministic
    --  default-aggregate sentinel. Actual decoded outcomes always preserve the
    --  physical status; changing the default affects source-level aggregates.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Configuration Optional acceleration status on success
    --  @field Request_Charged Optional modeled response header on success
@@ -4301,6 +4310,13 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Decode one complete bounded GetBucketAccelerateConfiguration response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Request_Charged Optional requester-pays response value
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving acceleration status or S3 rejection
    function Decode_Get_Bucket_Accelerate_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -4523,6 +4539,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Get_Bucket_Metadata_Table_Configuration_Outcome;
 
    --  Execute one exact prepared GetBucketAccelerateConfiguration request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving acceleration status or S3 rejection
    function Execute_Get_Bucket_Accelerate_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
