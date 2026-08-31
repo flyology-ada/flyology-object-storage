@@ -4680,6 +4680,163 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed PutBucketOwnershipControls lane accepted")
+    get_bucket_lifecycle_configuration_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the "
+        "presence-preserving lifecycle configuration and transition-minimum "
+        "header; every incomplete, invalid, or non-observed response exposes "
+        "no configuration state; the client performs no automatic retry"
+    )
+    get_bucket_lifecycle_configuration_reconciliation = (
+        "a later GetBucketLifecycleConfiguration observes only the bucket "
+        "lifecycle configuration current at read time; it does not prove "
+        "that a prior mutation caused the observed state or authorize "
+        "automatic replay"
+    )
+    get_bucket_lifecycle_configuration_symbols = [
+        "Prepare_Get_Bucket_Lifecycle_Configuration",
+        "Decode_Get_Bucket_Lifecycle_Configuration_Response",
+        "Execute_Get_Bucket_Lifecycle_Configuration",
+        "Get_Bucket_Lifecycle_Operation",
+        "Get_Lifecycle_Configuration",
+        "Finish",
+    ]
+
+    def assert_get_bucket_lifecycle_configuration_registry(candidate):
+        entry = candidate.operations["GetBucketLifecycleConfiguration"]
+        assert entry.get("public_name") == "Get_Lifecycle_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "get_bucket_lifecycle_configuration"
+        )
+        assert entry.get("certainty") == (
+            get_bucket_lifecycle_configuration_certainty
+        )
+        assert entry.get("reconciliation") == (
+            get_bucket_lifecycle_configuration_reconciliation
+        )
+        assert entry.get("ada_symbols") == (
+            get_bucket_lifecycle_configuration_symbols
+        )
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "NoSuchLifecycleConfiguration" in entry["absence"]
+        assert "lifecycle action execution" in entry["exclusions"][0]
+        assert "without inventing a public numeric" in entry["exclusions"][1]
+        assert candidate.qualification[
+            "get_bucket_lifecycle_configuration"
+        ][0][-1] == (
+            "tools/verify-get-bucket-lifecycle-configuration-preparation.py"
+        )
+
+    def reject_get_bucket_lifecycle_configuration_registry(candidate, label):
+        try:
+            assert_get_bucket_lifecycle_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketLifecycleConfiguration registry accepted"
+        )
+
+    assert_get_bucket_lifecycle_configuration_registry(registry)
+    missing_get_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
+    del missing_get_bucket_lifecycle_configuration_name.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["public_name"]
+    reject_get_bucket_lifecycle_configuration_registry(
+        missing_get_bucket_lifecycle_configuration_name, "missing name"
+    )
+    wrong_get_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
+    wrong_get_bucket_lifecycle_configuration_name.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["public_name"] = "Get_Lifecycle"
+    reject_get_bucket_lifecycle_configuration_registry(
+        wrong_get_bucket_lifecycle_configuration_name, "deprecated name"
+    )
+    retry_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    retry_get_bucket_lifecycle_configuration.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["certainty"] = "read-only; retry automatically"
+    reject_get_bucket_lifecycle_configuration_registry(
+        retry_get_bucket_lifecycle_configuration, "automatic retry"
+    )
+    causal_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    causal_get_bucket_lifecycle_configuration.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["reconciliation"] = "the read proves the prior mutation caused state"
+    reject_get_bucket_lifecycle_configuration_registry(
+        causal_get_bucket_lifecycle_configuration, "causal reconciliation"
+    )
+    bounded_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
+    bounded_get_bucket_lifecycle_configuration.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["exclusions"][1] = "lifecycle numbers are limited to 32 bits"
+    reject_get_bucket_lifecycle_configuration_registry(
+        bounded_get_bucket_lifecycle_configuration, "invented numeric bound"
+    )
+    cross_get_bucket_lifecycle_configuration_symbol = copy.deepcopy(registry)
+    cross_get_bucket_lifecycle_configuration_symbol.operations[
+        "GetBucketLifecycleConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Lifecycle"
+    reject_get_bucket_lifecycle_configuration_registry(
+        cross_get_bucket_lifecycle_configuration_symbol,
+        "deprecated-operation symbol",
+    )
+    lifecycle_qualification, lifecycle_commands = (
+        s3_operation.qualification_plan(
+            registry, ["GetBucketLifecycleConfiguration"]
+        )
+    )
+    assert lifecycle_qualification == "get_bucket_lifecycle_configuration"
+    assert lifecycle_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-lifecycle-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_lifecycle_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert lifecycle_commands[4] == ["./tools/verify-coverage.sh"]
+    assert lifecycle_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-lifecycle-configuration-gnatdoc",
+        "--operation",
+        "GetBucketLifecycleConfiguration",
+    ]
+    assert lifecycle_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketLifecycleConfiguration",
+                "GetBucketLifecycleConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketLifecycleConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["GetBucketLifecycleConfiguration", "PutBucketLifecycleConfiguration"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed LifecycleConfiguration lane accepted")
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
