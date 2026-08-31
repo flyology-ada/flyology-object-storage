@@ -6555,6 +6555,35 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Empty optional strings preserve omission; Bucket_Key_Enabled preserves
    --  absent versus explicit false. Metadata entries project as x-amz-meta-*
    --  headers and are rejected on a case-insensitive duplicate name.
+   --  @field ACL Optional canned access-control policy
+   --  @field Cache_Control Optional cache-control metadata
+   --  @field Content_Disposition Optional content-disposition metadata
+   --  @field Content_Encoding Optional content-encoding metadata
+   --  @field Content_Language Optional content-language metadata
+   --  @field Content_Type Optional content-type metadata
+   --  @field Expires Optional IMF-date expiration metadata
+   --  @field Grant_Full_Control Optional full-control grant
+   --  @field Grant_Read Optional read grant
+   --  @field Grant_Read_ACP Optional ACL-read grant
+   --  @field Grant_Write_ACP Optional ACL-write grant
+   --  @field Metadata Caller-supplied object metadata entries
+   --  @field Server_Side_Encryption Optional destination encryption algorithm
+   --  @field Storage_Class Optional destination storage class
+   --  @field Website_Redirect_Location Optional redirect metadata
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key Optional customer encryption key
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional KMS context
+   --  @field Bucket_Key_Enabled Presence-preserving destination choice
+   --  @field Request_Payer Optional requester-pays header value
+   --  @field Tagging Optional encoded destination tag set
+   --  @field Object_Lock_Mode Optional retention mode
+   --  @field Object_Lock_Retain_Until_Date Optional retention timestamp
+   --  @field Object_Lock_Legal_Hold_Status Optional legal-hold status
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field Checksum_Algorithm Optional initiation checksum policy
+   --  @field Checksum_Type Optional requested checksum aggregation type
    type Create_Multipart_Parameters is record
       ACL                       : Ada.Strings.Unbounded.Unbounded_String;
       Cache_Control             : Ada.Strings.Unbounded.Unbounded_String;
@@ -6589,6 +6618,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Checksum_Type             : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare a bodyless CreateMultipartUpload request with content type.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @param Content_Type Optional content-type metadata
+   --  @return Prepared bodyless multipart-initiation request
    function Prepare_Create_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;
       Style     : Addressing_Style;
@@ -6600,6 +6639,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Content_Type : String := "") return Prepared_Request;
 
    --  Prepare CreateMultipartUpload with explicit modeled checksum policy.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Parameters Complete modeled initiation controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless multipart-initiation request
    function Prepare_Create_Multipart_Upload
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -6610,9 +6658,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Distinguish created multipart upload from structured S3 rejection.
+   --  @enum Created Validated multipart initiation was decoded
+   --  @enum Create_Rejected Structured S3 error was decoded
    type Create_Multipart_Outcome_Kind is (Created, Create_Rejected);
 
    --  Every member in the pinned CreateMultipartUpload output shape.
+   --  @field Bucket Returned bucket identity
+   --  @field Key Returned object-key identity
+   --  @field Upload_ID New multipart upload identifier
+   --  @field Abort_Date Optional returned abort timestamp
+   --  @field Abort_Rule_ID Optional returned abort-rule identifier
+   --  @field Server_Side_Encryption Optional returned encryption algorithm
+   --  @field SSE_Customer_Algorithm Optional returned customer algorithm
+   --  @field SSE_Customer_Key_MD5 Optional returned customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional returned KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional returned KMS context
+   --  @field Bucket_Key_Enabled Presence-preserving returned bucket-key value
+   --  @field Request_Charged Optional returned requester-charge value
+   --  @field Checksum_Algorithm Optional returned checksum algorithm
+   --  @field Checksum_Type Optional returned checksum aggregation type
    type Create_Multipart_Result is record
       Bucket                     : Ada.Strings.Unbounded.Unbounded_String;
       Key                        : Ada.Strings.Unbounded.Unbounded_String;
@@ -6633,6 +6698,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Physical response headers supplied to the pure decoder. Empty strings
    --  and an unset boolean mean absent; Execute enforces physical presence,
    --  multiplicity, and present-empty distinctions before constructing this.
+   --  @field Abort_Date Supplied abort timestamp
+   --  @field Abort_Rule_ID Supplied abort-rule identifier
+   --  @field Server_Side_Encryption Supplied encryption value
+   --  @field SSE_Customer_Algorithm Supplied customer-key algorithm
+   --  @field SSE_Customer_Key_MD5 Supplied customer-key MD5
+   --  @field SSE_KMS_Key_ID Supplied KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Supplied KMS context
+   --  @field Bucket_Key_Enabled Supplied bucket-key choice
+   --  @field Request_Charged Supplied requester-charge value
+   --  @field Checksum_Algorithm Supplied checksum algorithm
+   --  @field Checksum_Type Supplied checksum aggregation type
    type Create_Multipart_Response_Headers is record
       Abort_Date                 : Ada.Strings.Unbounded.Unbounded_String;
       Abort_Rule_ID              : Ada.Strings.Unbounded.Unbounded_String;
@@ -6647,6 +6723,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       Checksum_Type              : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Result of decoding or executing one CreateMultipartUpload operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated multipart initiation on success
+   --  @field Error Structured S3 error on rejection
    type Create_Multipart_Outcome
      (Kind : Create_Multipart_Outcome_Kind := Create_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -6658,6 +6739,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded initiation response from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @param Headers Caller-supplied modeled response headers
+   --  @return Multipart initiation or structured S3 rejection
    function Decode_Create_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -6685,6 +6774,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Multipart_Outcome;
 
+   --  Execute one bodyless initiation attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Prepared CreateMultipartUpload request metadata
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Multipart initiation or structured S3 rejection
    function Execute_Create_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -8916,6 +9012,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared CreateMultipartUpload exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Source One-shot empty source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Create_Multipart_Upload
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
