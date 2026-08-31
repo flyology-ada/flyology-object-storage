@@ -6,6 +6,7 @@ with Flyology.Object_Storage.S3.XML;
 --  Strict REST/XML codecs for small bucket-control configurations.
 package Flyology.Object_Storage.S3.Bucket_Controls is
 
+   --  Raised when a bucket-control document violates its modeled contract.
    Malformed_Configuration : exception;
 
    --  Pinned S3 model contract: absent preserves the optional output member;
@@ -239,16 +240,24 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
       Limits : XML.Parse_Limits := XML.Default_Limits) return String;
 
    --  Serialize one exact PutBucketAbac request document.
+   --  @param Value Presence-preserving ABAC status to encode
+   --  @return Exact S3 AbacStatus XML document
    function Serialize_Abac (Value : Abac_Status) return String;
 
    --  Serialize one exact PutBucketAccelerateConfiguration request document.
+   --  @param Value Presence-preserving acceleration status to encode
+   --  @return Exact S3 AccelerateConfiguration XML document
    function Serialize_Accelerate (Value : Accelerate_Status) return String;
 
    --  Serialize one exact PutBucketRequestPayment request document.
+   --  @param Value Required payer value to encode
+   --  @return Exact S3 RequestPaymentConfiguration XML document
    --  @exception Malformed_Configuration Payer is absent
    function Serialize_Request_Payment (Value : Payer) return String;
 
    --  Serialize one exact PutPublicAccessBlock request document.
+   --  @param Value Four presence-preserving access-block values to encode
+   --  @return Exact S3 PublicAccessBlockConfiguration XML document
    function Serialize_Public_Access_Block
      (Value : Public_Access_Block_Configuration) return String;
 
