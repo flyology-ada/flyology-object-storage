@@ -9930,8 +9930,20 @@ package Flyology.Object_Storage.Client.Buckets is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Low_Level.Put_Bucket_Control_Outcome;
 
+   --  Terminal convenience HeadBucket response classification.
+   --  @enum Bucket_Available Modeled bucket metadata is present
+   --  @enum Head_Rejected Structured bodyless rejection is present
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 
+   --  Completed convenience HeadBucket response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Bucket_ARN Optional exact bucket resource name
+   --  @field Bucket_Location_Type Optional location classification
+   --  @field Bucket_Location_Name Optional exact location name
+   --  @field Region Reported bucket region or request signing region
+   --  @field Access_Point_Alias Optional access-point-alias flag
+   --  @field Error Structured bodyless rejection
    type Head_Outcome
      (Kind : Head_Outcome_Kind := Head_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -10002,8 +10014,16 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Head_Outcome;
 
+   --  Terminal convenience GetBucketLocation response classification.
+   --  @enum Location_Found Normalized and legacy locations are present
+   --  @enum Location_Rejected Structured S3 rejection is present
    type Location_Outcome_Kind is (Location_Found, Location_Rejected);
 
+   --  Completed convenience GetBucketLocation response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Legacy_Constraint Exact legacy location constraint
+   --  @field Error Structured S3 rejection
    type Location_Outcome
      (Kind : Location_Outcome_Kind := Location_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -10569,12 +10589,20 @@ package Flyology.Object_Storage.Client.Buckets is
       Token      : access Flyology.Cancellation.Token := null)
       return Put_Bucket_Versioning_Result;
 
+   --  Configurable versioning values from Enabled through Suspended.
    subtype Configurable_Versioning_Status is Bucket_Versioning_Status range
      Versioning_Enabled .. Versioning_Suspended;
 
+   --  Terminal convenience PutBucketVersioning response classification.
+   --  @enum Versioning_Updated Payload-free completed update carrying status
+   --  @enum Set_Versioning_Rejected Exact status and structured S3 rejection
    type Set_Versioning_Outcome_Kind is
      (Versioning_Updated, Set_Versioning_Rejected);
 
+   --  Completed convenience PutBucketVersioning response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Error Structured S3 rejection
    type Set_Versioning_Outcome
      (Kind : Set_Versioning_Outcome_Kind := Set_Versioning_Rejected)
    is record
@@ -10648,9 +10676,18 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Set_Versioning_Outcome;
 
+   --  Terminal convenience GetBucketVersioning response classification.
+   --  @enum Versioning_Found Complete presence-preserving configuration
+   --  @enum Get_Versioning_Rejected Exact status and structured S3 rejection
    type Get_Versioning_Outcome_Kind is
      (Versioning_Found, Get_Versioning_Rejected);
 
+   --  Completed convenience GetBucketVersioning response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Configuration Complete presence-preserving configuration
+   --     retaining Unconfigured as distinct from Suspended
+   --  @field Error Structured S3 rejection
    type Get_Versioning_Outcome
      (Kind : Get_Versioning_Outcome_Kind := Get_Versioning_Rejected)
    is record
