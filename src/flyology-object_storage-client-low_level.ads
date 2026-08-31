@@ -7181,6 +7181,27 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Multipart_Uploads_Outcome;
 
+   --  Complete modeled UploadPart request metadata outside the body stream.
+   --  @field Part_Number Target multipart part number
+   --  @field Upload_ID Required multipart upload identifier
+   --  @field Payload_SHA256 Caller-supplied hash or UNSIGNED-PAYLOAD
+   --  @field Content_MD5 Optional caller-supplied content MD5
+   --  @field Checksum_Algorithm Optional modeled checksum algorithm
+   --  @field Checksum_CRC32 Optional caller-supplied CRC-32 checksum
+   --  @field Checksum_CRC32C Optional caller-supplied CRC-32C checksum
+   --  @field Checksum_CRC64NVME Optional caller-supplied CRC-64/NVME checksum
+   --  @field Checksum_SHA1 Optional caller-supplied SHA-1 checksum
+   --  @field Checksum_SHA256 Optional caller-supplied SHA-256 checksum
+   --  @field Checksum_SHA512 Optional caller-supplied SHA-512 checksum
+   --  @field Checksum_MD5 Optional caller-supplied MD5 checksum
+   --  @field Checksum_XXHASH64 Optional caller-supplied XXH64 checksum
+   --  @field Checksum_XXHASH3 Optional caller-supplied XXH3 checksum
+   --  @field Checksum_XXHASH128 Optional caller-supplied XXH128 checksum
+   --  @field SSE_Customer_Algorithm Optional customer encryption algorithm
+   --  @field SSE_Customer_Key Optional customer-provided encryption key
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5 value
+   --  @field Request_Payer Optional request-payer value
+   --  @field Expected_Bucket_Owner Optional owner precondition
    type Upload_Part_Parameters is record
       Part_Number       : S3.Core.Part_Number := S3.Core.Part_Number'First;
       Upload_ID         : Ada.Strings.Unbounded.Unbounded_String;
@@ -7204,6 +7225,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner  : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exact signed UploadPart request metadata.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Parameters Complete modeled request metadata
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact UploadPart request metadata
    function Prepare_Upload_Part
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7214,6 +7245,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Modeled response headers returned by a successful UploadPart request.
+   --  @field Entity_Tag Required returned entity tag
+   --  @field Checksum_CRC32 Optional returned CRC-32 checksum
+   --  @field Checksum_CRC32C Optional returned CRC-32C checksum
+   --  @field Checksum_CRC64NVME Optional returned CRC-64/NVME checksum
+   --  @field Checksum_SHA1 Optional returned SHA-1 checksum
+   --  @field Checksum_SHA256 Optional returned SHA-256 checksum
+   --  @field Checksum_SHA512 Optional returned SHA-512 checksum
+   --  @field Checksum_MD5 Optional returned MD5 checksum
+   --  @field Checksum_XXHASH64 Optional returned XXH64 checksum
+   --  @field Checksum_XXHASH3 Optional returned XXH3 checksum
+   --  @field Checksum_XXHASH128 Optional returned XXH128 checksum
+   --  @field Server_Side_Encryption Optional returned encryption algorithm
+   --  @field SSE_Customer_Algorithm Optional returned customer algorithm
+   --  @field SSE_Customer_Key_MD5 Optional returned customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional returned KMS key identifier
+   --  @field Bucket_Key_Enabled Optional returned bucket-key header text
+   --  @field Request_Charged Optional returned requester-charge value
    type Upload_Part_Result is record
       Entity_Tag          : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_CRC32      : Ada.Strings.Unbounded.Unbounded_String;
@@ -7234,8 +7283,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged        : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish completed part upload from structured S3 rejection.
+   --  @enum Part_Uploaded UploadPart success metadata was decoded
+   --  @enum Upload_Rejected S3 rejected the operation
    type Upload_Part_Outcome_Kind is (Part_Uploaded, Upload_Rejected);
 
+   --  Result of decoding or executing one UploadPart operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Response metadata on success
+   --  @field Error Structured S3 error on rejection
    type Upload_Part_Outcome
      (Kind : Upload_Part_Outcome_Kind := Upload_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -7247,6 +7304,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded UploadPart response from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete body; exactly empty on status 200
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Uploaded-part metadata or structured S3 rejection
    function Decode_Upload_Part_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -7279,6 +7344,13 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  is conservatively publication-ambiguous and must be reconciled using
    --  the prepared upload
    --  ID and part number before any retry or completion decision.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Source Forward-only part body source borrowed for this call
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Uploaded-part metadata or structured S3 rejection
    function Execute_Upload_Part
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -8845,6 +8917,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared UploadPart exchange with its one-shot part source.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed request retained through terminal drain
+   --  @param Source One-shot part body source retained through drain
+   --  @param Sink Bounded response sink retained through drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Upload_Part
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
