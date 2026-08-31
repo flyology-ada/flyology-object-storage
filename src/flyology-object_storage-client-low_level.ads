@@ -2652,6 +2652,10 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Validate all modeled response-head fields. Successful response bodies
    --  remain unread. Rejected responses are consumed within Limits and
    --  decoded as S3 errors; bodyless conditional errors retain request IDs.
+   --  @param Response Unconsumed limited HTTP response
+   --  @param Token Optional cancellation source used while reading rejection
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Validated success metadata or structured S3 rejection
    function Decode_Get_Object_Response_Head
      (Response : in out Flyology.HTTP.Client.Response;
       Token    : access Flyology.Cancellation.Token := null;
@@ -2673,6 +2677,48 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every non-body, non-ContentLength member in the pinned PutObject input
    --  shape. The borrowed request source supplies Body and ContentLength.
+   --  @field ACL Optional canned access-control policy
+   --  @field Cache_Control Optional cache-control metadata
+   --  @field Content_Disposition Optional content-disposition metadata
+   --  @field Content_Encoding Optional content-encoding metadata
+   --  @field Content_Language Optional content-language metadata
+   --  @field Content_MD5 Optional caller-supplied content MD5
+   --  @field Content_Type Optional content-type metadata
+   --  @field Checksum_Algorithm Optional checksum algorithm selector
+   --  @field Checksum_CRC32 Optional caller-supplied CRC32 checksum
+   --  @field Checksum_CRC32C Optional caller-supplied CRC32C checksum
+   --  @field Checksum_CRC64NVME Optional caller-supplied CRC64NVME checksum
+   --  @field Checksum_SHA1 Optional caller-supplied SHA1 checksum
+   --  @field Checksum_SHA256 Optional caller-supplied SHA256 checksum
+   --  @field Checksum_SHA512 Optional caller-supplied SHA512 checksum
+   --  @field Checksum_MD5 Optional caller-supplied MD5 checksum
+   --  @field Checksum_XXHASH64 Optional caller-supplied XXHASH64 checksum
+   --  @field Checksum_XXHASH3 Optional caller-supplied XXHASH3 checksum
+   --  @field Checksum_XXHASH128 Optional caller-supplied XXHASH128 checksum
+   --  @field Expires Optional expiration metadata
+   --  @field If_Match Optional exact entity-tag precondition
+   --  @field If_None_Match Optional negative entity-tag precondition
+   --  @field Grant_Full_Control Optional full-control grant header
+   --  @field Grant_Read Optional read grant header
+   --  @field Grant_Read_ACP Optional access-control read grant header
+   --  @field Grant_Write_ACP Optional access-control write grant header
+   --  @field Write_Offset_Bytes Optional exact write offset
+   --  @field Metadata Ordered user metadata entries
+   --  @field Server_Side_Encryption Optional server encryption selector
+   --  @field Storage_Class Optional storage-class selector
+   --  @field Website_Redirect_Location Optional website redirect metadata
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key Optional encoded customer key
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional encoded KMS context
+   --  @field Bucket_Key_Enabled Optional bucket-key selection
+   --  @field Request_Payer Optional requester-pays request value
+   --  @field Tagging Optional encoded object tag set
+   --  @field Object_Lock_Mode Optional object-lock mode
+   --  @field Object_Lock_Retain_Until_Date Optional retention timestamp
+   --  @field Object_Lock_Legal_Hold_Status Optional legal-hold status
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
    type Put_Object_Parameters is record
       ACL                       : Ada.Strings.Unbounded.Unbounded_String;
       Cache_Control             : Ada.Strings.Unbounded.Unbounded_String;
@@ -2722,6 +2768,16 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Prepare all 46 modeled PutObject inputs. Bucket and Key are explicit;
    --  Body and ContentLength are supplied later by the borrowed source.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination object key
+   --  @param Parameters Complete modeled non-body request controls
+   --  @param Payload_SHA256 Digest of future source or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Signed request prepared for a borrowed body source
    function Prepare_Put_Object
      (Origin         : Flyology.HTTP.Origin;
       Style          : Addressing_Style;
@@ -2734,6 +2790,28 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp      : String) return Prepared_Request;
 
    --  Every member in the pinned PutObject output shape.
+   --  @field Expiration Optional modeled expiration value
+   --  @field Entity_Tag Validated strong quoted entity tag
+   --  @field Checksum_CRC32 Optional CRC32 checksum value
+   --  @field Checksum_CRC32C Optional CRC32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC64NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA1 checksum value
+   --  @field Checksum_SHA256 Optional SHA256 checksum value
+   --  @field Checksum_SHA512 Optional SHA512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXHASH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXHASH3 checksum value
+   --  @field Checksum_XXHASH128 Optional XXHASH128 checksum value
+   --  @field Checksum_Type Empty or full-object checksum classification
+   --  @field Server_Side_Encryption Optional server encryption value
+   --  @field Version_ID Optional exact version response value
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional encoded KMS context
+   --  @field Bucket_Key_Enabled Optional bucket-key response flag
+   --  @field Size Optional reported object size
+   --  @field Request_Charged Optional requester-pays response value
    type Put_Object_Result is record
       Expiration                 : Ada.Strings.Unbounded.Unbounded_String;
       Entity_Tag                 : Ada.Strings.Unbounded.Unbounded_String;
@@ -2759,8 +2837,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged            : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Terminal PutObject response classification.
+   --  @enum Object_Put Validated response metadata is present
+   --  @enum Put_Object_Rejected A structured S3 rejection is present
    type Put_Object_Outcome_Kind is (Object_Put, Put_Object_Rejected);
 
+   --  Completed PutObject response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful response metadata
+   --  @field Error Structured S3 rejection
    type Put_Object_Outcome
      (Kind : Put_Object_Outcome_Kind := Put_Object_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -2778,6 +2864,13 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  coherent bounded encryption tuple. An omitted ChecksumType accompanying
    --  one checksum is normalized to FULL_OBJECT, the only PutObject type.
    --  Other statuses return a bounded, structured S3 error.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled PutObject response headers
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Validated response metadata or structured S3 rejection
    function Decode_Put_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -2817,6 +2910,13 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Execute a prepared PutObject request and enforce physical singleton and
    --  present-nonempty semantics for all 22 modeled response headers before
    --  decoding them. Object size remains optional and accepts canonical zero.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared PutObject request
+   --  @param Source Borrowed streaming object body
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Validated response metadata or structured S3 rejection
    function Execute_Put_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
