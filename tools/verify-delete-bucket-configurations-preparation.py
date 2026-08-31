@@ -491,6 +491,41 @@ GET_PUBLIC_ACCESS_BLOCK_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+PUT_PUBLIC_ACCESS_BLOCK_CERTAINTY = (
+    "only a complete validated 200 response with an empty or whitespace-only "
+    "body reports Public_Access_Block_Mutation_Completed; an exact recognized "
+    "non-mutating rejection or definite non-admission reports "
+    "Public_Access_Block_Mutation_Definitely_Not_Applied; pre-admission "
+    "cancellation reports "
+    "Public_Access_Block_Mutation_Cancelled_Before_Admission; possible or "
+    "incomplete admission, retryable responses, and malformed or oversized "
+    "responses report Public_Access_Block_Mutation_Outcome_Unknown; no "
+    "automatic replay"
+)
+PUT_PUBLIC_ACCESS_BLOCK_RECONCILIATION = (
+    "caller-selected Get_Public_Access_Block may observe the current bucket "
+    "public-access-block configuration or exact "
+    "NoSuchPublicAccessBlockConfiguration before a retry, but does not prove "
+    "that the lost replacement caused the observed state or upgrade mutation "
+    "certainty; no automatic replay"
+)
+PUT_PUBLIC_ACCESS_BLOCK_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-public-access-block-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 
 # Operation, generated enum stem, shape, URI, whether Id is required,
 # low-level preparer, low-level executor, and convenience call.
@@ -1794,6 +1829,97 @@ def verify_get_public_access_block_negatives(
         fail(f"{label}: candidate was accepted")
 
 
+def put_public_access_block_entry(
+    data: dict[str, object],
+) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "PutPublicAccessBlock"
+    ]
+    if len(matches) != 1:
+        fail("PutPublicAccessBlock is not unique")
+    return matches[0]
+
+
+def verify_put_public_access_block_registry(
+    data: dict[str, object],
+) -> None:
+    entry = put_public_access_block_entry(data)
+    expected = {
+        "public_name": "Set_Public_Access_Block",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "put_public_access_block",
+        "codec": "empty_response",
+        "certainty": PUT_PUBLIC_ACCESS_BLOCK_CERTAINTY,
+        "reconciliation": PUT_PUBLIC_ACCESS_BLOCK_RECONCILIATION,
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Put_Public_Access_Block",
+            "Execute_Put_Public_Access_Block",
+            "Put_Public_Access_Block_Operation",
+            "Set_Public_Access_Block",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"PutPublicAccessBlock changed: {key}")
+    if "atomically replaces" not in entry["absence"]:
+        fail("PutPublicAccessBlock replacement semantics changed")
+    if "exact HTTP 200" not in entry["exclusions"][2]:
+        fail("PutPublicAccessBlock success changed")
+    if "Content-MD5" not in entry["exclusions"][3]:
+        fail("PutPublicAccessBlock checksum binding changed")
+    if "does not establish causation" not in entry["exclusions"][4]:
+        fail("PutPublicAccessBlock reconcile changed")
+    if data["qualification"].get(
+        "put_public_access_block"
+    ) != PUT_PUBLIC_ACCESS_BLOCK_LANE:
+        fail("PutPublicAccessBlock lane changed")
+
+
+def verify_put_public_access_block_negatives(
+    data: dict[str, object],
+) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Set_Policy"),
+        (
+            "broadened success",
+            "certainty",
+            PUT_PUBLIC_ACCESS_BLOCK_CERTAINTY.replace(
+                "validated 200", "validated 200 or 204"
+            ),
+        ),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_Public_Access_Block proves replacement",
+        ),
+        ("cross-operation lane", "qualification", "get_public_access_block"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = put_public_access_block_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_put_public_access_block_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -1899,6 +2025,8 @@ def main() -> int:
     verify_delete_public_access_block_negatives(registry)
     verify_get_public_access_block_registry(registry)
     verify_get_public_access_block_negatives(registry)
+    verify_put_public_access_block_registry(registry)
+    verify_put_public_access_block_negatives(registry)
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
         fail("pinned botocore revision changed")
@@ -1998,6 +2126,10 @@ def main() -> int:
         "@enum Delete_Public_Access_Block_Operation Delete public access block"
     ) != 1:
         fail("DeletePublicAccessBlock docs changed")
+    if model_spec.count(
+        "@enum Put_Public_Access_Block_Operation Put public access block"
+    ) != 1:
+        fail("PutPublicAccessBlock docs changed")
     ordered(
         texts["high-level body"],
         [
@@ -2683,7 +2815,8 @@ def main() -> int:
             "possibly admitted exchange",
             "`Get_Public_Access_Block`",
             "neither proves the lost deletion caused the state",
-            "`delete_public_access_block` and `get_public_access_block` lanes",
+            "`delete_public_access_block`, `get_public_access_block`, and",
+            "`put_public_access_block` lanes",
             "repository-wide GNATdoc qualification",
         ],
         "DeletePublicAccessBlock backend and server qualification prose",
@@ -2729,9 +2862,56 @@ def main() -> int:
             "preserves independent presence",
             "`NoSuchPublicAccessBlockConfiguration`",
             "remains distinct from `NoSuchBucket`",
-            "`get_public_access_block` lanes",
+            "`get_public_access_block`, and",
+            "`put_public_access_block` lanes",
         ],
         "GetPublicAccessBlock qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Conclusive_Public_Access_Block_Rejection",
+            "function Normalize_Put_Public_Access_Block_Response",
+            "Public_Access_Block_Mutation_Completed",
+            "function Normalize_Put_Public_Access_Block_Failure",
+            "procedure Start_Put_Public_Access_Block",
+            "PutPublicAccessBlock restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "PutPublicAccessBlock provider",
+    )
+    ordered(
+        testing,
+        [
+            "procedure Check_Public_Access_Block_Certainty_Corpus",
+            "procedure Check_Put",
+            "PutPublicAccessBlock response normalization mismatch",
+            "Public_Access_Block_Mutation_Definitely_Not_Applied",
+            "Public_Access_Block_Mutation_Outcome_Unknown",
+            "Normalize_Put_Public_Access_Block_Failure",
+        ],
+        "PutPublicAccessBlock certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            "composed PutPublicAccessBlock result mismatch",
+            "restarted PutPublicAccessBlock result mismatch",
+            "PutPublicAccessBlock accepted a prepared ABAC request",
+        ],
+        "PutPublicAccessBlock socket evidence",
+    )
+    ordered(
+        public_access_block_qualification,
+        [
+            "reviewed `PutPublicAccessBlock` client contract",
+            "empty or whitespace-only response tolerance",
+            "never replayed automatically",
+            "Content-MD5",
+            "neither proves the lost replacement caused that state",
+            "`put_public_access_block` lanes",
+        ],
+        "PutPublicAccessBlock qualification prose",
     )
     expected_member_rows: list[tuple[str, str, str, str, str, str]] = []
     for row, expected in zip(operations, EXPECTED, strict=True):

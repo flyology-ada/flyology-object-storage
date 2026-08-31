@@ -73,11 +73,21 @@ configuration and remains distinct from `NoSuchBucket`. Malformed, oversized,
 or incomplete responses fail closed and do not create a mutation or retry
 claim.
 
-The focused `delete_public_access_block` and `get_public_access_block` lanes
-are each conditional on every maintained command succeeding. They do not
-claim directory-bucket support, account- or organization-level
-effective-policy interpretation, external-provider interoperability, or
-repository-wide GNATdoc qualification.
+The reviewed `PutPublicAccessBlock` client contract accepts only exact HTTP
+200 with the established empty or whitespace-only response tolerance as a
+completed replacement. Exact recognized rejections and definite non-admission
+prove non-application; a possibly admitted exchange, retryable response, or
+malformed response remains outcome-unknown and is never replayed
+automatically. Content-MD5 and a requested modeled generated-checksum header
+bind the exact serialized configuration. A later
+`Get_Public_Access_Block` observes current state only: it neither proves the
+lost replacement caused that state nor upgrades mutation certainty.
+
+The focused `delete_public_access_block`, `get_public_access_block`, and
+`put_public_access_block` lanes are each conditional on every maintained
+command succeeding. They do not claim directory-bucket support, account- or
+organization-level effective-policy interpretation, external-provider
+interoperability, or repository-wide GNATdoc qualification.
 
 The shared backend conformance exercises absent buckets, new unconfigured
 buckets, present-empty configurations, every Boolean presence/value form,
