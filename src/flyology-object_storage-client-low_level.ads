@@ -8472,6 +8472,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared GetBucketMetricsConfiguration exchange into a
    --  bounded sink. Another prepared operation is rejected before admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Metrics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8483,6 +8489,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared ListBucketMetricsConfigurations exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Bucket_Metrics_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8494,6 +8506,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared ListBucketAnalyticsConfigurations exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Bucket_Analytics_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8505,6 +8523,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared GetBucketAnalyticsConfiguration exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Analytics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8516,6 +8540,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared GetBucketIntelligentTieringConfiguration
    --  exchange into a bounded sink. Another prepared operation is rejected
    --  pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Intelligent_Tiering_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8527,6 +8557,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared ListBucketIntelligentTieringConfigurations
    --  exchange into a bounded sink. Another operation is rejected
    --  pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Bucket_Intelligent_Tiering_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8537,6 +8573,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
    --  Start an exact prepared GetBucketInventoryConfiguration exchange into
    --  a bounded sink. Another prepared operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Inventory_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8548,6 +8590,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start one exact prepared ListBucketInventoryConfigurations exchange.
    --  Another prepared operation is rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Bucket_Inventory_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8559,6 +8607,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared GetBucketLogging exchange into a bounded sink.
    --  Another prepared operation is rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Logging
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8570,6 +8624,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared GetBucketWebsite exchange into a bounded sink.
    --  Another prepared operation is rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Website
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8581,6 +8641,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start an exact prepared GetBucketMetadataConfiguration exchange into a
    --  bounded sink. Another prepared operation is rejected pre-admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Metadata_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
