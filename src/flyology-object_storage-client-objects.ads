@@ -4825,26 +4825,50 @@ private
    --  @exclude
    --  @param Item Internal conditional object write
    overriding procedure Finalize (Item : in out Conditional_Put_Operation);
+   --  @exclude
+   --  @param Item Internal whole-object read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Whole_Get_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal whole-object read
    overriding procedure Request_Cancellation
      (Item : in out Whole_Get_Operation);
+   --  @exclude
+   --  @param Item Internal whole-object read
    overriding procedure Finalize (Item : in out Whole_Get_Operation);
+   --  @exclude
+   --  @param Item Internal ranged object read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Range_Get_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ranged object read
    overriding procedure Request_Cancellation
      (Item : in out Range_Get_Operation);
+   --  @exclude
+   --  @param Item Internal ranged object read
    overriding procedure Finalize (Item : in out Range_Get_Operation);
+   --  @exclude
+   --  @param Item Internal object metadata read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Head_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal object metadata read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Head_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal object metadata read
    overriding procedure Request_Cancellation
      (Item : in out Head_Operation);
+   --  @exclude
+   --  @param Item Internal object metadata read
    overriding procedure Finalize (Item : in out Head_Operation);
    overriding function Declared_Length
      (Item : Delete_Operation)
