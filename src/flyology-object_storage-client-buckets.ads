@@ -5576,6 +5576,17 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Read one metrics-configuration page by waiting on the same owner-driven
    --  state machine used by composable callers. Continuation remains explicit
    --  in Parameters; the wrapper never starts a hidden next-page request.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose metrics configurations are requested
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled page or bounded exchange failure
    function List_Metrics_Configurations
      (Client     : aliased in out Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -5691,6 +5702,17 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Read one analytics-configuration page by waiting on the same
    --  owner-driven state machine used by composable callers. Continuation is
    --  explicit in Parameters; no hidden next-page request is started.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose analytics configurations are requested
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled page or bounded exchange failure
    function List_Analytics_Configurations
      (Client     : aliased in out Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -6065,6 +6087,17 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Read one Intelligent-Tiering page by waiting on the same owner-driven
    --  state machine used by composable callers. Continuation is explicit in
    --  Parameters; no hidden next-page request is started.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose Intelligent-Tiering configurations are read
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled page or bounded exchange failure
    function List_Intelligent_Tiering_Configurations
      (Client     : aliased in out Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -6180,6 +6213,17 @@ package Flyology.Object_Storage.Client.Buckets is
    --  Read one inventory page by waiting on the same owner-driven state
    --  machine used by composable callers. Continuation is explicit in
    --  Parameters; no hidden next-page request is started.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose inventory configurations are requested
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled page or bounded exchange failure
    function List_Inventory_Configurations
      (Client     : aliased in out Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
