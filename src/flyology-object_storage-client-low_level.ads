@@ -3124,6 +3124,7 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Owner-precondition parameters for no-ID configuration deletions.
    subtype Delete_Bucket_Configuration_Parameters is
      Delete_Bucket_CORS_Parameters;
 
@@ -3173,15 +3174,24 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  exact operation-specific executors reuse one response implementation.
    subtype Delete_Bucket_Configuration_Outcome_Kind is
      Delete_Bucket_CORS_Outcome_Kind;
+   --  Exact alias for Bucket_CORS_Deleted.
    Configuration_Deleted : constant
      Delete_Bucket_Configuration_Outcome_Kind := Bucket_CORS_Deleted;
+   --  Exact alias for Delete_Bucket_CORS_Rejected.
    Delete_Configuration_Rejected : constant
      Delete_Bucket_Configuration_Outcome_Kind :=
        Delete_Bucket_CORS_Rejected;
+   --  Alias of the shared CORS outcome record.
    subtype Delete_Bucket_Configuration_Outcome is
      Delete_Bucket_CORS_Outcome;
 
-   --  Decode the common generated 204/no-output response shape.
+   --  Decode the common exact-empty 204 or bounded S3 rejection.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed configuration deletion or S3 rejection
    function Decode_Delete_Bucket_Configuration_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -3190,7 +3200,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
 
-   --  DeleteBucketCors uses the common bodyless configuration response.
+   --  DeleteBucketCors uses the common exact-empty 204 response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed CORS deletion or structured S3 rejection
    function Decode_Delete_Bucket_CORS_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -3202,6 +3218,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Execute one prepared synchronous DeleteBucketCors request and release
    --  its response before return.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared DeleteBucketCors request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed CORS deletion or structured S3 rejection
    function Execute_Delete_Bucket_CORS
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
