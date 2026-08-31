@@ -2306,24 +2306,30 @@
       "evidence": {
         "backend": [],
         "client": [
-          "tests/src/s3_get_object_acl_corpus.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-objects.ads",
+          "src/flyology-object_storage-client-objects.adb",
+          "src/flyology-object_storage-s3-object_lock.ads",
+          "src/flyology-object_storage-s3-object_lock.adb",
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_get_object_legal_hold_corpus.adb",
-          "tests/src/s3_get_object_retention_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_object_legal_hold_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_get_object_acl_corpus.adb",
+          "tools/verify-get-object-legal-hold-preparation.py",
+          "docs/qualification/get-object-legal-hold.md",
+          "tests/corpora/get-object-legal-hold/members.tsv",
+          "tests/corpora/get-object-legal-hold/vectors.tsv",
+          "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_get_object_legal_hold_corpus.adb",
-          "tests/src/s3_get_object_retention_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_object_legal_hold_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "server": []
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "absent",

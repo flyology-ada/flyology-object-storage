@@ -66,7 +66,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetObjectAcl | Get_ACL | objects | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAnnotation | legacy_preserved | objects | streaming_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetObjectAttributes | Get_Attributes | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectLegalHold | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetObjectLegalHold | Get_Legal_Hold | objects | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetObjectLockConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetObjectRetention | Get_Retention | objects | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetObjectTagging | Get_Tags | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

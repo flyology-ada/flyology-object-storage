@@ -3827,6 +3827,136 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketAcl lane accepted")
+    get_object_legal_hold_certainty = (
+        "read-only; only one complete validated 200 Object_Legal_Hold_Found "
+        "response observed exposes the presence-preserving legal-hold value; "
+        "every incomplete, invalid, or non-observed response exposes no "
+        "legal-hold state; the client performs no automatic retry"
+    )
+    get_object_legal_hold_reconciliation = (
+        "an explicit VersionId observes legal-hold state for that selected "
+        "object generation and an omitted VersionId observes the generation "
+        "current at read time; the modeled response does not echo a version "
+        "identifier and neither form proves that a prior mutation caused the "
+        "observed state"
+    )
+    get_object_legal_hold_symbols = [
+        "Prepare_Get_Object_Legal_Hold",
+        "Decode_Get_Object_Legal_Hold_Response",
+        "Execute_Get_Object_Legal_Hold",
+        "Get_Legal_Hold_Operation",
+        "Get_Legal_Hold",
+        "Finish",
+    ]
+
+    def assert_get_object_legal_hold_registry(candidate):
+        entry = candidate.operations["GetObjectLegalHold"]
+        assert entry.get("public_name") == "Get_Legal_Hold"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_object_legal_hold"
+        assert entry.get("certainty") == get_object_legal_hold_certainty
+        assert (
+            entry.get("reconciliation") == get_object_legal_hold_reconciliation
+        )
+        assert entry.get("ada_symbols") == get_object_legal_hold_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "NoSuchVersion" in entry["absence"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert (
+            candidate.qualification["get_object_legal_hold"][0][-1]
+            == "tools/verify-get-object-legal-hold-preparation.py"
+        )
+
+    def reject_get_object_legal_hold_registry(candidate, label):
+        try:
+            assert_get_object_legal_hold_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetObjectLegalHold registry accepted")
+
+    assert_get_object_legal_hold_registry(registry)
+    missing_get_object_legal_hold_name = copy.deepcopy(registry)
+    del missing_get_object_legal_hold_name.operations["GetObjectLegalHold"][
+        "public_name"
+    ]
+    reject_get_object_legal_hold_registry(
+        missing_get_object_legal_hold_name, "missing name"
+    )
+    wrong_get_object_legal_hold_name = copy.deepcopy(registry)
+    wrong_get_object_legal_hold_name.operations["GetObjectLegalHold"][
+        "public_name"
+    ] = "Get_Retention"
+    reject_get_object_legal_hold_registry(
+        wrong_get_object_legal_hold_name, "wrong name"
+    )
+    retry_get_object_legal_hold = copy.deepcopy(registry)
+    retry_get_object_legal_hold.operations["GetObjectLegalHold"][
+        "certainty"
+    ] = "read-only; retry automatically"
+    reject_get_object_legal_hold_registry(
+        retry_get_object_legal_hold, "automatic retry"
+    )
+    server_get_object_legal_hold = copy.deepcopy(registry)
+    server_get_object_legal_hold.operations["GetObjectLegalHold"]["coverage"][
+        "server"
+    ] = "covered"
+    reject_get_object_legal_hold_registry(
+        server_get_object_legal_hold, "invented server coverage"
+    )
+    cross_get_object_legal_hold_symbol = copy.deepcopy(registry)
+    cross_get_object_legal_hold_symbol.operations["GetObjectLegalHold"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Object_Retention"
+    reject_get_object_legal_hold_registry(
+        cross_get_object_legal_hold_symbol, "cross-operation symbol"
+    )
+    get_object_legal_hold_qualification, get_object_legal_hold_commands = (
+        s3_operation.qualification_plan(registry, ["GetObjectLegalHold"])
+    )
+    assert get_object_legal_hold_qualification == "get_object_legal_hold"
+    assert get_object_legal_hold_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-object-legal-hold-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_object_legal_hold_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert get_object_legal_hold_commands[4] == ["./tools/verify-coverage.sh"]
+    assert get_object_legal_hold_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-object-legal-hold-gnatdoc",
+        "--operation",
+        "GetObjectLegalHold",
+    ]
+    assert get_object_legal_hold_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObjectLegalHold", "GetObjectLegalHold"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetObjectLegalHold lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObjectLegalHold", "PutObjectLegalHold"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed GetObjectLegalHold lane accepted")
     get_object_retention_certainty = (
         "read-only; only one complete validated 200 Object_Retention_Found "
         "response observed exposes the presence-preserving retention value; "
