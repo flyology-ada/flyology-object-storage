@@ -47,6 +47,7 @@ OPERATION_DOCUMENTATION = {
     "GetPublicAccessBlock": "Get public access block",
     "GetObjectAttributes": "Get object attributes operation",
     "PutBucketTagging": "Put bucket tagging operation",
+    "PutBucketPolicy": "Put bucket policy",
     "PutPublicAccessBlock": "Put public access block",
 }
 
