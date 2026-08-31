@@ -279,6 +279,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Flyology.HTTP.Client.Response;
 
+   --  Build and sign one bodyless ListObjects v1 request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose objects are requested
+   --  @param Parameters Presence-preserving filters, cursor, and headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared ListObjects v1 request
    function Prepare_List_Objects
      (Origin      : Flyology.HTTP.Origin;
       Style       : Addressing_Style;
@@ -288,17 +297,28 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region      : String;
       Timestamp   : String) return Prepared_Request;
 
+   --  Raised when a received S3 response violates its modeled contract.
    Invalid_Response : exception;
 
+   --  Terminal object-listing response classification.
+   --  @enum Listed The decoded listing is present
+   --  @enum Rejected A structured S3 rejection is present
    type List_Outcome_Kind is (Listed, Rejected);
 
    --  Every member in the pinned ListObjects v1 output shape. The XML
    --  members are grouped in Listing; RequestCharged is an HTTP header.
+   --  @field Listing Decoded ListObjects v1 page
+   --  @field Request_Charged Optional requester-pays response value
    type List_Objects_Result is record
       Listing         : S3.Listings.List_Objects_Result;
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Completed ListObjects v1 response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful listing result
+   --  @field Error Structured S3 rejection
    type List_Objects_Outcome
      (Kind : List_Outcome_Kind := Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -310,6 +330,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded ListObjects v1 HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_Charged Optional requester-pays response value
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
    function Decode_List_Objects_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -337,6 +365,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_Outcome;
 
+   --  Execute one prepared ListObjects v1 request and decode its response.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared ListObjects v1 request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
    function Execute_List_Objects
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -345,6 +380,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_Outcome;
 
+   --  Build and sign one bodyless ListObjectsV2 request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose objects are requested
+   --  @param Parameters Filters, cursor, maximum, and request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared ListObjectsV2 request
    function Prepare_List_Objects_V2
      (Origin      : Flyology.HTTP.Origin;
       Style       : Addressing_Style;
@@ -354,6 +398,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region      : String;
       Timestamp   : String) return Prepared_Request;
 
+   --  Completed ListObjectsV2 response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Listing Successful decoded page
+   --  @field Request_Charged Optional requester-pays response value
+   --  @field Error Structured S3 rejection
    type List_Objects_V2_Outcome
      (Kind : List_Outcome_Kind := Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -366,6 +416,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded ListObjectsV2 HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Request_Charged Optional requester-pays response value
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
    function Decode_List_Objects_V2_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -393,6 +451,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
 
+   --  Execute one prepared ListObjectsV2 request and decode its response.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared ListObjectsV2 request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
    function Execute_List_Objects_V2
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -404,6 +469,20 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every non-bucket member in the pinned ListObjectVersions request.
    --  Presence flags preserve explicit empty markers and filters. The model's
    --  OptionalObjectAttributes list currently has one value, RestoreStatus.
+   --  @field Delimiter Delimiter value when present
+   --  @field Has_Delimiter Whether Delimiter is present
+   --  @field URL_Encoding Whether URL encoding is requested
+   --  @field Key_Marker Key cursor value when present
+   --  @field Has_Key_Marker Whether Key_Marker is present
+   --  @field Max_Keys Requested page maximum when present
+   --  @field Has_Max_Keys Whether Max_Keys is present
+   --  @field Prefix Prefix filter when present
+   --  @field Has_Prefix Whether Prefix is present
+   --  @field Version_ID_Marker Version cursor value when present
+   --  @field Has_Version_ID_Marker Whether Version_ID_Marker is present
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
+   --  @field Request_Payer Optional requester-pays request value
+   --  @field Include_Restore_Status Whether restore status is requested
    type List_Object_Versions_Parameters is record
       Delimiter               : Ada.Strings.Unbounded.Unbounded_String;
       Has_Delimiter           : Boolean := False;
@@ -444,11 +523,18 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every output member in the pinned ListObjectVersions response. The 13
    --  XML members are grouped in Listing; RequestCharged is its sole header.
+   --  @field Listing Decoded ListObjectVersions page
+   --  @field Request_Charged Optional requester-pays response value
    type List_Object_Versions_Result is record
       Listing         : S3.Versions.List_Object_Versions_Result;
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Completed ListObjectVersions response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful version-listing result
+   --  @field Error Structured S3 rejection
    type List_Object_Versions_Outcome
      (Kind : List_Outcome_Kind := Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
