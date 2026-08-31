@@ -16404,30 +16404,46 @@ private
    overriding procedure Finalize
      (Item : in out Get_Bucket_ACL_Operation);
    --  @exclude
+   --  @param Item Owner-driven metadata-table read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Metadata_Table_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven metadata-table read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Metadata_Table_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven metadata-table read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven metadata-table read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Create_Bucket_Metadata_Table_Configuration_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Create_Bucket_Metadata_Table_Configuration_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out
         Create_Bucket_Metadata_Table_Configuration_Operation;
@@ -16435,20 +16451,27 @@ private
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
    overriding procedure Release_Source
      (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item  : in out Create_Bucket_Metadata_Table_Configuration_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
    overriding procedure Request_Cancellation
      (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
+   --  @param Item Owner-driven metadata-table create operation
    overriding procedure Finalize
      (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
@@ -16501,201 +16524,317 @@ private
    --  @param Item Internal nonreplaying encryption mutation
    overriding procedure Finalize
      (Item : in out Put_Bucket_Encryption_Operation);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Delete_Bucket_Encryption_Operation)
       return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Delete_Bucket_Encryption_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Bucket_Encryption_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
    overriding procedure Release_Source
      (Item : in out Delete_Bucket_Encryption_Operation);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Delete_Bucket_Encryption_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Delete_Bucket_Encryption_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Delete_Bucket_Encryption_Operation);
+   --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Encryption_Operation state
    overriding procedure Finalize
      (Item : in out Delete_Bucket_Encryption_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_Lifecycle_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_Lifecycle_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_Lifecycle_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
    overriding procedure Release_Source
      (Item : in out Put_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Put_Bucket_Lifecycle_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Put_Bucket_Lifecycle_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Lifecycle_Operation state
    overriding procedure Finalize
      (Item : in out Put_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Put_Bucket_Notification_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Put_Bucket_Notification_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Bucket_Notification_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
    overriding procedure Release_Source
      (Item : in out Put_Bucket_Notification_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Put_Bucket_Notification_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Put_Bucket_Notification_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Put_Bucket_Notification_Operation);
    --  @exclude
+   --  @param Item Owner-driven Put_Bucket_Notification_Operation state
    overriding procedure Finalize
      (Item : in out Put_Bucket_Notification_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Delete_Bucket_Lifecycle_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Delete_Bucket_Lifecycle_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Bucket_Lifecycle_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
    overriding procedure Release_Source
      (Item : in out Delete_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Delete_Bucket_Lifecycle_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Delete_Bucket_Lifecycle_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Delete_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Lifecycle_Operation state
    overriding procedure Finalize
      (Item : in out Delete_Bucket_Lifecycle_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Delete_Bucket_Replication_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Delete_Bucket_Replication_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Bucket_Replication_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
    overriding procedure Release_Source
      (Item : in out Delete_Bucket_Replication_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Delete_Bucket_Replication_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Delete_Bucket_Replication_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Delete_Bucket_Replication_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Replication_Operation state
    overriding procedure Finalize
      (Item : in out Delete_Bucket_Replication_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Delete_Bucket_Website_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   : in out Delete_Bucket_Website_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Bucket_Website_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
    overriding procedure Release_Source
      (Item : in out Delete_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Delete_Bucket_Website_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Delete_Bucket_Website_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
    overriding procedure Request_Cancellation
      (Item : in out Delete_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Website_Operation state
    overriding procedure Finalize
      (Item : in out Delete_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Metadata_Operation state
+   --  @return Declared request-body length
    overriding function Declared_Length
      (Item : Delete_Bucket_Metadata_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Metadata_Operation state
+   --  @param Data Destination buffer for request bytes
+   --  @param Last Last destination offset filled
+   --  @param Result Request-source step result
    overriding procedure Read_Now
      (Item   :
         in out Delete_Bucket_Metadata_Operation;
@@ -16703,6 +16842,10 @@ private
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Owner-driven Delete_Bucket_Metadata_Operation state
+   --  @param Required Requested source wait condition
+   --  @param Descriptor Descriptor used for source readiness
+   --  @param Ready_Now Whether the source is ready without waiting
    overriding procedure Source_Wait_Source
      (Item       :
         in out Delete_Bucket_Metadata_Operation;
