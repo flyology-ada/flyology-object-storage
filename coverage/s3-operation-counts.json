@@ -10,13 +10,13 @@
     "partial": 11
   },
   "corpus": {
-    "covered": 106,
-    "missing": 10,
+    "covered": 107,
+    "missing": 9,
     "partial": 0
   },
   "decision_status": {
-    "inventory_only": 10,
-    "reviewed": 106
+    "inventory_only": 9,
+    "reviewed": 107
   },
   "families": {
     "bodyless_mutation": 20,
@@ -35,8 +35,8 @@
     "true": 9
   },
   "implementation_mode": {
-    "generated": 19,
-    "handwritten": 80,
+    "generated": 18,
+    "handwritten": 81,
     "shared-family": 17
   },
   "operations": 116,
@@ -49,8 +49,8 @@
     },
     "client": {
       "absent": 0,
-      "generated": 19,
-      "handwritten": 80,
+      "generated": 18,
+      "handwritten": 81,
       "shared_family": 17
     },
     "server": {
@@ -60,9 +60,9 @@
       "shared_family": 0
     },
     "tests": {
-      "absent": 10,
+      "absent": 9,
       "generated": 8,
-      "handwritten": 82,
+      "handwritten": 83,
       "shared_family": 16
     }
   },

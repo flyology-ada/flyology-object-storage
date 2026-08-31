@@ -38,12 +38,16 @@ def function_body(model: str, function: str) -> str:
     return tail.split(marker, 1)[0]
 
 
-def operation_scalar(model: str, function: str) -> str:
+def operation_scalar(
+    model: str,
+    function: str,
+    operation: str = "Put_Bucket_Lifecycle_Configuration_Operation",
+) -> str:
     match = re.search(
-        r"when Put_Bucket_Lifecycle_Configuration_Operation =>\s+"
+        rf"when {re.escape(operation)} =>\s+"
         r"return\s+([^;]+);", function_body(model, function))
     if match is None:
-        fail(f"PutBucketLifecycleConfiguration lacks {function}")
+        fail(f"{operation} lacks {function}")
     return match.group(1).strip().strip('"')
 
 
@@ -98,6 +102,21 @@ def main() -> int:
         if operation_scalar(model, function) != expected:
             fail(f"generated {function} changed")
 
+    legacy_scalars = {
+        "Method": "Put_Method",
+        "Request_URI": "/{Bucket}?lifecycle",
+        "Response_Code": "200",
+        "Input_Shape": "533",
+        "Output_Shape": "0",
+        "Request_Checksum_Required": "True",
+        "Request_Checksum_Algorithm_Member": "ChecksumAlgorithm",
+    }
+    for function, expected in legacy_scalars.items():
+        if operation_scalar(
+            model, function, "Put_Bucket_Lifecycle_Operation"
+        ) != expected:
+            fail(f"generated legacy {function} changed")
+
     if case_values(model, "Member_Name", 532) != [
             "Bucket", "ChecksumAlgorithm", "LifecycleConfiguration",
             "ExpectedBucketOwner", "TransitionDefaultMinimumObjectSize"] or \
@@ -125,6 +144,32 @@ def main() -> int:
             shape_scalar(model, "List_Member_Shape", 377) != "374" or \
             shape_scalar(model, "Is_Flattened", 377) != "True":
         fail("generated lifecycle rule projection changed")
+    if case_values(model, "Member_Name", 533) != [
+            "Bucket", "ContentMD5", "ChecksumAlgorithm",
+            "LifecycleConfiguration", "ExpectedBucketOwner"] or \
+            case_values(model, "Member_Shape", 533) != [
+                "60", "111", "77", "372", "15"] or \
+            case_values(model, "Member_Required", 533) != [
+                "True", "False", "False", "False", "False"] or \
+            case_values(model, "Member_Location_Name", 533) != [
+                "Bucket", "Content-MD5",
+                "x-amz-sdk-checksum-algorithm",
+                "LifecycleConfiguration", "x-amz-expected-bucket-owner"]:
+        fail("generated legacy lifecycle-write request inventory changed")
+    if case_values(model, "Member_Name", 372) != ["Rules"] or \
+            case_values(model, "Member_Shape", 372) != ["622"] or \
+            case_values(model, "Member_Required", 372) != ["True"] or \
+            case_values(model, "Member_Location_Name", 372) != ["Rule"]:
+        fail("generated legacy lifecycle configuration root changed")
+    if shape_scalar(model, "Kind", 622) != "List_Shape" or \
+            shape_scalar(model, "List_Member_Shape", 622) != "621" or \
+            shape_scalar(model, "Is_Flattened", 622) != "True":
+        fail("generated legacy lifecycle Rules list changed")
+    legacy_rule_wire = case_values(model, "Member_Location_Name", 621)
+    modern_rule_wire = case_values(model, "Member_Location_Name", 374)
+    if legacy_rule_wire != [
+            name for name in modern_rule_wire if name != "Filter"]:
+        fail("legacy lifecycle Rule is not the maintained wire subset")
     if enum_values(model, 77) != [
             "CRC32", "CRC32C", "SHA1", "SHA256", "CRC64NVME", "SHA512",
             "MD5", "XXHASH64", "XXHASH3", "XXHASH128"] or \
@@ -133,6 +178,20 @@ def main() -> int:
         fail("generated lifecycle-write enum domain changed")
 
     source = "\n".join(path.read_text(encoding="utf-8") for path in SOURCES)
+    low_level = SOURCES[1].read_text(encoding="utf-8")
+    prepare = function_body(
+        low_level, "Prepare_Put_Bucket_Lifecycle_Configuration"
+    )
+    for token in (
+            "Model.Put_Bucket_Lifecycle_Configuration_Operation",
+            "Lifecycle.Serialize (Value, Limits)",
+            "Content_MD5           => US.Null_Unbounded_String",
+            "Checksum_Algorithm    => Parameters.Checksum_Algorithm",
+            "Require_Checksum => True"):
+        if prepare.count(token) != 1:
+            fail(f"maintained lifecycle preparation lacks exact {token}")
+    if "Model.Put_Bucket_Lifecycle_Operation" in prepare:
+        fail("deprecated lifecycle operation identity is unexpectedly used")
     for token in (
             "Serialize", "Prepare_Put_Bucket_Lifecycle_Configuration",
             "Decode_Put_Bucket_Lifecycle_Configuration_Response",
@@ -143,9 +202,12 @@ def main() -> int:
             "x-amz-sdk-checksum-algorithm"):
         if token not in source:
             fail(f"typed implementation lacks {token}")
-    print("PutBucketLifecycleConfiguration preparation: five request members, "
-          "one response member, required flattened Rules, 12 exact checksum/"
-          "transition values, and the shared 32-member lifecycle graph")
+    print(
+        "PutBucketLifecycleConfiguration preparation: maintained five-member "
+        "request/one-member response plus the legacy five-member exact "
+        "prefix-rule compatibility subset, current operation identity, "
+        "generated checksum, and lifecycle graph"
+    )
     return 0
 
 

@@ -5,6 +5,16 @@ for `PutBucketLifecycleConfiguration`. It does not claim lifecycle persistence,
 an authenticated Flyology server route, lifecycle action execution, or
 external server interoperability.
 
+The pinned model also retains deprecated `PutBucketLifecycle`. Its method,
+resource path, success status, checksum selection, and prefix-rule payload are
+a structural subset of the maintained operation. The client deliberately
+exposes only a compatibility subset through `Set_Lifecycle_Configuration`:
+it uses the current operation identity and does not reject modern-only inputs
+when the evidence is attributed to the deprecated name. The optional legacy
+`ContentMD5` override is not surfaced. Its separate registry lane appends
+only `PutBucketLifecycle`; no automatic replay, full legacy-operation, or
+external-provider claim follows.
+
 ## Pinned authority and complete inventory
 
 The machine inventory is tied to botocore S3 model revision
