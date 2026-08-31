@@ -18497,189 +18497,383 @@ private
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "")
       return Delete_Bucket_Inventory_Configuration_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_CORS_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_CORS_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_CORS_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_CORS_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Ownership_Controls_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Ownership_Controls_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Ownership_Controls_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Ownership_Controls_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Delete_Ownership_Controls_Response
      (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Ownership_Controls_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Delete_Ownership_Controls_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Ownership_Controls_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_ABAC_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_ABAC_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_ABAC_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_ABAC_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Accelerate_Configuration_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Accelerate_Configuration_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Accelerate_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "")
       return Put_Bucket_Accelerate_Configuration_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Request_Payment_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Request_Payment_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Request_Payment_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Request_Payment_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Public_Access_Block_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Public_Access_Block_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Public_Access_Block_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Public_Access_Block_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Delete_Public_Access_Block_Response
      (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Public_Access_Block_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Delete_Public_Access_Block_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Public_Access_Block_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Accelerate_Configuration_Response
      (Value     : Low_Level.Get_Bucket_Accelerate_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Accelerate_Configuration_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Accelerate_Configuration_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "")
       return Get_Bucket_Accelerate_Configuration_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_ABAC_Response
      (Value     : Low_Level.Get_Bucket_Abac_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_ABAC_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_ABAC_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_ABAC_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Policy_Response
      (Value     : Low_Level.Get_Bucket_Policy_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Policy_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Policy_Status_Response
      (Value     : Low_Level.Get_Bucket_Policy_Status_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Policy_Status_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Policy_Status_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Policy_Status_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Request_Payment_Response
      (Value     : Low_Level.Get_Bucket_Request_Payment_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Request_Payment_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Request_Payment_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Request_Payment_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Policy_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Policy_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Delete_Bucket_Policy_Response
      (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Delete_Bucket_Policy_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Bucket_Policy_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Versioning_Response
      (Value     : Low_Level.Get_Bucket_Versioning_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Versioning_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Versioning_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Versioning_Result;
+   --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Versioning_Response
      (Value     : Low_Level.Put_Bucket_Versioning_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Versioning_Result;
+   --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Versioning_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Versioning_Result;
    --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Put_Bucket_Tagging_Response
      (Value     : Low_Level.Put_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Bucket_Tagging_Result;
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Put_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Tagging_Result;
    --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Get_Bucket_Tagging_Response
      (Value     : Low_Level.Get_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Bucket_Tagging_Result;
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Get_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Tagging_Result;
    --  @exclude
+   --  @param Value Decoded operation result
+   --  @param Admission Request admission certainty
+   --  @return Normalized private response result
    function Normalize_Delete_Bucket_Tagging_Response
      (Value     : Low_Level.Delete_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Bucket_Tagging_Result;
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized private failure result
    function Normalize_Delete_Bucket_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
