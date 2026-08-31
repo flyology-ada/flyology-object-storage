@@ -3711,6 +3711,122 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetObjectAcl lane accepted")
+    get_bucket_acl_certainty = (
+        "read-only; only one complete validated 200 Bucket_ACL_Found response "
+        "observed exposes the presence-preserving ACL; every incomplete, "
+        "invalid, or non-observed response exposes no ACL; the client "
+        "performs no automatic retry"
+    )
+    get_bucket_acl_reconciliation = (
+        "the result is a read-only observation of the bucket ACL projection "
+        "at response time and does not prove that any prior mutation caused "
+        "the observed policy"
+    )
+    get_bucket_acl_symbols = [
+        "Prepare_Get_Bucket_ACL",
+        "Decode_Get_Bucket_ACL_Response",
+        "Execute_Get_Bucket_ACL",
+        "Get_Bucket_ACL_Operation",
+        "Get_ACL",
+        "Finish",
+    ]
+
+    def assert_get_bucket_acl_registry(candidate):
+        entry = candidate.operations["GetBucketAcl"]
+        assert entry.get("public_name") == "Get_ACL"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_acl"
+        assert entry.get("certainty") == get_bucket_acl_certainty
+        assert entry.get("reconciliation") == get_bucket_acl_reconciliation
+        assert entry.get("ada_symbols") == get_bucket_acl_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert "NoSuchBucket" in entry["absence"]
+        assert "does not persist arbitrary ACL state" in entry["exclusions"][0]
+        assert (
+            candidate.qualification["get_bucket_acl"][0][-1]
+            == "tools/verify-get-bucket-acl-preparation.py"
+        )
+
+    def reject_get_bucket_acl_registry(candidate, label):
+        try:
+            assert_get_bucket_acl_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetBucketAcl registry accepted")
+
+    assert_get_bucket_acl_registry(registry)
+    missing_get_bucket_acl_name = copy.deepcopy(registry)
+    del missing_get_bucket_acl_name.operations["GetBucketAcl"]["public_name"]
+    reject_get_bucket_acl_registry(
+        missing_get_bucket_acl_name, "missing name"
+    )
+    wrong_get_bucket_acl_name = copy.deepcopy(registry)
+    wrong_get_bucket_acl_name.operations["GetBucketAcl"][
+        "public_name"
+    ] = "Get_Object_ACL"
+    reject_get_bucket_acl_registry(wrong_get_bucket_acl_name, "wrong name")
+    retry_get_bucket_acl = copy.deepcopy(registry)
+    retry_get_bucket_acl.operations["GetBucketAcl"][
+        "certainty"
+    ] = "read-only; retry automatically"
+    reject_get_bucket_acl_registry(retry_get_bucket_acl, "automatic retry")
+    backend_get_bucket_acl = copy.deepcopy(registry)
+    backend_get_bucket_acl.operations["GetBucketAcl"]["coverage"][
+        "backend"
+    ] = "covered"
+    reject_get_bucket_acl_registry(
+        backend_get_bucket_acl, "invented backend coverage"
+    )
+    cross_get_bucket_acl_symbol = copy.deepcopy(registry)
+    cross_get_bucket_acl_symbol.operations["GetBucketAcl"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Object_ACL"
+    reject_get_bucket_acl_registry(
+        cross_get_bucket_acl_symbol, "cross-operation symbol"
+    )
+    get_bucket_acl_qualification, get_bucket_acl_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketAcl"])
+    )
+    assert get_bucket_acl_qualification == "get_bucket_acl"
+    assert get_bucket_acl_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-acl-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_acl_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert get_bucket_acl_commands[5] == ["./tools/verify-coverage.sh"]
+    assert get_bucket_acl_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-acl-gnatdoc",
+        "--operation",
+        "GetBucketAcl",
+    ]
+    assert get_bucket_acl_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketAcl", "GetBucketAcl"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketAcl lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketAcl", "GetObjectAcl"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetBucketAcl lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",

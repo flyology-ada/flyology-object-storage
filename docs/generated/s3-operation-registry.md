@@ -39,7 +39,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeletePublicAccessBlock | Delete_Public_Access_Block | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketAbac | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketAccelerateConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketAcl | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketAcl | Get_ACL | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketCors | Get_CORS | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |

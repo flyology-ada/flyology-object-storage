@@ -381,6 +381,17 @@ get_bucket_policy = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_acl = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-acl-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_acl_corpus"],
+  ["@tests", "./bin/s3_server_application_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-acl-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_cors = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-cors-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -1475,18 +1486,22 @@ tier = "extended"
 provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Get_ACL"
+absence = "no dedicated absence variant; exact NoSuchBucket remains a structured typed rejection, while a validated 200 preserves absence of the optional ACL payload separately from a present policy"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only; only one complete validated 200 Bucket_ACL_Found response observed exposes the presence-preserving ACL; every incomplete, invalid, or non-observed response exposes no ACL; the client performs no automatic retry"
+reconciliation = "the result is a read-only observation of the bucket ACL projection at response time and does not prove that any prior mutation caused the observed policy"
+exclusions = ["the Flyology server derives one private owner FULL_CONTROL grant and does not persist arbitrary ACL state or expose a general ACL mutation engine", "configured requester billing, public grants, directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "the response describes the qualified private-only server profile rather than a general persisted ACL backend", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "missing", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_bucket_acl"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "src/flyology-object_storage-s3-acl.ads", "src/flyology-object_storage-s3-acl.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-get-bucket-acl-preparation.py", "docs/qualification/get-bucket-acl.md", "tests/corpora/get-bucket-acl/members.tsv", "tests/corpora/get-bucket-acl/vectors.tsv", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+ada_symbols = ["Prepare_Get_Bucket_ACL", "Decode_Get_Bucket_ACL_Response", "Execute_Get_Bucket_ACL", "Get_Bucket_ACL_Operation", "Get_ACL", "Finish"]
 
 [[operation]]
 name = "GetBucketAnalyticsConfiguration"
