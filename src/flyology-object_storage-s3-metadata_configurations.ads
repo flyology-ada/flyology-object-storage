@@ -240,4 +240,15 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
      (Value  : Record_Expiration;
       Limits : XML.Parse_Limits) return String;
 
+   --  Serialize one exact UpdateBucketMetadataAnnotationTableConfiguration
+   --  payload. Value.Is_Set must be true because the model requires the
+   --  payload member; the flag remains presence-preserving for create calls.
+   --  @param Value Complete caller-selected annotation-table update
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Metadata_Configuration Value violates the model
+   function Serialize_Update_Annotation
+     (Value  : Annotation_Table_Configuration;
+      Limits : XML.Parse_Limits) return String;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;

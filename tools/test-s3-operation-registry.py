@@ -204,6 +204,11 @@ GENERATED_MUTATION_START_LABELS = (
         "metadata journal-table configuration",
         "UpdateBucketMetadataJournalTableConfiguration",
     ),
+    (
+        "Set_Metadata_Annotation_Table_Configuration",
+        "metadata annotation-table configuration",
+        "UpdateBucketMetadataAnnotationTableConfiguration",
+    ),
     ("Set_ACL", "bucket access-control policy", "PutBucketAcl"),
     (
         "Set_Inventory_Configuration",
@@ -9794,6 +9799,7 @@ def main() -> None:
         "PutBucketWebsite",
         "UpdateBucketMetadataInventoryTableConfiguration",
         "UpdateBucketMetadataJournalTableConfiguration",
+        "UpdateBucketMetadataAnnotationTableConfiguration",
     }
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(

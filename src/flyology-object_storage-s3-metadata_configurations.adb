@@ -816,4 +816,33 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
            "metadata journal update serialization violates caller limits";
    end Serialize_Update_Journal;
 
+   function Serialize_Update_Annotation
+     (Value  : Annotation_Table_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      if not Value.Is_Set then
+         raise Malformed_Metadata_Configuration with
+           "missing annotation-table configuration update";
+      end if;
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "AnnotationTableConfiguration",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      XML_Writers.Text_Element
+        (Item, "ConfigurationState",
+         Annotation_State_Image (Value.Configuration_State));
+      Write_Encryption (Item, Value.Encryption);
+      if Value.Role.Is_Set then
+         XML_Writers.Text_Element
+           (Item, "Role", US.To_String (Value.Role.Value));
+      end if;
+      return XML_Writers.Finish (Item, "AnnotationTableConfiguration");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Configuration with
+           "metadata annotation update serialization violates caller limits";
+   end Serialize_Update_Annotation;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;

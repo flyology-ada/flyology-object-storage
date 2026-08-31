@@ -77,6 +77,7 @@ project Flyology_Object_Storage_Tests is
       "s3_create_bucket_metadata_configuration_qualification.adb",
       "s3_set_metadata_inventory_table_configuration_qualification.adb",
       "s3_set_metadata_journal_table_configuration_qualification.adb",
+      "s3_set_metadata_annotation_table_configuration_qualification.adb",
       "s3_put_bucket_acl_qualification.adb",
       "s3_put_bucket_inventory_configuration_qualification.adb",
       "s3_put_bucket_logging_qualification.adb",

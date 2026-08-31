@@ -4968,6 +4968,276 @@
         }
       ]
     },
+    "UpdateBucketMetadataAnnotationTableConfiguration": {
+      "adapter": "./bin/s3_set_metadata_annotation_table_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?metadataAnnotationTable"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?metadataAnnotationTable"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?metadataAnnotationTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?metadataAnnotationTable"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?metadataAnnotationTable"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?metadataAnnotationTable"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?metadataAnnotationTable"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?metadataAnnotationTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?metadataAnnotationTable"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<AnnotationTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState><Role>arn:aws:iam::123456789012:role/qualified-annotation</Role></AnnotationTableConfiguration>",
+              "request_headers": {
+                "content-md5": "77UsAedZJVTnFZPo3e49sA==",
+                "x-amz-checksum-sha256": "dTzO/+K/9Iq8Uy0SBRP8gy9jGQD8623dAWkt+5p+Yec=",
+                "x-amz-content-sha256": "753cceffe2bff48abc532d120513fc832f631900fceb6ddd01692dfb9a7e61e7",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?metadataAnnotationTable"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 222
+          }
+        }
+      ]
+    },
     "UpdateBucketMetadataInventoryTableConfiguration": {
       "adapter": "./bin/s3_set_metadata_inventory_table_configuration_qualification",
       "cases": [

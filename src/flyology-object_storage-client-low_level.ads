@@ -8024,6 +8024,66 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Prepare one exact UpdateBucketMetadataAnnotationTableConfiguration
+   --  request. The returned request owns its exact serialized and signed one-
+   --  shot XML body.
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Bucket Required exact target bucket
+   --  @param Value Metadata annotation-table configuration value serialized
+   --  before admission
+   --  @param Parameters Complete modeled non-resource
+   --  UpdateBucketMetadataAnnotationTableConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Region Exact SigV4 signing region
+   --  @param Timestamp Exact SigV4 signing timestamp
+   --  @param Limits Caller-selected bounded XML limits
+   --  @return Prepared signed request with an owned one-shot body
+   function Prepare_Set_Metadata_Annotation_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Metadata_Configurations.Annotation_Table_Configuration;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared
+   --  UpdateBucketMetadataAnnotationTableConfiguration request without replay.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Prepared Exact prepared request and owned body
+   --  @param Timeout Whole request and drain budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected bounded response XML limits
+   --  @return Complete modeled response or structured rejection
+   function Execute_Set_Metadata_Annotation_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Start one exact prepared
+   --  UpdateBucketMetadataAnnotationTableConfiguration exchange. A differently
+   --  bound request is rejected before HTTP admission.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Prepared Exact prepared request retained through drain
+   --  @param Source One-shot request body source
+   --  @param Sink Bounded response body sink
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Caller-owned HTTP exchange operation
+   procedure Set_Metadata_Annotation_Table_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Prepare one exact PutBucketAcl request. The returned request owns its
    --  exact serialized and signed one-shot XML body.
    --  @param Origin Exact HTTP origin used for routing and signing

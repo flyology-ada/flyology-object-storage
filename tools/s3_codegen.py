@@ -2042,6 +2042,20 @@ GENERATED_MUTATIONS = (
         reconciliation="Get_Metadata_Configuration",
     ),
     Generated_Mutation(
+        operation="UpdateBucketMetadataAnnotationTableConfiguration",
+        ada_stem="Set_Metadata_Annotation_Table_Configuration",
+        model_stem="Update_Bucket_Metadata_Annotation_Table_Configuration",
+        public_name="Set_Metadata_Annotation_Table_Configuration",
+        label="metadata annotation-table configuration",
+        value_unit="Metadata_Configurations",
+        value_type="Annotation_Table_Configuration",
+        parameters_type="Bucket_Control_Mutation_Parameters",
+        disposition_stem="Bucket_Metadata_Configuration_Mutation",
+        declares_disposition=False,
+        has_identifier=False,
+        reconciliation="Get_Metadata_Configuration",
+    ),
+    Generated_Mutation(
         operation="PutBucketAcl",
         ada_stem="Put_Bucket_ACL",
         model_stem="Put_Bucket_Acl",
@@ -2815,6 +2829,9 @@ def _generated_mutation_low_level_body(
             "UpdateBucketMetadataJournalTableConfiguration": (
                 "S3.Metadata_Configurations.Serialize_Update_Journal"
             ),
+            "UpdateBucketMetadataAnnotationTableConfiguration": (
+                "S3.Metadata_Configurations.Serialize_Update_Annotation"
+            ),
         }
         serializer = metadata_serializers.get(
             item.operation,
@@ -3035,6 +3052,14 @@ def _generated_mutation_provider_spec(
                 f"@return Terminal typed {item.label} replacement evidence",
             )
         )
+        public_operation_parameter = (
+            f"      Operation  : in out {item.operation_type})"
+        )
+        if len(public_operation_parameter) > 79:
+            public_operation_parameter = (
+                "      Operation  : in out\n"
+                f"        {item.operation_type})"
+            )
         parts.append(
             f"""{result_header}
 {result_comments}
@@ -3094,7 +3119,7 @@ def _generated_mutation_provider_spec(
       Style      : Low_Level.Addressing_Style;
       Limits     : S3.XML.Parse_Limits;
       Token      : access Flyology.Cancellation.Token;
-      Operation  : in out {item.operation_type})
+{public_operation_parameter}
    with
      Pre =>
        not Flyology.Operations.Is_Active (Operation)
@@ -3171,6 +3196,28 @@ def _generated_mutation_provider_private_spec(
                 f'          "{item.operation}",'
             )
         )
+        result_type_binding = (
+            f"       (Result_Type       => {item.result_type},"
+        )
+        if len(result_type_binding) > 79:
+            result_type_binding = (
+                "       (Result_Type       =>\n"
+                f"          {item.result_type},"
+            )
+        state_field = f"      State : {family}.State (Set);"
+        if len(state_field) > 79:
+            state_field = (
+                "      State :\n"
+                f"        {family}.State (Set);"
+            )
+        source_wait_item = (
+            f"     (Item       : in out {item.operation_type};"
+        )
+        if len(source_wait_item) > 79:
+            source_wait_item = (
+                "     (Item       : in out\n"
+                f"        {item.operation_type};"
+            )
         parts.append(
             f"""   --  @exclude
    function Decode_{item.ada_stem}_Family_Response
@@ -3194,7 +3241,7 @@ def _generated_mutation_provider_private_spec(
    --  @exclude
    package {family} is new
      Flyology.Object_Storage.Client.REST_XML_Mutations
-       (Result_Type       => {item.result_type},
+{result_type_binding}
 {operation_name}
 {start_exchange}
         Decode_Response   =>
@@ -3211,7 +3258,7 @@ def _generated_mutation_provider_private_spec(
      and Flyology.HTTP.Client.Operation_Request_Body_Source
      and Flyology.HTTP.Client.Response_Body_Sink
    with record
-      State : {family}.State (Set);
+{state_field}
    end record;
 
    --  @exclude
@@ -3226,7 +3273,7 @@ def _generated_mutation_provider_private_spec(
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
    overriding procedure Source_Wait_Source
-     (Item       : in out {item.operation_type};
+{source_wait_item}
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
@@ -3367,6 +3414,33 @@ def _generated_mutation_provider_body(
                 f"        {item.operation_type}\n"
                 "          (Set, Client, Token)"
             )
+        source_wait_item = (
+            f"     (Item       : in out {item.operation_type};"
+        )
+        if len(source_wait_item) > 79:
+            source_wait_item = (
+                "     (Item       : in out\n"
+                f"        {item.operation_type};"
+            )
+        request_cancellation_line = (
+            f"      {family}.Request_Cancellation"
+        )
+        request_cancellation_call = (
+            request_cancellation_line
+            if len(request_cancellation_line) <= 79
+            else (
+                f"      {family}.\n"
+                "        Request_Cancellation"
+            )
+        )
+        start_operation = (
+            f"     (Operation  : in out {item.operation_type};"
+        )
+        if len(start_operation) > 79:
+            start_operation = (
+                "     (Operation  : in out\n"
+                f"        {item.operation_type};"
+            )
         parts.append(
             f"""   function Failed_{item.ada_stem}_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
@@ -3469,7 +3543,7 @@ def _generated_mutation_provider_body(
    end Read_Now;
 
    overriding procedure Source_Wait_Source
-     (Item       : in out {item.operation_type};
+{source_wait_item}
       Required   : HTTP_Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean) is
@@ -3503,7 +3577,7 @@ def _generated_mutation_provider_body(
    overriding procedure Request_Cancellation
      (Item : in out {item.operation_type}) is
    begin
-      {family}.Request_Cancellation
+{request_cancellation_call}
         (Item.State);
    end Request_Cancellation;
 
@@ -3519,7 +3593,7 @@ def _generated_mutation_provider_body(
    end Finalize;
 
    procedure Start_{item.ada_stem}
-     (Operation  : in out {item.operation_type};
+{start_operation}
       Client     : not null access HTTP_Client.Client;
       Origin     : Flyology.HTTP.Origin;
       Bucket     : String;
@@ -3720,6 +3794,25 @@ def _generated_mutation_qualification_text(
      (Expiration => {item.value_unit}.Expiration_Enabled,
       Days       =>
         (Is_Set => True, Text => US.To_Unbounded_String ("30")));'''
+    elif item.operation == (
+        "UpdateBucketMetadataAnnotationTableConfiguration"
+    ):
+        identifier_declaration = ""
+        value_document = ""
+        parameters = f'''   Parameters : constant
+     Low_Level.{item.parameters_type} :=
+     (Content_MD5           => US.Null_Unbounded_String,
+      Checksum_Algorithm    => US.To_Unbounded_String ("SHA256"),
+      Expected_Bucket_Owner =>
+        US.To_Unbounded_String (Expected_Bucket_Owner));'''
+        value_declarations = f'''   Value : constant {value_type} :=
+     (Is_Set              => True,
+      Configuration_State => {item.value_unit}.Annotation_Enabled,
+      Encryption          => (Is_Set => False, others => <>),
+      Role                =>
+        (Is_Set => True,
+         Value => US.To_Unbounded_String
+           ("arn:aws:iam::123456789012:role/qualified-annotation")));'''
     elif item.operation == "PutBucketInventoryConfiguration":
         identifier_declaration = '''   Identifier : constant String :=
      Input ("ID");'''
@@ -3929,6 +4022,14 @@ def _generated_mutation_qualification_text(
             f"             {item.operation_type} :="
         )
     )
+    sentinel_expression = (
+        f'     ("{item.operation} signed qualification " &'
+    )
+    if len(sentinel_expression) > 79:
+        sentinel_expression = (
+            f'     ("{item.operation}" &\n'
+            '      " signed qualification " &'
+        )
     text = f'''with Ada.Environment_Variables;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -4174,7 +4275,7 @@ with Flyology.Operations;
    end if;
    HTTP_Client.Shutdown (HTTP);
    Ada.Text_IO.Put_Line
-     ("{item.operation} signed qualification " &
+{sentinel_expression}
       Case_ID & ": OK");
 exception
    when others =>

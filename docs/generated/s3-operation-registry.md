@@ -118,7 +118,7 @@ remain inventory-only until their audits gain executable evidence.
 | RenameObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | RestoreObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | SelectObjectContent | legacy_preserved | objects | event_stream_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
-| UpdateBucketMetadataAnnotationTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateBucketMetadataAnnotationTableConfiguration | Set_Metadata_Annotation_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataInventoryTableConfiguration | Set_Metadata_Inventory_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateBucketMetadataJournalTableConfiguration | Set_Metadata_Journal_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
