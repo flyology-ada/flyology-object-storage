@@ -39,6 +39,7 @@ is
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
    --  @enum Get_Public_Access_Block_Operation Get public access block
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation
+   --  @enum Put_Public_Access_Block_Operation Put public access block
    type Operation_Id is
      (Abort_Multipart_Upload_Operation,
       Complete_Multipart_Upload_Operation,
