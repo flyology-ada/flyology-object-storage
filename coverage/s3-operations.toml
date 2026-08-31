@@ -189,6 +189,17 @@ complete_multipart_upload = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+upload_part = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-upload-part-preparation.py"],
+  ["./tools/verify-composable-client-fixtures.sh"],
+  ["./tools/test-composable-client-fixtures-verifier.sh"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-upload-part-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 copy_object = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-copy-object-preparation.py"],
   ["./tools/verify-composable-client-fixtures.sh"],
@@ -4716,18 +4727,22 @@ tier = "core"
 provider = "transfers"
 family = "streaming_mutation"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+codec = "streaming_request_and_singleton_headers"
+public_name = "Upload_Part"
+absence = "no dedicated absence variant; NoSuchBucket and NoSuchUpload are structured typed rejections but remain publication-unknown after admission"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 response observed with Part_Uploaded reports Part_Published; definite non-admission reports Definitely_Not_Staged, pre-admission cancellation reports Part_Cancelled_Before_Admission, and every complete rejection or possible or incomplete admission reports Part_Outcome_Unknown; no automatic replay"
+reconciliation = "read-only ListParts for the exact bucket, key, upload identifier, and part number before any caller-selected retry or completion decision"
+exclusions = ["server compatibility is limited to authenticated path-style general-purpose bucket requests; directory-bucket and access-point routing are not claimed", "server-side configured Requester Pays and SSE-C multipart state are not claimed; their exact client transport and authenticated validated NotImplemented rejection remain covered", "inner aws-chunked request framing and HTTP/2 or HTTP/3 server qualification are outside the profile", "a ListParts observation does not establish which concurrent writer staged an indistinguishable part; caller serialization or content binding remains required for causal attribution"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/upload-part-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/upload-part/members.tsv", "tests/corpora/upload-part/vectors.tsv", "tools/verify-upload-part-preparation.py", "docs/qualification/upload-part-preparation.md", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/corpora/composable-client/upload-part-certainty.tsv", "tools/verify-composable-client-fixtures.sh", "tools/test-composable-client-fixtures-verifier.sh", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "upload_part"
+ada_symbols = ["Prepare_Upload_Part", "Decode_Upload_Part_Complete_Response", "Execute_Upload_Part", "Upload_Part_Operation", "Upload_Part", "Finish"]
 
 [[operation]]
 name = "UploadPartCopy"

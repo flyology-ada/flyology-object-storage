@@ -157,6 +157,14 @@ independent digest-pinned s5cmd byte and deletion oracle.
 The isolated verifier needs only the Python standard library; it does not build
 the Ada project or run GNATprove.
 
+The `UploadPart` registry lane is conditional on every maintained command
+succeeding. It pins request checksum and body binding, conservative certainty
+after possible admission, exact-upload ListParts reconciliation without
+automatic replay, cancellation and same-object restart, and authenticated
+server exclusions. The generated-model GNATdoc association is a region-scoped
+warning measurement only; repository-wide and selected GNATdoc qualification
+remain blocked by pre-existing warnings outside that declaration region.
+
 The deterministic source was frozen in local commit
 `7297dcf779cd66dd1d24e06183b1d6acb6938c6c`. After a clear host-process audit,
 the single serialized `./tools/prove.sh` campaign started at

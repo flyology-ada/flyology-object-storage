@@ -122,6 +122,6 @@ remain inventory-only until their audits gain executable evidence.
 | UpdateBucketMetadataInventoryTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UpdateBucketMetadataJournalTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
-| UploadPart | legacy_preserved | transfers | streaming_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| UploadPart | Upload_Part | transfers | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | UploadPartCopy | legacy_preserved | transfers | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | WriteGetObjectResponse | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |

@@ -3373,6 +3373,114 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed ListParts lane accepted")
+    upload_part_certainty = (
+        "only a complete validated 200 response observed with Part_Uploaded "
+        "reports Part_Published; definite non-admission reports "
+        "Definitely_Not_Staged, pre-admission cancellation reports "
+        "Part_Cancelled_Before_Admission, and every complete rejection or "
+        "possible or incomplete admission reports Part_Outcome_Unknown; no "
+        "automatic replay"
+    )
+    upload_part_reconciliation = (
+        "read-only ListParts for the exact bucket, key, upload identifier, "
+        "and part number before any caller-selected retry or completion "
+        "decision"
+    )
+    upload_part_symbols = [
+        "Prepare_Upload_Part",
+        "Decode_Upload_Part_Complete_Response",
+        "Execute_Upload_Part",
+        "Upload_Part_Operation",
+        "Upload_Part",
+        "Finish",
+    ]
+
+    def assert_upload_part_registry(candidate):
+        entry = candidate.operations["UploadPart"]
+        assert entry.get("public_name") == "Upload_Part"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "upload_part"
+        assert entry.get("certainty") == upload_part_certainty
+        assert entry.get("reconciliation") == upload_part_reconciliation
+        assert entry.get("ada_symbols") == upload_part_symbols
+        assert "NoSuchBucket and NoSuchUpload" in entry["absence"]
+        assert "aws-chunked" in entry["exclusions"][2]
+        assert (
+            candidate.qualification["upload_part"][0][-1]
+            == "tools/verify-upload-part-preparation.py"
+        )
+
+    def reject_upload_part_registry(candidate, label):
+        try:
+            assert_upload_part_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} UploadPart registry accepted")
+
+    assert_upload_part_registry(registry)
+    missing_upload_part_name = copy.deepcopy(registry)
+    del missing_upload_part_name.operations["UploadPart"]["public_name"]
+    reject_upload_part_registry(missing_upload_part_name, "missing name")
+    wrong_upload_part_name = copy.deepcopy(registry)
+    wrong_upload_part_name.operations["UploadPart"][
+        "public_name"
+    ] = "Upload_Part_Copy"
+    reject_upload_part_registry(wrong_upload_part_name, "wrong name")
+    replay_upload_part = copy.deepcopy(registry)
+    replay_upload_part.operations["UploadPart"][
+        "reconciliation"
+    ] = "automatically replay UploadPart"
+    reject_upload_part_registry(replay_upload_part, "automatic replay")
+    cross_upload_part_symbol = copy.deepcopy(registry)
+    cross_upload_part_symbol.operations["UploadPart"][
+        "ada_symbols"
+    ][0] = "Prepare_Upload_Part_Copy"
+    reject_upload_part_registry(
+        cross_upload_part_symbol, "cross-operation symbol"
+    )
+    upload_part_qualification, upload_part_commands = (
+        s3_operation.qualification_plan(registry, ["UploadPart"])
+    )
+    assert upload_part_qualification == "upload_part"
+    assert upload_part_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-upload-part-preparation.py",
+        ],
+        ["./tools/verify-composable-client-fixtures.sh"],
+        ["./tools/test-composable-client-fixtures-verifier.sh"],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert upload_part_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-upload-part-gnatdoc",
+        "--operation",
+        "UploadPart",
+    ]
+    assert upload_part_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(registry, ["UploadPart", "UploadPart"])
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate UploadPart lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["UploadPart", "UploadPartCopy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "operation has no focused qualification lane" in str(error)
+            or "do not share one qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed UploadPart lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",
