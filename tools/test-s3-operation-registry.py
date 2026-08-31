@@ -6051,6 +6051,176 @@ def main() -> None:
         raise AssertionError(
             "mixed PutBucketNotificationConfiguration lane accepted"
         )
+    put_bucket_notification_certainty = (
+        "mutation compatibility subset; "
+        + put_bucket_notification_configuration_certainty
+    )
+    put_bucket_notification_reconciliation = (
+        "a later GetBucketNotification or "
+        "GetBucketNotificationConfiguration may observe the bucket "
+        "notification configuration current at read time before a "
+        "caller-selected retry, but it neither proves that the lost mutation "
+        "caused the observed state nor upgrades mutation certainty; no "
+        "automatic replay"
+    )
+    put_bucket_notification_symbols = [
+        "Prepare_Put_Bucket_Notification_Configuration",
+        "Execute_Put_Bucket_Notification_Configuration",
+        "Put_Bucket_Notification_Operation",
+        "Set_Notification_Configuration",
+        "Finish",
+    ]
+
+    def assert_put_bucket_notification_registry(candidate):
+        entry = candidate.operations["PutBucketNotification"]
+        assert entry.get("public_name") == "Set_Notification_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_bucket_notification"
+        assert entry.get("codec") == (
+            "strict_current_rest_xml_mutation_compatibility_subset"
+        )
+        assert entry.get("certainty") == put_bucket_notification_certainty
+        assert entry.get("reconciliation") == (
+            put_bucket_notification_reconciliation
+        )
+        assert entry.get("ada_symbols") == put_bucket_notification_symbols
+        assert entry["coverage"] == {
+            "backend": "missing",
+            "client": "partial",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry["provenance"]["client"] == "handwritten"
+        assert entry["provenance"]["tests"] == "handwritten"
+        assert "client coverage is deliberately partial" in (
+            entry["exclusions"][1]
+        )
+        assert "InvocationRole" in entry["exclusions"][1]
+        assert "modern filters" in entry["exclusions"][1]
+        assert "legacy operation requires checksum transport" in (
+            entry["exclusions"][2]
+        )
+        assert "maintained current operation sends neither" in (
+            entry["exclusions"][2]
+        )
+        commands = candidate.qualification["put_bucket_notification"]
+        assert commands[0][-1] == (
+            "tools/verify-bucket-notification-configuration-preparation.py"
+        )
+
+    def reject_put_bucket_notification_registry(candidate, label):
+        try:
+            assert_put_bucket_notification_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketNotification registry accepted"
+        )
+
+    assert_put_bucket_notification_registry(registry)
+    missing_put_bucket_notification_name = copy.deepcopy(registry)
+    del missing_put_bucket_notification_name.operations[
+        "PutBucketNotification"
+    ]["public_name"]
+    reject_put_bucket_notification_registry(
+        missing_put_bucket_notification_name, "missing compatibility name"
+    )
+    full_put_bucket_notification = copy.deepcopy(registry)
+    full_put_bucket_notification.operations[
+        "PutBucketNotification"
+    ]["coverage"]["client"] = "covered"
+    reject_put_bucket_notification_registry(
+        full_put_bucket_notification, "invented complete client coverage"
+    )
+    hidden_put_bucket_notification_gap = copy.deepcopy(registry)
+    hidden_put_bucket_notification_gap.operations[
+        "PutBucketNotification"
+    ]["exclusions"][1] = "all deprecated notification shapes are accepted"
+    reject_put_bucket_notification_registry(
+        hidden_put_bucket_notification_gap, "hidden legacy shape gap"
+    )
+    checksum_put_bucket_notification = copy.deepcopy(registry)
+    checksum_put_bucket_notification.operations[
+        "PutBucketNotification"
+    ]["exclusions"][2] = "the current client sends the legacy checksums"
+    reject_put_bucket_notification_registry(
+        checksum_put_bucket_notification, "invented checksum transport"
+    )
+    replay_put_bucket_notification = copy.deepcopy(registry)
+    replay_put_bucket_notification.operations[
+        "PutBucketNotification"
+    ]["certainty"] = "automatically replay PutBucketNotification"
+    reject_put_bucket_notification_registry(
+        replay_put_bucket_notification, "automatic replay"
+    )
+    causal_put_bucket_notification = copy.deepcopy(registry)
+    causal_put_bucket_notification.operations[
+        "PutBucketNotification"
+    ]["reconciliation"] = "the later read proves the mutation caused state"
+    reject_put_bucket_notification_registry(
+        causal_put_bucket_notification, "causal reconciliation"
+    )
+    cross_put_bucket_notification_symbol = copy.deepcopy(registry)
+    cross_put_bucket_notification_symbol.operations[
+        "PutBucketNotification"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification_Configuration"
+    reject_put_bucket_notification_registry(
+        cross_put_bucket_notification_symbol, "cross-operation symbol"
+    )
+    malformed_put_bucket_notification_lane = copy.deepcopy(registry)
+    malformed_put_bucket_notification_lane.qualification[
+        "put_bucket_notification"
+    ][0][-1] = "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
+    reject_put_bucket_notification_registry(
+        malformed_put_bucket_notification_lane, "cross-operation lane"
+    )
+    legacy_put_notification_qualification, legacy_put_notification_commands = (
+        s3_operation.qualification_plan(registry, ["PutBucketNotification"])
+    )
+    assert legacy_put_notification_qualification == "put_bucket_notification"
+    assert legacy_put_notification_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-bucket-notification-configuration-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert legacy_put_notification_commands[4] == [
+        "./tools/verify-coverage.sh"
+    ]
+    assert legacy_put_notification_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-notification-gnatdoc",
+        "--operation",
+        "PutBucketNotification",
+    ]
+    assert legacy_put_notification_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketNotification", "PutBucketNotification"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutBucketNotification lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "PutBucketNotification",
+                "PutBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketNotification lane accepted")
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
@@ -10167,8 +10337,8 @@ def main() -> None:
         entry["implementation_mode"]
         for entry in registry.operations.values()
     ) == {
-        "handwritten": 81,
-        "generated": 18,
+        "handwritten": 82,
+        "generated": 17,
         "shared-family": 17,
     }
     assert {

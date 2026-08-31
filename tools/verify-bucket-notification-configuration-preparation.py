@@ -148,6 +148,15 @@ def main() -> int:
             "Request_Checksum_Required": "False",
             "Request_Checksum_Algorithm_Member": "",
         },
+        "Put_Bucket_Notification_Operation": {
+            "Method": "Put_Method",
+            "Request_URI": "/{Bucket}?notification",
+            "Response_Code": "200",
+            "Input_Shape": "537",
+            "Output_Shape": "0",
+            "Request_Checksum_Required": "True",
+            "Request_Checksum_Algorithm_Member": "ChecksumAlgorithm",
+        },
     }
     for operation, scalars in operations.items():
         for function, expected in scalars.items():
@@ -222,6 +231,26 @@ def main() -> int:
     )
     require_members(
         model,
+        537,
+        [
+            "Bucket",
+            "ContentMD5",
+            "ChecksumAlgorithm",
+            "NotificationConfiguration",
+            "ExpectedBucketOwner",
+        ],
+        ["60", "111", "77", "459", "15"],
+        ["True", "False", "False", "True", "False"],
+        [
+            "Bucket",
+            "Content-MD5",
+            "x-amz-sdk-checksum-algorithm",
+            "NotificationConfiguration",
+            "x-amz-expected-bucket-owner",
+        ],
+    )
+    require_members(
+        model,
         458,
         [
             "TopicConfigurations",
@@ -279,6 +308,21 @@ def main() -> int:
         fail("generated notification enum domain changed")
 
     source = "\n".join(path.read_text(encoding="utf-8") for path in SOURCES)
+    low_level = SOURCES[1].read_text(encoding="utf-8")
+    prepare = function_body(
+        low_level, "Prepare_Put_Bucket_Notification_Configuration"
+    )
+    for token in (
+        "Model.Put_Bucket_Notification_Configuration_Operation",
+        "Notifications.Serialize (Value, Limits)",
+        "Content_MD5           => US.Null_Unbounded_String",
+        "Checksum_Algorithm    => US.Null_Unbounded_String",
+        "Has_Skip_Destination_Validation => True",
+    ):
+        if prepare.count(token) != 1:
+            fail(f"maintained notification preparation lacks exact {token}")
+    if "Model.Put_Bucket_Notification_Operation" in prepare:
+        fail("deprecated notification operation identity is unexpectedly used")
     for token in (
         "Prepare_Get_Bucket_Notification_Configuration",
         "Decode_Get_Bucket_Notification_Configuration_Response",
@@ -295,10 +339,10 @@ def main() -> int:
         if token not in source:
             fail(f"typed implementation lacks {token}")
     print(
-        "Bucket notification configuration preparation: deprecated GET "
-        "17-node partial boundary; current GET 2-member input, PUT 4-member "
-        "input, complete flattened destination/filter graph, and 30-event "
-        "exact domain"
+        "Bucket notification configuration preparation: deprecated GET and "
+        "PUT partial boundaries; legacy PUT five-member checksum request, "
+        "current PUT four-member unchecksummed request, complete current "
+        "destination/filter graph, and 30-event exact domain"
     )
     return 0
 

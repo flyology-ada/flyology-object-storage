@@ -88,7 +88,7 @@ PutBucketLifecycle	extended	missing	partial	missing	covered
 PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered
 PutBucketLogging	extended	missing	covered	missing	covered
 PutBucketMetricsConfiguration	extended	missing	covered	missing	covered
-PutBucketNotification	extended	missing	partial	missing	missing
+PutBucketNotification	extended	missing	partial	missing	covered
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
 PutBucketOwnershipControls	extended	missing	covered	missing	covered
 PutBucketPolicy	extended	covered	covered	covered	covered
