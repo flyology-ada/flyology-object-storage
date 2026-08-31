@@ -14454,6 +14454,15 @@ private
      (Item : in out Get_Bucket_Website_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded PutBucketReplication result
    function Decode_Put_Bucket_Replication_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14466,6 +14475,11 @@ private
       return Put_Bucket_Replication_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized PutBucketReplication failure result
    function Normalize_Put_Bucket_Replication_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14494,6 +14508,15 @@ private
    end record;
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded PutBucketAnalyticsConfiguration result
    function Decode_Put_Bucket_Analytics_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14506,6 +14529,11 @@ private
       return Put_Bucket_Analytics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized PutBucketAnalyticsConfiguration failure result
    function Normalize_Put_Bucket_Analytics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14534,6 +14562,15 @@ private
    end record;
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded intelligent-tiering update result
    function Decode_Put_Bucket_Intelligent_Tiering_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14546,6 +14583,11 @@ private
       return Put_Bucket_Intelligent_Tiering_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized intelligent-tiering update failure result
    function Normalize_Put_Bucket_Intelligent_Tiering_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14577,6 +14619,15 @@ private
    end record;
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded PutBucketMetricsConfiguration result
    function Decode_Put_Bucket_Metrics_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14589,6 +14640,11 @@ private
       return Put_Bucket_Metrics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized PutBucketMetricsConfiguration failure result
    function Normalize_Put_Bucket_Metrics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
