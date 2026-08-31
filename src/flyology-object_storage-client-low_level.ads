@@ -7301,6 +7301,14 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every non-resource member in the pinned ListMultipartUploads input
    --  shape.  An upload-id marker without a key marker is preserved exactly;
    --  S3 defines it as ignored rather than malformed.
+   --  @field Delimiter Optional common-prefix delimiter
+   --  @field URL_Encoding Whether encoding-type=url is requested
+   --  @field Key_Marker Exclusive starting key marker
+   --  @field Max_Uploads Maximum uploads requested in one page
+   --  @field Prefix Optional key-prefix filter
+   --  @field Upload_ID_Marker Starting upload identifier within a key
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field Request_Payer Optional requester-pays header value
    type List_Multipart_Uploads_Parameters is record
       Delimiter             : Ada.Strings.Unbounded.Unbounded_String;
       URL_Encoding          : Boolean := False;
@@ -7312,6 +7320,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one signed bodyless ListMultipartUploads request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Complete modeled page selectors
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless upload-listing request metadata
    function Prepare_List_Multipart_Uploads
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7323,14 +7340,24 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every output member in the pinned shape: REST/XML members are grouped
    --  in Listing and RequestCharged is the sole operation response header.
+   --  @field Listing Parsed multipart-upload page
+   --  @field Request_Charged Optional returned requester-charge value
    type List_Multipart_Uploads_Result is record
       Listing : S3.Multipart_Uploads.List_Multipart_Uploads_Result;
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish validated upload page from structured S3 rejection.
+   --  @enum Multipart_Uploads_Listed Validated HTTP-200 page was decoded
+   --  @enum List_Multipart_Uploads_Rejected Structured S3 error was decoded
    type List_Multipart_Uploads_Outcome_Kind is
      (Multipart_Uploads_Listed, List_Multipart_Uploads_Rejected);
 
+   --  Result of decoding or executing one ListMultipartUploads operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated multipart-upload page on success
+   --  @field Error Structured S3 error on rejection
    type List_Multipart_Uploads_Outcome
      (Kind : List_Multipart_Uploads_Outcome_Kind :=
         List_Multipart_Uploads_Rejected)
@@ -7344,6 +7371,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded upload page from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_Charged Supplied requester-charge value, possibly empty
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Multipart-upload page or structured S3 rejection
    function Decode_List_Multipart_Uploads_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -7371,6 +7406,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Multipart_Uploads_Outcome;
 
+   --  Execute one bodyless listing attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Multipart-upload page or structured S3 rejection
    function Execute_List_Multipart_Uploads
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -9250,6 +9292,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared ListMultipartUploads exchange into a bounded sink.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Multipart_Uploads
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
