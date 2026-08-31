@@ -3827,6 +3827,136 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketAcl lane accepted")
+    get_object_retention_certainty = (
+        "read-only; only one complete validated 200 Object_Retention_Found "
+        "response observed exposes the presence-preserving retention value; "
+        "every incomplete, invalid, or non-observed response exposes no "
+        "retention state; the client performs no automatic retry"
+    )
+    get_object_retention_reconciliation = (
+        "an explicit VersionId observes retention for that selected object "
+        "generation and an omitted VersionId observes the generation current "
+        "at read time; the modeled response does not echo a version identifier "
+        "and neither form proves that a prior mutation caused the observed "
+        "retention state"
+    )
+    get_object_retention_symbols = [
+        "Prepare_Get_Object_Retention",
+        "Decode_Get_Object_Retention_Response",
+        "Execute_Get_Object_Retention",
+        "Get_Retention_Operation",
+        "Get_Retention",
+        "Finish",
+    ]
+
+    def assert_get_object_retention_registry(candidate):
+        entry = candidate.operations["GetObjectRetention"]
+        assert entry.get("public_name") == "Get_Retention"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_object_retention"
+        assert entry.get("certainty") == get_object_retention_certainty
+        assert (
+            entry.get("reconciliation") == get_object_retention_reconciliation
+        )
+        assert entry.get("ada_symbols") == get_object_retention_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "NoSuchVersion" in entry["absence"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert (
+            candidate.qualification["get_object_retention"][0][-1]
+            == "tools/verify-get-object-retention-preparation.py"
+        )
+
+    def reject_get_object_retention_registry(candidate, label):
+        try:
+            assert_get_object_retention_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetObjectRetention registry accepted")
+
+    assert_get_object_retention_registry(registry)
+    missing_get_object_retention_name = copy.deepcopy(registry)
+    del missing_get_object_retention_name.operations["GetObjectRetention"][
+        "public_name"
+    ]
+    reject_get_object_retention_registry(
+        missing_get_object_retention_name, "missing name"
+    )
+    wrong_get_object_retention_name = copy.deepcopy(registry)
+    wrong_get_object_retention_name.operations["GetObjectRetention"][
+        "public_name"
+    ] = "Get_Legal_Hold"
+    reject_get_object_retention_registry(
+        wrong_get_object_retention_name, "wrong name"
+    )
+    retry_get_object_retention = copy.deepcopy(registry)
+    retry_get_object_retention.operations["GetObjectRetention"][
+        "certainty"
+    ] = "read-only; retry automatically"
+    reject_get_object_retention_registry(
+        retry_get_object_retention, "automatic retry"
+    )
+    server_get_object_retention = copy.deepcopy(registry)
+    server_get_object_retention.operations["GetObjectRetention"]["coverage"][
+        "server"
+    ] = "covered"
+    reject_get_object_retention_registry(
+        server_get_object_retention, "invented server coverage"
+    )
+    cross_get_object_retention_symbol = copy.deepcopy(registry)
+    cross_get_object_retention_symbol.operations["GetObjectRetention"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Object_Legal_Hold"
+    reject_get_object_retention_registry(
+        cross_get_object_retention_symbol, "cross-operation symbol"
+    )
+    get_object_retention_qualification, get_object_retention_commands = (
+        s3_operation.qualification_plan(registry, ["GetObjectRetention"])
+    )
+    assert get_object_retention_qualification == "get_object_retention"
+    assert get_object_retention_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-object-retention-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_object_retention_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert get_object_retention_commands[4] == ["./tools/verify-coverage.sh"]
+    assert get_object_retention_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-object-retention-gnatdoc",
+        "--operation",
+        "GetObjectRetention",
+    ]
+    assert get_object_retention_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObjectRetention", "GetObjectRetention"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetObjectRetention lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObjectRetention", "PutObjectRetention"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError("mixed GetObjectRetention lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",

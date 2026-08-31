@@ -532,6 +532,16 @@ get_object_acl = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_object_retention = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-retention-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_object_retention_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-object-retention-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_object_attributes = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-attributes-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -2805,18 +2815,22 @@ tier = "extended"
 provider = "objects"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Get_Retention"
+absence = "no dedicated absence variant; exact NoSuchBucket, NoSuchKey, and NoSuchVersion responses are structured typed rejections, while a validated 200 preserves absence of the optional Retention payload separately from a present value with independently optional members"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only; only one complete validated 200 Object_Retention_Found response observed exposes the presence-preserving retention value; every incomplete, invalid, or non-observed response exposes no retention state; the client performs no automatic retry"
+reconciliation = "an explicit VersionId observes retention for that selected object generation and an omitted VersionId observes the generation current at read time; the modeled response does not echo a version identifier and neither form proves that a prior mutation caused the observed retention state"
+exclusions = ["Object Lock persistence and an authenticated Flyology GetObjectRetention server route are absent and not claimed", "configured requester billing is not claimed; exact RequestPayer construction remains client evidence only", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_object_retention"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "src/flyology-object_storage-s3-object_lock.ads", "src/flyology-object_storage-s3-object_lock.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-get-object-retention-preparation.py", "docs/qualification/get-object-retention.md", "tests/corpora/get-object-retention/members.tsv", "tests/corpora/get-object-retention/vectors.tsv", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
+ada_symbols = ["Prepare_Get_Object_Retention", "Decode_Get_Object_Retention_Response", "Execute_Get_Object_Retention", "Get_Retention_Operation", "Get_Retention", "Finish"]
 
 [[operation]]
 name = "GetObjectTagging"
