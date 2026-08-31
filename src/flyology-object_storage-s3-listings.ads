@@ -111,18 +111,27 @@ package Flyology.Object_Storage.S3.Listings is
      (Token, Bucket, Prefix, Delimiter : String)
       return Continuation_Result;
 
+   --  Vector implementation used for listed checksum algorithm names.
    package Checksum_Algorithm_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive,
       Element_Type => Ada.Strings.Unbounded.Unbounded_String,
       "=" => Ada.Strings.Unbounded."=");
 
+   --  Ordered checksum algorithm names reported for one object.
    subtype Checksum_Algorithm_List is Checksum_Algorithm_Vectors.Vector;
 
+   --  Optional owner structure reported for one listed object.
+   --  @field Display_Name Modeled owner display name
+   --  @field ID Owner identifier
    type Object_Owner is record
       Display_Name : Ada.Strings.Unbounded.Unbounded_String;
       ID           : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Optional archive-restore details reported for one listed object.
+   --  @field Has_Is_Restore_In_Progress Whether progress state is present
+   --  @field Is_Restore_In_Progress Restore progress state when present
+   --  @field Restore_Expiry_Date Optional modeled restore-expiry date
    type Object_Restore_Status is record
       Has_Is_Restore_In_Progress : Boolean := False;
       Is_Restore_In_Progress : Boolean := False;
@@ -132,6 +141,17 @@ package Flyology.Object_Storage.S3.Listings is
    --  Every member in the pinned S3 model's Object structure used by both
    --  ListObjects response versions. Presence flags preserve absent nested
    --  structures independently from their optional members.
+   --  @field Key Object key
+   --  @field Last_Modified Modeled last-modified timestamp
+   --  @field Entity_Tag Modeled entity tag
+   --  @field Checksum_Algorithms Reported checksum algorithm names
+   --  @field Checksum_Type Optional modeled checksum type
+   --  @field Size Object size in bytes
+   --  @field Storage_Class Modeled storage class
+   --  @field Has_Owner Whether the owner structure is present
+   --  @field Owner Owner structure when present
+   --  @field Has_Restore_Status Whether restore details are present
+   --  @field Restore_Status Restore details when present
    type Object_Entry is record
       Key                 : Ada.Strings.Unbounded.Unbounded_String;
       Last_Modified       : Ada.Strings.Unbounded.Unbounded_String;
@@ -146,18 +166,38 @@ package Flyology.Object_Storage.S3.Listings is
       Restore_Status      : Object_Restore_Status;
    end record;
 
+   --  Vector implementation used for listed object entries.
    package Object_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Object_Entry);
 
+   --  Ordered list of object entries.
    subtype Object_List is Object_Vectors.Vector;
 
+   --  Vector implementation used for listed common prefixes.
    package Prefix_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive,
       Element_Type => Ada.Strings.Unbounded.Unbounded_String,
       "=" => Ada.Strings.Unbounded."=");
 
+   --  Ordered list of common-prefix values.
    subtype Prefix_List is Prefix_Vectors.Vector;
 
+   --  Decoded ListObjects v1 response.
+   --  @field Name Bucket name
+   --  @field Prefix Optional echoed object-key prefix
+   --  @field Has_Prefix Whether Prefix is present
+   --  @field Delimiter Optional echoed grouping delimiter
+   --  @field Has_Delimiter Whether Delimiter is present
+   --  @field Encoding_Type Optional echoed encoding type
+   --  @field Has_Encoding_Type Whether Encoding_Type is present
+   --  @field Marker Optional echoed request marker
+   --  @field Has_Marker Whether Marker is present
+   --  @field Next_Marker Next-page marker for a truncated delimited result
+   --  @field Has_Next_Marker Whether Next_Marker is present
+   --  @field Max_Keys Echoed maximum result count
+   --  @field Is_Truncated Whether another result page remains
+   --  @field Contents Ordered object entries
+   --  @field Common_Prefixes Ordered collapsed prefix entries
    type List_Objects_Result is record
       Name            : Ada.Strings.Unbounded.Unbounded_String;
       Prefix          : Ada.Strings.Unbounded.Unbounded_String;
@@ -179,14 +219,39 @@ package Flyology.Object_Storage.S3.Listings is
    --  Decode a ListObjects v1 REST/XML response through the bounded shared
    --  S3 XML boundary. Required scalars, counts, object entries, delimiter
    --  pagination, and encoding-type semantics are validated before return.
+   --  @param Document ListObjects v1 result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded and validated v1 result
    function Parse_List_Objects
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return List_Objects_Result;
 
+   --  Serialize one ListObjects v1 result document.
+   --  @param Value Result value to serialize
+   --  @return Namespaced ListObjects v1 result XML
    function Serialize_List_Objects
      (Value : List_Objects_Result) return String;
 
+   --  Decoded ListObjectsV2 response.
+   --  @field Name Bucket name
+   --  @field Prefix Echoed object-key prefix, empty when absent
+   --  @field Delimiter Optional echoed grouping delimiter
+   --  @field Has_Delimiter Whether Delimiter is present
+   --  @field Encoding_Type Optional echoed encoding type
+   --  @field Has_Encoding_Type Whether Encoding_Type is present
+   --  @field Continuation_Token Optional echoed continuation token
+   --  @field Has_Continuation_Token Whether Continuation_Token is present
+   --  @field Next_Continuation_Token Next-page token when Is_Truncated is true
+   --  @field Has_Next_Continuation_Token Whether the next-page token
+   --    is present
+   --  @field Start_After Optional echoed exclusive starting key
+   --  @field Has_Start_After Whether Start_After is present
+   --  @field Key_Count Number of returned entries
+   --  @field Max_Keys Echoed maximum result count
+   --  @field Is_Truncated Whether another result page remains
+   --  @field Contents Ordered object entries
+   --  @field Common_Prefixes Ordered collapsed prefix entries
    type List_Objects_V2_Result is record
       Name                    : Ada.Strings.Unbounded.Unbounded_String;
       Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
@@ -207,11 +272,18 @@ package Flyology.Object_Storage.S3.Listings is
       Common_Prefixes         : Prefix_List;
    end record;
 
+   --  Parse one bounded ListObjectsV2 result document.
+   --  @param Document ListObjectsV2 result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded and validated v2 result
    function Parse_List_Objects_V2
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return List_Objects_V2_Result;
 
+   --  Serialize one ListObjectsV2 result document.
+   --  @param Value Result value to serialize
+   --  @return Namespaced ListObjectsV2 result XML
    function Serialize_List_Objects_V2
      (Value : List_Objects_V2_Result) return String;
 
