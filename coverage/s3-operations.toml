@@ -647,6 +647,12 @@ get_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_object_annotation = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-annotation-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_object_acl = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-acl-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -3109,18 +3115,21 @@ tier = "extended"
 provider = "objects"
 family = "streaming_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "streaming_bytes_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+public_name = "Not_Exposed"
+codec = "generated_model_only_streaming_bytes_and_headers"
+absence = "the pinned model distinguishes NoSuchBucket, NoSuchKey, and NoSuchAnnotation, but no public client decoder currently exposes those modeled errors or a successful annotation payload"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only model coverage only; no public client operation, response-body sink, header decoder, or runtime evidence exists, so this review exposes no annotation bytes and makes no response-validation or retry claim"
+reconciliation = "the modeled request can select an explicit VersionId or omit it, and the modeled response may carry x-amz-object-version-id; without an implemented request/response binding path, this review claims neither same-version observation nor current-version reconciliation"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects GetObjectAnnotation API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the streaming AnnotationPayload, Content-Length, ETag, checksum, encryption, requester-charge, replication, last-modified, and version response fields are inventory only and are not decoded or validated by the client", "the AnnotationName documentation describes a 1-to-512-byte domain, but the pinned string shape carries no generated minimum or maximum; this review does not invent a public bound or client validation policy", "backend storage, an authenticated Flyology GetObjectAnnotation server route, and external-provider behavior are absent and not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_object_annotation"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-get-object-annotation-model.py"], server = [], corpus = ["tools/verify-get-object-annotation-model.py"] }
 
 [[operation]]
 name = "GetObjectAttributes"

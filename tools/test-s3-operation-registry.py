@@ -3082,6 +3082,153 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetObject lane was accepted")
+    get_object_annotation_certainty = (
+        "read-only model coverage only; no public client operation, "
+        "response-body sink, header decoder, or runtime evidence exists, "
+        "so this review exposes no annotation bytes and makes no "
+        "response-validation or retry claim"
+    )
+
+    def assert_get_object_annotation_registry(candidate):
+        entry = candidate.operations["GetObjectAnnotation"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_object_annotation"
+        assert entry.get("codec") == (
+            "generated_model_only_streaming_bytes_and_headers"
+        )
+        assert entry.get("certainty") == get_object_annotation_certainty
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"]["client"] == "generated"
+        assert "no public client decoder" in entry["absence"]
+        assert "neither same-version observation" in entry["reconciliation"]
+        assert "registry sentinel and not an Ada declaration" in (
+            entry["exclusions"][0]
+        )
+        assert "are inventory only" in entry["exclusions"][1]
+        assert "does not invent a public bound" in entry["exclusions"][2]
+        assert entry["evidence"]["client"] == [
+            "src/flyology-object_storage-s3-model.adb",
+            "tools/verify-get-object-annotation-model.py",
+        ]
+        assert candidate.qualification["get_object_annotation"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-get-object-annotation-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_get_object_annotation_registry(candidate, label):
+        try:
+            assert_get_object_annotation_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetObjectAnnotation registry accepted")
+
+    assert_get_object_annotation_registry(registry)
+    invented_get_object_annotation_api = copy.deepcopy(registry)
+    invented_get_object_annotation_api.operations[
+        "GetObjectAnnotation"
+    ]["public_name"] = "Get_Annotation"
+    reject_get_object_annotation_registry(
+        invented_get_object_annotation_api, "invented public API"
+    )
+    full_get_object_annotation = copy.deepcopy(registry)
+    full_get_object_annotation.operations[
+        "GetObjectAnnotation"
+    ]["coverage"]["client"] = "covered"
+    reject_get_object_annotation_registry(
+        full_get_object_annotation, "invented complete client coverage"
+    )
+    binding_get_object_annotation = copy.deepcopy(registry)
+    binding_get_object_annotation.operations[
+        "GetObjectAnnotation"
+    ]["reconciliation"] = "the response proves exact version binding"
+    reject_get_object_annotation_registry(
+        binding_get_object_annotation, "invented version binding"
+    )
+    checksum_get_object_annotation = copy.deepcopy(registry)
+    checksum_get_object_annotation.operations[
+        "GetObjectAnnotation"
+    ]["exclusions"][1] = "the client validates every payload checksum"
+    reject_get_object_annotation_registry(
+        checksum_get_object_annotation, "invented checksum validation"
+    )
+    missing_get_object_annotation_model = copy.deepcopy(registry)
+    missing_get_object_annotation_model.operations[
+        "GetObjectAnnotation"
+    ]["evidence"]["client"] = []
+    reject_get_object_annotation_registry(
+        missing_get_object_annotation_model, "missing model evidence"
+    )
+    get_object_annotation_lane, get_object_annotation_commands = (
+        s3_operation.qualification_plan(registry, ["GetObjectAnnotation"])
+    )
+    assert get_object_annotation_lane == "get_object_annotation"
+    assert get_object_annotation_commands == (
+        registry.qualification["get_object_annotation"]
+    )
+    documented_get_object_annotation = copy.deepcopy(registry)
+    documented_get_object_annotation.qualification[
+        "get_object_annotation"
+    ].insert(2, [
+        "./tools/build-api-docs.sh", "/private/tmp/fos-impossible-gnatdoc",
+    ])
+    try:
+        s3_operation.qualification_plan(
+            documented_get_object_annotation, ["GetObjectAnnotation"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "model-only qualification lane" in str(error)
+    else:
+        raise AssertionError("model-only GNATdoc lane accepted")
+    mixed_exposure_lane = copy.deepcopy(registry)
+    mixed_exposure_lane.operations["GetObject"]["qualification"] = (
+        "get_object_annotation"
+    )
+    try:
+        s3_operation.qualification_plan(
+            mixed_exposure_lane, ["GetObject", "GetObjectAnnotation"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "mixes exposed and model-only" in str(error)
+    else:
+        raise AssertionError("mixed exposed/model-only lane accepted")
+    exposed_without_docs = copy.deepcopy(registry)
+    exposed_without_docs.qualification["get_object"] = [
+        command
+        for command in exposed_without_docs.qualification["get_object"]
+        if command[0] != "./tools/build-api-docs.sh"
+    ]
+    try:
+        s3_operation.qualification_plan(exposed_without_docs, ["GetObject"])
+    except s3_operation.Audit_Error as error:
+        assert "must contain exactly one documentation gate" in str(error)
+    else:
+        raise AssertionError("exposed lane without GNATdoc accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObjectAnnotation", "GetObjectAnnotation"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetObjectAnnotation lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetObject", "GetObjectAnnotation"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetObjectAnnotation lane accepted")
+
     head_object_public_name = "Head_Object"
 
     def assert_head_object_registry(candidate):

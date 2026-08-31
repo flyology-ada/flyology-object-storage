@@ -1700,12 +1700,26 @@ def qualification_plan(
         for command in result
         if command and command[0] == "./tools/build-api-docs.sh"
     ]
-    if len(documentation) != 1:
+    exposure_classes = {
+        entry.get("public_name") == "Not_Exposed" for entry in entries
+    }
+    if len(exposure_classes) != 1:
+        raise Audit_Error(
+            "qualification lane mixes exposed and model-only operations"
+        )
+    model_only = exposure_classes == {True}
+    if model_only and documentation:
+        raise Audit_Error(
+            "model-only qualification lane must not contain a "
+            "documentation gate"
+        )
+    if not model_only and len(documentation) != 1:
         raise Audit_Error(
             "qualification lane must contain exactly one documentation gate"
         )
-    for operation in operations:
-        documentation[0].extend(("--operation", operation))
+    if documentation:
+        for operation in operations:
+            documentation[0].extend(("--operation", operation))
     return qualification, result
 
 
