@@ -1227,10 +1227,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
       return Get_Bucket_Versioning_Outcome;
 
+   --  Modeled HeadBucket input outside the bucket path.
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
    type Head_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one bodyless HeadBucket request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose availability is checked
+   --  @param Parameters Optional request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared HeadBucket request
    function Prepare_Head_Bucket
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -1241,6 +1252,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  Every output member in the pinned HeadBucket response shape.
+   --  @field Bucket_ARN Optional exact bucket resource name
+   --  @field Bucket_Location_Type Optional location classification
+   --  @field Bucket_Location_Name Optional exact location name
+   --  @field Bucket_Region Optional exact bucket region
+   --  @field Access_Point_Alias Optional access-point-alias flag
    type Head_Bucket_Result is record
       Bucket_ARN           : Ada.Strings.Unbounded.Unbounded_String;
       Bucket_Location_Type : Ada.Strings.Unbounded.Unbounded_String;
@@ -1249,9 +1265,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Access_Point_Alias   : Optional_Boolean;
    end record;
 
+   --  Terminal HeadBucket response classification.
+   --  @enum Bucket_Found The modeled success metadata is present
+   --  @enum Head_Bucket_Rejected A bodyless rejection is present
    type Head_Bucket_Outcome_Kind is
      (Bucket_Found, Head_Bucket_Rejected);
 
+   --  Completed HeadBucket response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Result Successful bucket metadata
+   --  @field Error Synthesized bodyless rejection
    type Head_Bucket_Outcome
      (Kind : Head_Bucket_Outcome_Kind := Head_Bucket_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -1263,6 +1287,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one HeadBucket status, body, and modeled header set.
+   --  @param Status HTTP response status
+   --  @param Payload Complete response body
+   --  @param Headers Modeled HeadBucket response headers
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @return Modeled success metadata or bodyless rejection
    function Decode_Head_Bucket_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -1280,6 +1311,12 @@ package Flyology.Object_Storage.Client.Low_Level is
      (Response : Flyology.HTTP.Client.Response;
       Payload  : String) return Head_Bucket_Outcome;
 
+   --  Execute one prepared HeadBucket request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared HeadBucket request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @return Modeled success metadata or bodyless rejection
    function Execute_Head_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
