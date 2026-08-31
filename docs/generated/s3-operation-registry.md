@@ -85,7 +85,7 @@ remain inventory-only until their audits gain executable evidence.
 | ListObjectVersions | List_Versions_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjects | List_V1_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjectsV2 | List_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListParts | legacy_preserved | transfers | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListParts | List_Parts_Page | transfers | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketAbac | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketAccelerateConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketAcl | Set_ACL | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |

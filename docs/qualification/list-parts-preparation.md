@@ -127,8 +127,16 @@ adds exact-limit/one-past owner controls, owner/payer duplicates, malformed and
 mismatched SSE-C material, plaintext rejection, valid unsupported HTTPS, and
 bad-signature precedence. The implementation corpus uses the typed
 composable-backed page API and exercises real service-returned continuation
-markers. Ledger promotion
-records the qualified client and general-purpose server boundaries.
+markers. Ledger promotion records the qualified client and general-purpose
+server boundaries.
+
+The `ListParts` registry lane is conditional on every maintained command
+succeeding. It pins exact-upload response binding, read-only failure
+normalization, cancellation and same-object restart, bounded server behavior,
+and the measured SeaweedFS pagination exclusion. The generated-model GNATdoc
+association is a region-scoped warning measurement only; repository-wide and
+selected GNATdoc qualification remain blocked by pre-existing warnings outside
+that declaration region.
 
 ## Frozen gate evidence
 

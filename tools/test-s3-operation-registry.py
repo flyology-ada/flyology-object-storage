@@ -3283,6 +3283,96 @@ def main() -> None:
         "--operation",
         "ListMultipartUploads",
     ]
+    list_parts_symbols = [
+        "Prepare_List_Parts",
+        "Decode_List_Parts_Complete_Response",
+        "Execute_List_Parts",
+        "List_Parts_Operation",
+        "List_Parts_Page",
+        "Finish",
+    ]
+
+    def assert_list_parts_registry(candidate):
+        entry = candidate.operations["ListParts"]
+        assert entry.get("public_name") == "List_Parts_Page"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "list_parts"
+        assert entry.get("certainty") == "read_only"
+        assert entry.get("reconciliation") == "not_applicable"
+        assert entry.get("ada_symbols") == list_parts_symbols
+        assert "NoSuchUpload or NoSuchBucket" in entry["absence"]
+        assert "PartNumberMarker" in entry["exclusions"][3]
+        assert (
+            candidate.qualification["list_parts"][0][-1]
+            == "tools/verify-list-parts-preparation.py"
+        )
+
+    def reject_list_parts_registry(candidate, label):
+        try:
+            assert_list_parts_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} ListParts registry accepted")
+
+    assert_list_parts_registry(registry)
+    missing_list_parts_name = copy.deepcopy(registry)
+    del missing_list_parts_name.operations["ListParts"]["public_name"]
+    reject_list_parts_registry(missing_list_parts_name, "missing public name")
+    wrong_list_parts_name = copy.deepcopy(registry)
+    wrong_list_parts_name.operations["ListParts"][
+        "public_name"
+    ] = "List_Multipart_Uploads_Page"
+    reject_list_parts_registry(wrong_list_parts_name, "wrong public name")
+    legacy_list_parts_absence = copy.deepcopy(registry)
+    legacy_list_parts_absence.operations["ListParts"][
+        "absence"
+    ] = "legacy_preserved"
+    reject_list_parts_registry(legacy_list_parts_absence, "legacy absence")
+    cross_list_parts_symbol = copy.deepcopy(registry)
+    cross_list_parts_symbol.operations["ListParts"][
+        "ada_symbols"
+    ][0] = "Prepare_List_Multipart_Uploads"
+    reject_list_parts_registry(
+        cross_list_parts_symbol, "cross-operation symbol"
+    )
+    list_parts_qualification, list_parts_commands = (
+        s3_operation.qualification_plan(registry, ["ListParts"])
+    )
+    assert list_parts_qualification == "list_parts"
+    assert list_parts_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-list-parts-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert list_parts_commands[4] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-list-parts-gnatdoc",
+        "--operation",
+        "ListParts",
+    ]
+    assert list_parts_commands[5:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(registry, ["ListParts", "ListParts"])
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate ListParts lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["ListParts", "ListMultipartUploads"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed ListParts lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",

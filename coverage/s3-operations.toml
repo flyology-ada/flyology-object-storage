@@ -139,6 +139,15 @@ list_multipart_uploads = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+list_parts = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-parts-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-parts-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 list_objects_v2 = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-list-objects-v2-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -3552,18 +3561,22 @@ tier = "core"
 provider = "transfers"
 family = "paginated_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Transfers"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+codec = "strict_paginated_rest_xml_and_singleton_headers"
+public_name = "List_Parts_Page"
+absence = "no dedicated absence variant; a well-formed bounded 404 NoSuchUpload or NoSuchBucket response is a structured typed rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["directory-bucket endpoint and session semantics are outside the qualified general-purpose path claim", "server-side configured Requester Pays accounting is not claimed; exact client RequestPayer and RequestCharged handling remains covered", "server-side SSE-C multipart state is unavailable; exact client SSE-C header construction and response validation plus authenticated NotImplemented coverage remain covered", "SeaweedFS 4.43 is excluded from the positive external lane because it repeats a part at or below the supplied PartNumberMarker on the second page"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+human_decisions_resolved = true
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-multipart.ads", "src/flyology-object_storage-s3-multipart.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-transfers.ads", "src/flyology-object_storage-client-transfers.adb", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-s3-multipart.ads", "src/flyology-object_storage-s3-multipart.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/corpora/list-parts/members.tsv", "tests/corpora/list-parts/vectors.tsv", "tools/verify-list-parts-preparation.py", "docs/qualification/list-parts-preparation.md", "tests/src/flyology-object_storage-client-transfers-testing.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+decision_status = "reviewed"
+qualification = "list_parts"
+ada_symbols = ["Prepare_List_Parts", "Decode_List_Parts_Complete_Response", "Execute_List_Parts", "List_Parts_Operation", "List_Parts_Page", "Finish"]
 
 [[operation]]
 name = "PutBucketAbac"
