@@ -1,8 +1,9 @@
 # PutBucketCors client qualification
 
-This record qualifies the strict bounded low-level and provider-owned clients
-for `PutBucketCors`. It does not claim CORS persistence in a Flyology backend,
-an authenticated Flyology server route, or external server interoperability.
+This record qualifies the strict bounded low-level and provider-owned clients,
+backend persistence, authenticated server route, and corpora for
+`PutBucketCors`. It does not claim browser CORS enforcement, policy-effect
+interpretation, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -82,6 +83,15 @@ typed response-observed certainty, and exact prepared-operation identity. The
 normalization corpus crosses every typed HTTP failure with every admission
 certainty.
 
-These client and corpus results advance only the client and corpus coverage
-cells. Backend state, authenticated routing, and independent external-provider
-behavior remain separate work.
+The machine ledger records `PutBucketCors` as `covered / covered / covered /
+covered`. Backend and authenticated server evidence preserves the exact
+serialized document, validates its checksums, and distinguishes an absent
+bucket. This coverage does not claim browser enforcement of stored CORS state.
+
+The `PutBucketCors` registry lane is independently conditional on every
+maintained command succeeding. It records exact HTTP-200 completion, checksum
+binding, unknown outcome after possible admission, and noncausal `Get_CORS`
+observation without automatic replay. Its generated-model documentation
+evidence is a region-scoped warning measurement only; repository-wide and
+selected GNATdoc qualification remain blocked by pre-existing warnings outside
+that declaration region.

@@ -6134,6 +6134,129 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetBucketCors lane accepted")
 
+    put_cors_certainty = (
+        "only a complete validated 200 response with an empty or "
+        "XML-whitespace body reports Bucket_CORS_Mutation_Completed; an "
+        "exact recognized non-mutating rejection or definite non-admission "
+        "reports Bucket_CORS_Mutation_Definitely_Not_Applied; pre-admission "
+        "cancellation reports "
+        "Bucket_CORS_Mutation_Cancelled_Before_Admission; "
+        "possible or incomplete admission, retryable responses, and malformed "
+        "or oversized responses report Bucket_CORS_Mutation_Outcome_Unknown; "
+        "no automatic replay"
+    )
+    put_cors_reconciliation = (
+        "caller-selected Get_CORS may observe the current exact CORS "
+        "configuration or NoSuchCORSConfiguration before a retry, but does "
+        "not prove that the lost replacement caused the observed state or "
+        "upgrade mutation certainty; no automatic replay"
+    )
+
+    def assert_put_cors_registry(candidate):
+        entry = candidate.operations["PutBucketCors"]
+        assert entry.get("public_name") == "Set_CORS"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_bucket_cors"
+        assert entry.get("certainty") == put_cors_certainty
+        assert entry.get("reconciliation") == put_cors_reconciliation
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Put_Bucket_CORS",
+            "Execute_Put_Bucket_CORS",
+            "Put_Bucket_CORS_Operation",
+            "Set_CORS",
+            "Finish",
+        ]
+        assert "atomically replaces" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][0]
+        assert "Content-MD5" in entry["exclusions"][1]
+        assert "does not establish causation" in entry["exclusions"][3]
+        assert (
+            candidate.qualification["put_bucket_cors"][0][-1]
+            == "tools/verify-put-bucket-cors-preparation.py"
+        )
+
+    def reject_put_cors_registry(candidate, label):
+        try:
+            assert_put_cors_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutBucketCors registry accepted")
+
+    assert_put_cors_registry(registry)
+    missing_put_cors_name = copy.deepcopy(registry)
+    del missing_put_cors_name.operations["PutBucketCors"]["public_name"]
+    reject_put_cors_registry(missing_put_cors_name, "missing public name")
+    wrong_put_cors_name = copy.deepcopy(registry)
+    wrong_put_cors_name.operations["PutBucketCors"][
+        "public_name"
+    ] = "Get_CORS"
+    reject_put_cors_registry(wrong_put_cors_name, "wrong public name")
+    broadened_put_cors_success = copy.deepcopy(registry)
+    broadened_put_cors_success.operations["PutBucketCors"][
+        "exclusions"
+    ][0] = "success accepts HTTP 200 or 204"
+    reject_put_cors_registry(broadened_put_cors_success, "broadened success")
+    causal_put_cors_reconciliation = copy.deepcopy(registry)
+    causal_put_cors_reconciliation.operations["PutBucketCors"][
+        "reconciliation"
+    ] = "Get_CORS proves replacement"
+    reject_put_cors_registry(
+        causal_put_cors_reconciliation, "causal reconciliation"
+    )
+    cross_put_cors_symbol = copy.deepcopy(registry)
+    cross_put_cors_symbol.operations["PutBucketCors"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Bucket_CORS"
+    reject_put_cors_registry(cross_put_cors_symbol, "cross-operation symbol")
+    put_cors_qualification, put_cors_commands = (
+        s3_operation.qualification_plan(registry, ["PutBucketCors"])
+    )
+    assert put_cors_qualification == "put_bucket_cors"
+    assert put_cors_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-cors-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_cors_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert put_cors_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-cors-gnatdoc",
+        "--operation",
+        "PutBucketCors",
+    ]
+    assert put_cors_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketCors", "PutBucketCors"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutBucketCors lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketCors", "GetBucketCors"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketCors lane accepted")
+
     put_policy_certainty = (
         "only a complete validated 200 response with an empty or "
         "whitespace-only body reports Bucket_Policy_Mutation_Completed; an "
