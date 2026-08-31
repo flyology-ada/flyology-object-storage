@@ -10342,6 +10342,150 @@ def main() -> None:
     else:
         raise AssertionError("mixed DeleteObjectAnnotation lane was accepted")
 
+    accelerate_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the complete "
+        "presence-preserving acceleration configuration and "
+        "requester-charged value; every incomplete, invalid, or "
+        "non-observed response exposes no configuration state; the client "
+        "performs no automatic retry"
+    )
+    accelerate_reconciliation = (
+        "a later GetBucketAccelerateConfiguration observes only the bucket "
+        "acceleration configuration current at read time; it does not prove "
+        "that a prior mutation caused the observed state or authorize "
+        "automatic replay"
+    )
+    accelerate_symbols = [
+        "Prepare_Get_Bucket_Accelerate_Configuration",
+        "Decode_Get_Bucket_Accelerate_Response",
+        "Execute_Get_Bucket_Accelerate_Configuration",
+        "Get_Bucket_Accelerate_Configuration_Operation",
+        "Get_Accelerate_Configuration",
+        "Finish",
+    ]
+
+    def assert_accelerate_registry(candidate):
+        entry = candidate.operations["GetBucketAccelerateConfiguration"]
+        assert entry.get("public_name") == "Get_Accelerate_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "get_bucket_accelerate_configuration"
+        )
+        assert entry.get("certainty") == accelerate_certainty
+        assert entry.get("reconciliation") == accelerate_reconciliation
+        assert entry.get("ada_symbols") == accelerate_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "absent, Enabled, or Suspended" in entry["absence"]
+        assert "billing or effective acceleration policy" in (
+            entry["exclusions"][3]
+        )
+        assert candidate.qualification[
+            "get_bucket_accelerate_configuration"
+        ][0][-1] == "tools/verify-get-bucket-controls-preparation.py"
+
+    def reject_accelerate_registry(candidate, label):
+        try:
+            assert_accelerate_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketAccelerateConfiguration registry accepted"
+        )
+
+    assert_accelerate_registry(registry)
+    accelerate_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Get_Acceleration"),
+        ("automatic retry", "certainty", "read-only; retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves the prior mutation",
+        ),
+        ("collapsed absence", "absence", "missing Status means Suspended"),
+    ]
+    for label, key, value in accelerate_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["GetBucketAccelerateConfiguration"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_accelerate_registry(candidate, label)
+    cross_accelerate_symbol = copy.deepcopy(registry)
+    cross_accelerate_symbol.operations[
+        "GetBucketAccelerateConfiguration"
+    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Accelerate_Configuration"
+    assert cross_accelerate_symbol != registry
+    reject_accelerate_registry(cross_accelerate_symbol, "cross-operation")
+    missing_accelerate_lane = copy.deepcopy(registry)
+    del missing_accelerate_lane.qualification[
+        "get_bucket_accelerate_configuration"
+    ]
+    assert missing_accelerate_lane != registry
+    reject_accelerate_registry(missing_accelerate_lane, "missing lane")
+    accelerate_qualification, accelerate_commands = (
+        s3_operation.qualification_plan(
+            registry, ["GetBucketAccelerateConfiguration"]
+        )
+    )
+    assert accelerate_qualification == "get_bucket_accelerate_configuration"
+    assert accelerate_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert accelerate_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-accelerate-configuration-gnatdoc",
+        "--operation",
+        "GetBucketAccelerateConfiguration",
+    ]
+    assert accelerate_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketAccelerateConfiguration",
+                "GetBucketAccelerateConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketAccelerateConfiguration lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketAccelerateConfiguration",
+                "PutBucketAccelerateConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert (
+            "do not share one qualification lane" in str(error)
+            or "has no focused qualification lane" in str(error)
+        )
+    else:
+        raise AssertionError(
+            "mixed GetBucketAccelerateConfiguration lane accepted"
+        )
+
     print("S3 operation registry evidence negative oracles: OK")
 
 

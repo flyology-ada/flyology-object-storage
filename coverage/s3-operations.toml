@@ -392,6 +392,16 @@ get_bucket_acl = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_accelerate_configuration = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-controls-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-accelerate-configuration-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_cors = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-cors-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -1621,18 +1631,22 @@ tier = "extended"
 provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
+public_name = "Get_Accelerate_Configuration"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
+absence = "a complete validated 200 preserves the optional acceleration Status as absent, Enabled, or Suspended and the optional RequestCharged header independently; no dedicated absence error is invented"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only; only one complete validated exact 200 Bucket_Control_Found response observed exposes the complete presence-preserving acceleration configuration and requester-charged value; every incomplete, invalid, or non-observed response exposes no configuration state; the client performs no automatic retry"
+reconciliation = "a later GetBucketAccelerateConfiguration observes only the bucket acceleration configuration current at read time; it does not prove that a prior mutation caused the observed state or authorize automatic replay"
+exclusions = ["backend persistence, authenticated server routing, and external-provider interoperability are not claimed", "automatic endpoint discovery or rewriting is not claimed; caller-supplied Origin remains authoritative", "success requires exact HTTP 200 with a bounded valid response document and physically singleton modeled and diagnostic headers", "the client preserves requester-pays and acceleration fields without interpreting billing or effective acceleration policy locally"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-get-bucket-controls-preparation.py", "docs/qualification/get-bucket-controls.md", "tests/corpora/get-bucket-controls/operations.tsv", "tests/corpora/get-bucket-controls/members.tsv", "tests/corpora/get-bucket-controls/vectors.tsv", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "get_bucket_accelerate_configuration"
+ada_symbols = ["Prepare_Get_Bucket_Accelerate_Configuration", "Decode_Get_Bucket_Accelerate_Response", "Execute_Get_Bucket_Accelerate_Configuration", "Get_Bucket_Accelerate_Configuration_Operation", "Get_Accelerate_Configuration", "Finish"]
 
 [[operation]]
 name = "GetBucketAcl"
