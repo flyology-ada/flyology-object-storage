@@ -12,8 +12,8 @@ is
    --  Identifiers for operations in the pinned S3 model.
    --  @enum Create_Bucket_Metadata_Table_Configuration_Operation
    --    Create metadata-table configuration
-   --  @enum Create_Session_Operation Create directory-bucket session
-   --    credentials
+   --  @enum Create_Session_Operation
+   --    Create directory-bucket session credentials
    --  @enum Delete_Bucket_Analytics_Configuration_Operation Delete analytics
    --  @enum Delete_Bucket_Cors_Operation Delete bucket CORS operation
    --  @enum Delete_Bucket_Encryption_Operation Delete bucket encryption
@@ -28,8 +28,8 @@ is
    --    Delete metadata-table configuration
    --  @enum Delete_Bucket_Metrics_Configuration_Operation
    --    Delete metrics configuration
-   --  @enum Delete_Bucket_Ownership_Controls_Operation Delete bucket ownership
-   --    controls
+   --  @enum Delete_Bucket_Ownership_Controls_Operation
+   --    Delete bucket ownership controls
    --  @enum Delete_Bucket_Policy_Operation Delete bucket policy
    --  @enum Delete_Bucket_Replication_Operation Delete bucket replication
    --  @enum Delete_Bucket_Tagging_Operation Delete bucket tagging operation
@@ -37,6 +37,7 @@ is
    --  @enum Delete_Public_Access_Block_Operation Delete public access block
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
+   --  @enum Get_Public_Access_Block_Operation Get public access block
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation
    type Operation_Id is
      (Abort_Multipart_Upload_Operation,
