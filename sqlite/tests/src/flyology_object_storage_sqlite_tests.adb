@@ -486,6 +486,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_cors_documents;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -524,6 +526,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_cors_documents;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -551,6 +555,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_cors_documents;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -577,6 +583,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -603,6 +611,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-documents',37);" &
          "PRAGMA user_version=14;");
       Databases.Close (Legacy);
@@ -613,6 +623,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V14_Database;
+
+   procedure Create_V15_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_lifecycle_documents;" &
+         "DROP TABLE bucket_logging_documents;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-documents',41);" &
+         "PRAGMA user_version=15;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V15_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1515,7 +1548,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1561,7 +1594,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1605,10 +1638,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 15 atomically");
+         "schema-v12 migration did not publish schema 16 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1662,10 +1695,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 15 atomically");
+         "schema-v13 migration did not publish schema 16 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1745,12 +1778,135 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 15 atomically");
+         "schema-v14 migration did not publish schema 16 atomically");
    end;
    Databases.Close (Database);
+   Delete_Database;
+
+   Create_V15_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Lifecycle : constant String :=
+        "<LifecycleConfiguration><Rule><ID>replacement</ID></Rule>" &
+        "</LifecycleConfiguration>";
+      Logging : constant String := "<BucketLoggingStatus/>";
+      Document   : US.Unbounded_String;
+      Transition : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Lifecycle
+        (Catalog, "legacy-documents", Document, Transition, Configured,
+         Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v15 migration invented lifecycle state");
+      Catalogs.Get_Bucket_Logging
+        (Catalog, "legacy-documents", Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v15 migration did not preserve disabled logging");
+      Catalogs.Put_Bucket_Lifecycle
+        (Catalog, "legacy-documents", Lifecycle,
+         "all_storage_classes_128K", Result);
+      Catalogs.Get_Bucket_Lifecycle
+        (Catalog, "legacy-documents", Document, Transition, Configured,
+         Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Lifecycle
+         and then US.To_String (Transition) =
+           "all_storage_classes_128K",
+         "schema-v15 lifecycle replacement lost exact state");
+      Catalogs.Put_Bucket_Logging
+        (Catalog, "legacy-documents", Logging, Result);
+      Catalogs.Get_Bucket_Logging
+        (Catalog, "legacy-documents", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Logging,
+         "schema-v15 logging migration lost exact bytes");
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Transition : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Lifecycle
+        (Catalog, "legacy-documents", Document, Transition, Configured,
+         Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<LifecycleConfiguration><Rule><ID>replacement</ID></Rule>" &
+             "</LifecycleConfiguration>"
+         and then US.To_String (Transition) =
+           "all_storage_classes_128K",
+         "migrated lifecycle state did not survive reopen");
+      Catalogs.Get_Bucket_Logging
+        (Catalog, "legacy-documents", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = "<BucketLoggingStatus/>",
+         "migrated logging bytes did not survive reopen");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name IN ('bucket_lifecycle_documents'," &
+         "'bucket_logging_documents')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 16
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v15 migration did not publish schema 16 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V15_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_lifecycle_documents (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "document BLOB NOT NULL," &
+      "transition_default_minimum_object_size TEXT NOT NULL," &
+      "CHECK(length(document)+length(CAST(" &
+      "transition_default_minimum_object_size AS BLOB)) <= 16777216)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v15 migration accepted a partial table publication");
+   end;
    Delete_Database;
 
    Create_V9_Database;
@@ -1770,6 +1926,112 @@ begin
       Assert
         (Rejected,
          "schema-v9 migration accepted a partial generation publication");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "PRAGMA writable_schema=ON;" &
+      "UPDATE sqlite_schema SET sql=replace(sql," &
+      "'CHECK(length(document)+length(CAST(" &
+      "transition_default_minimum_object_size AS BLOB)) <= 16777216)'," &
+      "'CHECK(length(document) <= 16777216)') " &
+      "WHERE type='table' AND name='bucket_lifecycle_documents';" &
+      "PRAGMA writable_schema=OFF;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema16 accepted a weakened lifecycle aggregate bound");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Rejected : Boolean := False;
+   begin
+      Databases.Execute
+        (Database,
+         "INSERT INTO buckets(name,created) VALUES('aggregate-bound',1);");
+      begin
+         Databases.Execute
+           (Database,
+            "INSERT INTO bucket_lifecycle_documents(" &
+            "bucket_name,document,transition_default_minimum_object_size) " &
+            "VALUES('aggregate-bound',zeroblob(16777216),'x');");
+      exception
+         when Databases.SQLite_Error => Rejected := True;
+      end;
+      Databases.Close (Database);
+      Assert
+        (Rejected,
+         "schema16 accepted lifecycle state above the aggregate bound");
+   exception
+      when others =>
+         if Databases.Is_Open (Database) then
+            Databases.Close (Database);
+         end if;
+         raise;
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE bucket_lifecycle_documents RENAME COLUMN " &
+      "transition_default_minimum_object_size TO transition_bogus;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema16 accepted a renamed lifecycle header column");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE bucket_logging_documents;" &
+      "CREATE TABLE bucket_logging_documents (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "document TEXT NOT NULL CHECK(length(document) <= 16777216)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema16 accepted a non-BLOB bucket logging document");
    end;
    Delete_Database;
 
@@ -2853,8 +3115,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15,
-         "schema-v1 migration did not publish version 15");
+         and then Databases.Column (Version, 0) = 16,
+         "schema-v1 migration did not publish version 16");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2865,10 +3127,12 @@ begin
          "'object_version_parts','bucket_public_access_blocks'," &
          "'bucket_policies','bucket_cors_documents'," &
          "'bucket_encryption_documents'," &
-         "'bucket_ownership_controls_documents')");
+         "'bucket_ownership_controls_documents'," &
+         "'bucket_lifecycle_documents'," &
+         "'bucket_logging_documents')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 18,
+         and then Databases.Column (Tables, 0) = 20,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -2934,8 +3198,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15,
-         "schema-v2 migration did not publish version 15");
+         and then Databases.Column (Version, 0) = 16,
+         "schema-v2 migration did not publish version 16");
    end;
    declare
       Tables : Databases.Statement;
@@ -2971,10 +3235,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 15 tables");
+         "schema-v3 migration did not publish schema 16 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3045,8 +3309,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 15,
-            "schema-v4 migration did not publish version 15");
+            and then Databases.Column (Version, 0) = 16,
+            "schema-v4 migration did not publish version 16");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3113,7 +3377,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 15
+            and then Databases.Column (Version, 0) = 16
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -3191,8 +3455,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15,
-         "schema-v6 migration did not publish version 15");
+         and then Databases.Column (Version, 0) = 16,
+         "schema-v6 migration did not publish version 16");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3323,7 +3587,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -3394,7 +3658,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 15
+         and then Databases.Column (Version, 0) = 16
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -4231,6 +4495,205 @@ begin
          Assert
            (Result = Success,
             "SQLite bucket CORS state could not be restored");
+      end;
+      declare
+         Lifecycle_1 : constant String :=
+           "<LifecycleConfiguration><Rule><ID>first</ID></Rule>" &
+           "</LifecycleConfiguration>";
+         Lifecycle_2 : constant String :=
+           "<LifecycleConfiguration><Rule><ID>replacement</ID></Rule>" &
+           "</LifecycleConfiguration>";
+         Logging_1 : constant String :=
+           "<BucketLoggingStatus><LoggingEnabled/></BucketLoggingStatus>";
+         Logging_2 : constant String := "<BucketLoggingStatus/>";
+         Observed   : US.Unbounded_String;
+         Transition : US.Unbounded_String;
+         Configured : Boolean;
+         Cancel     : aliased Flyology.Cancellation.Token;
+
+         procedure Expect_Cancelled
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Cancelled;
+
+         procedure Expect_Timeout
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Timeout;
+
+         procedure Put_Lifecycle_Cancelled is
+         begin
+            Store.Put_Bucket_Lifecycle
+              ("sqlite-bucket", Lifecycle_1,
+               "varies_by_storage_class", Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_Lifecycle_Cancelled;
+
+         procedure Get_Lifecycle_Cancelled is
+         begin
+            Store.Get_Bucket_Lifecycle
+              ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+               Observed, Transition, Configured, Result);
+         end Get_Lifecycle_Cancelled;
+
+         procedure Delete_Lifecycle_Cancelled is
+         begin
+            Store.Delete_Bucket_Lifecycle
+              ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+               Result);
+         end Delete_Lifecycle_Cancelled;
+
+         procedure Put_Logging_Expired is
+         begin
+            Store.Put_Bucket_Logging
+              ("sqlite-bucket", Logging_1, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_Logging_Expired;
+
+         procedure Get_Logging_Expired is
+         begin
+            Store.Get_Bucket_Logging
+              ("sqlite-bucket", null, Ada.Real_Time.Time_First,
+               Observed, Configured, Result);
+         end Get_Logging_Expired;
+      begin
+         --  GetBucketLifecycleConfiguration SQLite absence evidence.
+         Store.Get_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Transition, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Observed) = 0
+            and then US.Length (Transition) = 0,
+            "SQLite new bucket unexpectedly had lifecycle state");
+         Store.Get_Bucket_Logging
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Observed) = 0,
+            "SQLite absent logging was not the disabled default state");
+         --  PutBucketLifecycleConfiguration SQLite persistence evidence.
+         Store.Put_Bucket_Lifecycle
+           ("sqlite-bucket", Lifecycle_1, "varies_by_storage_class", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Transition, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Lifecycle_1
+            and then US.To_String (Transition) =
+              "varies_by_storage_class",
+            "SQLite lifecycle initial write lost exact state");
+         Store.Put_Bucket_Lifecycle
+           ("sqlite-bucket", Lifecycle_2, "all_storage_classes_128K", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Transition, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Lifecycle_2
+            and then US.To_String (Transition) =
+              "all_storage_classes_128K",
+            "SQLite lifecycle replacement lost exact state");
+         Store.Put_Bucket_Logging
+           ("sqlite-bucket", Logging_1, null, Ada.Real_Time.Time_Last,
+            Result);
+         Store.Get_Bucket_Logging
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Logging_1,
+            "SQLite logging initial write lost exact bytes");
+         Store.Put_Bucket_Logging
+           ("sqlite-bucket", Logging_2, null, Ada.Real_Time.Time_Last,
+            Result);
+         Store.Get_Bucket_Logging
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Logging_2,
+            "SQLite logging replacement lost exact bytes");
+         Store.Get_Bucket_Lifecycle
+           ("missing-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Transition, Configured, Result);
+         Assert
+           (Result = Not_Found and then not Configured
+            and then US.Length (Observed) = 0
+            and then US.Length (Transition) = 0,
+            "SQLite lifecycle get lost missing-bucket status");
+         Store.Put_Bucket_Logging
+           ("missing-bucket", Logging_1, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite logging put lost missing-bucket status");
+         Store.Delete_Bucket_Lifecycle
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite lifecycle delete lost missing-bucket status");
+         Cancel.Request;
+         Expect_Cancelled
+           (Put_Lifecycle_Cancelled'Access,
+            "SQLite lifecycle put ignored cancellation");
+         Expect_Cancelled
+           (Get_Lifecycle_Cancelled'Access,
+            "SQLite lifecycle get ignored cancellation");
+         Expect_Cancelled
+           (Delete_Lifecycle_Cancelled'Access,
+            "SQLite lifecycle delete ignored cancellation");
+         Expect_Timeout
+           (Put_Logging_Expired'Access,
+            "SQLite logging put ignored deadline");
+         Expect_Timeout
+           (Get_Logging_Expired'Access,
+            "SQLite logging get ignored deadline");
+         Store.Delete_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite lifecycle deletion did not complete");
+         Store.Delete_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite lifecycle repeated deletion was not idempotent");
+         Store.Get_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Transition, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Transition) = 0,
+            "SQLite lifecycle deletion was not idempotent");
+         Store.Put_Bucket_Lifecycle
+           ("sqlite-bucket", Lifecycle_2, "all_storage_classes_128K", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite lifecycle state could not be restored");
       end;
       declare
          First : constant String :=
@@ -5079,6 +5542,32 @@ begin
             and then Acceleration = Bucket_Acceleration_Suspended
             and then Payment = Requester_Pays,
             "SQLite scalar-control state did not survive reopen");
+      end;
+      declare
+         Lifecycle : constant String :=
+           "<LifecycleConfiguration><Rule><ID>replacement</ID></Rule>" &
+           "</LifecycleConfiguration>";
+         Logging : constant String := "<BucketLoggingStatus/>";
+         Document   : US.Unbounded_String;
+         Transition : US.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_Lifecycle
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Transition, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Lifecycle
+            and then US.To_String (Transition) =
+              "all_storage_classes_128K",
+            "SQLite lifecycle state did not survive reopen");
+         Store.Get_Bucket_Logging
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Logging,
+            "SQLite logging state did not survive reopen");
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

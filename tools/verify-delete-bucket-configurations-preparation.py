@@ -682,9 +682,9 @@ def verify_delete_encryption_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_ENCRYPTION_CERTAINTY,
         "reconciliation": DELETE_ENCRYPTION_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -767,9 +767,9 @@ def verify_delete_lifecycle_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_LIFECYCLE_CERTAINTY,
         "reconciliation": DELETE_LIFECYCLE_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -1554,9 +1554,9 @@ def verify_ownership_controls_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_OWNERSHIP_CONTROLS_CERTAINTY,
         "reconciliation": DELETE_OWNERSHIP_CONTROLS_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -2387,7 +2387,7 @@ def main() -> int:
         [
             "resets bucket default encryption to SSE-S3",
             "does not create an absent configuration state",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "removed exactly the one candidate-owned",
             "added none",
             "delete_bucket_encryption",
@@ -2437,7 +2437,7 @@ def main() -> int:
         [
             "removes every rule from the bucket lifecycle configuration",
             "NoSuchLifecycleConfiguration",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Lifecycle_Operation",
             "added none",
             "delete_bucket_lifecycle",
@@ -2913,7 +2913,7 @@ def main() -> int:
             "removes the bucket ownership-controls configuration",
             "OwnershipControlsNotFoundError",
             "prior presence",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Ownership_Controls_Operation",
             "added none",
             "delete_bucket_ownership_controls",

@@ -15,11 +15,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 15 adds canonical bucket-encryption and
-   --  ownership-controls documents. The value follows the schema-14 scalar
-   --  bucket controls; older readers must reject it because they cannot
-   --  preserve these configurations. Never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 15;
+   --  Persisted schema 16 adds exactly the lifecycle and logging singleton
+   --  document tables. Changing this private value or table set requires a
+   --  transactional migration; never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 16;
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -170,6 +169,21 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      ") WITHOUT ROWID;";
    Bucket_Ownership_Controls_Schema : constant String :=
      "CREATE TABLE bucket_ownership_controls_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Lifecycle_Schema : constant String :=
+     "CREATE TABLE bucket_lifecycle_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL," &
+     "transition_default_minimum_object_size TEXT NOT NULL," &
+     "CHECK(length(document)+length(CAST(" &
+     "transition_default_minimum_object_size AS BLOB)) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Logging_Schema : constant String :=
+     "CREATE TABLE bucket_logging_documents (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
@@ -1095,6 +1109,58 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_SQL ("withoutrowid");
    end Valid_Bucket_Configuration_Document_Schema;
 
+   function Valid_Bucket_Lifecycle_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='bucket_lifecycle_documents' AND instr(" &
+            Normalized_SQL & ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM " &
+         "pragma_table_info('bucket_lifecycle_documents')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_table_info('bucket_lifecycle_documents') " &
+           "WHERE name IN ('bucket_name','document'," &
+           "'transition_default_minimum_object_size')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_table_info('bucket_lifecycle_documents') WHERE " &
+           "(cid=0 AND name='bucket_name' AND lower(type)='text' " &
+           "AND ""notnull""=1 AND pk=1) OR " &
+           "(cid=1 AND name='document' AND lower(type)='blob' " &
+           "AND ""notnull""=1 AND pk=0) OR " &
+           "(cid=2 AND name='transition_default_minimum_object_size' " &
+           "AND lower(type)='text' AND ""notnull""=1 AND pk=0)") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_foreign_key_list('bucket_lifecycle_documents') " &
+           "WHERE ""table""='buckets' AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_delete='CASCADE'") = 1
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_foreign_key_list('bucket_lifecycle_documents')") = 1
+        and then Has_SQL ("primarykey")
+        and then Has_SQL
+          ("bucket_nametextprimarykeycollatebinarynotnull")
+        and then Has_SQL
+          ("check(length(document)+length(cast(" &
+           "transition_default_minimum_object_sizeasblob))<=16777216)")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Bucket_Lifecycle_Schema;
+
    function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
       Normalized_SQL : constant String :=
         "lower(replace(replace(replace(replace(sql,' ','')," &
@@ -1331,9 +1397,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_CORS_Schema &
          Bucket_Encryption_Schema &
          Bucket_Ownership_Controls_Schema &
+         Bucket_Lifecycle_Schema &
+         Bucket_Logging_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=15;");
+         "PRAGMA user_version=16;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1839,6 +1907,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V14;
 
+   procedure Upgrade_From_V15 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('bucket_lifecycle_documents'," &
+           "'bucket_logging_documents')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 15";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Lifecycle_Schema & Bucket_Logging_Schema &
+         "PRAGMA user_version=16;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V15;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1884,6 +1980,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 13 => null;
             when 14 => null;
             when 15 => null;
+            when 16 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1920,6 +2017,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V14 (Item);
             Version := 15;
          end if;
+         if Version = 15 then
+            Upgrade_From_V15 (Item);
+            Version := 16;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -1939,7 +2040,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'object_version_parts','bucket_public_access_blocks'," &
          "'bucket_policies','bucket_cors_documents'," &
          "'bucket_encryption_documents'," &
-         "'bucket_ownership_controls_documents')") /= 18
+         "'bucket_ownership_controls_documents'," &
+         "'bucket_lifecycle_documents'," &
+         "'bucket_logging_documents')") /= 20
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -1975,6 +2078,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite bucket ownership-controls schema is incomplete";
+      elsif not Valid_Bucket_Lifecycle_Schema (Item)
+      then
+         raise Catalog_Error with
+           "SQLite bucket lifecycle schema is incomplete";
+      elsif not Valid_Bucket_Configuration_Document_Schema
+        (Item, "bucket_logging_documents")
+      then
+         raise Catalog_Error with
+           "SQLite bucket logging schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -3237,6 +3349,167 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, "bucket_ownership_controls_documents",
          "bucket ownership controls", Result);
    end Delete_Bucket_Ownership_Controls;
+
+   procedure Put_Bucket_Lifecycle
+     (Item                                   : in out Catalog;
+      Bucket                                 : String;
+      Document                               : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Result                                 : out Status)
+   is
+      Exists         : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      if not Backends.Valid_Bucket_Lifecycle_Document
+        (Document, Transition_Default_Minimum_Object_Size)
+      then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "bucket lifecycle bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO bucket_lifecycle_documents(" &
+         "bucket_name,document,transition_default_minimum_object_size) " &
+         "VALUES(?1,?2,?3) ON CONFLICT(bucket_name) DO UPDATE SET " &
+         "document=excluded.document," &
+         "transition_default_minimum_object_size=" &
+         "excluded.transition_default_minimum_object_size");
+      DB.Bind (Upsert, 1, Bucket);
+      DB.Bind_Bytes (Upsert, 2, Document);
+      DB.Bind (Upsert, 3, Transition_Default_Minimum_Object_Size);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with "bucket lifecycle upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Lifecycle;
+
+   procedure Get_Bucket_Lifecycle
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Transition_Default_Minimum_Object_Size : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Document := US.Null_Unbounded_String;
+      Transition_Default_Minimum_Object_Size := US.Null_Unbounded_String;
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "bucket lifecycle bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT document,transition_default_minimum_object_size " &
+         "FROM bucket_lifecycle_documents WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      case DB.Step (Query) is
+         when DB.Row =>
+            Document := US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
+            Transition_Default_Minimum_Object_Size :=
+              US.To_Unbounded_String (DB.Column (Query, 1));
+            if DB.Step (Query) /= DB.Done then
+               raise Catalog_Error with
+                 "bucket lifecycle query returned multiple rows";
+            end if;
+            Configured := True;
+         when DB.Done =>
+            null;
+      end case;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Document := US.Null_Unbounded_String;
+         Transition_Default_Minimum_Object_Size := US.Null_Unbounded_String;
+         Configured := False;
+         raise;
+   end Get_Bucket_Lifecycle;
+
+   procedure Delete_Bucket_Lifecycle
+     (Item : in out Catalog; Bucket : String; Result : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_lifecycle_documents", "bucket lifecycle",
+         Result);
+   end Delete_Bucket_Lifecycle;
+
+   procedure Put_Bucket_Logging
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "bucket_logging_documents",
+         "bucket logging", Backends.Valid_Bucket_Logging_Document'Access,
+         Result);
+   end Put_Bucket_Logging;
+
+   procedure Get_Bucket_Logging
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_logging_documents", "bucket logging",
+         Document, Configured, Result);
+   end Get_Bucket_Logging;
 
    procedure Put_Bucket_Policy
      (Item   : in out Catalog;

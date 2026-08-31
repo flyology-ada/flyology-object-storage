@@ -1,9 +1,10 @@
 # GetBucketLifecycleConfiguration client qualification
 
 This record qualifies the provider-owned composable and typed synchronous
-client for `GetBucketLifecycleConfiguration`. It does not claim lifecycle
-configuration persistence in a Flyology backend, an authenticated Flyology
-server route, lifecycle action execution, or external server interoperability.
+client for `GetBucketLifecycleConfiguration`. Independent backend and server
+evidence also covers atomic lifecycle-configuration persistence and the
+authenticated Flyology route. It does not claim lifecycle action execution or
+external server interoperability.
 
 The pinned model also retains deprecated `GetBucketLifecycle`. Its method,
 resource path, required bucket, and optional owner precondition are identical
@@ -11,8 +12,9 @@ to the maintained operation, while its Rules response is a structural subset.
 The client therefore exposes that compatibility operation through the same
 `Get_Lifecycle_Configuration` API and strict decoder rather than duplicating
 an obsolete public name. Its separate registry lane appends only
-`GetBucketLifecycle`; this shared evidence is conditional on that lane and is
-not an external-provider or server-compatibility claim.
+`GetBucketLifecycle`; this shared client evidence is conditional on that lane.
+The maintained backend and route evidence covers both exact operation
+identities without making an external-provider claim.
 
 ## Pinned authority and complete inventory
 
@@ -110,9 +112,11 @@ repository-integrity gate passed against the pinned model. GNATdoc produced a
 nonempty 430-page API site from a 44,255-line log with no lifecycle-package
 documentation warning, internal error, or recursion diagnostic.
 
-The machine ledger therefore records the operation as `missing / covered /
-missing / covered`. Backend and server cells remain missing until independent
-persistence, route, and black-box gates exist.
+The machine ledger records both lifecycle GET identities as
+`covered / covered / covered / covered`. Memory, files, and SQLite preserve
+the canonical document and optional transition-minimum header atomically; the
+authenticated server distinguishes an absent lifecycle configuration from a
+missing bucket.
 
 This slice changes only non-SPARK client, codec, corpus, and documentation
 units. It does not alter any unit named by the maintained proof manifest;

@@ -69,6 +69,10 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one canonical encryption override.
    Bucket_Ownership_Controls_Magic : constant String := "FOSOWN01";
    --  Persisted-format discriminator for canonical ownership controls.
+   Bucket_Lifecycle_Magic : constant String := "FOSLIF01";
+   --  Persisted-format discriminator for one canonical lifecycle document.
+   Bucket_Logging_Magic : constant String := "FOSLOG01";
+   --  Persisted-format discriminator for one canonical logging document.
    Bucket_ABAC_Magic : constant String := "FOSABA01";
    --  Persisted-format discriminator for one bucket ABAC state.
    Bucket_Acceleration_Magic : constant String := "FOSACC01";
@@ -388,6 +392,16 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "ownership-controls.fos"));
    --  Persisted files-layout name paired with FOSOWN01.
+
+   function Bucket_Lifecycle_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "lifecycle.fos"));
+   --  Persisted files-layout name paired with FOSLIF01.
+
+   function Bucket_Logging_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "logging.fos"));
+   --  Persisted files-layout name paired with FOSLOG01.
 
    function Bucket_ABAC_Path
      (Item : Store; Bucket : String) return String is
@@ -1505,7 +1519,8 @@ package body Flyology.Object_Storage.Backends.Files is
    end Read_Bucket_CORS;
 
    procedure Write_Bucket_Encryption
-     (File : in out SIO.File_Type; Document : String) is
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
    begin
       if not Valid_Bucket_Encryption_Document (Document) then
          raise Constraint_Error;
@@ -1516,13 +1531,16 @@ package body Flyology.Object_Storage.Backends.Files is
    end Write_Bucket_Encryption;
 
    procedure Read_Bucket_Encryption
-     (File : in out SIO.File_Type; Document : out US.Unbounded_String)
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
    is
       File_Magic : constant String :=
         Read_String (File, Bucket_Encryption_Magic'Length);
       Length : constant Natural := Read_U32 (File);
    begin
       Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
       if File_Magic /= Bucket_Encryption_Magic
         or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
         or else SIO.Size (File) /=
@@ -1534,7 +1552,8 @@ package body Flyology.Object_Storage.Backends.Files is
    end Read_Bucket_Encryption;
 
    procedure Write_Bucket_Ownership_Controls
-     (File : in out SIO.File_Type; Document : String) is
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
    begin
       if not Valid_Bucket_Ownership_Controls_Document (Document) then
          raise Constraint_Error;
@@ -1545,13 +1564,16 @@ package body Flyology.Object_Storage.Backends.Files is
    end Write_Bucket_Ownership_Controls;
 
    procedure Read_Bucket_Ownership_Controls
-     (File : in out SIO.File_Type; Document : out US.Unbounded_String)
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
    is
       File_Magic : constant String :=
         Read_String (File, Bucket_Ownership_Controls_Magic'Length);
       Length : constant Natural := Read_U32 (File);
    begin
       Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
       if File_Magic /= Bucket_Ownership_Controls_Magic
         or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
         or else SIO.Size (File) /=
@@ -1561,6 +1583,81 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Document := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Ownership_Controls;
+
+   procedure Write_Bucket_Lifecycle
+     (File     : in out SIO.File_Type;
+      Document : String;
+      Metadata : String) is
+   begin
+      if not Valid_Bucket_Lifecycle_Document (Document, Metadata) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Lifecycle_Magic);
+      Write_U32 (File, Document'Length);
+      Write_U32 (File, Metadata'Length);
+      Write_String (File, Document);
+      Write_String (File, Metadata);
+   end Write_Bucket_Lifecycle;
+
+   procedure Read_Bucket_Lifecycle
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Lifecycle_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+      Metadata_Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_Lifecycle_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
+        or else Byte_Count (Metadata_Length) >
+          Maximum_Bucket_Configuration_Bytes - Byte_Count (Length)
+        or else SIO.Size (File) /=
+          SIO.Count
+            (Bucket_Lifecycle_Magic'Length + 8 + Length + Metadata_Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Document := US.To_Unbounded_String (Read_String (File, Length));
+      Metadata := US.To_Unbounded_String
+        (Read_String (File, Metadata_Length));
+   end Read_Bucket_Lifecycle;
+
+   procedure Write_Bucket_Logging
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
+   begin
+      if not Valid_Bucket_Logging_Document (Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Logging_Magic);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Document);
+   end Write_Bucket_Logging;
+
+   procedure Read_Bucket_Logging
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Logging_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_Logging_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
+        or else SIO.Size (File) /=
+          SIO.Count (Bucket_Logging_Magic'Length + 4 + Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Document := US.To_Unbounded_String (Read_String (File, Length));
+   end Read_Bucket_Logging;
 
    function Read_Versioning
      (Item : Store; Bucket : String) return Bucket_Versioning_Configuration
@@ -3541,9 +3638,11 @@ package body Flyology.Object_Storage.Backends.Files is
    end Delete_Bucket_CORS;
 
    type Write_Bucket_Document_Access is access procedure
-     (File : in out SIO.File_Type; Document : String);
+     (File : in out SIO.File_Type; Document : String; Metadata : String);
    type Read_Bucket_Document_Access is access procedure
-     (File : in out SIO.File_Type; Document : out US.Unbounded_String);
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String);
    type Valid_Bucket_Document_Access is access function
      (Document : String) return Boolean;
 
@@ -3551,12 +3650,14 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item        : in out Store;
       Bucket      : String;
       Document    : String;
+      Metadata    : String;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Temp_Prefix : String;
       Target      : String;
       Write       : not null Write_Bucket_Document_Access;
       Valid       : not null Valid_Bucket_Document_Access;
+      Metadata_Valid : Boolean;
       Result      : out Status)
    is
       File      : SIO.File_Type;
@@ -3571,7 +3672,7 @@ package body Flyology.Object_Storage.Backends.Files is
       if not Valid_Bucket_Name (Bucket) then
          Result := Invalid_Request;
          return;
-      elsif not Valid (Document) then
+      elsif not Valid (Document) or else not Metadata_Valid then
          Result := Entity_Too_Large;
          return;
       end if;
@@ -3585,7 +3686,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Validate_New_Temp_Target (Item, US.To_String (Temp));
       SIO.Create (File, SIO.Out_File, US.To_String (Temp));
       Opened := True;
-      Write (File, Document);
+      Write (File, Document, Metadata);
       SIO.Close (File);
       Opened := False;
       Sync_File (Item, US.To_String (Temp));
@@ -3666,6 +3767,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Path       : String;
       Read       : not null Read_Bucket_Document_Access;
       Document   : out US.Unbounded_String;
+      Metadata   : out US.Unbounded_String;
       Configured : out Boolean;
       Result     : out Status)
    is
@@ -3674,6 +3776,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Locked : Boolean := False;
    begin
       Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
       Configured := False;
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) then
@@ -3707,7 +3810,7 @@ package body Flyology.Object_Storage.Backends.Files is
       else
          SIO.Open (File, SIO.In_File, Path);
          Opened := True;
-         Read (File, Document);
+         Read (File, Document, Metadata);
          SIO.Close (File);
          Opened := False;
          Configured := True;
@@ -3733,6 +3836,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Item.Publication.Release;
          end if;
          Document := US.Null_Unbounded_String;
+         Metadata := US.Null_Unbounded_String;
          Configured := False;
          Result := Backend_Unavailable;
    end Get_Bucket_Configuration_Document;
@@ -3806,10 +3910,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Result   : out Status) is
    begin
       Put_Bucket_Configuration_Document
-        (Item, Bucket, Document, Token, Deadline, "bucket-encryption-",
+        (Item, Bucket, Document, "", Token, Deadline, "bucket-encryption-",
          Bucket_Encryption_Path (Item, Bucket),
          Write_Bucket_Encryption'Access,
-         Valid_Bucket_Encryption_Document'Access, Result);
+         Valid_Bucket_Encryption_Document'Access, True, Result);
    end Put_Bucket_Encryption;
 
    overriding procedure Get_Bucket_Encryption
@@ -3819,12 +3923,15 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline   : Ada.Real_Time.Time;
       Document   : out US.Unbounded_String;
       Configured : out Boolean;
-      Result     : out Status) is
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
    begin
       Get_Bucket_Configuration_Document
         (Item, Bucket, Token, Deadline,
          Bucket_Encryption_Path (Item, Bucket),
-         Read_Bucket_Encryption'Access, Document, Configured, Result);
+         Read_Bucket_Encryption'Access, Document, Ignored_Metadata,
+         Configured, Result);
    end Get_Bucket_Encryption;
 
    overriding procedure Delete_Bucket_Encryption
@@ -3848,11 +3955,11 @@ package body Flyology.Object_Storage.Backends.Files is
       Result   : out Status) is
    begin
       Put_Bucket_Configuration_Document
-        (Item, Bucket, Document, Token, Deadline,
+        (Item, Bucket, Document, "", Token, Deadline,
          "bucket-ownership-controls-",
          Bucket_Ownership_Controls_Path (Item, Bucket),
          Write_Bucket_Ownership_Controls'Access,
-         Valid_Bucket_Ownership_Controls_Document'Access, Result);
+         Valid_Bucket_Ownership_Controls_Document'Access, True, Result);
    end Put_Bucket_Ownership_Controls;
 
    overriding procedure Get_Bucket_Ownership_Controls
@@ -3862,13 +3969,15 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline   : Ada.Real_Time.Time;
       Document   : out US.Unbounded_String;
       Configured : out Boolean;
-      Result     : out Status) is
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
    begin
       Get_Bucket_Configuration_Document
         (Item, Bucket, Token, Deadline,
          Bucket_Ownership_Controls_Path (Item, Bucket),
          Read_Bucket_Ownership_Controls'Access,
-         Document, Configured, Result);
+         Document, Ignored_Metadata, Configured, Result);
    end Get_Bucket_Ownership_Controls;
 
    overriding procedure Delete_Bucket_Ownership_Controls
@@ -3882,6 +3991,87 @@ package body Flyology.Object_Storage.Backends.Files is
         (Item, Bucket, Token, Deadline,
          Bucket_Ownership_Controls_Path (Item, Bucket), Result);
    end Delete_Bucket_Ownership_Controls;
+
+   overriding procedure Put_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, Transition_Default_Minimum_Object_Size,
+         Token, Deadline, "bucket-lifecycle-",
+         Bucket_Lifecycle_Path (Item, Bucket),
+         Write_Bucket_Lifecycle'Access,
+         Valid_Bucket_Lifecycle_Document'Access,
+         Valid_Bucket_Lifecycle_Document
+           (Document, Transition_Default_Minimum_Object_Size),
+         Result);
+   end Put_Bucket_Lifecycle;
+
+   overriding procedure Get_Bucket_Lifecycle
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Transition_Default_Minimum_Object_Size : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Lifecycle_Path (Item, Bucket),
+         Read_Bucket_Lifecycle'Access, Document,
+         Transition_Default_Minimum_Object_Size, Configured, Result);
+   end Get_Bucket_Lifecycle;
+
+   overriding procedure Delete_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Delete_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Lifecycle_Path (Item, Bucket), Result);
+   end Delete_Bucket_Lifecycle;
+
+   overriding procedure Put_Bucket_Logging
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "", Token, Deadline, "bucket-logging-",
+         Bucket_Logging_Path (Item, Bucket), Write_Bucket_Logging'Access,
+         Valid_Bucket_Logging_Document'Access, True, Result);
+   end Put_Bucket_Logging;
+
+   overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Logging_Path (Item, Bucket),
+         Read_Bucket_Logging'Access, Document, Ignored_Metadata,
+         Configured, Result);
+   end Get_Bucket_Logging;
 
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;

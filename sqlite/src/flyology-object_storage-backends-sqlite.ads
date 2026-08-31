@@ -185,6 +185,88 @@ package Flyology.Object_Storage.Backends.SQLite is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   --  Transactionally retain one bounded lifecycle document.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical lifecycle bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional header
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Lifecycle
+     (Item                                   : in out Store;
+      Bucket                                 : String;
+      Document                               : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one transactional lifecycle snapshot.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Transition_Default_Minimum_Object_Size Retained optional header
+   --  @param Configured Whether lifecycle state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Lifecycle
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove retained lifecycle state.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Transactionally retain one bounded logging document.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical logging bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Logging
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one transactional logging snapshot.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit logging state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

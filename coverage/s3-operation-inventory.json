@@ -650,13 +650,16 @@
     },
     "DeleteBucketLifecycle": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -671,18 +674,22 @@
           "docs/qualification/delete-bucket-configurations.md",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_delete_bucket_configurations_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bodyless_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
@@ -1624,13 +1631,16 @@
     },
     "GetBucketLifecycle": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -1649,31 +1659,38 @@
           "tests/corpora/get-bucket-lifecycle-configuration/vectors.tsv",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "GetBucketLifecycleConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -1692,18 +1709,22 @@
           "tests/corpora/get-bucket-lifecycle-configuration/vectors.tsv",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
@@ -1754,13 +1775,16 @@
     },
     "GetBucketLogging": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-logging.adb",
           "src/flyology-object_storage-client-low_level.adb",
@@ -1770,18 +1794,22 @@
         "corpus": [
           "tests/generated/s3-negative-xml.json",
           "tests/generated/s3-signed-socket.json",
-          "tests/src/s3_get_bucket_logging_qualification.adb"
+          "tests/src/s3_get_bucket_logging_qualification.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "shared-family",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "shared_family",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "shared_family"
       },
       "provider": "buckets"
@@ -3748,13 +3776,16 @@
     },
     "PutBucketLifecycleConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -3771,31 +3802,38 @@
           "docs/qualification/put-bucket-lifecycle-configuration.md",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "PutBucketLogging": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-generated_put_bucket_logging_xml.ads",
           "src/flyology-object_storage-s3-generated_put_bucket_logging_xml.adb",
@@ -3807,18 +3845,22 @@
         ],
         "corpus": [
           "tests/generated/s3-signed-socket.json",
-          "tests/src/s3_put_bucket_logging_qualification.adb"
+          "tests/src/s3_put_bucket_logging_qualification.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": true,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "generated"
       },
       "provider": "buckets"

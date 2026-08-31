@@ -8,9 +8,10 @@ DeleteBucketMetadataConfiguration,
 DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration also have
 provider-owned composable operations and typed synchronous waits that use their
-corresponding state machines. It does not manufacture backend or server
-coverage. `DeleteBucketPolicy` and
-`DeletePublicAccessBlock` now have that independent coverage in
+corresponding state machines. `DeleteBucketLifecycle` now also has independent
+backend and server coverage; the shared client corpus does not manufacture
+that evidence for the remaining operations. `DeleteBucketPolicy` and
+`DeletePublicAccessBlock` have independent coverage in
 [bucket-policy.md](bucket-policy.md) and
 [public-access-block.md](public-access-block.md). No external-provider
 interoperability is claimed here.
@@ -228,13 +229,14 @@ The existing shared DeleteBucketCors physical-response lane supplies empty,
 malformed, and one-past bounded response faults against the same internal
 decoder and executor machinery.
 
-The machine ledger records `DeleteBucketPolicy` and
+The machine ledger records `DeleteBucketEncryption`, `DeleteBucketLifecycle`,
+`DeleteBucketOwnershipControls`, `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
-their independent backend and server evidence. The other eleven operations
-remain `missing / covered / missing / covered`; the additional lifecycle,
-replication, analytics, metrics, intelligent-tiering, metadata,
-metadata-table, website, and inventory composable clients do not change those
-ledger tuples.
+their independent backend and server evidence. The other eight operations
+remain
+`missing / covered / missing / covered`; the additional replication,
+analytics, metrics, intelligent-tiering, metadata, metadata-table, website,
+and inventory composable clients do not change those ledger tuples.
 This client corpus does not manufacture their backend persistence or server
 routes.
 
@@ -249,8 +251,8 @@ routes.
 `DeleteBucketOwnershipControls`, and
 `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock`
-have operation-specific reviewed registry lanes, but their ledger tuples remain
-unchanged: the independent public-access-block backend/server record remains
+have operation-specific reviewed registry lanes. The independent encryption,
+lifecycle, ownership-controls, public-access-block, and policy records are
 `covered / covered / covered / covered`, while the other lanes remain
 `missing / covered / missing / covered`. Each lane is conditional on every
 maintained command succeeding and does not convert client evidence into

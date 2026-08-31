@@ -764,6 +764,149 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Bucket_Ownership_Controls;
 
+   overriding procedure Put_Bucket_Lifecycle
+     (Item                                   : in out Store;
+      Bucket                                 : String;
+      Document                               : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Lifecycle_Document
+        (Document, Transition_Default_Minimum_Object_Size)
+      then
+         Result := Entity_Too_Large;
+      else
+         Catalogs.Put_Bucket_Lifecycle
+           (Item.Catalog, Bucket, Document,
+            Transition_Default_Minimum_Object_Size, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Lifecycle;
+
+   overriding procedure Get_Bucket_Lifecycle
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Transition_Default_Minimum_Object_Size :=
+        Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Lifecycle
+           (Item.Catalog, Bucket, Document,
+            Transition_Default_Minimum_Object_Size, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Transition_Default_Minimum_Object_Size :=
+           Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Lifecycle;
+
+   overriding procedure Delete_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Bucket_Lifecycle (Item.Catalog, Bucket, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Lifecycle;
+
+   overriding procedure Put_Bucket_Logging
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Logging_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Catalogs.Put_Bucket_Logging
+           (Item.Catalog, Bucket, Document, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Logging;
+
+   overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Logging
+           (Item.Catalog, Bucket, Document, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Logging;
+
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;
       Bucket   : String;

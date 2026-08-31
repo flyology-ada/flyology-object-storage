@@ -195,6 +195,90 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   --  Durably retain one bounded lifecycle document.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical lifecycle bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional response
+   --  header value, or the empty string when absent
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic durable lifecycle snapshot.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact retained optional
+   --  response-header value, or the empty string when absent
+   --  @param Configured Whether lifecycle state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Lifecycle
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Durably remove retained lifecycle state.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Durably retain one bounded logging document.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical logging bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Logging
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic durable logging snapshot.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit logging state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

@@ -5908,6 +5908,41 @@ def main() -> None:
             "tests/src/s3_server_application_corpus.adb",
         ]
 
+    for operation in (
+        "DeleteBucketLifecycle",
+        "GetBucketLifecycle",
+        "GetBucketLifecycleConfiguration",
+        "GetBucketLogging",
+        "PutBucketLifecycleConfiguration",
+        "PutBucketLogging",
+    ):
+        entry = registry.operations[operation]
+        assert_bucket_control_backend_server(entry)
+        assert "tests/src/s3_server_application_corpus.adb" in (
+            entry["evidence"]["corpus"]
+        )
+        missing_server = copy.deepcopy(entry)
+        missing_server["coverage"]["server"] = "missing"
+        try:
+            assert_bucket_control_backend_server(missing_server)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(
+                f"{operation} missing server coverage was accepted"
+            )
+
+    for operation in ("GetBucketLogging", "PutBucketLogging"):
+        assert "log delivery" in (
+            " ".join(registry.operations[operation]["exclusions"])
+            + " "
+            + " ".join(
+                registry.operations[operation]
+                .get("generation", {})
+                .get("intentional_exclusions", [])
+            )
+        )
+
     get_bucket_encryption_certainty = (
         "read-only; only one complete validated exact 200 "
         "Bucket_Control_Found response observed exposes the "
@@ -6527,10 +6562,7 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             get_bucket_lifecycle_configuration_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert "NoSuchLifecycleConfiguration" in entry["absence"]
         assert "lifecycle action execution" in entry["exclusions"][0]
         assert "without inventing a public numeric" in entry["exclusions"][1]
@@ -6665,11 +6697,12 @@ def main() -> None:
         )
         assert entry.get("ada_symbols") == get_bucket_lifecycle_symbols
         assert entry["coverage"] == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
+        assert_bucket_control_backend_server(entry)
         assert entry["provenance"]["client"] == "handwritten"
         assert entry["provenance"]["tests"] == "handwritten"
         assert "structural subset" in entry["exclusions"][1]
@@ -6801,10 +6834,7 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             put_bucket_lifecycle_configuration_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert entry.get("absence") == "not_applicable"
         assert "1,000-rule ceiling" in entry["exclusions"][1]
         assert "ten modeled checksum algorithms" in entry["exclusions"][2]
@@ -9231,11 +9261,12 @@ def main() -> None:
         assert entry.get("certainty") == delete_lifecycle_certainty
         assert entry.get("reconciliation") == delete_lifecycle_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
+        assert_bucket_control_backend_server(entry)
         assert entry.get("ada_symbols") == [
             "Prepare_Delete_Bucket_Lifecycle",
             "Execute_Delete_Bucket_Lifecycle",

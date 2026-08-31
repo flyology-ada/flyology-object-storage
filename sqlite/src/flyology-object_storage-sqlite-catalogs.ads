@@ -214,6 +214,68 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   --  Transactionally retain one lifecycle document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical lifecycle bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional header
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Lifecycle
+     (Item                                   : in out Catalog;
+      Bucket                                 : String;
+      Document                               : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Result                                 : out Status);
+
+   --  Read one transactional lifecycle snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Retained canonical bytes
+   --  @param Transition_Default_Minimum_Object_Size Retained optional header
+   --  @param Configured Whether lifecycle state is retained
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Lifecycle
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove retained lifecycle state.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Result Storage outcome
+   procedure Delete_Bucket_Lifecycle
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
+   --  Transactionally retain one logging document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical logging bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Logging
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional logging snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit logging state is retained
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Logging
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
    procedure Put_Bucket_Public_Access_Block
      (Item          : in out Catalog;
       Bucket        : String;

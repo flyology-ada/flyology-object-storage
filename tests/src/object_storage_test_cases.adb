@@ -761,7 +761,25 @@ package body Object_Storage_Test_Cases is
       Ownership : constant String :=
         "<OwnershipControls><Rule><ObjectOwnership>BucketOwnerEnforced" &
         "</ObjectOwnership></Rule></OwnershipControls>";
+      Lifecycle_First : constant String :=
+        "<LifecycleConfiguration><Rule><Status>Enabled</Status>" &
+        "<Filter><Prefix>current/</Prefix></Filter>" &
+        "</Rule></LifecycleConfiguration>";
+      Lifecycle_Second : constant String :=
+        "<LifecycleConfiguration><Rule><Status>Disabled</Status>" &
+        "<Filter><Prefix>archive/</Prefix></Filter>" &
+        "</Rule></LifecycleConfiguration>";
+      All_Storage_Classes_128K : constant String :=
+        "all_storage_classes_128K";
+      Varies_By_Storage_Class : constant String :=
+        "varies_by_storage_class";
+      Logging : constant String :=
+        "<BucketLoggingStatus><LoggingEnabled>" &
+        "<TargetBucket>logs</TargetBucket>" &
+        "<TargetPrefix>access/</TargetPrefix>" &
+        "</LoggingEnabled></BucketLoggingStatus>";
       Document   : US.Unbounded_String;
+      Transition_Default_Minimum_Object_Size : US.Unbounded_String;
       Configured : Boolean;
       Result     : Status;
    begin
@@ -838,6 +856,98 @@ package body Object_Storage_Test_Cases is
         (Result = Success,
          "bucket ownership-controls deletion was not idempotent");
 
+      --  GetBucketLifecycleConfiguration backend absence evidence.
+      Store.Get_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0
+         and then US.Length (Transition_Default_Minimum_Object_Size) = 0,
+         "new bucket exposed lifecycle state");
+      --  PutBucketLifecycleConfiguration backend persistence evidence.
+      Store.Put_Bucket_Lifecycle
+        (Bucket, Lifecycle_First, "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Lifecycle_First
+         and then US.Length (Transition_Default_Minimum_Object_Size) = 0,
+         "bucket lifecycle configuration did not round trip");
+      Store.Put_Bucket_Lifecycle
+        (Bucket, Lifecycle_Second, All_Storage_Classes_128K, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Lifecycle_Second
+         and then US.To_String (Transition_Default_Minimum_Object_Size) =
+           All_Storage_Classes_128K,
+         "bucket lifecycle replacement did not preserve exact bytes");
+      Store.Put_Bucket_Lifecycle
+        (Bucket, Lifecycle_First, Varies_By_Storage_Class, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Lifecycle_First
+         and then US.To_String (Transition_Default_Minimum_Object_Size) =
+           Varies_By_Storage_Class,
+         "bucket lifecycle transition default did not round trip");
+      Store.Delete_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0
+         and then US.Length (Transition_Default_Minimum_Object_Size) = 0,
+         "bucket lifecycle deletion left visible state");
+      Store.Delete_Bucket_Lifecycle
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket lifecycle deletion was not idempotent");
+
+      Store.Get_Bucket_Logging
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "new bucket did not expose the disabled logging state");
+      Store.Put_Bucket_Logging
+        (Bucket, Logging, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Logging
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Logging,
+         "bucket logging configuration did not round trip");
+
+      Store.Get_Bucket_Lifecycle
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Transition_Default_Minimum_Object_Size, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0
+         and then US.Length (Transition_Default_Minimum_Object_Size) = 0,
+         "bucket lifecycle get did not distinguish an absent bucket");
+      Store.Get_Bucket_Logging
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket logging get did not distinguish an absent bucket");
+
       declare
          Cancel : aliased Flyology.Cancellation.Token;
          Raised : Boolean := False;
@@ -864,10 +974,39 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, "bucket encryption put ignored deadline");
       end;
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Logging
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket logging get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Lifecycle
+              (Bucket, Lifecycle_First, "", null,
+               Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket lifecycle put ignored deadline");
+      end;
       Store.Put_Bucket_Encryption
         (Bucket, Encryption_First, null, Ada.Real_Time.Time_Last, Result);
       Store.Put_Bucket_Ownership_Controls
         (Bucket, Ownership, null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Lifecycle
+        (Bucket, Lifecycle_First, Varies_By_Storage_Class, null,
+         Ada.Real_Time.Time_Last, Result);
       Assert
         (Result = Success,
          "bucket configuration persistence fixtures failed");
@@ -4828,6 +4967,7 @@ package body Object_Storage_Test_Cases is
          end;
          declare
             Document   : US.Unbounded_String;
+            Transition_Default_Minimum_Object_Size : US.Unbounded_String;
             Configured : Boolean;
          begin
             Store.Get_Bucket_Encryption
@@ -4844,6 +4984,24 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Configured
                and then US.To_String (Document)'Length > 0,
                "files ownership controls did not persist across reopen");
+            Store.Get_Bucket_Lifecycle
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Transition_Default_Minimum_Object_Size,
+               Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0
+               and then US.To_String
+                 (Transition_Default_Minimum_Object_Size) =
+                   "varies_by_storage_class",
+               "files lifecycle state did not persist across reopen");
+            Store.Get_Bucket_Logging
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0,
+               "files logging state did not persist across reopen");
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

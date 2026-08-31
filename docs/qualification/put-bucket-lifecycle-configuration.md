@@ -1,9 +1,10 @@
 # PutBucketLifecycleConfiguration client qualification
 
 This record qualifies the strict bounded low-level and provider-owned clients
-for `PutBucketLifecycleConfiguration`. It does not claim lifecycle persistence,
-an authenticated Flyology server route, lifecycle action execution, or
-external server interoperability.
+for `PutBucketLifecycleConfiguration`. Independent backend and server evidence
+also covers atomic lifecycle-configuration persistence and the authenticated
+Flyology route. It does not claim lifecycle action execution or external
+server interoperability.
 
 The pinned model also retains deprecated `PutBucketLifecycle`. Its method,
 resource path, success status, checksum selection, and prefix-rule payload are
@@ -104,11 +105,12 @@ and exact prepared-operation rejection before admission. The normalization
 corpus crosses modeled responses and HTTP terminal failures with admission
 certainty.
 
-These gates advance only the wire/client and signed-corpus cells. Backend
-state, authenticated routing, lifecycle action execution, and external
-provider behavior remain separate work. The slice changes no unit selected by
-the maintained SPARK proof manifest, so proof is not reused to claim serializer
-or client behavior.
+The complete evidence advances every ledger cell. Memory, files, and SQLite
+preserve the canonical document and optional transition-minimum header
+atomically, while the authenticated route validates the exact checksum and
+owner contract. Lifecycle action execution and external-provider behavior
+remain separate work. Proof is not reused to claim serializer or client
+behavior.
 
 ## Maintained gate results
 

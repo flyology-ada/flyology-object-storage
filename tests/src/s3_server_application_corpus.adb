@@ -25,13 +25,17 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
+with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
+with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
+with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.MFA;
@@ -54,7 +58,11 @@ procedure S3_Server_Application_Corpus is
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
+   package Generated_Logging renames
+     Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
+   package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Listings renames Flyology.Object_Storage.S3.Listings;
+   package Logging renames Flyology.Object_Storage.S3.Logging;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
@@ -6375,6 +6383,423 @@ begin
                  ("DELETE", "/absent-bucket", Ownership_Delete)),
             "<Code>NoSuchBucket</Code>"),
          "DeleteBucketOwnershipControls did not distinguish absent bucket");
+   end;
+
+   declare
+      Lifecycle_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("lifecycle", ""),
+         SigV4.Pair ("x-id", "PutBucketLifecycleConfiguration"));
+      Lifecycle_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("lifecycle", ""),
+         SigV4.Pair ("x-id", "GetBucketLifecycleConfiguration"));
+      Legacy_Lifecycle_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("lifecycle", ""),
+         SigV4.Pair ("x-id", "GetBucketLifecycle"));
+      Lifecycle_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("lifecycle", ""),
+         SigV4.Pair ("x-id", "DeleteBucketLifecycle"));
+      Logging_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("logging", ""),
+         SigV4.Pair ("x-id", "PutBucketLogging"));
+      Logging_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("logging", ""),
+         SigV4.Pair ("x-id", "GetBucketLogging"));
+      Namespace : constant String :=
+        "http://s3.amazonaws.com/doc/2006-03-01/";
+      Lifecycle_Document : constant String :=
+        "<LifecycleConfiguration xmlns=""" & Namespace & """>" &
+        "<Rule><Status>Enabled</Status></Rule>" &
+        "</LifecycleConfiguration>";
+      Logging_Document : constant String :=
+        "<BucketLoggingStatus xmlns=""" & Namespace & """>" &
+        "<LoggingEnabled><TargetBucket>log-target</TargetBucket>" &
+        "<TargetPrefix>logs/</TargetPrefix></LoggingEnabled>" &
+        "</BucketLoggingStatus>";
+      Disabled_Logging : constant String :=
+        "<BucketLoggingStatus xmlns=""" & Namespace &
+        """></BucketLoggingStatus>";
+      Canonical_Lifecycle : constant String :=
+        Lifecycle.Serialize
+          (Lifecycle.Parse (Lifecycle_Document),
+           Flyology.Object_Storage.S3.XML.Default_Limits);
+      Canonical_Logging : constant String :=
+        Generated_Logging.Serialize
+          (Logging.Parse
+             (Logging_Document,
+              Flyology.Object_Storage.S3.XML.Default_Limits),
+           Flyology.Object_Storage.S3.XML.Default_Limits);
+      Canonical_Disabled_Logging : constant String :=
+        Generated_Logging.Serialize
+          (Logging.Parse
+             (Disabled_Logging,
+              Flyology.Object_Storage.S3.XML.Default_Limits),
+           Flyology.Object_Storage.S3.XML.Default_Limits);
+
+      function Put_Lifecycle
+        (Document : String;
+         Extra    : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Lifecycle_Put, Document,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Document) & CRLF & Extra)));
+
+      function Put_Logging
+        (Document : String;
+         Extra    : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Logging_Put, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF &
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Document) & CRLF & Extra)));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Lifecycle_Get)),
+            "<Code>NoSuchLifecycleConfiguration</Code>"),
+         "GetBucketLifecycleConfiguration did not report absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Lifecycle_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketLifecycleConfiguration confused bucket and state " &
+         "absence");
+      Require
+        (Has (Put_Lifecycle (Lifecycle_Document), "200 OK"),
+         "PutBucketLifecycleConfiguration rejected an absent transition " &
+         "minimum");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Lifecycle_Get));
+      begin
+         Require
+           (Response_Body (Response) = Canonical_Lifecycle
+            and then not Has
+              (Response,
+               "x-amz-transition-default-minimum-object-size:"),
+            "GetBucketLifecycleConfiguration invented a transition " &
+            "minimum");
+      end;
+      Require
+        (Has
+           (Put_Lifecycle
+              (Lifecycle_Document,
+               "x-amz-transition-default-minimum-object-size: " &
+               "varies_by_storage_class" & CRLF),
+            "200 OK"),
+         "PutBucketLifecycleConfiguration rejected valid state");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Lifecycle_Get));
+      begin
+         Require
+           (Response_Body (Response) = Canonical_Lifecycle
+            and then Has
+              (Response,
+               "x-amz-transition-default-minimum-object-size: " &
+               "varies_by_storage_class")
+            and then not Has (Response, "all_storage_classes_128K"),
+            "GetBucketLifecycleConfiguration lost the varying transition " &
+            "minimum");
+      end;
+      Require
+        (Has
+           (Put_Lifecycle
+              (Lifecycle_Document,
+               "x-amz-transition-default-minimum-object-size: " &
+               "all_storage_classes_128K" & CRLF),
+            "200 OK"),
+         "PutBucketLifecycleConfiguration rejected a 128K transition " &
+         "minimum");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Lifecycle_Get));
+      begin
+         Require
+           (Response_Body (Response) = Canonical_Lifecycle
+            and then Has
+              (Response,
+               "x-amz-transition-default-minimum-object-size: " &
+               "all_storage_classes_128K")
+            and then not Has (Response, "varies_by_storage_class"),
+            "GetBucketLifecycleConfiguration did not replace the " &
+            "transition minimum");
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Legacy_Lifecycle_Get));
+      begin
+         Require
+           (Response_Body (Response) = Canonical_Lifecycle
+            and then not Has
+              (Response,
+               "x-amz-transition-default-minimum-object-size:"),
+            "GetBucketLifecycle alias returned a configuration-only " &
+            "transition header");
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket",
+                 (1 => SigV4.Pair ("lifecycle", ""))));
+      begin
+         Require
+           (Response_Body (Response) = Canonical_Lifecycle
+            and then Has
+              (Response,
+               "x-amz-transition-default-minimum-object-size: " &
+               "all_storage_classes_128K"),
+            "bare lifecycle query did not select the modern response");
+      end;
+      Require
+        (Has
+           (Put_Lifecycle
+              (Lifecycle_Document,
+               "x-amz-transition-default-minimum-object-size: invalid" &
+               CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycleConfiguration accepted an invalid transition " &
+         "minimum");
+      Require
+        (Has
+           (Put_Lifecycle
+              ("<LifecycleConfiguration><Rule/></LifecycleConfiguration>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketLifecycleConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Lifecycle_Put,
+                  Lifecycle_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycleConfiguration accepted a missing checksum");
+      Require
+        (Has
+           (Put_Lifecycle
+               (Lifecycle_Document,
+               "content-md5: " & Content_MD5 (Lifecycle_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycleConfiguration accepted Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Lifecycle_Put,
+                  Lifecycle_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, "different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketLifecycleConfiguration accepted a checksum mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Lifecycle_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketLifecycleConfiguration ignored expected owner");
+      Require
+        (Has
+           (Put_Lifecycle
+              (Lifecycle_Document,
+               "x-amz-expected-bucket-owner: different-owner" & CRLF),
+            "403 Forbidden"),
+         "PutBucketLifecycleConfiguration ignored expected owner");
+      Require
+        (Has
+           (Put_Lifecycle
+              (Lifecycle_Document,
+               "x-amz-request-payer: requester" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycleConfiguration accepted RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("lifecycle", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketLifecycleConfiguration accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Lifecycle_Delete)),
+            "204 No Content"),
+         "DeleteBucketLifecycle failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Lifecycle_Get)),
+            "NoSuchLifecycleConfiguration"),
+         "DeleteBucketLifecycle left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Lifecycle_Delete)),
+            "204 No Content"),
+         "DeleteBucketLifecycle was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Lifecycle_Delete,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "DeleteBucketLifecycle ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Lifecycle_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketLifecycle did not distinguish an absent bucket");
+
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Logging_Get))) =
+           Canonical_Disabled_Logging,
+         "GetBucketLogging did not return disabled state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Logging_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketLogging confused bucket absence with disabled state");
+      Require
+        (Has (Put_Logging (Logging_Document), "200 OK"),
+         "PutBucketLogging rejected valid state");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Logging_Get))) =
+           Canonical_Logging,
+         "GetBucketLogging lost canonical state");
+      Require
+        (Has (Put_Logging (Disabled_Logging), "200 OK"),
+         "PutBucketLogging rejected canonical disabled state");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Logging_Get))) =
+           Canonical_Disabled_Logging,
+         "GetBucketLogging lost explicitly disabled state");
+      Require
+        (Has
+           (Put_Logging
+              ("<BucketLoggingStatus><LoggingEnabled/>" &
+               "</BucketLoggingStatus>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketLogging accepted malformed XML");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Logging_Put,
+                  Logging_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Logging_Document) & CRLF)),
+            "200 OK"),
+         "PutBucketLogging rejected an omitted optional Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Logging_Put,
+                  Logging_Document,
+                  "content-md5: " & Content_MD5 (Logging_Document) & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLogging accepted a missing checksum");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Logging_Put,
+                  Logging_Document,
+                  "content-md5: invalid" & CRLF &
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Logging_Document) & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLogging accepted an invalid Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Logging_Put,
+                  Logging_Document,
+                  "content-md5: " & Content_MD5 (Logging_Document) & CRLF &
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, "different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketLogging accepted a checksum mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Logging_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketLogging ignored expected owner");
+      Require
+        (Has
+           (Put_Logging
+              (Logging_Document,
+               "x-amz-expected-bucket-owner: different-owner" & CRLF),
+            "403 Forbidden"),
+         "PutBucketLogging ignored expected owner");
+      Require
+        (Has
+           (Put_Logging
+              (Logging_Document,
+               "x-amz-request-payer: requester" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLogging accepted unmodeled RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("logging", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketLogging accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Logging_Get,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketLogging accepted unmodeled RequestPayer");
    end;
 
    declare

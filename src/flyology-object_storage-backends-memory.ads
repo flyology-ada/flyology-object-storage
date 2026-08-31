@@ -10,8 +10,9 @@ with Flyology.Object_Storage.Tags;
 --  uploads, and parts; retaining history therefore consumes object slots.
 --  Byte_Capacity covers retained committed, staged, and in-progress object
 --  payload buffers plus retained opaque bucket-configuration bytes, including
---  policy, CORS, encryption, and ownership controls; atomic replacement and
---  multipart assembly therefore require coexistence headroom.
+--  policy, CORS, encryption, ownership controls, lifecycle, and logging;
+--  atomic replacement and multipart assembly therefore require coexistence
+--  headroom.
 --  It implements the same contract as durable backends and is the reference
 --  oracle for conformance tests; capacity exhaustion is an ordinary reported
 --  outcome.
@@ -188,6 +189,90 @@ package Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
+
+   --  Retain one bounded lifecycle document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical lifecycle bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional response
+   --  header value, or the empty string when absent
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory lifecycle snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact retained optional
+   --  response-header value, or the empty string when absent
+   --  @param Configured Whether lifecycle state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Lifecycle
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove retained in-memory lifecycle state.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Lifecycle
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Retain one bounded logging document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical logging bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Logging
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory logging snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit logging state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
@@ -629,6 +714,14 @@ package Flyology.Object_Storage.Backends.Memory is
    function Bytes_Used (Item : Store) return Byte_Count;
 
 private
+   type Singleton_Configuration_Kind is
+     (Lifecycle_Configuration, Logging_Configuration);
+   type Configuration_Document_Array is array
+     (Singleton_Configuration_Kind) of
+       Ada.Strings.Unbounded.Unbounded_String;
+   type Configuration_Presence_Array is array
+     (Singleton_Configuration_Kind) of Boolean;
+
    type Byte_Array_Access is access Ada.Streams.Stream_Element_Array;
 
    type Owned_Bytes is new Ada.Finalization.Controlled with record
@@ -667,6 +760,10 @@ private
       Ownership_Controls_Configured : Boolean := False;
       Ownership_Controls_Document :
         Ada.Strings.Unbounded.Unbounded_String;
+      Configuration_Configured : Configuration_Presence_Array :=
+        (others => False);
+      Configuration_Documents : Configuration_Document_Array;
+      Configuration_Metadata : Configuration_Document_Array;
       Public_Access_Block_Configured : Boolean := False;
       Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
         (others => <>);
@@ -785,6 +882,23 @@ private
          Result     : out Status);
       procedure Delete_Bucket_Ownership_Controls
         (Name : String; Result : out Status);
+      procedure Put_Bucket_Configuration
+        (Name     : String;
+         Kind     : Singleton_Configuration_Kind;
+         Document : String;
+         Metadata : String;
+         Result   : out Status);
+      procedure Get_Bucket_Configuration
+        (Name       : String;
+         Kind       : Singleton_Configuration_Kind;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Metadata   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Delete_Bucket_Configuration
+        (Name   : String;
+         Kind   : Singleton_Configuration_Kind;
+         Result : out Status);
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
          Configuration : Bucket_Public_Access_Block_Configuration;

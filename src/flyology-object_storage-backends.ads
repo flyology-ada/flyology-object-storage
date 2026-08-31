@@ -764,6 +764,30 @@ package Flyology.Object_Storage.Backends is
    function Valid_Bucket_Ownership_Controls_Document
      (Document : String) return Boolean;
 
+   --  Check the shared persistence bound for one canonical lifecycle
+   --  document. XML parsing and semantic validation remain at the S3 boundary.
+   --  @param Document Exact canonical lifecycle-configuration bytes
+   --  @return True when every backend can retain the document
+   function Valid_Bucket_Lifecycle_Document
+     (Document : String) return Boolean;
+
+   --  Check the shared persistence bound for one canonical lifecycle
+   --  document and its exact optional response-header value.
+   --  @param Document Exact canonical lifecycle-configuration bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional response
+   --  header value, or the empty string when absent
+   --  @return True when every backend can retain the complete state
+   function Valid_Bucket_Lifecycle_Document
+     (Document : String;
+      Transition_Default_Minimum_Object_Size : String) return Boolean;
+
+   --  Check the shared persistence bound for one canonical logging document.
+   --  XML parsing and semantic validation remain at the S3 boundary.
+   --  @param Document Exact canonical logging-status bytes
+   --  @return True when every backend can retain the document
+   function Valid_Bucket_Logging_Document
+     (Document : String) return Boolean;
+
    --  Atomically replace the complete canonical CORS document of an existing
    --  bucket.  The backend treats Document as bounded opaque bytes and does
    --  not depend on S3 XML or request types.
@@ -908,6 +932,95 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
+
+   --  Atomically replace the complete canonical lifecycle document. The
+   --  backend retains configuration state but does not execute lifecycle
+   --  actions.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical lifecycle-configuration bytes
+   --  @param Transition_Default_Minimum_Object_Size Exact optional response
+   --  header value, or the empty string when absent
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Lifecycle
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical lifecycle-document snapshot.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Transition_Default_Minimum_Object_Size Exact retained optional
+   --  response-header value, or the empty string when absent
+   --  @param Configured Whether the existing bucket has lifecycle state
+   --  @param Result Read result
+   procedure Get_Bucket_Lifecycle
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove lifecycle state. Deletion is idempotent for an
+   --  existing bucket without a lifecycle configuration.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Lifecycle
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the complete canonical logging document. The
+   --  backend retains configuration state but does not deliver access logs.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical logging-status bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Logging
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical logging-document snapshot. Configured is
+   --  False for the successful disabled/default state of an existing bucket.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether explicit logging state is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Logging
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
 
    --  Atomically replace the complete PublicAccessBlock configuration of an
    --  existing bucket.  A configuration whose four members are absent is a
@@ -1573,8 +1686,9 @@ private
    Maximum_Bucket_Configuration_Bytes : constant Byte_Count :=
      Maximum_Bucket_CORS_Bytes;
    --  Derived from the same established XML resource budget as CORS. This
-   --  private value bounds canonical encryption and ownership-control bytes
-   --  without exposing a caller-visible resource-policy constant.
+   --  private value bounds canonical singleton bucket-configuration bytes,
+   --  including encryption, ownership, lifecycle, and logging, without
+   --  exposing a caller-visible resource-policy constant.
 
    --  Monotonic publication order is backend-private metadata, not a wire or
    --  caller-visible value.  It disambiguates generations that share a

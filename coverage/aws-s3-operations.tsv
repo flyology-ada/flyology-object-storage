@@ -13,7 +13,7 @@ DeleteBucketCors	extended	covered	covered	covered	covered
 DeleteBucketEncryption	extended	covered	covered	covered	covered
 DeleteBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 DeleteBucketInventoryConfiguration	extended	missing	covered	missing	covered
-DeleteBucketLifecycle	extended	missing	covered	missing	covered
+DeleteBucketLifecycle	extended	covered	covered	covered	covered
 DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetricsConfiguration	extended	missing	covered	missing	covered
@@ -35,10 +35,10 @@ GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	covered	covered	covered	covered
 GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 GetBucketInventoryConfiguration	extended	missing	covered	missing	covered
-GetBucketLifecycle	extended	missing	covered	missing	covered
-GetBucketLifecycleConfiguration	extended	missing	covered	missing	covered
+GetBucketLifecycle	extended	covered	covered	covered	covered
+GetBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 GetBucketLocation	core	covered	covered	covered	covered
-GetBucketLogging	extended	missing	covered	missing	covered
+GetBucketLogging	extended	covered	covered	covered	covered
 GetBucketMetadataConfiguration	extended	missing	covered	missing	covered
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	covered	missing	covered
@@ -85,8 +85,8 @@ PutBucketEncryption	extended	covered	covered	covered	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 PutBucketInventoryConfiguration	extended	missing	covered	missing	covered
 PutBucketLifecycle	extended	missing	partial	missing	covered
-PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered
-PutBucketLogging	extended	missing	covered	missing	covered
+PutBucketLifecycleConfiguration	extended	covered	covered	covered	covered
+PutBucketLogging	extended	covered	covered	covered	covered
 PutBucketMetricsConfiguration	extended	missing	covered	missing	covered
 PutBucketNotification	extended	missing	partial	missing	covered
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
