@@ -13581,6 +13581,15 @@ private
    end record;
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded GetBucketReplication result
    function Decode_Get_Bucket_Replication_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13593,6 +13602,11 @@ private
       return Get_Bucket_Replication_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized GetBucketReplication failure result
    function Normalize_Get_Bucket_Replication_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13620,6 +13634,15 @@ private
    end record;
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded GetBucketMetricsConfiguration result
    function Decode_Get_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13632,6 +13655,11 @@ private
       return Get_Bucket_Metrics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized GetBucketMetricsConfiguration failure result
    function Normalize_Get_Bucket_Metrics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13659,21 +13687,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven GetBucketMetricsConfiguration read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Metrics_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven GetBucketMetricsConfiguration read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Metrics_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven GetBucketMetricsConfiguration read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Metrics_Operation);
    --  @exclude
+   --  @param Item Owner-driven GetBucketMetricsConfiguration read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Metrics_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded ListBucketMetricsConfigurations result
    function Decode_List_Bucket_Metrics_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13686,6 +13729,11 @@ private
       return List_Bucket_Metrics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized ListBucketMetricsConfigurations failure result
    function Normalize_List_Bucket_Metrics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13713,21 +13761,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven ListBucketMetricsConfigurations read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out List_Bucket_Metrics_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven ListBucketMetricsConfigurations read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out List_Bucket_Metrics_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven ListBucketMetricsConfigurations read operation
    overriding procedure Request_Cancellation
      (Item : in out List_Bucket_Metrics_Operation);
    --  @exclude
+   --  @param Item Owner-driven ListBucketMetricsConfigurations read operation
    overriding procedure Finalize
      (Item : in out List_Bucket_Metrics_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded ListBucketAnalyticsConfigurations result
    function Decode_List_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13740,6 +13803,11 @@ private
       return List_Bucket_Analytics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized ListBucketAnalyticsConfigurations failure result
    function Normalize_List_Bucket_Analytics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13767,21 +13835,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven analytics list operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out List_Bucket_Analytics_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven analytics list operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out List_Bucket_Analytics_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven analytics list operation
    overriding procedure Request_Cancellation
      (Item : in out List_Bucket_Analytics_Operation);
    --  @exclude
+   --  @param Item Owner-driven analytics list operation
    overriding procedure Finalize
      (Item : in out List_Bucket_Analytics_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded GetBucketAnalyticsConfiguration result
    function Decode_Get_Bucket_Analytics_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13794,6 +13877,11 @@ private
       return Get_Bucket_Analytics_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized GetBucketAnalyticsConfiguration failure result
    function Normalize_Get_Bucket_Analytics_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13821,20 +13909,35 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven analytics read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Analytics_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven analytics read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Analytics_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven analytics read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Analytics_Operation);
    --  @exclude
+   --  @param Item Owner-driven analytics read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Analytics_Operation);
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded GetBucketIntelligentTieringConfiguration result
    function Decode_Get_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13847,6 +13950,11 @@ private
       return Get_Bucket_Intelligent_Tiering_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized intelligent-tiering read failure result
    function Normalize_Get_Bucket_Intelligent_Tiering_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13875,21 +13983,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Intelligent_Tiering_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Intelligent_Tiering_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Intelligent_Tiering_Operation);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Intelligent_Tiering_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded intelligent-tiering configuration list result
    function Decode_List_Bucket_Intelligent_Tiering_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13902,6 +14025,11 @@ private
       return List_Bucket_Intelligent_Tiering_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized intelligent-tiering list failure result
    function Normalize_List_Bucket_Intelligent_Tiering_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13933,21 +14061,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering list operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out List_Bucket_Intelligent_Tiering_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering list operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out List_Bucket_Intelligent_Tiering_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering list operation
    overriding procedure Request_Cancellation
      (Item : in out List_Bucket_Intelligent_Tiering_Operation);
    --  @exclude
+   --  @param Item Owner-driven intelligent-tiering list operation
    overriding procedure Finalize
      (Item : in out List_Bucket_Intelligent_Tiering_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded bucket inventory configuration list result
    function Decode_List_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -13960,6 +14103,11 @@ private
       return List_Bucket_Inventory_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized bucket inventory list failure result
    function Normalize_List_Bucket_Inventory_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -13988,21 +14136,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven bucket inventory list operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out List_Bucket_Inventory_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory list operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out List_Bucket_Inventory_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory list operation
    overriding procedure Request_Cancellation
      (Item : in out List_Bucket_Inventory_Operation);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory list operation
    overriding procedure Finalize
      (Item : in out List_Bucket_Inventory_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded bucket inventory configuration result
    function Decode_Get_Bucket_Inventory_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14015,6 +14178,11 @@ private
       return Get_Bucket_Inventory_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized bucket inventory read failure result
    function Normalize_Get_Bucket_Inventory_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14043,21 +14211,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven bucket inventory read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Inventory_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Inventory_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Inventory_Operation);
    --  @exclude
+   --  @param Item Owner-driven bucket inventory read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Inventory_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded bucket logging configuration result
    function Decode_Get_Bucket_Logging_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14070,6 +14253,11 @@ private
       return Get_Bucket_Logging_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized bucket logging read failure result
    function Normalize_Get_Bucket_Logging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14097,21 +14285,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven bucket logging read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Logging_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven bucket logging read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Logging_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven bucket logging read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Logging_Operation);
    --  @exclude
+   --  @param Item Owner-driven bucket logging read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Logging_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded bucket metadata configuration result
    function Decode_Get_Bucket_Metadata_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14124,6 +14327,11 @@ private
       return Get_Bucket_Metadata_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized bucket metadata read failure result
    function Normalize_Get_Bucket_Metadata_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14151,21 +14359,36 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven bucket metadata read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Metadata_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven bucket metadata read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Metadata_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven bucket metadata read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Metadata_Operation);
    --  @exclude
+   --  @param Item Owner-driven bucket metadata read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Metadata_Operation);
 
    --  @exclude
+   --  @param Status HTTP response status
+   --  @param Response HTTP response metadata
+   --  @param Payload Complete response body
+   --  @param Request_ID S3 request identifier
+   --  @param Host_ID S3 host identifier
+   --  @param Limits XML parsing limits for the response
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Decoded bucket website configuration result
    function Decode_Get_Bucket_Website_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -14178,6 +14401,11 @@ private
       return Get_Bucket_Website_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result
+   --  @param Admission Request admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized bucket website read failure result
    function Normalize_Get_Bucket_Website_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -14205,17 +14433,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven bucket website read operation
+   --  @param Data Response bytes appended to the bounded payload
    overriding procedure Write
      (Item : in out Get_Bucket_Website_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven bucket website read operation
+   --  @param Event Driver event advancing the exchange
    overriding procedure Drive
      (Item : in out Get_Bucket_Website_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven bucket website read operation
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Website_Operation);
    --  @exclude
+   --  @param Item Owner-driven bucket website read operation
    overriding procedure Finalize
      (Item : in out Get_Bucket_Website_Operation);
 
