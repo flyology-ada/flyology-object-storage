@@ -3256,6 +3256,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketEncryption request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Encryption
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
@@ -3293,12 +3301,28 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketLifecycle request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Lifecycle
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketMetadataConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Metadata_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
@@ -3306,6 +3330,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketMetadataTableConfiguration
    --  request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Metadata_Table_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
@@ -3327,30 +3359,70 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketOwnershipControls request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Ownership_Controls
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketPolicy request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketReplication request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Replication
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeleteBucketWebsite request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Bucket_Website
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Build and sign one exact DeletePublicAccessBlock request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Delete_Public_Access_Block
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
@@ -3371,6 +3443,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketEncryption request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Encryption
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3405,6 +3483,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketLifecycle request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Lifecycle
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3412,6 +3496,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketMetadataConfiguration request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Metadata_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3420,6 +3510,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketMetadataTableConfiguration
    --  request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Metadata_Table_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3440,6 +3536,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketOwnershipControls request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Ownership_Controls
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3447,6 +3549,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketPolicy request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3454,6 +3562,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketReplication request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Replication
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3461,6 +3575,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeleteBucketWebsite request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Bucket_Website
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -3468,6 +3588,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Configuration_Outcome;
    --  Execute one exact prepared DeletePublicAccessBlock request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Exact-empty 204 completion or structured S3 rejection
    function Execute_Delete_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
