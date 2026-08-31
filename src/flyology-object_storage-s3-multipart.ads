@@ -6,14 +6,30 @@ with Flyology.Object_Storage.S3.XML;
 --  Typed multipart REST/XML documents shared by clients and servers.
 package Flyology.Object_Storage.S3.Multipart is
 
+   --  Raised when multipart query or REST/XML data is malformed.
    Malformed_Multipart : exception;
 
+   --  Part-number marker including zero for no previous part.
    subtype Part_Marker_Value is Natural range 0 .. Core.Part_Number'Last;
 
+   --  Multipart query shape selected by its required members.
+   --  @enum Create_Upload_Query CreateMultipartUpload query
+   --  @enum Upload_Part_Query UploadPart or UploadPartCopy query
+   --  @enum Existing_Upload_Query Existing-upload mutation query
+   --  @enum List_Parts_Query ListParts query
    type Multipart_Query_Kind is
      (Create_Upload_Query, Upload_Part_Query, Existing_Upload_Query,
       List_Parts_Query);
 
+   --  Parsed multipart query parameters.
+   --  @field Kind Selected multipart query shape
+   --  @field Operation_ID Optional modeled x-id operation name
+   --  @field Upload_ID Upload identifier for an uploaded part
+   --  @field Part_Number Uploaded part number
+   --  @field Existing_Upload_ID Upload identifier for an existing-upload query
+   --  @field Listed_Upload_ID Upload identifier for a ListParts query
+   --  @field Part_Number_Marker Exclusive completed-part marker
+   --  @field Max_Parts Requested maximum ListParts result count
    type Multipart_Query (Kind : Multipart_Query_Kind := Create_Upload_Query)
    is record
       Operation_ID : Ada.Strings.Unbounded.Unbounded_String;
@@ -35,8 +51,23 @@ package Flyology.Object_Storage.S3.Multipart is
    --  Parse the exact query shapes used by CreateMultipartUpload, UploadPart,
    --  CompleteMultipartUpload, AbortMultipartUpload, and ListParts. Names and
    --  values use strict URI percent decoding; '+' remains a literal plus byte.
+   --  @param Query Raw query bytes after the question mark
+   --  @return Parsed multipart query shape and values
    function Parse_Query (Query : String) return Multipart_Query;
 
+   --  One requested completed multipart part.
+   --  @field Number Multipart part number
+   --  @field Entity_Tag Modeled part entity tag
+   --  @field Checksum_CRC32 Optional CRC-32 checksum value
+   --  @field Checksum_CRC32C Optional CRC-32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC-64/NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA-1 checksum value
+   --  @field Checksum_SHA256 Optional SHA-256 checksum value
+   --  @field Checksum_SHA512 Optional SHA-512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXH3 64-bit checksum value
+   --  @field Checksum_XXHASH128 Optional XXH3 128-bit checksum value
    type Completed_Part is record
       Number           : Core.Part_Number := Core.Part_Number'First;
       Entity_Tag       : Ada.Strings.Unbounded.Unbounded_String;
@@ -52,35 +83,56 @@ package Flyology.Object_Storage.S3.Multipart is
       Checksum_XXHASH128 : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Vector implementation used for completed multipart parts.
    package Completed_Part_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Completed_Part);
 
+   --  Ordered completed multipart part collection.
    subtype Completed_Part_List is Completed_Part_Vectors.Vector;
 
+   --  CompleteMultipartUpload request body.
+   --  @field Parts Ordered completed multipart parts
    type Complete_Multipart_Upload_Request is record
       Parts : Completed_Part_List;
    end record;
 
+   --  Parse one bounded CompleteMultipartUpload request document.
+   --  @param Document CompleteMultipartUpload request XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded completion request
    function Parse_Complete_Request
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Complete_Multipart_Upload_Request;
 
+   --  Serialize one CompleteMultipartUpload request document.
+   --  @param Value Completion request to serialize
+   --  @return Namespaced CompleteMultipartUpload request XML
    function Serialize_Complete_Request
      (Value : Complete_Multipart_Upload_Request) return String;
 
    --  Body fields returned by CreateMultipartUpload.
+   --  @field Bucket Bucket name
+   --  @field Key Object key
+   --  @field Upload_ID New multipart upload identifier
    type Create_Multipart_Upload_Result is record
       Bucket    : Ada.Strings.Unbounded.Unbounded_String;
       Key       : Ada.Strings.Unbounded.Unbounded_String;
       Upload_ID : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Parse one bounded CreateMultipartUpload result document.
+   --  @param Document CreateMultipartUpload result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded create result
    function Parse_Create_Result
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Create_Multipart_Upload_Result;
 
+   --  Serialize one CreateMultipartUpload result document.
+   --  @param Value Create result to serialize
+   --  @return Namespaced CreateMultipartUpload result XML
    function Serialize_Create_Result
      (Value : Create_Multipart_Upload_Result) return String;
 
