@@ -3373,8 +3373,18 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return Head_Result;
 
+   --  Outcome selection for one DeleteObject response.
+   --  @enum Object_Removed The DeleteObject request completed
+   --  @enum Delete_Rejected The service rejected the deletion request
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 
+   --  One completed DeleteObject response or structured S3 rejection.
+   --  @field Kind Selected outcome variant
+   --  @field Status Exact HTTP response status
+   --  @field Delete_Marker Optional delete-marker response header
+   --  @field Version_ID Provider version identifier response header
+   --  @field Request_Charged Decoded requester-pays response header
+   --  @field Error Structured S3 error response
    type Delete_Outcome
      (Kind : Delete_Outcome_Kind := Delete_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
