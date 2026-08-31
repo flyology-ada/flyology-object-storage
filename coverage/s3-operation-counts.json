@@ -15,8 +15,8 @@
     "partial": 0
   },
   "decision_status": {
-    "inventory_only": 33,
-    "reviewed": 83
+    "inventory_only": 32,
+    "reviewed": 84
   },
   "families": {
     "bodyless_mutation": 20,
