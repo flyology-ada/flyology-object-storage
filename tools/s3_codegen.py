@@ -2000,6 +2000,20 @@ class Generated_Mutation:
 
 GENERATED_MUTATIONS = (
     Generated_Mutation(
+        operation="CreateBucketMetadataConfiguration",
+        ada_stem="Create_Bucket_Metadata_Configuration",
+        model_stem="Create_Bucket_Metadata_Configuration",
+        public_name="Create_Metadata_Configuration",
+        label="bucket metadata configuration",
+        value_unit="Metadata_Configurations",
+        value_type="Metadata_Configuration_Request",
+        parameters_type="Bucket_Control_Mutation_Parameters",
+        disposition_stem="Bucket_Metadata_Configuration_Mutation",
+        declares_disposition=False,
+        has_identifier=False,
+        reconciliation="Get_Metadata_Configuration",
+    ),
+    Generated_Mutation(
         operation="PutBucketAcl",
         ada_stem="Put_Bucket_ACL",
         model_stem="Put_Bucket_Acl",
@@ -2533,17 +2547,58 @@ def _generated_mutation_low_level_spec(
         )
     for item in mutations:
         value = f"S3.{item.value_unit}.{item.value_type}"
-        execute_comment = ada_comment(
-            f"Execute one exact prepared {item.operation} request without "
-            "replay."
+        prepare_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Prepare one exact {item.operation} request. The returned "
+                "request owns its exact serialized and signed one-shot XML "
+                "body.",
+                "@param Origin Exact HTTP origin used for routing and signing",
+                "@param Style Caller-selected S3 addressing style",
+                "@param Bucket Required exact target bucket",
+                f"@param Value {item.label.capitalize()} value serialized "
+                "before admission",
+                "@param Parameters Complete modeled non-resource "
+                f"{item.operation} controls",
+                "@param Identity Credentials borrowed only while signing "
+                "the request",
+                "@param Region Exact SigV4 signing region",
+                "@param Timestamp Exact SigV4 signing timestamp",
+                "@param Limits Caller-selected bounded XML limits",
+                "@return Prepared signed request with an owned one-shot body",
+            )
         )
-        start_comment = ada_comment(
-            f"Start one exact prepared {item.operation} exchange. A "
-            "differently bound request is rejected before HTTP admission."
+        execute_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Execute one exact prepared {item.operation} request "
+                "without replay.",
+                "@param Client HTTP client retained through terminal drain",
+                "@param Prepared Exact prepared request and owned body",
+                "@param Timeout Whole request and drain budget",
+                "@param Token Caller-selected cancellation source or null",
+                "@param Limits Caller-selected bounded response XML limits",
+                "@return Complete modeled response or structured rejection",
+            )
+        )
+        start_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Start one exact prepared {item.operation} exchange. A "
+                "differently bound request is rejected before HTTP admission.",
+                "@param Client HTTP client retained through terminal drain",
+                "@param Prepared Exact prepared request retained through "
+                "drain",
+                "@param Source One-shot request body source",
+                "@param Sink Bounded response body sink",
+                "@param Deadline Absolute admission, exchange, and drain "
+                "limit",
+                "@param Token Caller-selected cancellation source or null",
+                "@param Operation Caller-owned HTTP exchange operation",
+            )
         )
         parts.append(
-            f"""   --  Prepare one exact {item.operation} request. The returned
-   --  request owns its exact serialized and signed one-shot XML body.
+            f"""{prepare_comment}
    function {item.low_prepare}
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String;
@@ -2722,7 +2777,11 @@ def _generated_mutation_low_level_body(
             if http.requires_checksum
             else ""
         )
-        serializer = f"S3.Generated_{item.ada_stem}_XML.Serialize"
+        serializer = (
+            "S3.Metadata_Configurations.Serialize_Create"
+            if item.operation == "CreateBucketMetadataConfiguration"
+            else f"S3.Generated_{item.ada_stem}_XML.Serialize"
+        )
         declarations = common + (
             "\n" if common else ""
         ) + f"""      Payload : constant String :=
@@ -2734,6 +2793,18 @@ def _generated_mutation_low_level_body(
             "         Has_Configuration_ID => True"
             if item.has_identifier
             else ""
+        )
+        execute_call_first = (
+            f"        (Client, Prepared, Model.{item.model_stem}_Operation,"
+        )
+        execute_call = (
+            execute_call_first + "\n         Timeout, Token, Limits)"
+            if len(execute_call_first) <= 79
+            else (
+                "        (Client, Prepared,\n"
+                f"         Model.{item.model_stem}_Operation,\n"
+                "         Timeout, Token, Limits)"
+            )
         )
         parts.append(
             f"""   function {item.low_prepare}
@@ -2754,7 +2825,11 @@ def _generated_mutation_low_level_body(
          False, {parameters}, Identity, Region, Timestamp,
          One_Shot_Source => True{checksum}{identifier});
    exception
-      when S3.{item.value_unit}.Malformed_{item.value_unit} =>
+      when S3.{item.value_unit}.{(
+          'Malformed_Metadata_Configuration'
+          if item.operation == 'CreateBucketMetadataConfiguration'
+          else 'Malformed_' + item.value_unit
+      )} =>
          raise Invalid_Request with
            "invalid {item.operation} payload";
    end {item.low_prepare};
@@ -2766,8 +2841,7 @@ def _generated_mutation_low_level_body(
       Limits : S3.XML.Parse_Limits)
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Mutation
-        (Client, Prepared, Model.{item.ada_stem}_Operation,
-         Timeout, Token, Limits));
+{execute_call});
 
    procedure {item.ada_stem}
      (Client    : not null access Flyology.HTTP.Client.Client;
@@ -2888,11 +2962,37 @@ def _generated_mutation_provider_spec(
                 f"@return Started owner-driven {item.label} replacement",
             )
         )
-        sync_comment = ada_comment(
-            f"Replace one {item.label} by waiting on the same state machine "
-            "used by composable callers. No possibly admitted request is "
-            f"replayed; unknown outcomes require read-only {item.reconciliation} "
-            "reconciliation."
+        finish_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Consume one terminal {item.operation} operation.",
+                "@param Operation Terminal owner-driven operation consumed",
+                "@param Result Complete typed terminal evidence",
+            )
+        )
+        sync_comment = "\n".join(
+            ada_comment(text)
+            for text in (
+                f"Replace one {item.label} by waiting on the same state "
+                "machine used by composable callers. No possibly admitted "
+                f"request is replayed; unknown outcomes require read-only "
+                f"{item.reconciliation} reconciliation.",
+                "@param Client HTTP client retained through terminal drain",
+                "@param Origin Exact HTTP origin used for routing and signing",
+                "@param Bucket Required exact target bucket",
+                f"@param Value {item.label.capitalize()} value serialized "
+                "before admission",
+                "@param Parameters Complete modeled non-resource "
+                f"{item.operation} controls",
+                "@param Identity Credentials borrowed only while signing "
+                "the request",
+                "@param Region Exact SigV4 signing region",
+                "@param Style Caller-selected S3 addressing style",
+                "@param Timeout Whole owner-driven operation budget",
+                "@param Token Caller-selected cancellation source or null",
+                "@param Limits Caller-selected bounded XML limits",
+                f"@return Terminal typed {item.label} replacement evidence",
+            )
         )
         parts.append(
             f"""   --  Shape of one terminal {item.operation} call.
@@ -2975,7 +3075,7 @@ def _generated_mutation_provider_spec(
       Token      : access Flyology.Cancellation.Token)
       return {item.operation_type};
 
-   --  Consume one terminal {item.operation} operation.
+{finish_comment}
    procedure Finish
      (Operation : in out {item.operation_type};
       Result    : out {item.result_type})
@@ -3130,6 +3230,23 @@ def _generated_mutation_provider_body(
     ]
     for item in mutations:
         family = item.ada_stem + "_Mutations"
+        response_kind_line = (
+            f"        (Kind        => {item.response_available},"
+        )
+        response_kind = (
+            response_kind_line
+            if len(response_kind_line) <= 79
+            else (
+                "        (Kind        =>\n"
+                f"           {item.response_available},"
+            )
+        )
+        release_source_line = f"      {family}.Release_Source (Item.State);"
+        release_source = (
+            release_source_line
+            if len(release_source_line) <= 79
+            else f"      {family}.Release_Source\n        (Item.State);"
+        )
         parts.append(
             f"""   function Failed_{item.ada_stem}_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
@@ -3154,7 +3271,7 @@ def _generated_mutation_provider_body(
         Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
    begin
       return
-        (Kind        => {item.response_available},
+{response_kind}
          Disposition =>
            (if Admission /= HTTP_Client.Response_Observed
             then {item.outcome_unknown}
@@ -3244,7 +3361,7 @@ def _generated_mutation_provider_body(
    overriding procedure Release_Source
      (Item : in out {item.operation_type}) is
    begin
-      {family}.Release_Source (Item.State);
+{release_source}
    end Release_Source;
 
    overriding procedure Write
@@ -3405,7 +3522,41 @@ def _generated_mutation_qualification_text(
     optional_input_declaration = ""
     pre_admission_checks = ""
     pre_admission_call = ""
-    if item.operation == "PutBucketInventoryConfiguration":
+    if item.operation == "CreateBucketMetadataConfiguration":
+        identifier_declaration = ""
+        value_document = '''     "<MetadataConfiguration xmlns=\"\"http://s3.amazonaws.com/doc/" &
+     "2006-03-01/\"\"><JournalTableConfiguration>" &
+     "<RecordExpiration><Expiration>ENABLED</Expiration><Days>30" &
+     "</Days></RecordExpiration></JournalTableConfiguration>" &
+     "<InventoryTableConfiguration><ConfigurationState>ENABLED" &
+     "</ConfigurationState></InventoryTableConfiguration>" &
+     "<AnnotationTableConfiguration><ConfigurationState>DISABLED" &
+     "</ConfigurationState><Role>qualified-role</Role>" &
+     "</AnnotationTableConfiguration></MetadataConfiguration>"'''
+        parameters = f'''   Parameters : constant Low_Level.{item.parameters_type} :=
+     (Content_MD5           => US.Null_Unbounded_String,
+      Checksum_Algorithm    => US.To_Unbounded_String ("SHA256"),
+      Expected_Bucket_Owner =>
+        US.To_Unbounded_String (Expected_Bucket_Owner));'''
+        value_declarations = f'''   Value : constant {value_type} :=
+     (Journal =>
+        (Expiration =>
+           (Expiration => {item.value_unit}.Expiration_Enabled,
+            Days =>
+              (Is_Set => True, Text => US.To_Unbounded_String ("30"))),
+         Encryption => (Is_Set => False, others => <>)),
+      Inventory =>
+        (Is_Set => True,
+         Configuration_State => {item.value_unit}.Inventory_Enabled,
+         Encryption => (Is_Set => False, others => <>)),
+      Annotation =>
+        (Is_Set => True,
+         Configuration_State => {item.value_unit}.Annotation_Disabled,
+         Encryption => (Is_Set => False, others => <>),
+         Role =>
+           (Is_Set => True,
+            Value => US.To_Unbounded_String ("qualified-role"))));'''
+    elif item.operation == "PutBucketInventoryConfiguration":
         identifier_declaration = '''   Identifier : constant String :=
      Input ("ID");'''
         value_document = '''     "<InventoryConfiguration xmlns=\"\"http://s3.amazonaws.com/doc/" &
@@ -3564,6 +3715,17 @@ def _generated_mutation_qualification_text(
     identifier_block = (
         identifier_declaration + "\n" if identifier_declaration else ""
     )
+    value_rename = (
+        f"   package {item.value_unit} renames\n"
+        f"     {value_package};"
+        if len(item.value_unit) + len(value_package) + 23 > 79
+        else f"   package {item.value_unit} renames {value_package};"
+    )
+    document_declaration = (
+        ""
+        if item.operation == "CreateBucketMetadataConfiguration"
+        else f"   Document : constant String :=\n{value_document};"
+    )
     text = f'''with Ada.Environment_Variables;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -3583,7 +3745,7 @@ procedure {main} is
    package Client renames Flyology.Object_Storage.Client;
    package Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
-   package {item.value_unit} renames {value_package};
+{value_rename}
    package Operations renames Flyology.Operations;
    package XML renames Flyology.Object_Storage.S3.XML;
    package US renames Ada.Strings.Unbounded;
@@ -3660,8 +3822,7 @@ procedure {main} is
       Maximum_Text_Bytes =>
         Limit ("MAXIMUM_TEXT_BYTES",
                XML.Default_Limits.Maximum_Text_Bytes));
-   Document : constant String :=
-{value_document};
+{document_declaration}
 {value_declarations}
 
    --  Every case is serial. One HTTP slot is the derived minimum and makes a
@@ -3856,9 +4017,12 @@ def generated_ada_outputs(
         outputs[s3_operation.ROOT / "src" / f"{unit}.ads"] = spec
         outputs[s3_operation.ROOT / "src" / f"{unit}.adb"] = body
     for item in mutations:
-        unit, spec, body = mutation_serializer_text(model, item.operation)
-        outputs[s3_operation.ROOT / "src" / f"{unit}.ads"] = spec
-        outputs[s3_operation.ROOT / "src" / f"{unit}.adb"] = body
+        if item.operation != "CreateBucketMetadataConfiguration":
+            unit, spec, body = mutation_serializer_text(
+                model, item.operation
+            )
+            outputs[s3_operation.ROOT / "src" / f"{unit}.ads"] = spec
+            outputs[s3_operation.ROOT / "src" / f"{unit}.adb"] = body
         qualification_unit, qualification = (
             _generated_mutation_qualification_text(item)
         )
@@ -3906,6 +4070,7 @@ def generated_ada_outputs(
                 "with\n  Flyology.Object_Storage."
                 + item.serializer_package + ";"
                 for item in mutations
+                if item.operation != "CreateBucketMetadataConfiguration"
             ]
         ),
         "package body Flyology.Object_Storage.Client.Low_Level is\n",

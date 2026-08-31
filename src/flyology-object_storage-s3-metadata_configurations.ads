@@ -145,6 +145,62 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
       Annotation  : Annotation_Table_Result;
    end record;
 
+   --  Exact pinned server-side-encryption algorithm for metadata tables.
+   --  @enum Metadata_SSE_KMS Exact aws:kms wire value
+   --  @enum Metadata_SSE_S3 Exact AES256 wire value
+   type Metadata_Table_SSE_Algorithm is
+     (Metadata_SSE_KMS, Metadata_SSE_S3);
+
+   --  Presence-preserving metadata-table encryption configuration.
+   --  @field Is_Set Whether EncryptionConfiguration is present
+   --  @field Algorithm Required algorithm when present
+   --  @field KMS_Key_ARN Optional exact KMS key ARN
+   type Metadata_Table_Encryption is record
+      Is_Set      : Boolean;
+      Algorithm   : Metadata_Table_SSE_Algorithm;
+      KMS_Key_ARN : Optional_String;
+   end record;
+
+   --  Required journal-table configuration for metadata creation.
+   --  @field Expiration Required record-expiration policy
+   --  @field Encryption Optional exact table-encryption configuration
+   type Journal_Table_Configuration is record
+      Expiration : Record_Expiration;
+      Encryption : Metadata_Table_Encryption;
+   end record;
+
+   --  Optional inventory-table configuration for metadata creation.
+   --  @field Is_Set Whether InventoryTableConfiguration is present
+   --  @field Configuration_State Required state when present
+   --  @field Encryption Optional exact table-encryption configuration
+   type Inventory_Table_Configuration is record
+      Is_Set              : Boolean;
+      Configuration_State : Inventory_Configuration_State;
+      Encryption          : Metadata_Table_Encryption;
+   end record;
+
+   --  Optional annotation-table configuration for metadata creation.
+   --  @field Is_Set Whether AnnotationTableConfiguration is present
+   --  @field Configuration_State Required state when present
+   --  @field Encryption Optional exact table-encryption configuration
+   --  @field Role Optional exact role identifier
+   type Annotation_Table_Configuration is record
+      Is_Set              : Boolean;
+      Configuration_State : Annotation_Configuration_State;
+      Encryption          : Metadata_Table_Encryption;
+      Role                : Optional_String;
+   end record;
+
+   --  Complete CreateBucketMetadataConfiguration request payload.
+   --  @field Journal Required journal-table configuration
+   --  @field Inventory Optional inventory-table configuration
+   --  @field Annotation Optional annotation-table configuration
+   type Metadata_Configuration_Request is record
+      Journal    : Journal_Table_Configuration;
+      Inventory  : Inventory_Table_Configuration;
+      Annotation : Annotation_Table_Configuration;
+   end record;
+
    --  Parse one exact nonempty GetBucketMetadataConfiguration payload.
    --  @param Document Complete same-response XML document
    --  @param Limits Caller-selected shared S3 XML resource limits
@@ -153,5 +209,14 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Metadata_Configuration;
+
+   --  Serialize one exact CreateBucketMetadataConfiguration payload.
+   --  @param Value Complete caller-selected metadata configuration
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Metadata_Configuration Value violates the model
+   function Serialize_Create
+     (Value  : Metadata_Configuration_Request;
+      Limits : XML.Parse_Limits) return String;
 
 end Flyology.Object_Storage.S3.Metadata_Configurations;

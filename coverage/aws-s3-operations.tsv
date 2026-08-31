@@ -3,7 +3,7 @@ AbortMultipartUpload	core	covered	covered	covered	covered
 CompleteMultipartUpload	core	covered	covered	covered	covered
 CopyObject	core	covered	covered	covered	covered
 CreateBucket	core	covered	covered	covered	covered
-CreateBucketMetadataConfiguration	extended	missing	partial	missing	missing
+CreateBucketMetadataConfiguration	extended	missing	covered	missing	covered
 CreateBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 CreateMultipartUpload	core	covered	covered	covered	covered
 CreateSession	extended	missing	covered	missing	covered

@@ -189,6 +189,11 @@ LIST_DIRECTORY_SYNC_REGION = """\
 
 
 GENERATED_MUTATION_START_LABELS = (
+    (
+        "Create_Metadata_Configuration",
+        "bucket metadata configuration",
+        "CreateBucketMetadataConfiguration",
+    ),
     ("Set_ACL", "bucket access-control policy", "PutBucketAcl"),
     (
         "Set_Inventory_Configuration",
@@ -265,6 +270,135 @@ def generated_leading_comment(source: str, marker: str) -> tuple[str, ...]:
         cursor -= 1
     assert block, f"generated provider documentation is detached: {marker}"
     return tuple(reversed(block))
+
+
+def generated_overload_comment(
+    source: str,
+    marker: str,
+    next_prefix: str,
+) -> tuple[str, ...]:
+    lines = source.splitlines()
+    positions = [
+        index
+        for index, line in enumerate(lines[:-1])
+        if line == marker and lines[index + 1].startswith(next_prefix)
+    ]
+    assert len(positions) == 1, (
+        f"generated overload declaration count differs: {marker}"
+    )
+    cursor = positions[0] - 1
+    block = []
+    while cursor >= 0 and lines[cursor].startswith("   --  "):
+        block.append(lines[cursor][7:])
+        cursor -= 1
+    assert block, f"generated overload documentation is detached: {marker}"
+    return tuple(reversed(block))
+
+
+def generated_logical_tags(comment: tuple[str, ...]) -> tuple[str, ...]:
+    tags: list[str] = []
+    for line in comment:
+        if line.startswith("@param ") or line.startswith("@return "):
+            tags.append(line)
+        elif tags:
+            assert line and not line.startswith("@"), (
+                "generated documentation continuation is malformed"
+            )
+            tags[-1] += " " + line
+    return tuple(tags)
+
+
+def assert_generated_mutation_low_level_documentation(source: str) -> None:
+    for item in s3_codegen.GENERATED_MUTATIONS:
+        prepare = generated_leading_comment(
+            source,
+            f"   function {item.low_prepare}",
+        )
+        assert generated_logical_tags(prepare) == (
+            "@param Origin Exact HTTP origin used for routing and signing",
+            "@param Style Caller-selected S3 addressing style",
+            "@param Bucket Required exact target bucket",
+            f"@param Value {item.label.capitalize()} value serialized before "
+            "admission",
+            "@param Parameters Complete modeled non-resource "
+            f"{item.operation} controls",
+            "@param Identity Credentials borrowed only while signing the "
+            "request",
+            "@param Region Exact SigV4 signing region",
+            "@param Timestamp Exact SigV4 signing timestamp",
+            "@param Limits Caller-selected bounded XML limits",
+            "@return Prepared signed request with an owned one-shot body",
+        ), f"generated {item.operation} Prepare documentation differs"
+        execute = generated_leading_comment(
+            source,
+            f"   function {item.low_execute}",
+        )
+        assert generated_logical_tags(execute) == (
+            "@param Client HTTP client retained through terminal drain",
+            "@param Prepared Exact prepared request and owned body",
+            "@param Timeout Whole request and drain budget",
+            "@param Token Caller-selected cancellation source or null",
+            "@param Limits Caller-selected bounded response XML limits",
+            "@return Complete modeled response or structured rejection",
+        ), f"generated {item.operation} Execute documentation differs"
+        start = generated_leading_comment(
+            source,
+            f"   procedure {item.ada_stem}",
+        )
+        assert generated_logical_tags(start) == (
+            "@param Client HTTP client retained through terminal drain",
+            "@param Prepared Exact prepared request retained through drain",
+            "@param Source One-shot request body source",
+            "@param Sink Bounded response body sink",
+            "@param Deadline Absolute admission, exchange, and drain limit",
+            "@param Token Caller-selected cancellation source or null",
+            "@param Operation Caller-owned HTTP exchange operation",
+        ), f"generated {item.operation} Start documentation differs"
+        assert all(
+            len("   --  " + line) <= 79
+            for comment in (prepare, execute, start)
+            for line in comment
+        ), f"generated {item.operation} Low_Level documentation is overwidth"
+
+
+def assert_generated_mutation_terminal_documentation(source: str) -> None:
+    for item in s3_codegen.GENERATED_MUTATIONS:
+        finish = generated_overload_comment(
+            source,
+            "   procedure Finish",
+            f"     (Operation : in out {item.operation_type};",
+        )
+        assert generated_logical_tags(finish) == (
+            "@param Operation Terminal owner-driven operation consumed",
+            "@param Result Complete typed terminal evidence",
+        ), f"generated {item.operation} Finish documentation differs"
+        sync = generated_overload_comment(
+            source,
+            f"   function {item.public_name}",
+            "     (Client",
+        )
+        assert generated_logical_tags(sync) == (
+            "@param Client HTTP client retained through terminal drain",
+            "@param Origin Exact HTTP origin used for routing and signing",
+            "@param Bucket Required exact target bucket",
+            f"@param Value {item.label.capitalize()} value serialized before "
+            "admission",
+            "@param Parameters Complete modeled non-resource "
+            f"{item.operation} controls",
+            "@param Identity Credentials borrowed only while signing the "
+            "request",
+            "@param Region Exact SigV4 signing region",
+            "@param Style Caller-selected S3 addressing style",
+            "@param Timeout Whole owner-driven operation budget",
+            "@param Token Caller-selected cancellation source or null",
+            "@param Limits Caller-selected bounded XML limits",
+            f"@return Terminal typed {item.label} replacement evidence",
+        ), f"generated {item.operation} synchronous documentation differs"
+        assert all(
+            len("   --  " + line) <= 79
+            for comment in (finish, sync)
+            for line in comment
+        ), f"generated {item.operation} terminal documentation is overwidth"
 
 
 def assert_generated_mutation_start_documentation(source: str) -> None:
@@ -1023,11 +1157,51 @@ def main() -> None:
                 f"ListDirectoryBuckets synchronous {label} was accepted"
             )
 
+    mutation_low_level = s3_codegen._generated_mutation_low_level_spec(
+        s3_codegen.GENERATED_MUTATIONS
+    )
+    assert_generated_mutation_low_level_documentation(mutation_low_level)
+    prepare_return = s3_codegen.ada_comment(
+        "@return Prepared signed request with an owned one-shot body"
+    )
+    invalid_low_level = mutation_low_level.replace(
+        prepare_return + "\n",
+        "",
+        1,
+    )
+    assert invalid_low_level != mutation_low_level
+    try:
+        assert_generated_mutation_low_level_documentation(invalid_low_level)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError(
+            "generated mutation missing Prepare return was accepted"
+        )
+
     mutation_provider = s3_codegen._generated_mutation_provider_spec(
         s3_codegen.GENERATED_MUTATIONS
     )
     assert_generated_mutation_start_documentation(mutation_provider)
     assert_generated_mutation_constructor_documentation(mutation_provider)
+    assert_generated_mutation_terminal_documentation(mutation_provider)
+    sync_timeout = s3_codegen.ada_comment(
+        "@param Timeout Whole owner-driven operation budget"
+    )
+    invalid_terminal = mutation_provider.replace(
+        sync_timeout,
+        sync_timeout.replace("Timeout", "Deadline", 1),
+        1,
+    )
+    assert invalid_terminal != mutation_provider
+    try:
+        assert_generated_mutation_terminal_documentation(invalid_terminal)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError(
+            "generated mutation wrong synchronous parameter was accepted"
+        )
     for label, invalid_source in {
         "missing operation association": mutation_provider.replace(
             "   --  @param Operation Reusable owner-driven operation "
@@ -9596,6 +9770,7 @@ def main() -> None:
         for name, entry in registry.operations.items()
         if entry["generator_eligible"]
     } == {
+        "CreateBucketMetadataConfiguration",
         "ListDirectoryBuckets",
         "PutBucketAcl",
         "PutBucketInventoryConfiguration",

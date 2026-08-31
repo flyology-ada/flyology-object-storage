@@ -26476,6 +26476,266 @@ package body Flyology.Object_Storage.Client.Buckets is
       then Unavailable_Or_Retryable
       else Corrupt_Or_Invalid_Response);
 
+   function Failed_Create_Bucket_Metadata_Configuration_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Bucket_Metadata_Configuration_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then Bucket_Metadata_Configuration_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied
+      else Bucket_Metadata_Configuration_Mutation_Outcome_Unknown);
+
+   function Normalize_Create_Bucket_Metadata_Configuration_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Create_Bucket_Metadata_Configuration_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
+   begin
+      return
+        (Kind        =>
+           Create_Bucket_Metadata_Configuration_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Bucket_Metadata_Configuration_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then Bucket_Metadata_Configuration_Mutation_Completed
+            elsif Conclusive
+            then Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied
+            else Bucket_Metadata_Configuration_Mutation_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then No_Failure
+            else Generated_Mutation_Response_Failure
+              (Value.Status, Code)),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Create_Bucket_Metadata_Configuration_Response;
+
+   function Normalize_Create_Bucket_Metadata_Configuration_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return Create_Bucket_Metadata_Configuration_Result is
+   begin
+      return
+        (Kind        => Create_Bucket_Metadata_Configuration_Exchange_Failed,
+         Disposition =>
+           Failed_Create_Bucket_Metadata_Configuration_Disposition
+             (Kind, Admission),
+         Failure     =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Create_Bucket_Metadata_Configuration_Failure;
+
+   function Decode_Create_Bucket_Metadata_Configuration_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Create_Bucket_Metadata_Configuration_Result is
+   begin
+      pragma Unreferenced (Response, Phase);
+      return Normalize_Create_Bucket_Metadata_Configuration_Response
+        (Low_Level.Decode_Put_Bucket_Control_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission);
+   end Decode_Create_Bucket_Metadata_Configuration_Family_Response;
+
+   overriding function Declared_Length
+     (Item : Create_Bucket_Metadata_Configuration_Operation)
+      return HTTP_Client.Body_Length is
+     (Create_Bucket_Metadata_Configuration_Mutations.Declared_Length
+        (Item.State));
+
+   overriding procedure Read_Now
+     (Item   : in out Create_Bucket_Metadata_Configuration_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Read_Now
+        (Item.State, Data, Last, Result);
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Create_Bucket_Metadata_Configuration_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Source_Wait_Source
+        (Item.State, Required, Descriptor, Ready_Now);
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Create_Bucket_Metadata_Configuration_Operation) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Release_Source
+        (Item.State);
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Create_Bucket_Metadata_Configuration_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item : in out Create_Bucket_Metadata_Configuration_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Drive
+        (Item.State, Item'Access, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Bucket_Metadata_Configuration_Operation) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Request_Cancellation
+        (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Create_Bucket_Metadata_Configuration_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Create_Bucket_Metadata_Configuration_Mutations.Finalize (Item.State);
+   end Finalize;
+
+   procedure Start_Create_Bucket_Metadata_Configuration
+     (Operation  : in out Create_Bucket_Metadata_Configuration_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Metadata_Configuration_Request;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CreateBucketMetadataConfiguration restart changed retained owner";
+      end if;
+      Create_Bucket_Metadata_Configuration_Mutations.Start
+        (Operation.State, Operation'Access,
+         Low_Level.Prepare_Create_Bucket_Metadata_Configuration
+           (Origin, Style, Bucket, Value, Parameters, Identity, Region,
+            Timestamp, Limits),
+         Deadline, Limits);
+   end Start_Create_Bucket_Metadata_Configuration;
+
+   procedure Create_Metadata_Configuration
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Metadata_Configuration_Request;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Create_Bucket_Metadata_Configuration_Operation) is
+   begin
+      Start_Create_Bucket_Metadata_Configuration
+        (Operation, Client, Origin, Bucket, Value, Parameters, Identity,
+         Deadline, Region, Style, Limits, Token);
+   end Create_Metadata_Configuration;
+
+   function Create_Metadata_Configuration
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Metadata_Configuration_Request;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Create_Bucket_Metadata_Configuration_Operation is
+   begin
+      return Result :
+        Create_Bucket_Metadata_Configuration_Operation (Set, Client, Token)
+      do
+         Start_Create_Bucket_Metadata_Configuration
+           (Result, Client, Origin, Bucket, Value, Parameters, Identity,
+            Deadline, Region, Style, Limits, Token);
+      end return;
+   end Create_Metadata_Configuration;
+
+   procedure Finish
+     (Operation : in out Create_Bucket_Metadata_Configuration_Operation;
+      Result    : out Create_Bucket_Metadata_Configuration_Result) is
+   begin
+      Create_Bucket_Metadata_Configuration_Mutations.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Create_Metadata_Configuration
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Metadata_Configuration_Request;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Create_Bucket_Metadata_Configuration_Result
+   is
+      --  Derived owner stack: mutation parent, HTTP exchange, and transport.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Create_Bucket_Metadata_Configuration_Operation :=
+           Create_Metadata_Configuration
+             (Set'Access, Client'Access, Origin, Bucket, Value, Parameters,
+              Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : Create_Bucket_Metadata_Configuration_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Create_Metadata_Configuration;
+
    function Failed_Put_Bucket_ACL_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
       Admission : HTTP_Client.Admission_Certainty)

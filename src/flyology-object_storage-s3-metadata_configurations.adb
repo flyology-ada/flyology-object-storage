@@ -1,3 +1,5 @@
+with Flyology.Object_Storage.S3.XML_Writers;
+
 package body Flyology.Object_Storage.S3.Metadata_Configurations is
 
    package US renames Ada.Strings.Unbounded;
@@ -670,5 +672,105 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
          raise Malformed_Metadata_Configuration with
            "malformed metadata-configuration XML";
    end Parse;
+
+   function Annotation_State_Image
+     (Value : Annotation_Configuration_State) return String is
+     (case Value is
+         when Annotation_Enabled  => "ENABLED",
+         when Annotation_Disabled => "DISABLED");
+
+   function Inventory_State_Image
+     (Value : Inventory_Configuration_State) return String is
+     (case Value is
+         when Inventory_Enabled  => "ENABLED",
+         when Inventory_Disabled => "DISABLED");
+
+   function Expiration_State_Image
+     (Value : Expiration_State) return String is
+     (case Value is
+         when Expiration_Enabled  => "ENABLED",
+         when Expiration_Disabled => "DISABLED");
+
+   function SSE_Algorithm_Image
+     (Value : Metadata_Table_SSE_Algorithm) return String is
+     (case Value is
+         when Metadata_SSE_KMS => "aws:kms",
+         when Metadata_SSE_S3  => "AES256");
+
+   procedure Write_Encryption
+     (Item  : in out XML_Writers.Writer;
+      Value : Metadata_Table_Encryption) is
+   begin
+      if not Value.Is_Set then
+         return;
+      end if;
+      XML_Writers.Start_Element (Item, "EncryptionConfiguration");
+      XML_Writers.Text_Element
+        (Item, "SseAlgorithm", SSE_Algorithm_Image (Value.Algorithm));
+      if Value.KMS_Key_ARN.Is_Set then
+         XML_Writers.Text_Element
+           (Item, "KmsKeyArn", US.To_String (Value.KMS_Key_ARN.Value));
+      end if;
+      XML_Writers.End_Element (Item, "EncryptionConfiguration");
+   end Write_Encryption;
+
+   procedure Write_Record_Expiration
+     (Item  : in out XML_Writers.Writer;
+      Value : Record_Expiration) is
+      Days : constant String := US.To_String (Value.Days.Text);
+   begin
+      if Value.Days.Is_Set and then not Valid_Integer_Text (Days) then
+         raise Malformed_Metadata_Configuration with
+           "invalid metadata record-expiration days";
+      end if;
+      XML_Writers.Start_Element (Item, "RecordExpiration");
+      XML_Writers.Text_Element
+        (Item, "Expiration", Expiration_State_Image (Value.Expiration));
+      if Value.Days.Is_Set then
+         XML_Writers.Text_Element (Item, "Days", Days);
+      end if;
+      XML_Writers.End_Element (Item, "RecordExpiration");
+   end Write_Record_Expiration;
+
+   function Serialize_Create
+     (Value  : Metadata_Configuration_Request;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "MetadataConfiguration",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      XML_Writers.Start_Element (Item, "JournalTableConfiguration");
+      Write_Record_Expiration (Item, Value.Journal.Expiration);
+      Write_Encryption (Item, Value.Journal.Encryption);
+      XML_Writers.End_Element (Item, "JournalTableConfiguration");
+      if Value.Inventory.Is_Set then
+         XML_Writers.Start_Element (Item, "InventoryTableConfiguration");
+         XML_Writers.Text_Element
+           (Item, "ConfigurationState",
+            Inventory_State_Image (Value.Inventory.Configuration_State));
+         Write_Encryption (Item, Value.Inventory.Encryption);
+         XML_Writers.End_Element (Item, "InventoryTableConfiguration");
+      end if;
+      if Value.Annotation.Is_Set then
+         XML_Writers.Start_Element (Item, "AnnotationTableConfiguration");
+         XML_Writers.Text_Element
+           (Item, "ConfigurationState",
+            Annotation_State_Image (Value.Annotation.Configuration_State));
+         Write_Encryption (Item, Value.Annotation.Encryption);
+         if Value.Annotation.Role.Is_Set then
+            XML_Writers.Text_Element
+              (Item, "Role", US.To_String (Value.Annotation.Role.Value));
+         end if;
+         XML_Writers.End_Element (Item, "AnnotationTableConfiguration");
+      end if;
+      return XML_Writers.Finish (Item, "MetadataConfiguration");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Configuration with
+           "metadata serialization violates caller limits";
+   end Serialize_Create;
 
 end Flyology.Object_Storage.S3.Metadata_Configurations;

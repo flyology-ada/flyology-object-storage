@@ -213,25 +213,37 @@
     "CreateBucketMetadataConfiguration": {
       "coverage": {
         "backend": "missing",
-        "client": "partial",
-        "corpus": "missing",
+        "client": "covered",
+        "corpus": "covered",
         "server": "missing"
       },
       "evidence": {
         "backend": [],
-        "client": [],
-        "corpus": [],
+        "client": [
+          "src/flyology-object_storage-s3-metadata_configurations.ads",
+          "src/flyology-object_storage-s3-metadata_configurations.adb",
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "tests/src/s3_create_bucket_metadata_configuration_qualification.adb"
+        ],
+        "corpus": [
+          "tools/test-s3-operation-registry.py",
+          "tests/generated/s3-signed-socket.json",
+          "tests/src/s3_create_bucket_metadata_configuration_qualification.adb"
+        ],
         "server": []
       },
       "family": "rest_xml_mutation",
-      "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "generator_eligible": true,
+      "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
         "backend": "absent",
         "client": "generated",
         "server": "absent",
-        "tests": "absent"
+        "tests": "generated"
       },
       "provider": "buckets"
     },

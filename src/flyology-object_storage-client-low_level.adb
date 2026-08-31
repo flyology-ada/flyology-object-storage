@@ -16854,6 +16854,65 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Deadline, Token, Operation);
    end List_Directory_Buckets;
 
+   function Prepare_Create_Bucket_Metadata_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Metadata_Configurations.Metadata_Configuration_Request;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Payload : constant String :=
+        S3.Metadata_Configurations.Serialize_Create
+          (Value, Limits);
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Create_Bucket_Metadata_Configuration_Operation,
+         "POST", "metadataConfiguration",
+         Origin, Style, Bucket, Payload, True, (others => <>),
+         False, Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => True,
+         Require_Checksum => True);
+   exception
+      when S3.Metadata_Configurations.Malformed_Metadata_Configuration =>
+         raise Invalid_Request with
+           "invalid CreateBucketMetadataConfiguration payload";
+   end Prepare_Create_Bucket_Metadata_Configuration;
+
+   function Execute_Create_Bucket_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared,
+         Model.Create_Bucket_Metadata_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   procedure Create_Bucket_Metadata_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Create_Bucket_Metadata_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Create_Bucket_Metadata_Configuration;
+
    function Prepare_Put_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String;

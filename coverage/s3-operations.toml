@@ -71,6 +71,15 @@ generated_acl_mutation = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+create_bucket_metadata_configuration = [
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "CreateBucketMetadataConfiguration"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-create-bucket-metadata-configuration-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 list_bucket_metrics_configurations = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
@@ -967,7 +976,7 @@ list_object_annotations = [
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 33
-socket_qualifier_count = 17
+socket_qualifier_count = 18
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -1036,6 +1045,7 @@ corpora = [
   ["./bin/s3_transfer_many_corpus"],
 ]
 socket_qualifiers = [
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "CreateBucketMetadataConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketReplication"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetricsConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketMetricsConfiguration"],
@@ -1153,18 +1163,24 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
+codec = "strict_generated_rest_xml_request_and_singleton_headers"
+public_name = "Create_Metadata_Configuration"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated exact 200 response reports Bucket_Metadata_Configuration_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Metadata_Configuration_Mutation_Cancelled_Before_Admission; every other possibly admitted, incomplete, retryable, or corrupt outcome reports Bucket_Metadata_Configuration_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Metadata_Configuration may observe the current metadata configuration before a retry, but it neither proves that the lost mutation caused the observation nor upgrades mutation certainty; no automatic replay"
+exclusions = ["metadata persistence and an authenticated Flyology CreateBucketMetadataConfiguration server route are absent and not claimed", "the caller supplies the complete modeled journal configuration and optional inventory and annotation table configurations without a library-selected table, retention, encryption, or role policy", "Content-MD5 and the required selected generated checksum cover the exact immutable serialized metadata-configuration bytes", "the caller-supplied Origin remains authoritative; automatic S3 Express control-endpoint selection is not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "create_bucket_metadata_configuration"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-metadata_configurations.ads", "src/flyology-object_storage-s3-metadata_configurations.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_create_bucket_metadata_configuration_qualification.adb"], server = [], corpus = ["tools/test-s3-operation-registry.py", "tests/generated/s3-signed-socket.json", "tests/src/s3_create_bucket_metadata_configuration_qualification.adb"] }
+ada_symbols = ["Prepare_Create_Bucket_Metadata_Configuration", "Execute_Create_Bucket_Metadata_Configuration", "Create_Bucket_Metadata_Configuration_Operation", "Create_Metadata_Configuration", "Finish"]
+generation = { public_result = "Create_Bucket_Metadata_Configuration_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "required journal configuration plus optional inventory and annotation configurations are serialized exactly; no additional policy rule beyond the pinned model is imposed", intentional_exclusions = ["no backend or server compatibility claim", "no automatic S3 Express endpoint selection", "no provider-specific publication or durability claim"] }
+generated_mutation_qualification = { adapter = "./bin/s3_create_bucket_metadata_configuration_qualification", input_values = { ExpectedBucketOwner = "123456789012" }, request_body = "<MetadataConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><JournalTableConfiguration><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration><InventoryTableConfiguration><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration><AnnotationTableConfiguration><ConfigurationState>DISABLED</ConfigurationState><Role>qualified-role</Role></AnnotationTableConfiguration></MetadataConfiguration>", expected_request_headers = { content-md5 = "+1l0IztcqRIUmCZeqqaCwg==", x-amz-checksum-sha256 = "pFmHvZrmEVqths5hQwRww61upGCeVZzBGOdaZKdEfX0=", x-amz-sdk-checksum-algorithm = "SHA256" } }
 
 [[operation]]
 name = "CreateBucketMetadataTableConfiguration"
