@@ -3546,6 +3546,202 @@ def main() -> None:
     else:
         raise AssertionError("duplicate RenameObject lane accepted")
 
+    restore_object_certainty = (
+        "mutation model coverage only; no public restore request, XML "
+        "serializer, checksum binding, response decoder, or runtime evidence "
+        "exists, so this review reports no accepted or completed restore, no "
+        "admission certainty, and no automatic replay"
+    )
+    restore_object_reconciliation = (
+        "the model carries an optional VersionId and documents later "
+        "HeadObject restore-state observation, but neither request binding "
+        "nor restore-state decoding is implemented; explicit or omitted "
+        "version selection, later observation, causal proof, certainty "
+        "upgrade, and automatic replay are not claimed"
+    )
+    restore_object_errors = [
+        "authentication", "authorization", "not_found", "invalid_request",
+        "unavailable_or_retryable", "corrupt_or_invalid_response",
+    ]
+    restore_object_exclusions = [
+        "Not_Exposed is a registry sentinel and not an Ada declaration; no "
+        "Low_Level or Objects RestoreObject API, composable operation, "
+        "synchronous wrapper, Finish path, or GNATdoc qualification is "
+        "claimed",
+        "the modeled RestoreRequest XML, optional checksum algorithm, "
+        "VersionId, requester-pays controls, response headers, and "
+        "active-tier error are inventory only; no XML serialization, "
+        "cross-field validation, digest generation, signing binding, version "
+        "binding, response validation, or error decoding is implemented",
+        "regular restore, speed upgrade, and deprecated Select restore shapes "
+        "are structural inventory only; no Days or tier policy, Select "
+        "support, output-location policy, ACL, tag, metadata, encryption, "
+        "SQL, body-size, or collection bound is claimed",
+        "only ObjectAlreadyInActiveTierError is a modeled operation error "
+        "shape; documentation-only RestoreAlreadyInProgress and "
+        "GlacierExpeditedRetrievalNotAvailable codes and modeled HTTP 200 "
+        "versus documented 202 behavior are not normalized or qualified",
+        "later HeadObject x-amz-restore observation cannot prove that a lost "
+        "request caused the observed state, upgrade mutation certainty, or "
+        "authorize automatic replay",
+        "directory buckets are documented as unsupported; access-point "
+        "behavior and conflicting inherited Outposts routing prose are not "
+        "implemented or resolved",
+    ]
+
+    def assert_restore_object_registry(candidate):
+        entry = candidate.operations["RestoreObject"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "restore_object"
+        assert entry.get("family") == "rest_xml_mutation"
+        assert entry.get("codec") == (
+            "generated_model_only_restore_xml_and_headers"
+        )
+        assert entry.get("certainty") == restore_object_certainty
+        assert entry.get("reconciliation") == restore_object_reconciliation
+        assert entry.get("errors") == restore_object_errors
+        assert entry.get("exclusions") == restore_object_exclusions
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tools/verify-restore-object-model.py",
+            ],
+            "server": [],
+            "corpus": ["tools/verify-restore-object-model.py"],
+        }
+        assert candidate.qualification["restore_object"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-restore-object-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_restore_object_registry(candidate, label):
+        try:
+            assert_restore_object_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} RestoreObject registry accepted")
+
+    assert_restore_object_registry(registry)
+    invented_restore_object_api = copy.deepcopy(registry)
+    invented_restore_object_api.operations[
+        "RestoreObject"
+    ]["public_name"] = "Restore_Object"
+    reject_restore_object_registry(
+        invented_restore_object_api, "invented public API"
+    )
+    full_restore_object = copy.deepcopy(registry)
+    full_restore_object.operations[
+        "RestoreObject"
+    ]["coverage"]["client"] = "covered"
+    reject_restore_object_registry(
+        full_restore_object, "invented complete client coverage"
+    )
+    bodyless_restore_object = copy.deepcopy(registry)
+    bodyless_restore_object.operations[
+        "RestoreObject"
+    ]["family"] = "bodyless_mutation"
+    reject_restore_object_registry(
+        bodyless_restore_object, "missing XML request body"
+    )
+    serialized_restore_object = copy.deepcopy(registry)
+    serialized_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][1] += "; the client serializes and validates the XML"
+    reject_restore_object_registry(
+        serialized_restore_object, "invented XML serializer"
+    )
+    checksum_restore_object = copy.deepcopy(registry)
+    checksum_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][1] += "; the client computes the selected checksum"
+    reject_restore_object_registry(
+        checksum_restore_object, "invented checksum binding"
+    )
+    version_restore_object = copy.deepcopy(registry)
+    version_restore_object.operations[
+        "RestoreObject"
+    ]["reconciliation"] = "the response proves exact version binding"
+    reject_restore_object_registry(
+        version_restore_object, "invented version binding"
+    )
+    decoded_restore_object = copy.deepcopy(registry)
+    decoded_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][3] += "; the client distinguishes 200, 202, 409, and 503"
+    reject_restore_object_registry(
+        decoded_restore_object, "invented status and error decoder"
+    )
+    selected_restore_object = copy.deepcopy(registry)
+    selected_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][2] += "; Select restore is supported"
+    reject_restore_object_registry(
+        selected_restore_object, "invented Select support"
+    )
+    bounded_restore_object = copy.deepcopy(registry)
+    bounded_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][2] += "; serialized restore bodies are bounded"
+    reject_restore_object_registry(
+        bounded_restore_object, "invented restore bounds"
+    )
+    routed_restore_object = copy.deepcopy(registry)
+    routed_restore_object.operations[
+        "RestoreObject"
+    ]["exclusions"][5] += "; access points and Outposts are supported"
+    reject_restore_object_registry(
+        routed_restore_object, "invented endpoint support"
+    )
+    replay_restore_object = copy.deepcopy(registry)
+    replay_restore_object.operations[
+        "RestoreObject"
+    ]["certainty"] = "automatically replay after transport failure"
+    reject_restore_object_registry(
+        replay_restore_object, "automatic replay"
+    )
+    causal_restore_object = copy.deepcopy(registry)
+    causal_restore_object.operations[
+        "RestoreObject"
+    ]["reconciliation"] = "HeadObject proves restore causation"
+    reject_restore_object_registry(
+        causal_restore_object, "causal reconciliation"
+    )
+    missing_restore_object_model = copy.deepcopy(registry)
+    missing_restore_object_model.operations[
+        "RestoreObject"
+    ]["evidence"]["client"] = []
+    reject_restore_object_registry(
+        missing_restore_object_model, "missing model evidence"
+    )
+    restore_object_lane, restore_object_commands = (
+        s3_operation.qualification_plan(registry, ["RestoreObject"])
+    )
+    assert restore_object_lane == "restore_object"
+    assert restore_object_commands == registry.qualification["restore_object"]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["RestoreObject", "RestoreObject"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate RestoreObject lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "

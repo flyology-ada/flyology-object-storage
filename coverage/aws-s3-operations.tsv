@@ -106,7 +106,7 @@ PutObjectRetention	extended	missing	covered	missing	covered
 PutObjectTagging	core	covered	covered	covered	covered
 PutPublicAccessBlock	extended	covered	covered	covered	covered
 RenameObject	extended	missing	partial	missing	covered
-RestoreObject	extended	missing	partial	missing	missing
+RestoreObject	extended	missing	partial	missing	covered
 SelectObjectContent	extended	missing	partial	missing	missing
 UpdateBucketMetadataAnnotationTableConfiguration	extended	missing	covered	missing	covered
 UpdateBucketMetadataInventoryTableConfiguration	extended	missing	covered	missing	covered

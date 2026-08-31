@@ -665,6 +665,12 @@ rename_object = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+restore_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-restore-object-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
@@ -5140,18 +5146,21 @@ tier = "extended"
 provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+public_name = "Not_Exposed"
+codec = "generated_model_only_restore_xml_and_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "mutation model coverage only; no public restore request, XML serializer, checksum binding, response decoder, or runtime evidence exists, so this review reports no accepted or completed restore, no admission certainty, and no automatic replay"
+reconciliation = "the model carries an optional VersionId and documents later HeadObject restore-state observation, but neither request binding nor restore-state decoding is implemented; explicit or omitted version selection, later observation, causal proof, certainty upgrade, and automatic replay are not claimed"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RestoreObject API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled RestoreRequest XML, optional checksum algorithm, VersionId, requester-pays controls, response headers, and active-tier error are inventory only; no XML serialization, cross-field validation, digest generation, signing binding, version binding, response validation, or error decoding is implemented", "regular restore, speed upgrade, and deprecated Select restore shapes are structural inventory only; no Days or tier policy, Select support, output-location policy, ACL, tag, metadata, encryption, SQL, body-size, or collection bound is claimed", "only ObjectAlreadyInActiveTierError is a modeled operation error shape; documentation-only RestoreAlreadyInProgress and GlacierExpeditedRetrievalNotAvailable codes and modeled HTTP 200 versus documented 202 behavior are not normalized or qualified", "later HeadObject x-amz-restore observation cannot prove that a lost request caused the observed state, upgrade mutation certainty, or authorize automatic replay", "directory buckets are documented as unsupported; access-point behavior and conflicting inherited Outposts routing prose are not implemented or resolved"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "restore_object"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-restore-object-model.py"], server = [], corpus = ["tools/verify-restore-object-model.py"] }
 
 [[operation]]
 name = "SelectObjectContent"
