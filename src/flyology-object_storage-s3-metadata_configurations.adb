@@ -798,4 +798,22 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
            "metadata inventory update serialization violates caller limits";
    end Serialize_Update_Inventory;
 
+   function Serialize_Update_Journal
+     (Value  : Record_Expiration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "JournalTableConfiguration",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      Write_Record_Expiration (Item, Value);
+      return XML_Writers.Finish (Item, "JournalTableConfiguration");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Configuration with
+           "metadata journal update serialization violates caller limits";
+   end Serialize_Update_Journal;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;

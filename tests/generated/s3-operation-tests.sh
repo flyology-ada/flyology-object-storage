@@ -74,6 +74,7 @@ run_s3_operation_corpora() {
 run_s3_socket_qualifiers() {
   uv run --python 3.13 -- ../tools/s3-signed-socket.py CreateBucketMetadataConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py UpdateBucketMetadataInventoryTableConfiguration
+  uv run --python 3.13 -- ../tools/s3-signed-socket.py UpdateBucketMetadataJournalTableConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketReplication
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketMetricsConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py PutBucketMetricsConfiguration

@@ -230,4 +230,14 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
      (Value  : Inventory_Table_Configuration;
       Limits : XML.Parse_Limits) return String;
 
+   --  Serialize one exact UpdateBucketMetadataJournalTableConfiguration
+   --  payload.
+   --  @param Value Complete caller-selected record-expiration update
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Metadata_Configuration Value violates the model
+   function Serialize_Update_Journal
+     (Value  : Record_Expiration;
+      Limits : XML.Parse_Limits) return String;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;

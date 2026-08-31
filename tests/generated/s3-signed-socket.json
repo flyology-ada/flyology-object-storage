@@ -5237,6 +5237,276 @@
           }
         }
       ]
+    },
+    "UpdateBucketMetadataJournalTableConfiguration": {
+      "adapter": "./bin/s3_set_metadata_journal_table_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?metadataJournalTable"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?metadataJournalTable"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?metadataJournalTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?metadataJournalTable"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?metadataJournalTable"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?metadataJournalTable"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?metadataJournalTable"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?metadataJournalTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?metadataJournalTable"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>",
+              "request_headers": {
+                "content-md5": "F2E7vgvbN7G/qAfou5/s8g==",
+                "x-amz-checksum-sha256": "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=",
+                "x-amz-content-sha256": "49dff9579d7d6d248d66e221d055754f1d0cafa893cffd9abbd79c6181a1481c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?metadataJournalTable"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 188
+          }
+        }
+      ]
     }
   }
 }

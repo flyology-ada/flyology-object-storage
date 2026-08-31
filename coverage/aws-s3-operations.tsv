@@ -110,7 +110,7 @@ RestoreObject	extended	missing	partial	missing	missing
 SelectObjectContent	extended	missing	partial	missing	missing
 UpdateBucketMetadataAnnotationTableConfiguration	extended	missing	partial	missing	missing
 UpdateBucketMetadataInventoryTableConfiguration	extended	missing	covered	missing	covered
-UpdateBucketMetadataJournalTableConfiguration	extended	missing	partial	missing	missing
+UpdateBucketMetadataJournalTableConfiguration	extended	missing	covered	missing	covered
 UpdateObjectEncryption	extended	missing	partial	missing	missing
 UploadPart	core	covered	covered	covered	covered
 UploadPartCopy	core	covered	covered	covered	covered

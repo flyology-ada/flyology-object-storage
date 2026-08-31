@@ -89,6 +89,15 @@ update_bucket_metadata_inventory_table_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+update_bucket_metadata_journal_table_configuration = [
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "UpdateBucketMetadataJournalTableConfiguration"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-update-bucket-metadata-journal-table-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 list_bucket_metrics_configurations = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
@@ -985,7 +994,7 @@ list_object_annotations = [
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 33
-socket_qualifier_count = 19
+socket_qualifier_count = 20
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -1056,6 +1065,7 @@ corpora = [
 socket_qualifiers = [
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "CreateBucketMetadataConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "UpdateBucketMetadataInventoryTableConfiguration"],
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "UpdateBucketMetadataJournalTableConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketReplication"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetricsConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketMetricsConfiguration"],
@@ -5110,18 +5120,24 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
+codec = "strict_generated_rest_xml_request_and_singleton_headers"
+public_name = "Set_Metadata_Journal_Table_Configuration"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated exact 200 response reports Bucket_Metadata_Configuration_Mutation_Completed; an exact recognized non-mutating rejection or definite non-admission reports Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied; pre-admission cancellation reports Bucket_Metadata_Configuration_Mutation_Cancelled_Before_Admission; every other possibly admitted, incomplete, retryable, or corrupt outcome reports Bucket_Metadata_Configuration_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Metadata_Configuration may observe the current metadata configuration before a retry, but it neither proves that the lost mutation caused the observation nor upgrades mutation certainty; no automatic replay"
+exclusions = ["metadata persistence and an authenticated Flyology UpdateBucketMetadataJournalTableConfiguration server route are absent and not claimed", "the caller supplies the complete modeled record-expiration state and optional arbitrary-precision day count without a library-selected retention policy", "Content-MD5 and the required selected generated checksum cover the exact immutable serialized journal-table update bytes", "the caller-supplied Origin remains authoritative; automatic S3 Express control-endpoint selection is not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "update_bucket_metadata_journal_table_configuration"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-metadata_configurations.ads", "src/flyology-object_storage-s3-metadata_configurations.adb", "src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_set_metadata_journal_table_configuration_qualification.adb"], server = [], corpus = ["tools/test-s3-operation-registry.py", "tests/generated/s3-signed-socket.json", "tests/src/s3_set_metadata_journal_table_configuration_qualification.adb"] }
+ada_symbols = ["Prepare_Set_Metadata_Journal_Table_Configuration", "Execute_Set_Metadata_Journal_Table_Configuration", "Set_Metadata_Journal_Table_Configuration_Operation", "Set_Metadata_Journal_Table_Configuration", "Finish"]
+generation = { public_result = "Set_Metadata_Journal_Table_Configuration_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "the required record-expiration state and optional arbitrary-precision days are serialized exactly; no retention limit beyond the pinned model is imposed", intentional_exclusions = ["no backend or server compatibility claim", "no automatic S3 Express endpoint selection", "no provider-specific publication or durability claim"] }
+generated_mutation_qualification = { adapter = "./bin/s3_set_metadata_journal_table_configuration_qualification", input_values = { ExpectedBucketOwner = "123456789012" }, request_body = "<JournalTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfiguration>", expected_request_headers = { content-md5 = "F2E7vgvbN7G/qAfou5/s8g==", x-amz-checksum-sha256 = "Sd/5V519bSSNZuIh0FV1Tx0Mr6iTz/2au9ecYYGhSBw=", x-amz-sdk-checksum-algorithm = "SHA256" } }
 
 [[operation]]
 name = "UpdateObjectEncryption"

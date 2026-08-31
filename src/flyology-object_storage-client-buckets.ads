@@ -11236,6 +11236,170 @@ package Flyology.Object_Storage.Client.Buckets is
       Limits     : S3.XML.Parse_Limits)
       return Set_Metadata_Inventory_Table_Configuration_Result;
 
+   --  Shape of one terminal UpdateBucketMetadataJournalTableConfiguration
+   --  call.
+   --  @enum Set_Metadata_Journal_Table_Configuration_Response_Available A
+   --  complete modeled response exists
+   --  @enum Set_Metadata_Journal_Table_Configuration_Exchange_Failed No
+   --  complete modeled response exists
+   type Set_Metadata_Journal_Table_Configuration_Result_Kind is
+     (Set_Metadata_Journal_Table_Configuration_Response_Available,
+      Set_Metadata_Journal_Table_Configuration_Exchange_Failed);
+
+   --  Typed metadata journal-table configuration replacement result. The
+   --  defaults are conservative initialization sentinels shared by sibling
+   --  mutation results; Finish replaces them with terminal evidence before
+   --  exposing the value.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Set_Metadata_Journal_Table_Configuration_Result
+     (Kind : Set_Metadata_Journal_Table_Configuration_Result_Kind :=
+        Set_Metadata_Journal_Table_Configuration_Exchange_Failed)
+   is record
+      Disposition : Bucket_Metadata_Configuration_Mutation_Disposition :=
+        Bucket_Metadata_Configuration_Mutation_Outcome_Unknown;
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Set_Metadata_Journal_Table_Configuration_Response_Available =>
+            Response : Low_Level.Put_Bucket_Control_Outcome;
+         when Set_Metadata_Journal_Table_Configuration_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot owner-driven metadata journal-table configuration replacement.
+   --  The exact serialized body remains owned through typed Finish and is
+   --  never replayed.
+   type Set_Metadata_Journal_Table_Configuration_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one metadata journal-table configuration replacement.
+   --  Operation is last so overload resolution preserves the provider-centric
+   --  vocabulary.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Metadata journal-table configuration value serialized
+   --  before admission
+   --  @param Parameters Complete modeled non-resource
+   --  UpdateBucketMetadataJournalTableConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @param Operation Reusable owner-driven operation restarted
+   procedure Set_Metadata_Journal_Table_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Record_Expiration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Set_Metadata_Journal_Table_Configuration_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one owner-driven metadata journal-table configuration
+   --  replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Metadata journal-table configuration value serialized
+   --  before admission
+   --  @param Parameters Complete modeled non-resource
+   --  UpdateBucketMetadataJournalTableConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Deadline Absolute admission, exchange, and drain limit
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected bounded XML limits
+   --  @param Token Optional cancellation source retained to drain
+   --  @return Started owner-driven metadata journal-table configuration
+   --  replacement
+   function Set_Metadata_Journal_Table_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Record_Expiration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Set_Metadata_Journal_Table_Configuration_Operation;
+
+   --  Consume one terminal UpdateBucketMetadataJournalTableConfiguration
+   --  operation.
+   --  @param Operation Terminal owner-driven operation consumed
+   --  @param Result Complete typed terminal evidence
+   procedure Finish
+     (Operation : in out Set_Metadata_Journal_Table_Configuration_Operation;
+      Result    : out Set_Metadata_Journal_Table_Configuration_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace one metadata journal-table configuration by waiting on the same
+   --  state machine used by composable callers. No possibly admitted request
+   --  is replayed; unknown outcomes require read-only
+   --  Get_Metadata_Configuration reconciliation.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Bucket Required exact target bucket
+   --  @param Value Metadata journal-table configuration value serialized
+   --  before admission
+   --  @param Parameters Complete modeled non-resource
+   --  UpdateBucketMetadataJournalTableConfiguration controls
+   --  @param Identity Credentials borrowed only while signing the request
+   --  @param Region Exact SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected bounded XML limits
+   --  @return Terminal typed metadata journal-table configuration replacement
+   --  evidence
+   function Set_Metadata_Journal_Table_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Record_Expiration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Set_Metadata_Journal_Table_Configuration_Result;
+
    --  What is known after terminal PutBucketAcl drain.
    --  @enum Bucket_ACL_Mutation_Completed Complete observed success
    --  @enum Bucket_ACL_Mutation_Definitely_Not_Applied Conclusive non-
@@ -12102,6 +12266,84 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation);
+
+   --  @exclude
+   function Decode_Set_Metadata_Journal_Table_Configuration_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Set_Metadata_Journal_Table_Configuration_Result;
+
+   --  @exclude
+   function Normalize_Set_Metadata_Journal_Table_Configuration_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String)
+      return Set_Metadata_Journal_Table_Configuration_Result;
+
+   --  @exclude
+   package Set_Metadata_Journal_Table_Configuration_Mutations is new
+     Flyology.Object_Storage.Client.REST_XML_Mutations
+       (Result_Type       => Set_Metadata_Journal_Table_Configuration_Result,
+        Operation_Name    => "UpdateBucketMetadataJournalTableConfiguration",
+        Start_Exchange    =>
+          Low_Level.Set_Metadata_Journal_Table_Configuration,
+        Decode_Response   =>
+          Decode_Set_Metadata_Journal_Table_Configuration_Family_Response,
+        Normalize_Failure =>
+          Normalize_Set_Metadata_Journal_Table_Configuration_Failure);
+
+   --  @exclude
+   type Set_Metadata_Journal_Table_Configuration_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : Set_Metadata_Journal_Table_Configuration_Mutations.State (Set);
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Set_Metadata_Journal_Table_Configuration_Operation) return
+      Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Set_Metadata_Journal_Table_Configuration_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Set_Metadata_Journal_Table_Configuration_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Set_Metadata_Journal_Table_Configuration_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item  : in out Set_Metadata_Journal_Table_Configuration_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Set_Metadata_Journal_Table_Configuration_Operation);
 
    --  @exclude
    function Decode_Put_Bucket_ACL_Family_Response

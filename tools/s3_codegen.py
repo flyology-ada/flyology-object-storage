@@ -2028,6 +2028,20 @@ GENERATED_MUTATIONS = (
         reconciliation="Get_Metadata_Configuration",
     ),
     Generated_Mutation(
+        operation="UpdateBucketMetadataJournalTableConfiguration",
+        ada_stem="Set_Metadata_Journal_Table_Configuration",
+        model_stem="Update_Bucket_Metadata_Journal_Table_Configuration",
+        public_name="Set_Metadata_Journal_Table_Configuration",
+        label="metadata journal-table configuration",
+        value_unit="Metadata_Configurations",
+        value_type="Record_Expiration",
+        parameters_type="Bucket_Control_Mutation_Parameters",
+        disposition_stem="Bucket_Metadata_Configuration_Mutation",
+        declares_disposition=False,
+        has_identifier=False,
+        reconciliation="Get_Metadata_Configuration",
+    ),
+    Generated_Mutation(
         operation="PutBucketAcl",
         ada_stem="Put_Bucket_ACL",
         model_stem="Put_Bucket_Acl",
@@ -2797,6 +2811,9 @@ def _generated_mutation_low_level_body(
             ),
             "UpdateBucketMetadataInventoryTableConfiguration": (
                 "S3.Metadata_Configurations.Serialize_Update_Inventory"
+            ),
+            "UpdateBucketMetadataJournalTableConfiguration": (
+                "S3.Metadata_Configurations.Serialize_Update_Journal"
             ),
         }
         serializer = metadata_serializers.get(
@@ -3688,6 +3705,21 @@ def _generated_mutation_qualification_text(
      (Is_Set              => True,
       Configuration_State => {item.value_unit}.Inventory_Enabled,
       Encryption          => (Is_Set => False, others => <>));'''
+    elif item.operation == (
+        "UpdateBucketMetadataJournalTableConfiguration"
+    ):
+        identifier_declaration = ""
+        value_document = ""
+        parameters = f'''   Parameters : constant
+     Low_Level.{item.parameters_type} :=
+     (Content_MD5           => US.Null_Unbounded_String,
+      Checksum_Algorithm    => US.To_Unbounded_String ("SHA256"),
+      Expected_Bucket_Owner =>
+        US.To_Unbounded_String (Expected_Bucket_Owner));'''
+        value_declarations = f'''   Value : constant {value_type} :=
+     (Expiration => {item.value_unit}.Expiration_Enabled,
+      Days       =>
+        (Is_Set => True, Text => US.To_Unbounded_String ("30")));'''
     elif item.operation == "PutBucketInventoryConfiguration":
         identifier_declaration = '''   Identifier : constant String :=
      Input ("ID");'''

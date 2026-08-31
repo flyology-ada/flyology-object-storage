@@ -120,7 +120,7 @@ remain inventory-only until their audits gain executable evidence.
 | SelectObjectContent | legacy_preserved | objects | event_stream_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UpdateBucketMetadataAnnotationTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UpdateBucketMetadataInventoryTableConfiguration | Set_Metadata_Inventory_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
-| UpdateBucketMetadataJournalTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateBucketMetadataJournalTableConfiguration | Set_Metadata_Journal_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UploadPart | Upload_Part | transfers | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | UploadPartCopy | Upload_Part_Copy | transfers | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
