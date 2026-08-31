@@ -7172,6 +7172,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Abort_Multipart_Outcome;
 
    --  Every non-resource member in the pinned ListParts input shape.
+   --  @field Max_Parts Maximum parts requested in one page
+   --  @field Part_Number_Marker Exclusive starting part marker
+   --  @field Upload_ID Required multipart upload identifier
+   --  @field Request_Payer Optional requester-pays header value
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field SSE_Customer_Algorithm Optional customer-key algorithm
+   --  @field SSE_Customer_Key Optional customer encryption key
+   --  @field SSE_Customer_Key_MD5 Optional customer-key MD5
    type List_Parts_Parameters is record
       Max_Parts              : S3.Core.Page_Size := 1_000;
       Part_Number_Marker     : S3.Multipart.Part_Marker_Value := 0;
@@ -7183,6 +7191,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       SSE_Customer_Key_MD5   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one signed bodyless ListParts request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Parameters Complete modeled listing controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless ListParts request metadata
    function Prepare_List_Parts
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7195,6 +7213,10 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every member in the pinned ListParts output shape. The REST/XML body
    --  members are grouped in Listing; the remaining values are HTTP headers.
+   --  @field Listing Parsed multipart-parts page
+   --  @field Abort_Date Optional returned abort timestamp
+   --  @field Abort_Rule_ID Optional returned abort-rule identifier
+   --  @field Request_Charged Optional returned requester-charge value
    type List_Parts_Result is record
       Listing         : S3.Multipart.List_Parts_Result;
       Abort_Date      : Ada.Strings.Unbounded.Unbounded_String;
@@ -7202,8 +7224,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish validated parts page from structured S3 rejection.
+   --  @enum Parts_Listed Validated HTTP-200 parts page was decoded
+   --  @enum List_Parts_Rejected Structured S3 error was decoded
    type List_Parts_Outcome_Kind is (Parts_Listed, List_Parts_Rejected);
 
+   --  Result of decoding or executing one ListParts operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated parts page on success
+   --  @field Error Structured S3 error on rejection
    type List_Parts_Outcome
      (Kind : List_Parts_Outcome_Kind := List_Parts_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -7215,6 +7245,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded parts page from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Abort_Date Supplied abort timestamp, possibly empty
+   --  @param Abort_Rule_ID Supplied abort-rule identifier, possibly empty
+   --  @param Request_Charged Supplied requester-charge value, possibly empty
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Parts page or structured S3 rejection
    function Decode_List_Parts_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -7243,6 +7283,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Parts_Outcome;
 
+   --  Execute one bodyless ListParts attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Parts page or structured S3 rejection
    function Execute_List_Parts
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -9187,6 +9234,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared ListParts exchange into a bounded sink.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Parts
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
