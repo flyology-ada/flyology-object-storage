@@ -1,9 +1,9 @@
 # GetBucketCors client qualification
 
 This record qualifies the strict bounded provider-owned composable and typed
-synchronous clients and corpus for `GetBucketCors`. It does not claim CORS
-persistence in a Flyology backend, an
-authenticated Flyology server route, or external-server interoperability.
+synchronous clients, backend persistence, authenticated server route, and
+corpora for `GetBucketCors`. It does not claim browser CORS enforcement,
+policy-effect interpretation, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -76,10 +76,19 @@ rejection, and a caller-bounded response-sink failure. The root gate runs that
 sequence identically under native and Flyology lightweight task owners and
 repeats both paths three times.
 
-The machine ledger records `GetBucketCors` as `missing / covered / missing /
-covered`. Client and corpus evidence do not manufacture backend state or a
-server route. Promoting either remaining cell requires a separately approved
-persistence contract, authenticated routing, and independent black-box tests.
+The machine ledger records `GetBucketCors` as `covered / covered / covered /
+covered`. The backend and authenticated server distinguish an absent bucket
+from an existing bucket without configured CORS state, preserve the canonical
+stored document, and reject unsupported request fields. This coverage does not
+claim that a browser enforces the stored configuration.
+
+The `GetBucketCors` registry lane is independently conditional on every
+maintained command succeeding. It records exact HTTP-200 decoding, strict
+`NoSuchCORSConfiguration` absence distinct from `NoSuchBucket`, read-only
+transport certainty, and operation-local persistence and routing evidence.
+Its generated-model documentation evidence is a region-scoped warning
+measurement only; repository-wide and selected GNATdoc qualification remain
+blocked by pre-existing warnings outside that declaration region.
 
 ## Formal boundary
 

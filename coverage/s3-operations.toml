@@ -352,6 +352,17 @@ get_bucket_policy = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_cors = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-cors-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_cors_corpus"],
+  ["@tests", "./bin/s3_server_application_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-cors-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_bucket_policy = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -1549,17 +1560,21 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Get_CORS"
+absence = "exact 404 NoSuchCORSConfiguration reports no configured CORS document and remains distinct from NoSuchBucket; an exact 200 with an empty body preserves absence of the optional output separately from a present empty CORSConfiguration"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
+exclusions = ["success requires exact HTTP 200 and caller-bounded strict XML decoding; no other success status is accepted", "NoSuchCORSConfiguration reports absence of configured CORS state and remains distinct from NoSuchBucket", "RequestPayer is not modeled and is rejected; ExpectedBucketOwner is transported exactly", "the stored CORS document is covered, but browser CORS enforcement or policy-effect interpretation is not claimed", "external-provider behavior beyond the maintained signed implementation and socket corpus is not claimed"]
 coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
 provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_bucket_cors"
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tools/verify-get-bucket-cors-preparation.py", "docs/qualification/get-bucket-cors.md", "tests/src/object_storage_test_cases.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"] }
+ada_symbols = ["Prepare_Get_Bucket_CORS", "Execute_Get_Bucket_CORS", "Get_Bucket_CORS_Operation", "Get_CORS", "Finish"]
 
 [[operation]]
 name = "GetBucketEncryption"

@@ -6027,6 +6027,113 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketPolicy lane accepted")
+    def assert_get_cors_registry(candidate):
+        entry = candidate.operations["GetBucketCors"]
+        assert entry.get("public_name") == "Get_CORS"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_cors"
+        assert entry.get("certainty") == "read_only"
+        assert entry.get("reconciliation") == "not_applicable"
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Get_Bucket_CORS",
+            "Execute_Get_Bucket_CORS",
+            "Get_Bucket_CORS_Operation",
+            "Get_CORS",
+            "Finish",
+        ]
+        assert "NoSuchCORSConfiguration" in entry["absence"]
+        assert "NoSuchBucket" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][0]
+        assert "browser CORS enforcement" in entry["exclusions"][3]
+        assert (
+            candidate.qualification["get_bucket_cors"][0][-1]
+            == "tools/verify-get-bucket-cors-preparation.py"
+        )
+
+    def reject_get_cors_registry(candidate, label):
+        try:
+            assert_get_cors_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetBucketCors registry accepted")
+
+    assert_get_cors_registry(registry)
+    missing_get_cors_name = copy.deepcopy(registry)
+    del missing_get_cors_name.operations["GetBucketCors"]["public_name"]
+    reject_get_cors_registry(missing_get_cors_name, "missing public name")
+    wrong_get_cors_name = copy.deepcopy(registry)
+    wrong_get_cors_name.operations["GetBucketCors"][
+        "public_name"
+    ] = "Get_Policy"
+    reject_get_cors_registry(wrong_get_cors_name, "wrong public name")
+    broadened_get_cors_success = copy.deepcopy(registry)
+    broadened_get_cors_success.operations["GetBucketCors"][
+        "exclusions"
+    ][0] = "success accepts HTTP 200 or 204"
+    reject_get_cors_registry(
+        broadened_get_cors_success, "broadened success"
+    )
+    mutation_get_cors_certainty = copy.deepcopy(registry)
+    mutation_get_cors_certainty.operations["GetBucketCors"][
+        "certainty"
+    ] = "Outcome_Unknown"
+    reject_get_cors_registry(
+        mutation_get_cors_certainty, "mutation certainty"
+    )
+    cross_get_cors_symbol = copy.deepcopy(registry)
+    cross_get_cors_symbol.operations["GetBucketCors"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Bucket_Policy"
+    reject_get_cors_registry(cross_get_cors_symbol, "cross-operation symbol")
+    get_cors_qualification, get_cors_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketCors"])
+    )
+    assert get_cors_qualification == "get_bucket_cors"
+    assert get_cors_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-cors-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_cors_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert get_cors_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-cors-gnatdoc",
+        "--operation",
+        "GetBucketCors",
+    ]
+    assert get_cors_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketCors", "GetBucketCors"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketCors lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketCors", "GetBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetBucketCors lane accepted")
+
     put_policy_certainty = (
         "only a complete validated 200 response with an empty or "
         "whitespace-only body reports Bucket_Policy_Mutation_Completed; an "

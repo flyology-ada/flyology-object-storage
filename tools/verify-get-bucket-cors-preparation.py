@@ -3,15 +3,24 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / "src/flyology-object_storage-s3-model.adb"
 CORPUS = ROOT / "tests/corpora/get-bucket-cors"
 LOCK = ROOT / "coverage/corpora.lock.toml"
+REGISTRY = ROOT / "coverage/s3-operations.toml"
+HIGH_LEVEL = ROOT / "src/flyology-object_storage-client-buckets.adb"
+TESTING = ROOT / "tests/src/flyology-object_storage-client-buckets-testing.adb"
+SOCKET = ROOT / "tests/src/s3_http_socket_corpus.adb"
+SERVER = ROOT / "src/flyology-object_storage-server-s3_applications.adb"
+SERVER_TEST = ROOT / "tests/src/s3_server_application_corpus.adb"
+QUALIFICATION = ROOT / "docs/qualification/get-bucket-cors.md"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
@@ -38,6 +47,26 @@ VECTOR_HEADER = ["id", "direction", "layer", "category", "member_refs",
                  "stimulus", "expected_contract"]
 LOCATION = {"URI_Location": "uri-label", "Header_Location": "header",
             "Body_Location": "body", "Query_Location": "query"}
+GET_CORS_LANE = [
+    ["uv", "run", "--python", "3.13", "--",
+     "tools/verify-get-bucket-cors-preparation.py"],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_get_bucket_cors_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    ["./tools/build-api-docs.sh",
+     "/private/tmp/fos-get-bucket-cors-gnatdoc"],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
+GET_CORS_SYMBOLS = [
+    "Prepare_Get_Bucket_CORS",
+    "Execute_Get_Bucket_CORS",
+    "Get_Bucket_CORS_Operation",
+    "Get_CORS",
+    "Finish",
+]
 
 
 def fail(message: str) -> None:
@@ -92,6 +121,82 @@ def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
                        for row in rows):
         fail(f"{path}: empty or surplus field")
     return rows
+
+
+def registry_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "GetBucketCors"
+    ]
+    if len(matches) != 1:
+        fail("GetBucketCors is not unique")
+    return matches[0]
+
+
+def verify_registry(data: dict[str, object]) -> None:
+    entry = registry_entry(data)
+    expected = {
+        "public_name": "Get_CORS",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "get_bucket_cors",
+        "certainty": "read_only",
+        "reconciliation": "not_applicable",
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": GET_CORS_SYMBOLS,
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"GetBucketCors changed: {key}")
+    if "NoSuchCORSConfiguration" not in entry["absence"]:
+        fail("GetBucketCors absence changed")
+    if "NoSuchBucket" not in entry["absence"]:
+        fail("GetBucketCors bucket absence changed")
+    if "exact HTTP 200" not in entry["exclusions"][0]:
+        fail("GetBucketCors success changed")
+    if "browser CORS enforcement" not in entry["exclusions"][3]:
+        fail("GetBucketCors enforcement exclusion changed")
+    if data["qualification"].get("get_bucket_cors") != GET_CORS_LANE:
+        fail("GetBucketCors lane changed")
+
+
+def verify_registry_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Get_Policy"),
+        ("broadened success", "exclusions", []),
+        ("mutation certainty", "certainty", "Outcome_Unknown"),
+        ("cross-operation lane", "qualification", "get_bucket_policy"),
+        ("cross-operation symbols", "ada_symbols", ["Get_Policy"]),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = registry_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_registry(candidate)
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
+def require_in_order(text: str, fragments: list[str], label: str) -> None:
+    cursor = 0
+    for fragment in fragments:
+        position = text.find(fragment, cursor)
+        if position < 0:
+            fail(f"{label}: missing {fragment}")
+        cursor = position + len(fragment)
 
 
 def main() -> int:
@@ -166,8 +271,72 @@ def main() -> int:
                   "Optional_CORS_Integer_Text", "CORS_String_Vectors"):
         if token not in source:
             fail(f"typed implementation lacks {token}")
+    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
+    verify_registry(registry)
+    verify_registry_negatives(registry)
+    require_in_order(
+        HIGH_LEVEL.read_text(encoding="utf-8"),
+        [
+            "function Normalize_Get_Bucket_CORS_Response",
+            '"NoSuchBucket" | "NoSuchCORSConfiguration"',
+            "procedure Start_Get_Bucket_CORS",
+            "procedure Finish",
+        ],
+        "GetBucketCors provider",
+    )
+    require_in_order(
+        TESTING.read_text(encoding="utf-8"),
+        [
+            "Check_Get_Response (200",
+            'Check_Get_Response (404, "NoSuchBucket"',
+            'Check_Get_Response (404, "NoSuchCORSConfiguration"',
+        ],
+        "GetBucketCors normalization",
+    )
+    require_in_order(
+        SERVER.read_text(encoding="utf-8"),
+        [
+            "when Get_Bucket_CORS =>",
+            "Store.Get_Bucket_CORS",
+            '"NoSuchCORSConfiguration"',
+            "Apps.Respond",
+        ],
+        "GetBucketCors server",
+    )
+    require_in_order(
+        SERVER_TEST.read_text(encoding="utf-8"),
+        [
+            '"GetBucketCors did not distinguish absent configuration"',
+            '"GetBucketCors did not return the canonical configuration"',
+            '"GetBucketCors ignored expected owner"',
+        ],
+        "GetBucketCors server corpus",
+    )
+    require_in_order(
+        SOCKET.read_text(encoding="utf-8"),
+        [
+            '"GetBucketCors socket success mismatch"',
+            '"typed GetBucketCors result mismatch"',
+            '"composed GetBucketCors result mismatch"',
+            '"restarted GetBucketCors result mismatch"',
+        ],
+        "GetBucketCors socket corpus",
+    )
+    require_in_order(
+        " ".join(
+            QUALIFICATION.read_text(encoding="utf-8").split()
+        ),
+        [
+            "`GetBucketCors` registry lane",
+            "exact HTTP-200 decoding",
+            "read-only",
+            "region-scoped warning measurement only",
+        ],
+        "GetBucketCors qualification",
+    )
     print(f"GetBucketCors preparation: 9 modeled members, four flattened "
-          f"string lists, unbounded integer text, {len(vectors)} vectors")
+          f"string lists, unbounded integer text, {len(vectors)} vectors; "
+          "registry, persistence, routing, and docs match")
     return 0
 
 
