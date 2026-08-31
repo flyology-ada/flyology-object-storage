@@ -4776,29 +4776,54 @@ private
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
    end record;
+   --  @exclude
+   --  @param Item Internal conditional object write
+   --  @return Exact buffered request-body length
    overriding function Declared_Length
      (Item : Conditional_Put_Operation)
       return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   --  @param Item Internal conditional object write
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Conditional_Put_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   --  @param Item Internal conditional object write
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the buffered source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Conditional_Put_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
+   --  @exclude
+   --  @param Item Internal conditional object write
    overriding procedure Release_Source
      (Item : in out Conditional_Put_Operation);
+   --  @exclude
+   --  @param Item Internal conditional object write
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Conditional_Put_Operation;
       Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal conditional object write
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Conditional_Put_Operation;
       Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal conditional object write
    overriding procedure Request_Cancellation
      (Item : in out Conditional_Put_Operation);
+   --  @exclude
+   --  @param Item Internal conditional object write
    overriding procedure Finalize (Item : in out Conditional_Put_Operation);
    overriding procedure Drive
      (Item : in out Whole_Get_Operation;
