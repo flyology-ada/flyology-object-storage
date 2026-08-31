@@ -10606,6 +10606,129 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetBucketAbac lane accepted")
 
+    policy_status_certainty = (
+        "read-only; only one complete validated exact 200 "
+        "Bucket_Control_Found response observed exposes the "
+        "presence-preserving IsPublic status; every incomplete, invalid, "
+        "or non-observed response exposes no policy-status state; the "
+        "client performs no automatic retry"
+    )
+    policy_status_reconciliation = (
+        "a later GetBucketPolicyStatus observes only the bucket policy "
+        "status current at read time; it does not prove that a prior policy "
+        "mutation caused the observed state or authorize automatic replay"
+    )
+    policy_status_symbols = [
+        "Prepare_Get_Bucket_Policy_Status",
+        "Decode_Get_Bucket_Policy_Status_Response",
+        "Execute_Get_Bucket_Policy_Status",
+        "Get_Bucket_Policy_Status_Operation",
+        "Get_Policy_Status",
+        "Finish",
+    ]
+
+    def assert_policy_status_registry(candidate):
+        entry = candidate.operations["GetBucketPolicyStatus"]
+        assert entry.get("public_name") == "Get_Policy_Status"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_policy_status"
+        assert entry.get("certainty") == policy_status_certainty
+        assert entry.get("reconciliation") == policy_status_reconciliation
+        assert entry.get("ada_symbols") == policy_status_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert "absent, false, or true" in entry["absence"]
+        assert "authorization enforcement" in entry["exclusions"][3]
+        assert candidate.qualification["get_bucket_policy_status"][0][
+            -1
+        ] == "tools/verify-get-bucket-controls-preparation.py"
+
+    def reject_policy_status_registry(candidate, label):
+        try:
+            assert_policy_status_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketPolicyStatus registry accepted"
+        )
+
+    assert_policy_status_registry(registry)
+    policy_status_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Get_Public_Policy_Status"),
+        ("automatic retry", "certainty", "read-only; retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "the read proves the prior policy mutation",
+        ),
+        ("collapsed absence", "absence", "missing IsPublic means false"),
+    ]
+    for label, key, value in policy_status_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["GetBucketPolicyStatus"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_policy_status_registry(candidate, label)
+    cross_policy_status_symbol = copy.deepcopy(registry)
+    cross_policy_status_symbol.operations["GetBucketPolicyStatus"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Bucket_Policy"
+    assert cross_policy_status_symbol != registry
+    reject_policy_status_registry(
+        cross_policy_status_symbol, "cross-operation"
+    )
+    missing_policy_status_lane = copy.deepcopy(registry)
+    del missing_policy_status_lane.qualification["get_bucket_policy_status"]
+    assert missing_policy_status_lane != registry
+    reject_policy_status_registry(missing_policy_status_lane, "missing lane")
+    policy_status_qualification, policy_status_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketPolicyStatus"])
+    )
+    assert policy_status_qualification == "get_bucket_policy_status"
+    assert policy_status_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-get-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert policy_status_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-policy-status-gnatdoc",
+        "--operation",
+        "GetBucketPolicyStatus",
+    ]
+    assert policy_status_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketPolicyStatus", "GetBucketPolicyStatus"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate GetBucketPolicyStatus lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketPolicyStatus", "PutBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetBucketPolicyStatus lane accepted")
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
