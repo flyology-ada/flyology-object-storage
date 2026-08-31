@@ -4035,17 +4035,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object ACL read
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Get_Object_ACL_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object ACL read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Object_ACL_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object ACL read
    overriding procedure Request_Cancellation
      (Item : in out Get_Object_ACL_Operation);
    --  @exclude
+   --  @param Item Internal object ACL read
    overriding procedure Finalize
      (Item : in out Get_Object_ACL_Operation);
 
@@ -4073,18 +4079,24 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-torrent read
+   --  @param Data Response-body bytes appended within the caller limit
    overriding procedure Write
      (Item : in out Get_Object_Torrent_Operation;
       Data : Ada.Streams.Stream_Element_Array);
 
    --  @exclude
+   --  @param Item Internal object-torrent read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Object_Torrent_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-torrent read
    overriding procedure Request_Cancellation
      (Item : in out Get_Object_Torrent_Operation);
    --  @exclude
+   --  @param Item Internal object-torrent read
    overriding procedure Finalize
      (Item : in out Get_Object_Torrent_Operation);
 
