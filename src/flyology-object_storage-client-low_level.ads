@@ -3044,10 +3044,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Put_Object_Outcome;
 
    --  Modeled DeleteBucket request headers.
+   --  @field Expected_Bucket_Owner Optional expected-owner header
    type Delete_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exact bodyless DeleteBucket request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Optional expected-owner header
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact DeleteBucket request
    function Prepare_Delete_Bucket
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -3057,9 +3067,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Terminal DeleteBucket response category.
+   --  @enum Bucket_Deleted The deletion completed with status 204
+   --  @enum Delete_Bucket_Rejected A structured S3 rejection is present
    type Delete_Bucket_Outcome_Kind is
      (Bucket_Deleted, Delete_Bucket_Rejected);
 
+   --  Terminal DeleteBucket result.
+   --  @field Kind Active response variant
+   --  @field Status Physical HTTP status
+   --  @field Error Structured S3 error on rejection
    type Delete_Bucket_Outcome
      (Kind : Delete_Bucket_Outcome_Kind := Delete_Bucket_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -3071,6 +3088,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode a whitespace-only 204 or bounded S3 rejection.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier for an S3 rejection
+   --  @param Host_ID Optional host identifier for an S3 rejection
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed deletion or structured S3 rejection
    function Decode_Delete_Bucket_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -3079,6 +3103,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Outcome;
 
+   --  Execute one exact prepared DeleteBucket request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared DeleteBucket request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed deletion or structured S3 rejection
    function Execute_Delete_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
