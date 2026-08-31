@@ -3650,30 +3650,70 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketAbac request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketAbac request
    function Prepare_Get_Bucket_Abac
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketPolicy request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketPolicy request
    function Prepare_Get_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketPolicyStatus request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketPolicyStatus request
    function Prepare_Get_Bucket_Policy_Status
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketRequestPayment request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketRequestPayment request
    function Prepare_Get_Bucket_Request_Payment
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetPublicAccessBlock request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetPublicAccessBlock request
    function Prepare_Get_Public_Access_Block
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -3913,6 +3953,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Presence-preserving GetBucketAbac outcome.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Configuration Optional modeled ABAC status on success
    --  @field Error Structured S3 error on rejection
@@ -3930,6 +3971,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Complete same-response GetBucketPolicy outcome.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Policy Exact bounded response payload on success
    --  @field Error Structured S3 error on rejection
@@ -3947,6 +3989,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Presence-preserving GetBucketPolicyStatus outcome.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Is_Public Optional modeled Boolean on success
    --  @field Error Structured S3 error on rejection
@@ -3964,6 +4007,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Presence-preserving GetBucketRequestPayment outcome.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Payment Optional modeled payer value on success
    --  @field Error Structured S3 error on rejection
@@ -3981,6 +4025,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Presence-preserving GetPublicAccessBlock outcome.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Configuration Four optional modeled Booleans on success
    --  @field Error Structured S3 error on rejection
@@ -4324,30 +4369,60 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Accelerate_Outcome;
    --  Decode one complete bounded GetBucketAbac XML response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving ABAC status or S3 rejection
    function Decode_Get_Bucket_Abac_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Abac_Outcome;
    --  Decode one complete bounded raw GetBucketPolicy response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Response byte and S3 error parsing limits
+   --  @return Exact bounded policy bytes or S3 rejection
    function Decode_Get_Bucket_Policy_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Policy_Outcome;
    --  Decode one complete bounded GetBucketPolicyStatus XML response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving public-status value or S3 rejection
    function Decode_Get_Bucket_Policy_Status_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Policy_Status_Outcome;
    --  Decode one complete bounded GetBucketRequestPayment XML response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving payer value or S3 rejection
    function Decode_Get_Bucket_Request_Payment_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Request_Payment_Outcome;
    --  Decode one complete bounded GetPublicAccessBlock XML response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving block settings or S3 rejection
    function Decode_Get_Public_Access_Block_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -4552,6 +4627,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Accelerate_Outcome;
    --  Execute one exact prepared GetBucketAbac request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving ABAC status or S3 rejection
    function Execute_Get_Bucket_Abac
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4559,6 +4640,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Abac_Outcome;
    --  Execute one exact prepared GetBucketPolicy request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Response byte and S3 error parsing limits
+   --  @return Exact bounded policy bytes or S3 rejection
    function Execute_Get_Bucket_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4566,6 +4653,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Policy_Outcome;
    --  Execute one exact prepared GetBucketPolicyStatus request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving public-status value or S3 rejection
    function Execute_Get_Bucket_Policy_Status
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4573,6 +4666,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Policy_Status_Outcome;
    --  Execute one exact prepared GetBucketRequestPayment request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving payer value or S3 rejection
    function Execute_Get_Bucket_Request_Payment
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4580,6 +4679,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Request_Payment_Outcome;
    --  Execute one exact prepared GetPublicAccessBlock request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Presence-preserving block settings or S3 rejection
    function Execute_Get_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
