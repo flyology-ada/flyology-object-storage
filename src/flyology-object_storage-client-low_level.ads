@@ -3756,18 +3756,42 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketLogging request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketLogging request
    function Prepare_Get_Bucket_Logging
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketWebsite request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketWebsite request
    function Prepare_Get_Bucket_Website
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketMetadataConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Owner-precondition request parameters
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact operation request
    function Prepare_Get_Bucket_Metadata_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -4438,18 +4462,36 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Inventory_Configurations_Outcome;
    --  Decode one complete bounded GetBucketLogging response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed logging status or structured S3 rejection
    function Decode_Get_Bucket_Logging_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Logging_Outcome;
    --  Decode one complete bounded GetBucketWebsite response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed website configuration or structured S3 rejection
    function Decode_Get_Bucket_Website_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Website_Outcome;
    --  Decode one complete bounded GetBucketMetadataConfiguration response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed metadata configuration or structured S3 rejection
    function Decode_Get_Bucket_Metadata_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
@@ -4661,6 +4703,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Inventory_Configurations_Outcome;
    --  Execute one exact prepared GetBucketLogging exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed logging status or structured S3 rejection
    function Execute_Get_Bucket_Logging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
@@ -4668,6 +4716,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Logging_Outcome;
    --  Execute one exact prepared GetBucketWebsite exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed website configuration or structured S3 rejection
    function Execute_Get_Bucket_Website
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
@@ -4675,6 +4729,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Website_Outcome;
    --  Execute one exact prepared GetBucketMetadataConfiguration exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Typed metadata configuration or structured S3 rejection
    function Execute_Get_Bucket_Metadata_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
