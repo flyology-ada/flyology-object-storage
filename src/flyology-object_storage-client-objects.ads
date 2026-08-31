@@ -5277,37 +5277,77 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Object_ACL_Result;
+   --  @exclude
+   --  @param Value Complete modeled GetObjectLegalHold response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal GetObjectLegalHold result projection
    function Normalize_Get_Legal_Hold_Response
      (Value     : Low_Level.Get_Object_Legal_Hold_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Legal_Hold_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal GetObjectLegalHold failure projection
    function Normalize_Get_Legal_Hold_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Legal_Hold_Result;
+   --  @exclude
+   --  @param Value Complete modeled PutObjectLegalHold response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal PutObjectLegalHold result projection
    function Normalize_Put_Legal_Hold_Response
      (Value     : Low_Level.Put_Object_Legal_Hold_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Legal_Hold_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal PutObjectLegalHold failure projection
    function Normalize_Put_Legal_Hold_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Legal_Hold_Result;
+   --  @exclude
+   --  @param Value Complete modeled GetObjectRetention response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal GetObjectRetention result projection
    function Normalize_Get_Retention_Response
      (Value     : Low_Level.Get_Object_Retention_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Retention_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal GetObjectRetention failure projection
    function Normalize_Get_Retention_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Retention_Result;
+   --  @exclude
+   --  @param Value Complete modeled PutObjectRetention response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal PutObjectRetention result projection
    function Normalize_Put_Retention_Response
      (Value     : Low_Level.Put_Object_Retention_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Retention_Result;
+   --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal PutObjectRetention failure projection
    function Normalize_Put_Retention_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
