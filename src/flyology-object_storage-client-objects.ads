@@ -4343,36 +4343,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-tag mutation
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Put_Object_Tagging_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Internal object-tag mutation
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Put_Object_Tagging_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Internal object-tag mutation
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Put_Object_Tagging_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Internal object-tag mutation
    overriding procedure Release_Source
      (Item : in out Put_Object_Tagging_Operation);
    --  @exclude
+   --  @param Item Internal object-tag mutation
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Put_Object_Tagging_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object-tag mutation
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Put_Object_Tagging_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-tag mutation
    overriding procedure Request_Cancellation
      (Item : in out Put_Object_Tagging_Operation);
    --  @exclude
+   --  @param Item Internal object-tag mutation
    overriding procedure Finalize
      (Item : in out Put_Object_Tagging_Operation);
 
@@ -4397,17 +4414,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-tag read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Get_Object_Tagging_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object-tag read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Get_Object_Tagging_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-tag read
    overriding procedure Request_Cancellation
      (Item : in out Get_Object_Tagging_Operation);
    --  @exclude
+   --  @param Item Internal object-tag read
    overriding procedure Finalize
      (Item : in out Get_Object_Tagging_Operation);
 
@@ -4434,36 +4457,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-tag deletion
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Delete_Object_Tagging_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Internal object-tag deletion
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Delete_Object_Tagging_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Internal object-tag deletion
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Object_Tagging_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Internal object-tag deletion
    overriding procedure Release_Source
      (Item : in out Delete_Object_Tagging_Operation);
    --  @exclude
+   --  @param Item Internal object-tag deletion
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Delete_Object_Tagging_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object-tag deletion
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Delete_Object_Tagging_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-tag deletion
    overriding procedure Request_Cancellation
      (Item : in out Delete_Object_Tagging_Operation);
    --  @exclude
+   --  @param Item Internal object-tag deletion
    overriding procedure Finalize
      (Item : in out Delete_Object_Tagging_Operation);
 
@@ -4490,36 +4530,53 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-annotation deletion
+   --  @return Exact serialized request-body length
    overriding function Declared_Length
      (Item : Delete_Object_Annotation_Operation)
       return Flyology.HTTP.Client.Body_Length;
    --  @exclude
+   --  @param Item Internal object-annotation deletion
+   --  @param Data Caller-provided source window
+   --  @param Last Last produced source element
+   --  @param Result Immediate source progress
    overriding procedure Read_Now
      (Item   : in out Delete_Object_Annotation_Operation;
       Data   : out Ada.Streams.Stream_Element_Array;
       Last   : out Ada.Streams.Stream_Element_Offset;
       Result : out Flyology.HTTP.Client.Source_Step_Kind);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
+   --  @param Required Requested source readiness
+   --  @param Descriptor No descriptor for the memory source
+   --  @param Ready_Now Whether the source is immediately ready
    overriding procedure Source_Wait_Source
      (Item       : in out Delete_Object_Annotation_Operation;
       Required   : Flyology.HTTP.Client.Source_Wait_Kind;
       Descriptor : out Flyology.IO.Descriptor;
       Ready_Now  : out Boolean);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
    overriding procedure Release_Source
      (Item : in out Delete_Object_Annotation_Operation);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out Delete_Object_Annotation_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out Delete_Object_Annotation_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
    overriding procedure Request_Cancellation
      (Item : in out Delete_Object_Annotation_Operation);
    --  @exclude
+   --  @param Item Internal object-annotation deletion
    overriding procedure Finalize
      (Item : in out Delete_Object_Annotation_Operation);
 
