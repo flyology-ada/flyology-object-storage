@@ -7984,15 +7984,27 @@ package Flyology.Object_Storage.Client.Low_Level is
    procedure Clear_Prepared_Request (Prepared : in out Prepared_Request);
 
    --  @exclude
+   --  @param Prepared Prepared request with owned payload storage
+   --  @return Owned request-payload length
    function Owned_Payload_Length
      (Prepared : Prepared_Request) return Natural;
 
    --  @exclude
+   --  @param Prepared Prepared request with owned payload storage
+   --  @param Index One-based owned payload position
+   --  @return Character at the requested payload position
    function Owned_Payload_Element
      (Prepared : Prepared_Request;
       Index    : Positive) return Character;
 
    --  Start a prepared PutObject exchange in an established HTTP operation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed request retained through terminal drain
+   --  @param Source One-shot request source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Put_Object
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8005,6 +8017,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared GetObject exchange into an acquired bounded buffer.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed request retained through terminal drain
+   --  @param Destination Acquired response buffer retained through drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Object
      (Client      : not null access Flyology.HTTP.Client.Client;
       Prepared    : not null access constant Prepared_Request;
@@ -8047,6 +8065,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared ListObjects v1 exchange into a bounded sink.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Objects
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8057,6 +8081,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared service-level ListBuckets exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Buckets
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8067,6 +8097,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared CreateBucket exchange with its one-shot body source.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed request retained through terminal drain
+   --  @param Source One-shot request source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Create_Bucket
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -8079,6 +8116,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared bodyless HeadBucket exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Head_Bucket
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
