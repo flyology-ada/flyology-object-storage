@@ -508,6 +508,16 @@ def _list_directory_provider_spec() -> str:
 
 def _list_directory_provider_private_spec() -> str:
     return """   --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Complete response head
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Collection_Limit Caller-selected decoded collection limit
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @return Typed modeled page or bounded exchange failure
    function Decode_List_Directory_Buckets_Response
      (Status           : Flyology.HTTP.Status_Code;
       Response         : Flyology.HTTP.Client.Response;
@@ -521,6 +531,11 @@ def _list_directory_provider_private_spec() -> str:
       return List_Directory_Buckets_Result;
 
    --  @exclude
+   --  @param Kind Terminal HTTP exchange result kind
+   --  @param Admission Observed HTTP admission certainty
+   --  @param Phase Terminal HTTP exchange phase
+   --  @param Detail Exact terminal exchange detail
+   --  @return Bounded ListDirectoryBuckets exchange failure
    function Normalize_List_Directory_Buckets_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -549,17 +564,23 @@ def _list_directory_provider_private_spec() -> str:
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven directory-bucket listing operation
+   --  @param Data Exact received response-body chunk
    overriding procedure Write
      (Item : in out List_Directory_Buckets_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven directory-bucket listing operation
+   --  @param Event Driver event for the current exchange state
    overriding procedure Drive
      (Item  : in out List_Directory_Buckets_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven directory-bucket listing operation
    overriding procedure Request_Cancellation
      (Item : in out List_Directory_Buckets_Operation);
    --  @exclude
+   --  @param Item Owner-driven directory-bucket listing operation
    overriding procedure Finalize
      (Item : in out List_Directory_Buckets_Operation);"""
 
