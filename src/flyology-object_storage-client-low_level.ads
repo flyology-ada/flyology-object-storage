@@ -7831,6 +7831,11 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Complete model-derived ListDirectoryBuckets inputs. Presence
    --  remains independent from an empty cursor or numeric zero. The caller
    --  selects the page size; this record supplies no default.
+   --  @field Continuation_Token Exact continuation token when present
+   --  @field Has_Continuation_Token Whether Continuation_Token is present
+   --  @field Max_Directory_Buckets Exact page size when present
+   --  @field Has_Max_Directory_Buckets Whether Max_Directory_Buckets is
+   --  present
    type List_Directory_Buckets_Parameters is record
       Continuation_Token        : Ada.Strings.Unbounded.Unbounded_String;
       Has_Continuation_Token    : Boolean;
@@ -7840,6 +7845,12 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Build and sign one exact ListDirectoryBuckets request. Origin must be
    --  the caller-selected S3 Express control endpoint.
+   --  @param Origin Exact S3 Express control endpoint
+   --  @param Parameters Complete modeled request inputs
+   --  @param Identity Credentials borrowed only while signing
+   --  @param Region Exact SigV4 signing region
+   --  @param Timestamp Exact SigV4 signing timestamp
+   --  @return Prepared signed ListDirectoryBuckets request
    function Prepare_List_Directory_Buckets
      (Origin     : Flyology.HTTP.Origin;
       Parameters : List_Directory_Buckets_Parameters;
@@ -7847,12 +7858,19 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Shape of a completed ListDirectoryBuckets response.
+   --  @enum Directory_Buckets_Listed A modeled directory-bucket page exists
+   --  @enum List_Directory_Buckets_Rejected A structured S3 rejection exists
    type List_Directory_Buckets_Outcome_Kind is
      (Directory_Buckets_Listed, List_Directory_Buckets_Rejected);
 
    --  Kind selects the meaningful payload. All fields remain explicit so the
    --  low-level result is definite without inventing a status or discriminant
    --  default for an exchange that has not occurred.
+   --  @field Kind Selects the meaningful response payload
+   --  @field Status Exact HTTP response status
+   --  @field Result Decoded page when Kind is Directory_Buckets_Listed
+   --  @field Error Structured S3 error when Kind is rejected
    type List_Directory_Buckets_Outcome is record
       Kind   : List_Directory_Buckets_Outcome_Kind;
       Status : Flyology.HTTP.Status_Code;
@@ -7860,6 +7878,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error  : S3.Errors.Error_Response;
    end record;
 
+   --  Decode one complete ListDirectoryBuckets HTTP response.
+   --  @param Response Complete response head providing status and headers
+   --  @param Payload Complete response body bytes
+   --  @param Limits Caller-selected XML parsing limits
+   --  @param Collection_Limit Caller-selected decoded collection limit
+   --  @return Decoded directory-bucket page or structured S3 rejection
    function Decode_List_Directory_Buckets_Complete_Response
      (Response         : Flyology.HTTP.Client.Response;
       Payload          : String;
@@ -7867,6 +7891,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Collection_Limit : Positive)
       return List_Directory_Buckets_Outcome;
 
+   --  Execute and decode one prepared ListDirectoryBuckets request.
+   --  @param Client HTTP client that owns the synchronous exchange
+   --  @param Prepared Exact prepared ListDirectoryBuckets request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and XML parsing limits
+   --  @param Collection_Limit Caller-selected decoded collection limit
+   --  @return Decoded directory-bucket page or structured S3 rejection
    function Execute_List_Directory_Buckets
      (Client           : aliased in out Flyology.HTTP.Client.Client;
       Prepared         : Prepared_Request;
@@ -7876,6 +7908,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Collection_Limit : Positive)
       return List_Directory_Buckets_Outcome;
 
+   --  Start one prepared composable ListDirectoryBuckets exchange.
+   --  @param Client HTTP client retained through terminal drain
+   --  @param Prepared Signed request retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure List_Directory_Buckets
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
