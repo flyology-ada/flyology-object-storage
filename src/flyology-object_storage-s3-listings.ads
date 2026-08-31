@@ -6,9 +6,22 @@ with Flyology.Object_Storage.S3.XML;
 --  Typed ListObjects REST/XML documents shared by clients and servers.
 package Flyology.Object_Storage.S3.Listings is
 
+   --  Raised when ListObjects response data is malformed.
    Malformed_Listing : exception;
+
+   --  Raised when a ListObjects query is malformed or unsupported.
    Malformed_List_Request : exception;
 
+   --  Parsed ListObjects v1 query parameters.
+   --  @field Prefix Optional object-key prefix
+   --  @field Has_Prefix Whether prefix was supplied
+   --  @field Delimiter Optional grouping delimiter
+   --  @field Has_Delimiter Whether delimiter was supplied
+   --  @field Marker Optional exclusive object-key marker
+   --  @field Has_Marker Whether marker was supplied
+   --  @field Max_Keys Requested maximum result count
+   --  @field Has_Max_Keys Whether max-keys was supplied
+   --  @field URL_Encoding Whether encoding-type=url was requested
    type List_Objects_Request is record
       Prefix       : Ada.Strings.Unbounded.Unbounded_String;
       Has_Prefix   : Boolean := False;
@@ -25,13 +38,29 @@ package Flyology.Object_Storage.S3.Listings is
    --  valid request. Percent escapes are strict, '+' remains literal,
    --  duplicates and unsupported parameters are rejected, and an optional
    --  x-id must identify ListObjects.
+   --  @param Query Raw query bytes after the question mark
+   --  @return Parsed bounded ListObjects v1 request
    function Parse_List_Objects_Query
      (Query : String) return List_Objects_Request;
 
    --  Decode one encoding-type=url response value. Escapes are strict and
    --  '+' is a literal byte, matching S3 query and listing rules.
+   --  @param Value Percent-encoded listing response value
+   --  @return Strictly decoded response bytes
    function Decode_URL_Value (Value : String) return String;
 
+   --  Parsed ListObjectsV2 query parameters.
+   --  @field Prefix Optional object-key prefix
+   --  @field Delimiter Optional grouping delimiter
+   --  @field Has_Delimiter Whether delimiter was supplied
+   --  @field Continuation_Token Optional opaque continuation token
+   --  @field Has_Continuation_Token Whether the token was supplied
+   --  @field Start_After Optional exclusive starting object key
+   --  @field Has_Start_After Whether start-after was supplied
+   --  @field Max_Keys Requested maximum result count
+   --  @field Fetch_Owner Whether object owners are requested
+   --  @field Has_Fetch_Owner Whether fetch-owner was supplied
+   --  @field URL_Encoding Whether encoding-type=url was requested
    type List_Objects_V2_Request is record
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter          : Ada.Strings.Unbounded.Unbounded_String;
@@ -49,9 +78,14 @@ package Flyology.Object_Storage.S3.Listings is
    --  Parse the raw query bytes after '?'. Percent escapes are strict, '+'
    --  remains literal, duplicates and unsupported parameters are rejected,
    --  and list-type=2 is required.
+   --  @param Query Raw query bytes after the question mark
+   --  @return Parsed bounded ListObjectsV2 request
    function Parse_List_Objects_V2_Query
      (Query : String) return List_Objects_V2_Request;
 
+   --  Result of validating and decoding a continuation token.
+   --  @field Valid Whether the token matches the request and envelope
+   --  @field After Exclusive emitted-item cursor when valid
    type Continuation_Result is record
       Valid : Boolean := False;
       After : Ada.Strings.Unbounded.Unbounded_String;
@@ -59,9 +93,20 @@ package Flyology.Object_Storage.S3.Listings is
 
    --  Continuation tokens are opaque at the wire boundary and are bound to
    --  the bucket, prefix, delimiter, and emitted-item cursor.
+   --  @param Bucket Bucket bound into the token
+   --  @param Prefix Object-key prefix bound into the token
+   --  @param Delimiter Grouping delimiter bound into the token
+   --  @param After Exclusive emitted-item cursor
+   --  @return Opaque continuation token bound to all four inputs
    function Encode_Continuation
      (Bucket, Prefix, Delimiter, After : String) return String;
 
+   --  Decode and validate a continuation token against listing inputs.
+   --  @param Token Candidate continuation token
+   --  @param Bucket Expected bucket
+   --  @param Prefix Expected object-key prefix
+   --  @param Delimiter Expected grouping delimiter
+   --  @return Validation result and decoded exclusive cursor
    function Decode_Continuation
      (Token, Bucket, Prefix, Delimiter : String)
       return Continuation_Result;
