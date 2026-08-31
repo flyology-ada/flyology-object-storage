@@ -52,6 +52,7 @@ OPERATION_DOCUMENTATION = {
     "PutBucketCors": "Put bucket CORS operation",
     "PutBucketPolicy": "Put bucket policy",
     "PutPublicAccessBlock": "Put public access block",
+    "UploadPart": "Upload multipart upload part",
 }
 
 
