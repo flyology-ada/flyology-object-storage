@@ -6402,6 +6402,11 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every non-resource member in the pinned CreateSession input. Empty
    --  strings preserve omission; Bucket_Key_Enabled preserves absent versus
    --  explicit false.
+   --  @field Session_Mode Optional modeled session mode
+   --  @field Server_Side_Encryption Optional encryption algorithm
+   --  @field SSE_KMS_Key_ID Optional KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional canonical Base64 KMS context
+   --  @field Bucket_Key_Enabled Presence-preserving bucket-key request flag
    type Create_Session_Parameters is record
       Session_Mode               : Ada.Strings.Unbounded.Unbounded_String;
       Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
@@ -6410,6 +6415,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket_Key_Enabled         : Optional_Boolean;
    end record;
 
+   --  Prepare one exactly bound CreateSession request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Bucket addressing style
+   --  @param Bucket Target directory bucket
+   --  @param Parameters Complete modeled non-resource input
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact CreateSession request
    function Prepare_Create_Session
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -6419,6 +6433,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Caller-supplied response metadata for compatibility decoding.
+   --  @field Server_Side_Encryption Returned encryption algorithm
+   --  @field SSE_KMS_Key_ID Returned KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Returned KMS encryption context
+   --  @field Bucket_Key_Enabled Presence-preserving returned bucket-key flag
    type Create_Session_Response_Headers is record
       Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
       SSE_KMS_Key_ID              : Ada.Strings.Unbounded.Unbounded_String;
@@ -6431,6 +6450,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Credentials type; expiration remains separately observable. Requests
    --  prepared with the returned identity use x-amz-s3session-token rather
    --  than the generic x-amz-security-token header.
+   --  @field Server_Side_Encryption Returned encryption algorithm
+   --  @field SSE_KMS_Key_ID Returned KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Returned KMS encryption context
+   --  @field Bucket_Key_Enabled Presence-preserving returned bucket-key flag
+   --  @field Identity Zeroizing session credentials
+   --  @field Expiration Returned credential-expiration text
    type Create_Session_Result is limited record
       Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
       SSE_KMS_Key_ID              : Ada.Strings.Unbounded.Unbounded_String;
@@ -6440,9 +6465,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expiration                 : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish completed session creation from structured S3 rejection.
+   --  @enum Session_Created Complete session credentials were decoded
+   --  @enum Create_Session_Rejected S3 rejected the operation
    type Create_Session_Outcome_Kind is
      (Session_Created, Create_Session_Rejected);
 
+   --  Result of decoding or executing one CreateSession operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Credentials and response metadata on success
+   --  @field Error Structured S3 error on rejection
    type Create_Session_Outcome
      (Kind : Create_Session_Outcome_Kind := Create_Session_Rejected)
    is limited record
@@ -6455,6 +6488,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded CreateSession response from supplied metadata.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Session credentials or structured S3 rejection
    function Decode_Create_Session_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -6495,6 +6536,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits)
       return Create_Session_Outcome;
 
+   --  Execute one exact prepared CreateSession exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Session credentials or structured S3 rejection
    function Execute_Create_Session
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
