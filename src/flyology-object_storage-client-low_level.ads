@@ -3672,6 +3672,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketOwnershipControls request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Optional owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact GetBucketOwnershipControls request
    function Prepare_Get_Bucket_Ownership_Controls
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -4306,6 +4314,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Public_Access_Block_Outcome;
    --  Decode one complete bounded GetBucketOwnershipControls response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier
+   --  @param Host_ID Optional host identifier
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Typed configuration or structured S3 rejection
    function Decode_Get_Bucket_Ownership_Controls_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -4509,6 +4523,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Public_Access_Block_Outcome;
    --  Execute one exact prepared GetBucketOwnershipControls request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML and S3 error parsing limits
+   --  @return Typed configuration or structured S3 rejection
    function Execute_Get_Bucket_Ownership_Controls
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
