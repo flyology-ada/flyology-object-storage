@@ -5050,6 +5050,15 @@ private
      (Item : in out Get_Object_Attributes_Operation);
 
    --  @exclude
+   --  @param Status Exact HTTP response status
+   --  @param Response Response metadata and headers
+   --  @param Payload Bounded response body
+   --  @param Request_ID Request identifier header
+   --  @param Host_ID Host identifier header
+   --  @param Limits XML parser limits
+   --  @param Admission Request admission certainty
+   --  @param Phase Exchange phase
+   --  @return Normalized object-annotation listing result
    function Decode_List_Object_Annotations_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -5062,6 +5071,11 @@ private
       return List_Object_Annotations_Result;
 
    --  @exclude
+   --  @param Kind Transport result kind
+   --  @param Admission Request admission certainty
+   --  @param Phase Exchange phase
+   --  @param Detail Transport failure detail
+   --  @return Normalized object-annotation listing failure
    function Normalize_List_Object_Annotations_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
@@ -5089,17 +5103,23 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Internal object-annotation listing read
+   --  @param Data Response-body bytes within the caller limit
    overriding procedure Write
      (Item : in out List_Object_Annotations_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Internal object-annotation listing read
+   --  @param Event Owner-driven scheduling event
    overriding procedure Drive
      (Item : in out List_Object_Annotations_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Internal object-annotation listing read
    overriding procedure Request_Cancellation
      (Item : in out List_Object_Annotations_Operation);
    --  @exclude
+   --  @param Item Internal object-annotation listing read
    overriding procedure Finalize
      (Item : in out List_Object_Annotations_Operation);
 
