@@ -7464,6 +7464,48 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every modeled CopyObject request member other than the destination
    --  bucket and key, which are explicit Prepare_Copy_Object parameters.
+   --  @field ACL Optional canned access-control policy
+   --  @field Cache_Control Optional cache-control metadata
+   --  @field Checksum_Algorithm Optional requested result-checksum algorithm
+   --  @field Content_Disposition Optional content-disposition metadata
+   --  @field Content_Encoding Optional content-encoding metadata
+   --  @field Content_Language Optional content-language metadata
+   --  @field Copy_Source Required source-object wire value
+   --  @field Content_Type Optional content-type metadata
+   --  @field Copy_Source_If_Match Optional source entity-tag precondition
+   --  @field Copy_Source_If_Modified_Since Optional source time precondition
+   --  @field Copy_Source_If_None_Match Optional source tag precondition
+   --  @field Copy_Source_If_Unmodified_Since Optional source time condition
+   --  @field Expires Optional expiration metadata
+   --  @field Grant_Full_Control Optional full-control grant
+   --  @field Grant_Read Optional read grant
+   --  @field Grant_Read_ACP Optional ACL-read grant
+   --  @field Grant_Write_ACP Optional ACL-write grant
+   --  @field If_Match Optional destination entity-tag precondition
+   --  @field If_None_Match Optional destination nonmatching precondition
+   --  @field Metadata Caller-supplied object metadata entries
+   --  @field Metadata_Directive Optional metadata copy directive
+   --  @field Tagging_Directive Optional tagging copy directive
+   --  @field Annotation_Directive Optional annotation copy directive
+   --  @field Server_Side_Encryption Optional destination encryption value
+   --  @field Storage_Class Optional destination storage class
+   --  @field Website_Redirect_Location Optional redirect metadata
+   --  @field SSE_Customer_Algorithm Optional destination key algorithm
+   --  @field SSE_Customer_Key Optional destination customer key
+   --  @field SSE_Customer_Key_MD5 Optional destination key MD5
+   --  @field SSE_KMS_Key_ID Optional destination KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional destination KMS context
+   --  @field Bucket_Key_Enabled Presence-preserving destination flag
+   --  @field Copy_Source_SSE_Customer_Algorithm Optional source decryption
+   --  @field Copy_Source_SSE_Customer_Key Optional source customer key
+   --  @field Copy_Source_SSE_Customer_Key_MD5 Optional source key MD5
+   --  @field Request_Payer Optional requester-pays header value
+   --  @field Tagging Optional destination tag-set encoding
+   --  @field Object_Lock_Mode Optional destination retention mode
+   --  @field Object_Lock_Retain_Until_Date Optional retention timestamp
+   --  @field Object_Lock_Legal_Hold_Status Optional legal-hold status
+   --  @field Expected_Bucket_Owner Optional destination-owner precondition
+   --  @field Expected_Source_Bucket_Owner Optional source-owner precondition
    type Copy_Object_Parameters is record
       ACL : Ada.Strings.Unbounded.Unbounded_String;
       Cache_Control : Ada.Strings.Unbounded.Unbounded_String;
@@ -7518,6 +7560,16 @@ package Flyology.Object_Storage.Client.Low_Level is
         Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one exact signed bodyless CopyObject request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Destination bucket
+   --  @param Key Destination object key
+   --  @param Parameters Complete modeled CopyObject controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless CopyObject request metadata
    function Prepare_Copy_Object
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7529,6 +7581,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  Every modeled CopyObject output member.
+   --  @field Copy_Result Parsed copy-result document
+   --  @field Expiration Optional returned expiration metadata
+   --  @field Copy_Source_Version_ID Optional returned source version
+   --  @field Version_ID Optional returned destination version
+   --  @field Server_Side_Encryption Optional returned encryption value
+   --  @field SSE_Customer_Algorithm Optional returned customer algorithm
+   --  @field SSE_Customer_Key_MD5 Optional returned customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional returned KMS key identifier
+   --  @field SSE_KMS_Encryption_Context Optional returned KMS context
+   --  @field Bucket_Key_Enabled Optional returned bucket-key header text
+   --  @field Request_Charged Optional returned requester-charge value
    type Copy_Object_Result is record
       Copy_Result : S3.Copies.Copy_Object_Result;
       Expiration : Ada.Strings.Unbounded.Unbounded_String;
@@ -7543,8 +7606,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish completed object copy from structured S3 rejection.
+   --  @enum Object_Copied Validated HTTP-200 copy result was decoded
+   --  @enum Copy_Object_Rejected Structured S3 error was decoded
    type Copy_Object_Outcome_Kind is (Object_Copied, Copy_Object_Rejected);
 
+   --  Result of decoding or executing one CopyObject operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated copy metadata on success
+   --  @field Error Structured S3 error on rejection
    type Copy_Object_Outcome
      (Kind : Copy_Object_Outcome_Kind := Copy_Object_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -7556,6 +7627,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded CopyObject response from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Copy metadata or structured S3 rejection
    function Decode_Copy_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -7582,6 +7661,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Copy_Object_Outcome;
 
+   --  Execute one bodyless CopyObject attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Copy metadata or structured S3 rejection
    function Execute_Copy_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -8893,6 +8979,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared CopyObject exchange without replaying its source.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Source One-shot empty source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Copy_Object
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
