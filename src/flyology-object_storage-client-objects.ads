@@ -5354,44 +5354,76 @@ private
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Retention_Result;
    --  @exclude
+   --  @param Value Complete modeled PutObjectTagging response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal PutObjectTagging result projection
    function Normalize_Put_Object_Tagging_Response
      (Value     : Low_Level.Object_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Put_Object_Tagging_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal PutObjectTagging failure projection
    function Normalize_Put_Object_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Object_Tagging_Result;
    --  @exclude
+   --  @param Value Complete modeled GetObjectTagging response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal GetObjectTagging result projection
    function Normalize_Get_Object_Tagging_Response
      (Value     : Low_Level.Object_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Get_Object_Tagging_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal GetObjectTagging failure projection
    function Normalize_Get_Object_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Object_Tagging_Result;
    --  @exclude
+   --  @param Value Complete modeled DeleteObjectTagging response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal DeleteObjectTagging result projection
    function Normalize_Delete_Object_Tagging_Response
      (Value     : Low_Level.Object_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Object_Tagging_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal DeleteObjectTagging failure projection
    function Normalize_Delete_Object_Tagging_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Object_Tagging_Result;
    --  @exclude
+   --  @param Value Complete modeled DeleteObjectAnnotation response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Internal DeleteObjectAnnotation result projection
    function Normalize_Delete_Object_Annotation_Response
      (Value     : Low_Level.Delete_Object_Annotation_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Delete_Object_Annotation_Result;
    --  @exclude
+   --  @param Kind Typed terminal HTTP result
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Terminal HTTP phase
+   --  @param Detail Failure detail
+   --  @return Internal DeleteObjectAnnotation failure projection
    function Normalize_Delete_Object_Annotation_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
