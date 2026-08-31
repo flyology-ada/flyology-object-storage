@@ -47,6 +47,7 @@ OPERATION_DOCUMENTATION = {
     "GetBucketPolicy": "Get bucket policy",
     "GetPublicAccessBlock": "Get public access block",
     "GetObjectAttributes": "Get object attributes operation",
+    "ListParts": "List multipart upload parts",
     "PutBucketTagging": "Put bucket tagging operation",
     "PutBucketCors": "Put bucket CORS operation",
     "PutBucketPolicy": "Put bucket policy",

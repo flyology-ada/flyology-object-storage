@@ -40,6 +40,7 @@ is
    --  @enum Get_Bucket_Tagging_Operation Get bucket tagging operation
    --  @enum Get_Object_Attributes_Operation Get object attributes operation
    --  @enum Get_Public_Access_Block_Operation Get public access block
+   --  @enum List_Parts_Operation List multipart upload parts
    --  @enum Put_Bucket_Cors_Operation Put bucket CORS operation
    --  @enum Put_Bucket_Policy_Operation Put bucket policy
    --  @enum Put_Bucket_Tagging_Operation Put bucket tagging operation
