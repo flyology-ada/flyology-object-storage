@@ -4659,6 +4659,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome;
 
    --  Every input member in the pinned DeleteObject request shape.
+   --  @field MFA Optional exact multi-factor authentication value
+   --  @field Version_ID Optional exact object-version selector
+   --  @field Request_Payer Optional exact requester-pays admission value
+   --  @field Bypass_Governance_Retention Optional exact governance bypass
+   --  value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field If_Match Optional exact entity-tag precondition
+   --  @field If_Match_Last_Modified_Time Optional exact last-modified-time
+   --  precondition
+   --  @field If_Match_Size Optional exact object-size precondition
    type Delete_Object_Parameters is record
       MFA                         : Ada.Strings.Unbounded.Unbounded_String;
       Version_ID                  : Ada.Strings.Unbounded.Unbounded_String;
@@ -4670,6 +4680,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       If_Match_Size               : Optional_Byte_Count;
    end record;
 
+   --  Prepare one exact signed DeleteObject request.
+   --  @param Origin Exact HTTP origin used for routing and signing
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Bucket Required exact target bucket
+   --  @param Key Required exact target object key
+   --  @param Parameters Complete modeled non-resource request inputs
+   --  @param Identity Credentials borrowed only while signing
+   --  @param Region Exact SigV4 signing region
+   --  @param Timestamp Exact SigV4 signing timestamp
+   --  @return Prepared signed DeleteObject request
    function Prepare_Delete_Object
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -4681,15 +4701,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  Every output member in the pinned DeleteObject response shape.
+   --  @field Delete_Marker Optional parsed delete-marker indication
+   --  @field Version_ID Optional exact returned version identifier
+   --  @field Request_Charged Optional exact requester-pays response value
    type Delete_Object_Result is record
       Delete_Marker   : Optional_Boolean;
       Version_ID      : Ada.Strings.Unbounded.Unbounded_String;
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Shape of a completed DeleteObject response.
+   --  @enum Object_Deleted Exact 204 deletion response decoded
+   --  @enum Delete_Object_Rejected Structured S3 rejection decoded
    type Delete_Object_Outcome_Kind is
      (Object_Deleted, Delete_Object_Rejected);
 
+   --  Completed DeleteObject response selected by Kind.
+   --  @field Kind Selects the meaningful response payload
+   --  @field Status Exact HTTP response status
+   --  @field Result Response headers when Kind is Object_Deleted
+   --  @field Error Structured S3 error when Kind is rejected
    type Delete_Object_Outcome
      (Kind : Delete_Object_Outcome_Kind := Delete_Object_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -4701,6 +4732,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode supplied DeleteObject response fields and body.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled response header values
+   --  @param Request_ID Optional exact S3 request identifier
+   --  @param Host_ID Optional exact S3 host identifier
+   --  @param Limits Caller-selected XML parsing limits
+   --  @return Typed deletion result or structured S3 rejection
    function Decode_Delete_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -4722,6 +4761,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Outcome;
 
+   --  Execute and decode one prepared DeleteObject request.
+   --  @param Client HTTP client that owns the synchronous exchange
+   --  @param Prepared Exact prepared DeleteObject request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and XML parsing limits
+   --  @return Typed deletion result or structured S3 rejection
    function Execute_Delete_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4889,6 +4935,7 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  kind and status 500 are deterministic scratch values required by the
    --  shared owner-driven state before terminal decoding; they are not an
    --  operational default or a provider compatibility claim.
+   --  @field Kind Selects the meaningful terminal payload
    --  @field Status Exact physical HTTP status
    --  @field Result Complete success graph when Kind is listed
    --  @field Error Structured bounded S3 error when Kind is rejected
