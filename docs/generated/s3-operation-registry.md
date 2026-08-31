@@ -55,7 +55,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | GetBucketNotificationConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketPolicy | legacy_preserved | buckets | bounded_document_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketPolicy | Get_Policy | buckets | bounded_document_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketPolicyStatus | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
 | GetBucketRequestPayment | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |

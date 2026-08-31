@@ -439,6 +439,23 @@ DELETE_POLICY_LANE = [
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
+GET_POLICY_LANE = [
+    [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-delete-bucket-configurations-preparation.py",
+    ],
+    ["@tests", "alr", "-n", "build"],
+    ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
+    ["@tests", "./bin/s3_http_socket_corpus"],
+    ["./tools/verify-coverage.sh"],
+    [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-policy-gnatdoc",
+    ],
+    ["./tools/ci/check-repository.sh", "{model}"],
+    ["git", "diff", "--check"],
+]
 DELETE_PUBLIC_ACCESS_BLOCK_CERTAINTY = (
     "only a complete validated 204 response with an exactly empty body "
     "reports Public_Access_Block_Mutation_Completed; an exact recognized "
@@ -1657,6 +1674,79 @@ def verify_delete_policy_negatives(data: dict[str, object]) -> None:
         fail(f"{label}: candidate was accepted")
 
 
+def get_policy_entry(data: dict[str, object]) -> dict[str, object]:
+    matches = [
+        entry for entry in data["operation"]
+        if entry["name"] == "GetBucketPolicy"
+    ]
+    if len(matches) != 1:
+        fail("GetBucketPolicy is not unique")
+    return matches[0]
+
+
+def verify_get_policy_registry(data: dict[str, object]) -> None:
+    entry = get_policy_entry(data)
+    expected = {
+        "public_name": "Get_Policy",
+        "decision_status": "reviewed",
+        "human_decisions_resolved": True,
+        "qualification": "get_bucket_policy",
+        "codec": "bounded_bytes_and_headers",
+        "certainty": "read_only",
+        "reconciliation": "not_applicable",
+        "coverage": {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        },
+        "ada_symbols": [
+            "Prepare_Get_Bucket_Policy",
+            "Execute_Get_Bucket_Policy",
+            "Get_Bucket_Policy_Operation",
+            "Get_Policy",
+            "Finish",
+        ],
+    }
+    for key, value in expected.items():
+        if entry.get(key) != value:
+            fail(f"GetBucketPolicy changed: {key}")
+    if "exact bounded bucket-policy bytes" not in entry["absence"]:
+        fail("GetBucketPolicy success semantics changed")
+    if "NoSuchBucketPolicy" not in entry["absence"]:
+        fail("GetBucketPolicy absence semantics changed")
+    if "exact HTTP 200" not in entry["exclusions"][1]:
+        fail("GetBucketPolicy status changed")
+    if "distinct from NoSuchBucket" not in entry["exclusions"][2]:
+        fail("GetBucketPolicy not-found boundary changed")
+    if data["qualification"].get("get_bucket_policy") != GET_POLICY_LANE:
+        fail("GetBucketPolicy lane changed")
+
+
+def verify_get_policy_negatives(data: dict[str, object]) -> None:
+    mutations = (
+        ("missing public name", "public_name", None),
+        ("wrong public name", "public_name", "Get_Policy_Status"),
+        ("mutation certainty", "certainty", "outcome_unknown"),
+        ("invented reconciliation", "reconciliation", "Get retries itself"),
+        ("cross-operation lane", "qualification", "delete_bucket_policy"),
+    )
+    for label, key, value in mutations:
+        candidate = copy.deepcopy(data)
+        entry = get_policy_entry(candidate)
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        if candidate == data:
+            fail(f"{label}: candidate did not change")
+        try:
+            verify_get_policy_registry(candidate)
+        except (KeyError, TypeError, ValueError):
+            continue
+        fail(f"{label}: candidate was accepted")
+
+
 def delete_public_access_block_entry(
     data: dict[str, object],
 ) -> dict[str, object]:
@@ -2021,6 +2111,8 @@ def main() -> int:
     verify_ownership_controls_negatives(registry)
     verify_delete_policy_registry(registry)
     verify_delete_policy_negatives(registry)
+    verify_get_policy_registry(registry)
+    verify_get_policy_negatives(registry)
     verify_delete_public_access_block_registry(registry)
     verify_delete_public_access_block_negatives(registry)
     verify_get_public_access_block_registry(registry)
@@ -2122,6 +2214,10 @@ def main() -> int:
         "@enum Delete_Bucket_Policy_Operation Delete bucket policy"
     ) != 1:
         fail("DeleteBucketPolicy docs changed")
+    if model_spec.count(
+        "@enum Get_Bucket_Policy_Operation Get bucket policy"
+    ) != 1:
+        fail("GetBucketPolicy docs changed")
     if model_spec.count(
         "@enum Delete_Public_Access_Block_Operation Delete public access block"
     ) != 1:
@@ -2762,6 +2858,52 @@ def main() -> int:
             "region-scoped warning measurement only",
         ],
         "DeleteBucketPolicy backend and server qualification prose",
+    )
+    ordered(
+        texts["high-level body"],
+        [
+            "function Normalize_Get_Bucket_Policy_Response",
+            'Code in "NoSuchBucket" | "NoSuchBucketPolicy"',
+            "function Normalize_Get_Bucket_Policy_Failure",
+            "GetBucketPolicy response exceeds the caller-selected limit",
+            "procedure Start_Get_Bucket_Policy",
+            "GetBucketPolicy restart changed a retained owner",
+            "procedure Finish",
+        ],
+        "GetBucketPolicy provider",
+    )
+    ordered(
+        testing,
+        [
+            "Normalize_Get_Bucket_Policy_Failure",
+            "procedure Check_Get_Bucket_Policy_Result_Corpus",
+            "Check_Get_Bucket_Policy_Response (200, \"\", No_Failure)",
+            '(404, "NoSuchBucket", Not_Found)',
+            '(404, "NoSuchBucketPolicy", Not_Found)',
+            "for Admission in",
+        ],
+        "GetBucketPolicy certainty corpus",
+    )
+    ordered(
+        socket,
+        [
+            "GetBucketPolicy accepted a prepared ABAC request",
+            "GetBucketPolicy socket mismatch",
+            "composed GetBucketPolicy first result mismatch",
+            "composed GetBucketPolicy restart mismatch",
+        ],
+        "GetBucketPolicy socket evidence",
+    )
+    ordered(
+        bucket_policy_qualification,
+        [
+            "`GetBucketPolicy` registry lane",
+            "exact bounded HTTP-200 policy read",
+            "`NoSuchBucketPolicy` as absence",
+            "The bytes remain opaque",
+            "region-scoped warning measurement only",
+        ],
+        "GetBucketPolicy backend and server qualification prose",
     )
     ordered(
         texts["high-level body"],

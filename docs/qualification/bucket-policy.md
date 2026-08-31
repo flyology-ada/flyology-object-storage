@@ -89,3 +89,12 @@ lost deletion caused that state. Its generated-model documentation evidence
 is a region-scoped warning measurement only; repository-wide and selected
 GNATdoc qualification remain blocked by pre-existing warnings outside that
 declaration region.
+
+The `GetBucketPolicy` registry lane is independently conditional on every
+maintained command succeeding. It records an exact bounded HTTP-200 policy
+read and preserves `NoSuchBucketPolicy` as absence of configured policy,
+distinct from `NoSuchBucket`. The bytes remain opaque: this lane makes no JSON
+interpretation, policy-enforcement, mutation, or automatic-retry claim. Its
+generated-model documentation evidence is likewise a region-scoped warning
+measurement only; repository-wide and selected GNATdoc qualification remain
+blocked by pre-existing warnings outside that declaration region.

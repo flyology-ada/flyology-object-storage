@@ -5920,6 +5920,113 @@ def main() -> None:
         raise AssertionError(
             "mixed DeleteBucketPolicy lane was accepted"
         )
+    def assert_get_policy_registry(candidate):
+        entry = candidate.operations["GetBucketPolicy"]
+        assert entry.get("public_name") == "Get_Policy"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_policy"
+        assert entry.get("codec") == "bounded_bytes_and_headers"
+        assert entry.get("certainty") == "read_only"
+        assert entry.get("reconciliation") == "not_applicable"
+        assert entry.get("coverage") == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry.get("ada_symbols") == [
+            "Prepare_Get_Bucket_Policy",
+            "Execute_Get_Bucket_Policy",
+            "Get_Bucket_Policy_Operation",
+            "Get_Policy",
+            "Finish",
+        ]
+        assert "exact bounded bucket-policy bytes" in entry["absence"]
+        assert "NoSuchBucketPolicy" in entry["absence"]
+        assert "exact HTTP 200" in entry["exclusions"][1]
+        assert "distinct from NoSuchBucket" in entry["exclusions"][2]
+        assert (
+            candidate.qualification["get_bucket_policy"][0][-1]
+            == "tools/verify-delete-bucket-configurations-preparation.py"
+        )
+
+    def reject_get_policy_registry(candidate, label):
+        try:
+            assert_get_policy_registry(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} GetBucketPolicy registry accepted")
+
+    assert_get_policy_registry(registry)
+    missing_get_policy_name = copy.deepcopy(registry)
+    del missing_get_policy_name.operations["GetBucketPolicy"]["public_name"]
+    reject_get_policy_registry(missing_get_policy_name, "missing public name")
+    wrong_get_policy_name = copy.deepcopy(registry)
+    wrong_get_policy_name.operations["GetBucketPolicy"][
+        "public_name"
+    ] = "Get_Policy_Status"
+    reject_get_policy_registry(wrong_get_policy_name, "wrong public name")
+    mutation_get_policy = copy.deepcopy(registry)
+    mutation_get_policy.operations["GetBucketPolicy"][
+        "certainty"
+    ] = "outcome_unknown"
+    reject_get_policy_registry(mutation_get_policy, "mutation certainty")
+    reconciled_get_policy = copy.deepcopy(registry)
+    reconciled_get_policy.operations["GetBucketPolicy"][
+        "reconciliation"
+    ] = "Get retries itself"
+    reject_get_policy_registry(
+        reconciled_get_policy, "invented reconciliation"
+    )
+    cross_get_policy_symbol = copy.deepcopy(registry)
+    cross_get_policy_symbol.operations["GetBucketPolicy"][
+        "ada_symbols"
+    ][0] = "Prepare_Get_Bucket_Policy_Status"
+    reject_get_policy_registry(
+        cross_get_policy_symbol, "cross-operation symbol"
+    )
+    get_policy_qualification, get_policy_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketPolicy"])
+    )
+    assert get_policy_qualification == "get_bucket_policy"
+    assert get_policy_commands[:6] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-delete-bucket-configurations-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert get_policy_commands[6] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-get-bucket-policy-gnatdoc",
+        "--operation",
+        "GetBucketPolicy",
+    ]
+    assert get_policy_commands[7:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketPolicy", "GetBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate GetBucketPolicy lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["GetBucketPolicy", "DeleteBucketPolicy"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed GetBucketPolicy lane accepted")
     delete_public_access_block_certainty = (
         "only a complete validated 204 response with an exactly empty body "
         "reports Public_Access_Block_Mutation_Completed; an exact recognized "
