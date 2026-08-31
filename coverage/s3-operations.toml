@@ -718,6 +718,16 @@ get_bucket_notification_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_notification = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-bucket-notification-configuration-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-notification-gnatdoc", "--operation", "GetBucketNotification"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_bucket_notification_configuration = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-bucket-notification-configuration-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -2629,18 +2639,22 @@ tier = "extended"
 provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = ["deprecated in the pinned service model; GetBucketNotificationConfiguration is the maintained replacement"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
-implementation_mode = "generated"
+codec = "strict_current_rest_xml_compatibility_subset"
+public_name = "Get_Notification_Configuration"
+absence = "the deprecated operation shares exact GET ?notification transport and input with GetBucketNotificationConfiguration; a validated exact 200 current-shape empty notification document returns the complete empty configuration, while exact 404 NoSuchBucket remains a structured rejection"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only compatibility subset; only one complete validated exact 200 Bucket_Control_Found response observed exposes accepted current-shape notification state, every incomplete, invalid, legacy-only, or non-observed response exposes no configuration state, and the client performs no automatic retry"
+reconciliation = "a later GetBucketNotification or GetBucketNotificationConfiguration observes only the bucket notification configuration current at read time; it does not prove that a prior mutation caused the observed state or authorize automatic replay"
+exclusions = ["the pinned model deprecates GetBucketNotification in favor of GetBucketNotificationConfiguration; the public compatibility surface deliberately uses the maintained Get_Notification_Configuration name and exact shared request path rather than duplicating an obsolete Ada API", "client coverage is deliberately partial: current-shape topic, queue, and Lambda configurations are accepted, while legacy-only optional or incomplete destination shapes and InvocationRole are rejected rather than silently discarded", "notification persistence, destination delivery, destination validation, and an authenticated Flyology GetBucketNotification server route are absent and not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed current-shape client and socket corpus is not claimed"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_bucket_notification"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "src/flyology-object_storage-s3-notifications.ads", "src/flyology-object_storage-s3-notifications.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-bucket-notification-configuration-preparation.py", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Get_Bucket_Notification_Configuration", "Decode_Get_Bucket_Notification_Configuration_Response", "Execute_Get_Bucket_Notification_Configuration", "Get_Bucket_Notification_Operation", "Get_Notification_Configuration", "Finish"]
 
 [[operation]]
 name = "GetBucketNotificationConfiguration"

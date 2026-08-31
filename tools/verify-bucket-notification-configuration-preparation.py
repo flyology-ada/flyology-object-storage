@@ -121,6 +121,15 @@ def main() -> int:
         fail("pinned botocore identity changed")
     model = MODEL.read_text(encoding="utf-8")
     operations = {
+        "Get_Bucket_Notification_Operation": {
+            "Method": "Get_Method",
+            "Request_URI": "/{Bucket}?notification",
+            "Response_Code": "200",
+            "Input_Shape": "253",
+            "Output_Shape": "459",
+            "Request_Checksum_Required": "False",
+            "Request_Checksum_Algorithm_Member": "",
+        },
         "Get_Bucket_Notification_Configuration_Operation": {
             "Method": "Get_Method",
             "Request_URI": "/{Bucket}?notification",
@@ -152,6 +161,46 @@ def main() -> int:
         ["60", "15"],
         ["True", "False"],
         ["Bucket", "x-amz-expected-bucket-owner"],
+    )
+    require_members(
+        model,
+        459,
+        [
+            "TopicConfiguration",
+            "QueueConfiguration",
+            "CloudFunctionConfiguration",
+        ],
+        ["690", "562", "93"],
+        ["False", "False", "False"],
+        [
+            "TopicConfiguration",
+            "QueueConfiguration",
+            "CloudFunctionConfiguration",
+        ],
+    )
+    require_members(
+        model,
+        690,
+        ["Id", "Events", "Event", "Topic"],
+        ["461", "202", "200", "688"],
+        ["False", "False", "False", "False"],
+        ["Id", "Event", "Event", "Topic"],
+    )
+    require_members(
+        model,
+        562,
+        ["Id", "Event", "Events", "Queue"],
+        ["461", "200", "202", "560"],
+        ["False", "False", "False", "False"],
+        ["Id", "Event", "Event", "Queue"],
+    )
+    require_members(
+        model,
+        93,
+        ["Id", "Event", "Events", "CloudFunction", "InvocationRole"],
+        ["461", "200", "202", "92", "94"],
+        ["False", "False", "False", "False", "False"],
+        ["Id", "Event", "Event", "CloudFunction", "InvocationRole"],
     )
     require_members(
         model,
@@ -246,9 +295,10 @@ def main() -> int:
         if token not in source:
             fail(f"typed implementation lacks {token}")
     print(
-        "Bucket notification configuration preparation: current GET 2-member "
-        "input, PUT 4-member input, complete flattened destination/filter "
-        "graph, and 30-event exact domain"
+        "Bucket notification configuration preparation: deprecated GET "
+        "17-node partial boundary; current GET 2-member input, PUT 4-member "
+        "input, complete flattened destination/filter graph, and 30-event "
+        "exact domain"
     )
     return 0
 

@@ -52,7 +52,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketMetadataTableConfiguration | Get_Metadata_Table_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketNotification | Get_Notification_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | partial / handwritten | missing / absent | covered / handwritten |
 | GetBucketNotificationConfiguration | Get_Notification_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketOwnershipControls | Get_Ownership_Controls | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketPolicy | Get_Policy | buckets | bounded_document_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

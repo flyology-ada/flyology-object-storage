@@ -42,7 +42,7 @@ GetBucketLogging	extended	missing	covered	missing	covered
 GetBucketMetadataConfiguration	extended	missing	covered	missing	covered
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	covered	missing	covered
-GetBucketNotification	extended	missing	partial	missing	missing
+GetBucketNotification	extended	missing	partial	missing	covered
 GetBucketNotificationConfiguration	extended	missing	covered	missing	covered
 GetBucketOwnershipControls	extended	missing	covered	missing	covered
 GetBucketPolicy	extended	covered	covered	covered	covered

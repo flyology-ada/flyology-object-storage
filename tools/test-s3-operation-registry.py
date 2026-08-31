@@ -5597,6 +5597,115 @@ def main() -> None:
         raise AssertionError(
             "mixed BucketNotificationConfiguration lane accepted"
         )
+    get_bucket_notification_symbols = [
+        "Prepare_Get_Bucket_Notification_Configuration",
+        "Decode_Get_Bucket_Notification_Configuration_Response",
+        "Execute_Get_Bucket_Notification_Configuration",
+        "Get_Bucket_Notification_Operation",
+        "Get_Notification_Configuration",
+        "Finish",
+    ]
+
+    def assert_get_bucket_notification_registry(candidate):
+        entry = candidate.operations["GetBucketNotification"]
+        assert entry.get("public_name") == "Get_Notification_Configuration"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "get_bucket_notification"
+        assert entry.get("codec") == (
+            "strict_current_rest_xml_compatibility_subset"
+        )
+        assert entry.get("ada_symbols") == get_bucket_notification_symbols
+        assert entry["coverage"] == {
+            "backend": "missing",
+            "client": "partial",
+            "server": "missing",
+            "corpus": "covered",
+        }
+        assert entry["provenance"]["client"] == "handwritten"
+        assert entry["provenance"]["tests"] == "handwritten"
+        assert "deliberately partial" in entry["exclusions"][1]
+        assert "InvocationRole" in entry["exclusions"][1]
+        assert "legacy-only" in entry["certainty"]
+        assert "does not prove" in entry["reconciliation"]
+        commands = candidate.qualification["get_bucket_notification"]
+        assert commands[0][-1] == (
+            "tools/verify-bucket-notification-configuration-preparation.py"
+        )
+        assert commands[5][-2:] == [
+            "--operation", "GetBucketNotification"
+        ]
+
+    def reject_get_bucket_notification_registry(candidate, label):
+        try:
+            assert_get_bucket_notification_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} GetBucketNotification registry accepted"
+        )
+
+    assert_get_bucket_notification_registry(registry)
+    missing_get_bucket_notification_name = copy.deepcopy(registry)
+    del missing_get_bucket_notification_name.operations[
+        "GetBucketNotification"
+    ]["public_name"]
+    reject_get_bucket_notification_registry(
+        missing_get_bucket_notification_name, "missing compatibility name"
+    )
+    full_get_bucket_notification = copy.deepcopy(registry)
+    full_get_bucket_notification.operations["GetBucketNotification"][
+        "coverage"
+    ]["client"] = "covered"
+    reject_get_bucket_notification_registry(
+        full_get_bucket_notification, "invented complete client coverage"
+    )
+    hidden_get_bucket_notification_gap = copy.deepcopy(registry)
+    hidden_get_bucket_notification_gap.operations[
+        "GetBucketNotification"
+    ]["exclusions"][1] = "all deprecated output shapes are accepted"
+    reject_get_bucket_notification_registry(
+        hidden_get_bucket_notification_gap, "hidden legacy gap"
+    )
+    cross_get_bucket_notification_symbol = copy.deepcopy(registry)
+    cross_get_bucket_notification_symbol.operations[
+        "GetBucketNotification"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification"
+    reject_get_bucket_notification_registry(
+        cross_get_bucket_notification_symbol, "obsolete symbol"
+    )
+    malformed_get_bucket_notification_lane = copy.deepcopy(registry)
+    malformed_get_bucket_notification_lane.qualification[
+        "get_bucket_notification"
+    ][5][-1] = "GetBucketNotificationConfiguration"
+    reject_get_bucket_notification_registry(
+        malformed_get_bucket_notification_lane, "cross-operation lane"
+    )
+    legacy_notification_qualification, legacy_notification_commands = (
+        s3_operation.qualification_plan(registry, ["GetBucketNotification"])
+    )
+    assert legacy_notification_qualification == "get_bucket_notification"
+    assert legacy_notification_commands[0][-1] == (
+        "tools/verify-bucket-notification-configuration-preparation.py"
+    )
+    assert legacy_notification_commands[2] == [
+        "@tests", "./bin/s3_bucket_notification_configuration_corpus"
+    ]
+    assert legacy_notification_commands[5][-2:] == [
+        "--operation", "GetBucketNotification"
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            [
+                "GetBucketNotification",
+                "GetBucketNotificationConfiguration",
+            ],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed legacy notification lane accepted")
     put_bucket_notification_configuration_certainty = (
         "only a complete validated exact 200 Bucket_Control_Updated response "
         "observed reports Bucket_Notification_Mutation_Completed; a "
@@ -9889,8 +9998,8 @@ def main() -> None:
         entry["implementation_mode"]
         for entry in registry.operations.values()
     ) == {
-        "handwritten": 79,
-        "generated": 20,
+        "handwritten": 80,
+        "generated": 19,
         "shared-family": 17,
     }
     assert {
