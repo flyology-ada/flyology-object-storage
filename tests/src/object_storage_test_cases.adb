@@ -7,6 +7,7 @@ with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
+with Ada.Unchecked_Deallocation;
 with AUnit.Assertions;
 with AUnit.Test_Caller;
 with AUnit.Test_Fixtures;
@@ -778,6 +779,18 @@ package body Object_Storage_Test_Cases is
         "<TargetBucket>logs</TargetBucket>" &
         "<TargetPrefix>access/</TargetPrefix>" &
         "</LoggingEnabled></BucketLoggingStatus>";
+      Analytics : constant String :=
+        "<AnalyticsConfiguration><Id>payload-analytics</Id>" &
+        "<StorageClassAnalysis><DataExport><OutputSchemaVersion>" &
+        "V_1</OutputSchemaVersion></DataExport></StorageClassAnalysis>" &
+        "</AnalyticsConfiguration>";
+      Analytics_Replacement : constant String :=
+        "<AnalyticsConfiguration><Id>replacement-payload</Id>" &
+        "<StorageClassAnalysis/></AnalyticsConfiguration>";
+      Metrics : constant String :=
+        "<MetricsConfiguration><Id>payload-metrics</Id>" &
+        "<Filter><Prefix>reports/</Prefix></Filter>" &
+        "</MetricsConfiguration>";
       Document   : US.Unbounded_String;
       Transition_Default_Minimum_Object_Size : US.Unbounded_String;
       Configured : Boolean;
@@ -932,6 +945,120 @@ package body Object_Storage_Test_Cases is
          and then US.To_String (Document) = Logging,
          "bucket logging configuration did not round trip");
 
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "query-analytics", Analytics, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket analytics put failed");
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, "query-analytics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Analytics,
+         "bucket analytics query identifier did not retain exact bytes");
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, "payload-analytics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket analytics payload Id became the storage key");
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "query-analytics", Analytics_Replacement, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, "query-analytics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Analytics_Replacement,
+         "bucket analytics replacement did not preserve exact bytes");
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "delete-analytics", Analytics, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "delete-analytics", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket analytics delete failed");
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "delete-analytics", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket analytics delete was not idempotent");
+
+      Store.Put_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", Metrics, null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert (Result = Success, "bucket metrics put failed");
+      Store.Get_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Metrics,
+         "bucket metrics query identifier did not retain exact bytes");
+      Store.Put_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", "<MetricsConfiguration><Id>second" &
+         "</Id></MetricsConfiguration>", null, Ada.Real_Time.Time_Last,
+         Result);
+      Store.Get_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<MetricsConfiguration><Id>second</Id>" &
+           "</MetricsConfiguration>",
+         "bucket metrics replacement did not preserve exact bytes");
+      Store.Get_Bucket_Metrics_Configuration
+        (Bucket, "payload-metrics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket metrics payload Id became the storage key");
+      Store.Delete_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket metrics delete failed");
+      Store.Delete_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket metrics delete was not idempotent");
+      Store.Get_Bucket_Metrics_Configuration
+        (Bucket, "query-metrics", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket metrics delete left visible state");
+      Store.Get_Bucket_Analytics_Configuration
+        ("missing-configuration-bucket", "query-analytics", null,
+         Ada.Real_Time.Time_Last, Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured,
+         "bucket analytics get did not distinguish an absent bucket");
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "", Analytics, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket analytics rejected a present empty query identifier");
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Analytics,
+         "bucket analytics lost the empty query identifier");
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "", "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = 0,
+         "bucket analytics empty-key replacement lost configured state");
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket analytics empty query identifier was not deletable");
+
       Store.Get_Bucket_Lifecycle
         ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
          Document, Transition_Default_Minimum_Object_Size, Configured, Result);
@@ -989,6 +1116,32 @@ package body Object_Storage_Test_Cases is
          Assert (Raised, "bucket logging get ignored cancellation");
       end;
       declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Analytics_Configuration
+              (Bucket, "query-analytics", Cancel'Access,
+               Ada.Real_Time.Time_Last, Document, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket analytics get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Metrics_Configuration
+              (Bucket, "deadline-metrics", Metrics, null,
+               Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket metrics put ignored deadline");
+      end;
+      declare
          Raised : Boolean := False;
       begin
          begin
@@ -1011,6 +1164,95 @@ package body Object_Storage_Test_Cases is
         (Result = Success,
          "bucket configuration persistence fixtures failed");
    end Exercise_Bucket_Configuration_Documents;
+
+   procedure Exercise_Bucket_Named_Configuration_Bounds
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package US renames Ada.Strings.Unbounded;
+      type String_Access is access String;
+      procedure Free is new Ada.Unchecked_Deallocation
+        (String, String_Access);
+      Limit_Bytes : constant Positive := 16 * 1_024 * 1_024;
+      At_Limit    : String_Access :=
+        new String'(1 .. Limit_Bytes => 'x');
+      Over_Limit  : String_Access :=
+        new String'(1 .. Limit_Bytes + 1 => 'y');
+      Document    : US.Unbounded_String;
+      Configured  : Boolean;
+      Result      : Status;
+   begin
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, At_Limit.all, "", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "named configuration rejected its exact aggregate byte limit: " &
+         Status'Image (Result));
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, At_Limit.all, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = 0,
+         "named configuration could not read an at-limit identifier");
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, At_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "named configuration could not release an at-limit identifier");
+      Store.Put_Bucket_Metrics_Configuration
+        (Bucket, "i",
+         At_Limit.all (At_Limit.all'First .. At_Limit.all'Last - 1),
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "named configuration rejected an exact aggregate document bound");
+      Store.Get_Bucket_Metrics_Configuration
+        (Bucket, "i", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Document) = Limit_Bytes - 1
+         and then US.Element (Document, 1) = 'x'
+         and then US.Element (Document, Limit_Bytes - 1) = 'x',
+         "named configuration could not read an at-limit document");
+      Store.Delete_Bucket_Metrics_Configuration
+        (Bucket, "i", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "named configuration could not release an at-limit document");
+      Store.Put_Bucket_Metrics_Configuration
+        (Bucket, "i", At_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Entity_Too_Large,
+         "named configuration accepted an over-limit aggregate document");
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, Over_Limit.all, "", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Invalid_Request,
+         "named configuration accepted an over-limit identifier");
+      Store.Get_Bucket_Analytics_Configuration
+        (Bucket, Over_Limit.all, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Invalid_Request and then not Configured
+         and then US.Length (Document) = 0,
+         "named configuration queried an over-limit identifier");
+      Store.Delete_Bucket_Metrics_Configuration
+        (Bucket, Over_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Invalid_Request,
+         "named configuration deleted an over-limit identifier");
+      Free (At_Limit);
+      Free (Over_Limit);
+   exception
+      when others =>
+         Free (At_Limit);
+         Free (Over_Limit);
+         raise;
+   end Exercise_Bucket_Named_Configuration_Bounds;
 
    procedure Exercise_Bucket_Scalar_Controls
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
@@ -3246,7 +3488,10 @@ package body Object_Storage_Test_Cases is
             "memory CORS cleanup did not release byte capacity");
       end;
       declare
-         Configuration_Store : Memory.Store (2, 4, 600);
+         --  Test-reference capacity admits the complete retained singleton
+         --  and named-configuration fixture set. Separate stores below pin
+         --  byte and per-family count rejection behavior.
+         Configuration_Store : Memory.Store (2, 4, 1_024);
       begin
          Configuration_Store.Create_Bucket
            ("configuration-bucket", null, Ada.Real_Time.Time_Last, Result);
@@ -3261,6 +3506,53 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success and then Configuration_Store.Bytes_Used = 0,
             "memory configuration cleanup did not release byte capacity");
+      end;
+      declare
+         Capacity_Store : Memory.Store (1, 1, 4);
+      begin
+         Capacity_Store.Create_Bucket
+           ("named-capacity", null, Ada.Real_Time.Time_Last, Result);
+         Capacity_Store.Put_Bucket_Analytics_Configuration
+           ("named-capacity", "abc", "12", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Capacity_Exceeded,
+            "named configuration byte capacity used count-limit status");
+      end;
+      declare
+         Boundary_Store : Memory.Store (1, 1, 16 * 1_024 * 1_024);
+      begin
+         Boundary_Store.Create_Bucket
+           ("named-boundary", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "create named-boundary memory bucket");
+         Exercise_Bucket_Named_Configuration_Bounds
+           (Boundary_Store, "named-boundary");
+      end;
+      declare
+         Limit_Store : Memory.Store (1, 1, 32 * 1_024);
+      begin
+         Limit_Store.Create_Bucket
+           ("named-limit", null, Ada.Real_Time.Time_Last, Result);
+         for Index in 1 .. 1_000 loop
+            Limit_Store.Put_Bucket_Analytics_Configuration
+              ("named-limit", "analytics" & Integer'Image (Index), "x",
+               null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "named analytics configuration reached its limit early");
+         end loop;
+         Limit_Store.Put_Bucket_Analytics_Configuration
+           ("named-limit", "analytics-over-limit", "x", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Configuration_Limit_Exceeded,
+            "named analytics count limit used capacity status");
+         Limit_Store.Put_Bucket_Metrics_Configuration
+           ("named-limit", "metrics-independent", "x", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "analytics count limit incorrectly blocked metrics state");
       end;
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
@@ -4728,6 +5020,7 @@ package body Object_Storage_Test_Cases is
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Exercise_Bucket_CORS (Store, "file-bucket");
          Exercise_Bucket_Configuration_Documents (Store, "file-bucket");
+         Exercise_Bucket_Named_Configuration_Bounds (Store, "file-bucket");
          Exercise_Bucket_Scalar_Controls (Store, "file-bucket");
          declare
             package SIO renames Ada.Streams.Stream_IO;
@@ -5002,6 +5295,21 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Configured
                and then US.To_String (Document)'Length > 0,
                "files logging state did not persist across reopen");
+            Store.Get_Bucket_Analytics_Configuration
+              ("file-bucket", "query-analytics", null,
+               Ada.Real_Time.Time_Last, Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document) =
+                 "<AnalyticsConfiguration><Id>replacement-payload</Id>" &
+                 "<StorageClassAnalysis/></AnalyticsConfiguration>",
+               "files analytics state did not persist across reopen");
+            Store.Get_Bucket_Metrics_Configuration
+              ("file-bucket", "query-metrics", null,
+               Ada.Real_Time.Time_Last, Document, Configured, Result);
+            Assert
+              (Result = Success and then not Configured,
+               "files metrics deletion did not persist across reopen");
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

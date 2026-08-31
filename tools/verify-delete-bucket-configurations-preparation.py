@@ -1018,9 +1018,9 @@ def verify_delete_analytics_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_ANALYTICS_CERTAINTY,
         "reconciliation": DELETE_ANALYTICS_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -1469,9 +1469,9 @@ def verify_metrics_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_METRICS_CERTAINTY,
         "reconciliation": DELETE_METRICS_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -2588,7 +2588,7 @@ def main() -> int:
             "removes the selected analytics configuration",
             "NoSuchConfiguration",
             "prior presence",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Analytics_Configuration_Operation",
             "added none",
             "delete_bucket_analytics",
@@ -2864,7 +2864,7 @@ def main() -> int:
             "removes the selected bucket metrics configuration",
             "NoSuchConfiguration",
             "prior presence",
-            "missing / covered / missing / covered",
+            "covered / covered / covered / covered",
             "Delete_Bucket_Metrics_Configuration_Operation",
             "added none",
             "delete_bucket_metrics",

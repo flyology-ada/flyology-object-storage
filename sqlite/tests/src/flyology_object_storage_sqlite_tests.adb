@@ -7,6 +7,7 @@ with Ada.Streams.Stream_IO;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Ada.Unchecked_Deallocation;
 with Conditional_Put_Conformance;
 with Copy_Object_Conformance;
 with Multipart_Part_Conformance;
@@ -488,6 +489,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -528,6 +531,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -557,6 +562,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -585,6 +592,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
          "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
          "ALTER TABLE buckets DROP COLUMN abac_status;" &
@@ -613,6 +622,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-documents',37);" &
          "PRAGMA user_version=14;");
       Databases.Close (Legacy);
@@ -636,6 +647,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-documents',41);" &
          "PRAGMA user_version=15;");
       Databases.Close (Legacy);
@@ -646,6 +659,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V15_Database;
+
+   procedure Create_V16_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_analytics_configurations;" &
+         "DROP TABLE bucket_metrics_configurations;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-points',43);" &
+         "PRAGMA user_version=16;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V16_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1548,7 +1584,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1594,7 +1630,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1638,10 +1674,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 16 atomically");
+         "schema-v12 migration did not publish schema 17 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1695,10 +1731,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 16 atomically");
+         "schema-v13 migration did not publish schema 17 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1778,10 +1814,10 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 16 atomically");
+         "schema-v14 migration did not publish schema 17 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1874,12 +1910,121 @@ begin
          "'bucket_logging_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v15 migration did not publish schema 16 atomically");
+         "schema-v15 migration did not publish schema 17 atomically");
    end;
    Databases.Close (Database);
+   Delete_Database;
+
+   Create_V16_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Analytics : constant String :=
+        "<AnalyticsConfiguration><Id>payload analytics</Id>" &
+        "</AnalyticsConfiguration>";
+      Metrics : constant String :=
+        "<MetricsConfiguration><Id>payload metrics</Id>" &
+        "</MetricsConfiguration>";
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Analytics_Configuration
+        (Catalog, "legacy-points", "query analytics", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v16 migration invented analytics state");
+      Catalogs.Get_Bucket_Metrics_Configuration
+        (Catalog, "legacy-points", "query metrics", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v16 migration invented metrics state");
+      Catalogs.Put_Bucket_Analytics_Configuration
+        (Catalog, "legacy-points", "query analytics", Analytics, Result);
+      Catalogs.Put_Bucket_Metrics_Configuration
+        (Catalog, "legacy-points", "query metrics", Metrics, Result);
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Analytics_Configuration
+        (Catalog, "legacy-points", "query analytics", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<AnalyticsConfiguration><Id>payload analytics</Id>" &
+             "</AnalyticsConfiguration>",
+         "migrated analytics state did not survive reopen");
+      Catalogs.Get_Bucket_Metrics_Configuration
+        (Catalog, "legacy-points", "query metrics", Document, Configured,
+         Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) =
+           "<MetricsConfiguration><Id>payload metrics</Id>" &
+             "</MetricsConfiguration>",
+         "migrated metrics state did not survive reopen");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name IN ('bucket_analytics_configurations'," &
+         "'bucket_metrics_configurations')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 17
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v16 migration did not publish schema 17 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V16_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_analytics_configurations (" &
+      "bucket_name TEXT NOT NULL COLLATE BINARY," &
+      "configuration_id BLOB NOT NULL CHECK(length(configuration_id)>0)," &
+      "document BLOB NOT NULL," &
+      "CHECK(length(configuration_id)+length(document)<=16777216)," &
+      "PRIMARY KEY(bucket_name,configuration_id)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v16 migration accepted a partial table publication");
+   end;
    Delete_Database;
 
    Create_V15_Database;
@@ -1927,6 +2072,142 @@ begin
         (Rejected,
          "schema-v9 migration accepted a partial generation publication");
    end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE bucket_metrics_configurations;" &
+      "CREATE TABLE bucket_metrics_configurations (" &
+      "bucket_name TEXT NOT NULL COLLATE BINARY," &
+      "configuration_id BLOB NOT NULL " &
+      "CHECK(length(configuration_id)>0)," &
+      "document BLOB NOT NULL," &
+      "CHECK(length(configuration_id)+length(document)<=16777216)," &
+      "PRIMARY KEY(bucket_name,configuration_id)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema17 accepted a constraint that rejects empty identifiers");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Rejected : Boolean := False;
+   begin
+      Databases.Execute
+        (Database,
+         "INSERT INTO buckets(name,created) VALUES('point-bound',1);" &
+         "INSERT INTO bucket_analytics_configurations(" &
+         "bucket_name,configuration_id,document) " &
+         "VALUES('point-bound',X'78',zeroblob(16777215));");
+      begin
+         Databases.Execute
+           (Database,
+            "INSERT INTO bucket_analytics_configurations(" &
+            "bucket_name,configuration_id,document) " &
+            "VALUES('point-bound',X'79',zeroblob(16777216));");
+      exception
+         when Databases.SQLite_Error => Rejected := True;
+      end;
+      Databases.Close (Database);
+      Assert
+        (Rejected,
+         "schema17 accepted a point configuration above the aggregate " &
+         "bound");
+   exception
+      when others =>
+         if Databases.Is_Open (Database) then
+            Databases.Close (Database);
+         end if;
+         raise;
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE bucket_metrics_configurations;" &
+      "CREATE TABLE bucket_metrics_configurations (" &
+      "bucket_name TEXT NOT NULL COLLATE BINARY," &
+      "configuration_id TEXT NOT NULL CHECK(length(configuration_id)>0)," &
+      "document BLOB NOT NULL," &
+      "CHECK(length(configuration_id)+length(document)<=16777216)," &
+      "PRIMARY KEY(bucket_name,configuration_id)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema17 accepted a non-BLOB point configuration identifier");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "INSERT INTO buckets(name,created) VALUES('point-limit',1);" &
+      "WITH RECURSIVE identifiers(value) AS (" &
+      "VALUES(1) UNION ALL SELECT value+1 FROM identifiers " &
+      "WHERE value<1000) " &
+      "INSERT INTO bucket_analytics_configurations(" &
+      "bucket_name,configuration_id,document) " &
+      "SELECT 'point-limit',CAST(value AS BLOB),X'7B7D' FROM identifiers;");
+   Databases.Close (Database);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Put_Bucket_Analytics_Configuration
+        (Catalog, "point-limit", "overflow", "{}", Result);
+      Assert
+        (Result = Configuration_Limit_Exceeded,
+         "SQLite analytics accepted a new configuration above its limit");
+      Catalogs.Put_Bucket_Analytics_Configuration
+        (Catalog, "point-limit", "1", "replacement", Result);
+      Catalogs.Get_Bucket_Analytics_Configuration
+        (Catalog, "point-limit", "1", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = "replacement",
+         "SQLite analytics limit rejected an existing configuration");
+      Catalogs.Put_Bucket_Metrics_Configuration
+        (Catalog, "point-limit", "first", "{}", Result);
+      Assert
+        (Result = Success,
+         "SQLite analytics limit leaked into the metrics family");
+   end;
+   Catalogs.Close (Catalog);
    Delete_Database;
 
    Catalogs.Open (Catalog, Database_Path);
@@ -3115,8 +3396,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16,
-         "schema-v1 migration did not publish version 16");
+         and then Databases.Column (Version, 0) = 17,
+         "schema-v1 migration did not publish version 17");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3129,10 +3410,12 @@ begin
          "'bucket_encryption_documents'," &
          "'bucket_ownership_controls_documents'," &
          "'bucket_lifecycle_documents'," &
-         "'bucket_logging_documents')");
+         "'bucket_logging_documents'," &
+         "'bucket_analytics_configurations'," &
+         "'bucket_metrics_configurations')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 20,
+         and then Databases.Column (Tables, 0) = 22,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -3198,8 +3481,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16,
-         "schema-v2 migration did not publish version 16");
+         and then Databases.Column (Version, 0) = 17,
+         "schema-v2 migration did not publish version 17");
    end;
    declare
       Tables : Databases.Statement;
@@ -3235,10 +3518,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 16 tables");
+         "schema-v3 migration did not publish schema 17 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3309,8 +3592,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 16,
-            "schema-v4 migration did not publish version 16");
+            and then Databases.Column (Version, 0) = 17,
+            "schema-v4 migration did not publish version 17");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3377,7 +3660,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 16
+            and then Databases.Column (Version, 0) = 17
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -3455,8 +3738,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16,
-         "schema-v6 migration did not publish version 16");
+         and then Databases.Column (Version, 0) = 17,
+         "schema-v6 migration did not publish version 17");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3587,7 +3870,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -3658,7 +3941,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 16
+         and then Databases.Column (Version, 0) = 17
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -4696,6 +4979,298 @@ begin
             "SQLite lifecycle state could not be restored");
       end;
       declare
+         Analytics_1 : constant String :=
+           "<AnalyticsConfiguration><Id>payload-a</Id>" &
+           "</AnalyticsConfiguration>";
+         Analytics_2 : constant String :=
+           "<AnalyticsConfiguration><Id>payload-replaced</Id>" &
+           "</AnalyticsConfiguration>";
+         Analytics_Other : constant String :=
+           "<AnalyticsConfiguration><Id>payload-other</Id>" &
+           "</AnalyticsConfiguration>";
+         Metrics_1 : constant String :=
+           "<MetricsConfiguration><Id>payload-m</Id></MetricsConfiguration>";
+         Metrics_2 : constant String :=
+           "<MetricsConfiguration><Id>payload-new</Id>" &
+           "</MetricsConfiguration>";
+         type String_Access is access String;
+         procedure Free is new Ada.Unchecked_Deallocation
+           (String, String_Access);
+         Limit_Bytes : constant Positive := 16 * 1_024 * 1_024;
+         At_Limit    : String_Access :=
+           new String'(1 .. Limit_Bytes => 'x');
+         Over_Limit  : String_Access :=
+           new String'(1 .. Limit_Bytes + 1 => 'y');
+         Observed   : US.Unbounded_String;
+         Configured : Boolean;
+         Cancel     : aliased Flyology.Cancellation.Token;
+
+         procedure Expect_Cancelled
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Cancelled;
+
+         procedure Expect_Timeout
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Timeout;
+
+         procedure Put_Analytics_Cancelled is
+         begin
+            Store.Put_Bucket_Analytics_Configuration
+              ("sqlite-bucket", "query-a", Analytics_1, Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_Analytics_Cancelled;
+
+         procedure Get_Analytics_Cancelled is
+         begin
+            Store.Get_Bucket_Analytics_Configuration
+              ("sqlite-bucket", "query-a", Cancel'Access,
+               Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         end Get_Analytics_Cancelled;
+
+         procedure Delete_Analytics_Cancelled is
+         begin
+            Store.Delete_Bucket_Analytics_Configuration
+              ("sqlite-bucket", "query-a", Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Delete_Analytics_Cancelled;
+
+         procedure Put_Metrics_Expired is
+         begin
+            Store.Put_Bucket_Metrics_Configuration
+              ("sqlite-bucket", "query-m", Metrics_1, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_Metrics_Expired;
+
+         procedure Get_Metrics_Expired is
+         begin
+            Store.Get_Bucket_Metrics_Configuration
+              ("sqlite-bucket", "query-m", null,
+               Ada.Real_Time.Time_First, Observed, Configured, Result);
+         end Get_Metrics_Expired;
+
+         procedure Delete_Metrics_Expired is
+         begin
+            Store.Delete_Bucket_Metrics_Configuration
+              ("sqlite-bucket", "query-m", null,
+               Ada.Real_Time.Time_First, Result);
+         end Delete_Metrics_Expired;
+      begin
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Observed) = 0,
+            "SQLite new bucket unexpectedly had analytics state");
+         Store.Get_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured
+            and then US.Length (Observed) = 0,
+            "SQLite new bucket unexpectedly had metrics state");
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "", Analytics_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Analytics_1,
+            "SQLite analytics rejected a present empty query identifier");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite analytics could not delete an empty query identifier");
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", At_Limit.all, "", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite rejected an exact-limit configuration identifier");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("sqlite-bucket", At_Limit.all, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "i",
+            At_Limit.all
+              (At_Limit.all'First .. At_Limit.all'Last - 1), null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite rejected an exact aggregate configuration bound");
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "i", null, Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "i", At_Limit.all, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Entity_Too_Large,
+            "SQLite accepted an over-limit aggregate configuration");
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", Over_Limit.all, "", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite accepted an over-limit configuration identifier");
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", Over_Limit.all, null,
+            Ada.Real_Time.Time_Last, Observed, Configured, Result);
+         Assert
+           (Result = Invalid_Request and then not Configured
+            and then US.Length (Observed) = 0,
+            "SQLite queried an over-limit configuration identifier");
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", Over_Limit.all, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite deleted an over-limit configuration identifier");
+         Free (At_Limit);
+         Free (Over_Limit);
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", Analytics_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Analytics_1,
+            "SQLite analytics query key did not retain its independent Id");
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-other", Analytics_Other, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", Analytics_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Analytics_2,
+            "SQLite analytics replacement lost exact bytes");
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-other", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Analytics_Other,
+            "SQLite analytics query keys aliased each other");
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", Metrics_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Metrics_1,
+            "SQLite metrics query key did not retain its independent Id");
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", Metrics_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Metrics_2,
+            "SQLite metrics replacement lost exact bytes");
+         Store.Put_Bucket_Analytics_Configuration
+           ("missing-bucket", "query-a", Analytics_1, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite analytics put lost missing-bucket status");
+         Store.Get_Bucket_Metrics_Configuration
+           ("missing-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Not_Found and then not Configured,
+            "SQLite metrics get lost missing-bucket status");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("missing-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite analytics delete lost missing-bucket status");
+         Cancel.Request;
+         Expect_Cancelled
+           (Put_Analytics_Cancelled'Access,
+            "SQLite analytics put ignored cancellation");
+         Expect_Cancelled
+           (Get_Analytics_Cancelled'Access,
+            "SQLite analytics get ignored cancellation");
+         Expect_Cancelled
+           (Delete_Analytics_Cancelled'Access,
+            "SQLite analytics delete ignored cancellation");
+         Expect_Timeout
+           (Put_Metrics_Expired'Access,
+            "SQLite metrics put ignored deadline");
+         Expect_Timeout
+           (Get_Metrics_Expired'Access,
+            "SQLite metrics get ignored deadline");
+         Expect_Timeout
+           (Delete_Metrics_Expired'Access,
+            "SQLite metrics delete ignored deadline");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert (Result = Success, "SQLite analytics deletion failed");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Success,
+            "SQLite analytics repeated deletion was not idempotent");
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-other", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Analytics_Other,
+            "SQLite analytics deletion removed a different query key");
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Result);
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Success,
+            "SQLite metrics repeated deletion was not idempotent");
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", Analytics_2, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", Metrics_2, null,
+            Ada.Real_Time.Time_Last, Result);
+      end;
+      declare
          First : constant String :=
            "{""Version"":""2012-10-17"",""Statement"":[]}";
          Second : constant String :=
@@ -5568,6 +6143,31 @@ begin
            (Result = Success and then Configured
             and then US.To_String (Document) = Logging,
             "SQLite logging state did not survive reopen");
+      end;
+      declare
+         Analytics : constant String :=
+           "<AnalyticsConfiguration><Id>payload-replaced</Id>" &
+           "</AnalyticsConfiguration>";
+         Metrics : constant String :=
+           "<MetricsConfiguration><Id>payload-new</Id>" &
+           "</MetricsConfiguration>";
+         Document   : US.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "query-a", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Analytics,
+            "SQLite analytics state did not survive reopen");
+         Store.Get_Bucket_Metrics_Configuration
+           ("sqlite-bucket", "query-m", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) = Metrics,
+            "SQLite metrics state did not survive reopen");
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

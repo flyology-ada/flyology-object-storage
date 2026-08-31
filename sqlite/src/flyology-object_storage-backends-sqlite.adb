@@ -907,6 +907,180 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Get_Bucket_Logging;
 
+   overriding procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Named_Configuration (Identifier, Document) then
+         Result := Entity_Too_Large;
+      else
+         Catalogs.Put_Bucket_Analytics_Configuration
+           (Item.Catalog, Bucket, Identifier, Document, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Analytics_Configuration;
+
+   overriding procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Analytics_Configuration
+           (Item.Catalog, Bucket, Identifier, Document, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Analytics_Configuration;
+
+   overriding procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Bucket_Analytics_Configuration
+           (Item.Catalog, Bucket, Identifier, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Analytics_Configuration;
+
+   overriding procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Named_Configuration (Identifier, Document) then
+         Result := Entity_Too_Large;
+      else
+         Catalogs.Put_Bucket_Metrics_Configuration
+           (Item.Catalog, Bucket, Identifier, Document, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Metrics_Configuration;
+
+   overriding procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Metrics_Configuration
+           (Item.Catalog, Bucket, Identifier, Document, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Metrics_Configuration;
+
+   overriding procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Bucket_Metrics_Configuration
+           (Item.Catalog, Bucket, Identifier, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Metrics_Configuration;
+
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;
       Bucket   : String;

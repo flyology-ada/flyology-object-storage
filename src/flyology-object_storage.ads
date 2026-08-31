@@ -20,6 +20,7 @@ is
    --  @enum Already_Exists Requested resource already exists
    --  @enum Bucket_Not_Empty Bucket still contains objects
    --  @enum Capacity_Exceeded Bounded backend capacity was exceeded
+   --  @enum Configuration_Limit_Exceeded Modeled configuration count reached
    --  @enum Invalid_Request Request did not satisfy the storage contract
    --  @enum Invalid_Range Requested byte range is invalid
    --  @enum Invalid_Part Multipart part is invalid
@@ -43,6 +44,7 @@ is
       Already_Exists,
       Bucket_Not_Empty,
       Capacity_Exceeded,
+      Configuration_Limit_Exceeded,
       Invalid_Request,
       Invalid_Range,
       Invalid_Part,

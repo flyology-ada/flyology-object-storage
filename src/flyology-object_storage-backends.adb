@@ -27,6 +27,14 @@ package body Flyology.Object_Storage.Backends is
      (Document : String) return Boolean is
      (Byte_Count (Document'Length) <= Maximum_Bucket_Configuration_Bytes);
 
+   function Valid_Bucket_Named_Configuration
+     (Identifier : String; Document : String) return Boolean is
+     (Byte_Count (Identifier'Length) <=
+        Maximum_Bucket_Configuration_Bytes
+      and then Byte_Count (Document'Length) <=
+        Maximum_Bucket_Configuration_Bytes -
+          Byte_Count (Identifier'Length));
+
    function Valid_Bucket_Policy (Policy : String) return Boolean is
      (Byte_Count (Policy'Length) <= Maximum_Bucket_Policy_Bytes);
 

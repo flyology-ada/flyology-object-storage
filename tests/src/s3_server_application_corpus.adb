@@ -17,6 +17,7 @@ with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Analytics;
 with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
@@ -31,6 +32,7 @@ with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
+with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versions;
@@ -55,6 +57,7 @@ procedure S3_Server_Application_Corpus is
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Core renames Flyology.Object_Storage.S3.Core;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
+   package Analytics renames Flyology.Object_Storage.S3.Analytics;
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
@@ -66,6 +69,8 @@ procedure S3_Server_Application_Corpus is
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
+   package Metrics renames Flyology.Object_Storage.S3.Metrics;
+   package XML renames Flyology.Object_Storage.S3.XML;
    package Backends renames Flyology.Object_Storage.Backends;
    package Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
@@ -1191,6 +1196,29 @@ procedure S3_Server_Application_Corpus is
            "Connection: close" & CRLF & CRLF & Payload;
       end;
    end Signed_Query_Body_Request;
+
+   function Signed_Query_Put_Declared_Length_Request
+     (Target : String;
+      Query  : SigV4.Name_Value_Array;
+      Length : String) return String
+   is
+      Payload_Hash : constant String := SigV4.Empty_Payload_Hash;
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Query_Text : constant String := SigV4.Canonical_Query (Query);
+   begin
+      return "PUT " & Target & "?" & Query_Text & " HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: " & Length & CRLF & "Connection: close" & CRLF &
+        CRLF;
+   end Signed_Query_Put_Declared_Length_Request;
 
    function Signed_Query_Body_Header_Request
      (Method       : String;
@@ -6800,6 +6828,415 @@ begin
                   "x-amz-request-payer", "requester")),
             "<Code>InvalidRequest</Code>"),
          "GetBucketLogging accepted unmodeled RequestPayer");
+   end;
+
+   declare
+      Namespace : constant String :=
+        "http://s3.amazonaws.com/doc/2006-03-01/";
+      Analytics_ID : constant String := "server analytics";
+      Metrics_ID : constant String := "server metrics";
+      Analytics_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("analytics", ""),
+         SigV4.Pair ("id", Analytics_ID));
+      Analytics_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("analytics", ""),
+         SigV4.Pair ("id", Analytics_ID),
+         SigV4.Pair ("x-id", "GetBucketAnalyticsConfiguration"));
+      Analytics_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("analytics", ""),
+         SigV4.Pair ("id", Analytics_ID));
+      Analytics_Empty : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("analytics", ""),
+         SigV4.Pair ("id", ""));
+      Metrics_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("metrics", ""),
+         SigV4.Pair ("id", Metrics_ID),
+         SigV4.Pair ("x-id", "PutBucketMetricsConfiguration"));
+      Metrics_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("metrics", ""),
+         SigV4.Pair ("id", Metrics_ID));
+      Metrics_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("metrics", ""),
+         SigV4.Pair ("id", Metrics_ID),
+         SigV4.Pair ("x-id", "DeleteBucketMetricsConfiguration"));
+      Metrics_Empty : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("metrics", ""),
+         SigV4.Pair ("id", ""));
+      Analytics_Document : constant String :=
+        "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
+        "<Id>stored analytics</Id><StorageClassAnalysis/>" &
+        "</AnalyticsConfiguration>";
+      Metrics_Document : constant String :=
+        "<MetricsConfiguration xmlns=""" & Namespace & """>" &
+        "<Id>stored metrics</Id></MetricsConfiguration>";
+      Canonical_Analytics : constant String :=
+        Analytics.Serialize
+          (Analytics.Parse (Analytics_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Metrics : constant String :=
+        Metrics.Serialize
+          (Metrics.Parse (Metrics_Document, XML.Default_Limits),
+           XML.Default_Limits);
+
+      function Put
+        (Query : SigV4.Name_Value_Array;
+         Document : String;
+         Extra : String := "";
+         Corrupt_Signature : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Query, Document, Extra,
+               Corrupt_Signature => Corrupt_Signature)));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "GetBucketAnalyticsConfiguration did not report absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Analytics_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketAnalyticsConfiguration confused bucket and state " &
+         "absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "GetBucketMetricsConfiguration did not report absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Metrics_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketMetricsConfiguration confused bucket and state absence");
+      Require
+        (Has (Put (Analytics_Empty, Analytics_Document), "200 OK"),
+         "PutBucketAnalyticsConfiguration rejected an empty id");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Empty))) =
+           Canonical_Analytics,
+         "GetBucketAnalyticsConfiguration lost an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Analytics_Empty)),
+            "204 No Content"),
+         "DeleteBucketAnalyticsConfiguration rejected an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Empty)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "empty analytics id remained configured after deletion");
+      Require
+        (Has (Put (Metrics_Empty, Metrics_Document), "200 OK"),
+         "PutBucketMetricsConfiguration rejected an empty id");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Empty))) =
+           Canonical_Metrics,
+         "GetBucketMetricsConfiguration lost an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Metrics_Empty)),
+            "204 No Content"),
+         "DeleteBucketMetricsConfiguration rejected an empty id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Empty)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "empty metrics id remained configured after deletion");
+      Require
+        (Has (Put (Analytics_Put, Analytics_Document), "200 OK"),
+         "PutBucketAnalyticsConfiguration rejected valid XML");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Get))) =
+           Canonical_Analytics,
+         "GetBucketAnalyticsConfiguration lost canonical state");
+      Require
+        (Has (Put (Metrics_Put, Metrics_Document), "200 OK"),
+         "PutBucketMetricsConfiguration rejected valid XML");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Get))) =
+           Canonical_Metrics,
+         "GetBucketMetricsConfiguration lost canonical state");
+      Require
+        (Has
+           (Put
+              (Analytics_Put,
+               "<AnalyticsConfiguration><Id>bad</Id>" &
+               "</AnalyticsConfiguration>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketAnalyticsConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Put (Metrics_Put, "<MetricsConfiguration/>"),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketMetricsConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Put
+              (Analytics_Put, Analytics_Document,
+               "content-md5: " & Content_MD5 (Analytics_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAnalyticsConfiguration accepted Content-MD5");
+      Require
+        (Has
+           (Put
+              (Metrics_Put, Metrics_Document,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Metrics_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketMetricsConfiguration accepted checksum controls");
+      Require
+        (Has
+           (Put
+              (Analytics_Put, Analytics_Document,
+               "x-amz-request-payer: requester" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAnalyticsConfiguration accepted RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Get,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketMetricsConfiguration accepted RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketAnalyticsConfiguration ignored expected owner");
+      Require
+        (Has
+           (Put
+              (Metrics_Put, Metrics_Document,
+               "x-amz-expected-bucket-owner: different-owner" & CRLF),
+            "403 Forbidden"),
+         "PutBucketMetricsConfiguration ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("analytics", ""),
+                   SigV4.Pair ("x-id",
+                               "GetBucketAnalyticsConfiguration")))),
+            "400 Bad Request"),
+         "GetBucketAnalyticsConfiguration accepted a missing id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("metrics", ""),
+                   SigV4.Pair ("id", Metrics_ID),
+                   SigV4.Pair ("id", "duplicate"),
+                   SigV4.Pair
+                     ("x-id", "GetBucketMetricsConfiguration")))),
+            "400 Bad Request"),
+         "GetBucketMetricsConfiguration accepted a duplicate id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("analytics", ""),
+                   SigV4.Pair ("id", Analytics_ID),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketAnalyticsConfiguration accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("metrics", ""),
+                   SigV4.Pair ("id", Metrics_ID),
+                   SigV4.Pair
+                     ("x-id", "GetBucketAnalyticsConfiguration")))),
+            "400 Bad Request"),
+         "GetBucketMetricsConfiguration accepted a cross-family x-id");
+      Require
+        (Has
+           (Put
+              ((SigV4.Pair ("analytics", ""),
+                SigV4.Pair ("x-id", "PutBucketAnalyticsConfiguration")),
+               "<bad/>", Corrupt_Signature => True),
+            "403 Forbidden"),
+         "point-configuration validation ran before authentication");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Put_Declared_Length_Request
+                 ("/test-bucket", Analytics_Put,
+                  Ada.Strings.Fixed.Trim
+                    (Natural'Image
+                       (XML.Default_Limits.Maximum_Document_Bytes + 1),
+                     Ada.Strings.Both))),
+            "<Code>EntityTooLarge</Code>"),
+         "PutBucketAnalyticsConfiguration accepted an oversized document");
+      declare
+         Limit_Bucket : constant String := "configuration-limit-bucket";
+         Result       : Flyology.Object_Storage.Status;
+
+         function Identifier
+           (Prefix : String; Index : Positive) return String is
+           (Prefix & Ada.Strings.Fixed.Trim
+              (Positive'Image (Index), Ada.Strings.Both));
+
+         function Limit_Put
+           (Family, Identifier : String; Document : String) return String is
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Limit_Bucket,
+                  (SigV4.Pair (Family, ""),
+                   SigV4.Pair ("id", Identifier)),
+                  Document)));
+      begin
+         Store.Create_Bucket
+           (Limit_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "point-configuration limit bucket creation failed");
+         for Index in 1 .. 1_000 loop
+            Store.Put_Bucket_Analytics_Configuration
+              (Limit_Bucket, Identifier ("analytics-", Index),
+               Canonical_Analytics, null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "analytics limit fixture reached its bound early");
+            Store.Put_Bucket_Metrics_Configuration
+              (Limit_Bucket, Identifier ("metrics-", Index),
+               Canonical_Metrics, null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "metrics limit fixture reached its bound early");
+         end loop;
+         declare
+            Response : constant String :=
+              Limit_Put
+                ("analytics", "analytics-over-limit", Analytics_Document);
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has
+                 (Response, "<Code>TooManyConfigurations</Code>"),
+               "PutBucketAnalyticsConfiguration lost its modeled limit " &
+               "error");
+         end;
+         Require
+           (Has (Limit_Put ("analytics", "analytics-1",
+                            Analytics_Document),
+                 "200 OK"),
+            "analytics limit rejected replacement of an existing id");
+         declare
+            Response : constant String :=
+              Limit_Put ("metrics", "metrics-over-limit", Metrics_Document);
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has
+                 (Response, "<Code>TooManyConfigurations</Code>"),
+               "PutBucketMetricsConfiguration lost its modeled limit " &
+               "error");
+         end;
+         Require
+           (Has (Limit_Put ("metrics", "metrics-1", Metrics_Document),
+                 "200 OK"),
+            "metrics limit rejected replacement of an existing id");
+         Store.Delete_Bucket
+           (Limit_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "point-configuration limit bucket cleanup failed");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Analytics_Delete)),
+            "204 No Content"),
+         "DeleteBucketAnalyticsConfiguration failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Analytics_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "DeleteBucketAnalyticsConfiguration left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Analytics_Delete)),
+            "204 No Content"),
+         "DeleteBucketAnalyticsConfiguration was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Analytics_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketAnalyticsConfiguration confused bucket absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Metrics_Delete)),
+            "204 No Content"),
+         "DeleteBucketMetricsConfiguration failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Metrics_Get)),
+            "<Code>NoSuchConfiguration</Code>"),
+         "DeleteBucketMetricsConfiguration left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Metrics_Delete)),
+            "204 No Content"),
+         "DeleteBucketMetricsConfiguration was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Metrics_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketMetricsConfiguration confused bucket absence");
    end;
 
    declare

@@ -1,4 +1,5 @@
 with Ada.Finalization;
+with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Real_Time;
 with Ada.Strings.Unbounded;
 with Ada.Streams;
@@ -10,9 +11,9 @@ with Flyology.Object_Storage.Tags;
 --  uploads, and parts; retaining history therefore consumes object slots.
 --  Byte_Capacity covers retained committed, staged, and in-progress object
 --  payload buffers plus retained opaque bucket-configuration bytes, including
---  policy, CORS, encryption, ownership controls, lifecycle, and logging;
---  atomic replacement and multipart assembly therefore require coexistence
---  headroom.
+--  policy, CORS, encryption, ownership controls, lifecycle, logging,
+--  analytics, and metrics; atomic replacement and multipart assembly
+--  therefore require coexistence headroom.
 --  It implements the same contract as durable backends and is the reference
 --  oracle for conformance tests; capacity exhaustion is an ordinary reported
 --  outcome.
@@ -272,6 +273,108 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline   : Ada.Real_Time.Time;
       Document   : out Ada.Strings.Unbounded.Unbounded_String;
       Configured : out Boolean;
+      Result     : out Status);
+
+   --  Retain one analytics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Canonical analytics-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one analytics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one analytics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Retain one metrics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Canonical metrics-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one metrics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one metrics configuration by its exact request identifier.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
 
    overriding procedure Put_Bucket_Public_Access_Block
@@ -721,6 +824,15 @@ private
        Ada.Strings.Unbounded.Unbounded_String;
    type Configuration_Presence_Array is array
      (Singleton_Configuration_Kind) of Boolean;
+   type Named_Configuration_Kind is
+     (Analytics_Configuration, Metrics_Configuration);
+   package Named_Configuration_Maps is new
+     Ada.Containers.Indefinite_Ordered_Maps
+       (Key_Type     => String,
+        Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+        "="          => Ada.Strings.Unbounded."=");
+   type Named_Configuration_Map_Array is array
+     (Named_Configuration_Kind) of Named_Configuration_Maps.Map;
 
    type Byte_Array_Access is access Ada.Streams.Stream_Element_Array;
 
@@ -764,6 +876,7 @@ private
         (others => False);
       Configuration_Documents : Configuration_Document_Array;
       Configuration_Metadata : Configuration_Document_Array;
+      Named_Configurations : Named_Configuration_Map_Array;
       Public_Access_Block_Configured : Boolean := False;
       Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
         (others => <>);
@@ -899,6 +1012,24 @@ private
         (Name   : String;
          Kind   : Singleton_Configuration_Kind;
          Result : out Status);
+      procedure Put_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Document   : String;
+         Result     : out Status);
+      procedure Get_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Delete_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Result     : out Status);
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
          Configuration : Bucket_Public_Access_Block_Configuration;

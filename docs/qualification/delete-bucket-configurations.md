@@ -8,9 +8,11 @@ DeleteBucketMetadataConfiguration,
 DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration also have
 provider-owned composable operations and typed synchronous waits that use their
-corresponding state machines. `DeleteBucketLifecycle` now also has independent
-backend and server coverage; the shared client corpus does not manufacture
-that evidence for the remaining operations. `DeleteBucketPolicy` and
+corresponding state machines. `DeleteBucketLifecycle`,
+`DeleteBucketAnalyticsConfiguration`, and `DeleteBucketMetricsConfiguration`
+now also have independent backend and server coverage; the shared client
+corpus does not manufacture that evidence for the remaining operations.
+`DeleteBucketPolicy` and
 `DeletePublicAccessBlock` have independent coverage in
 [bucket-policy.md](bucket-policy.md) and
 [public-access-block.md](public-access-block.md). No external-provider
@@ -230,15 +232,14 @@ malformed, and one-past bounded response faults against the same internal
 decoder and executor machinery.
 
 The machine ledger records `DeleteBucketEncryption`, `DeleteBucketLifecycle`,
+`DeleteBucketAnalyticsConfiguration`, `DeleteBucketMetricsConfiguration`,
 `DeleteBucketOwnershipControls`, `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
-their independent backend and server evidence. The other eight operations
-remain
-`missing / covered / missing / covered`; the additional replication,
-analytics, metrics, intelligent-tiering, metadata, metadata-table, website,
-and inventory composable clients do not change those ledger tuples.
-This client corpus does not manufacture their backend persistence or server
-routes.
+their independent backend and server evidence. The other six operations
+remain `missing / covered / missing / covered`; the additional replication,
+intelligent-tiering, metadata, metadata-table, website, and inventory
+composable clients do not change those ledger tuples. This client corpus does
+not manufacture their backend persistence or server routes.
 
 `DeleteBucketEncryption`, `DeleteBucketLifecycle`,
 `DeleteBucketReplication`, `DeleteBucketWebsite`,
@@ -252,11 +253,11 @@ routes.
 `DeleteBucketPolicy`, and
 `DeletePublicAccessBlock`
 have operation-specific reviewed registry lanes. The independent encryption,
-lifecycle, ownership-controls, public-access-block, and policy records are
-`covered / covered / covered / covered`, while the other lanes remain
-`missing / covered / missing / covered`. Each lane is conditional on every
-maintained command succeeding and does not convert client evidence into
-directory-bucket or external-provider qualification.
+lifecycle, analytics, metrics, ownership-controls, public-access-block, and
+policy records are `covered / covered / covered / covered`, while the other
+lanes remain `missing / covered / missing / covered`. Each lane is conditional
+on every maintained command succeeding and does not convert client evidence
+into directory-bucket or external-provider qualification.
 
 ## Gate evidence
 

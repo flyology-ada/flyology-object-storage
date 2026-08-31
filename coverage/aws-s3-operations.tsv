@@ -8,7 +8,7 @@ CreateBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 CreateMultipartUpload	core	covered	covered	covered	covered
 CreateSession	extended	missing	covered	missing	covered
 DeleteBucket	core	covered	covered	covered	covered
-DeleteBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
+DeleteBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 DeleteBucketCors	extended	covered	covered	covered	covered
 DeleteBucketEncryption	extended	covered	covered	covered	covered
 DeleteBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
@@ -16,7 +16,7 @@ DeleteBucketInventoryConfiguration	extended	missing	covered	missing	covered
 DeleteBucketLifecycle	extended	covered	covered	covered	covered
 DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
-DeleteBucketMetricsConfiguration	extended	missing	covered	missing	covered
+DeleteBucketMetricsConfiguration	extended	covered	covered	covered	covered
 DeleteBucketOwnershipControls	extended	covered	covered	covered	covered
 DeleteBucketPolicy	extended	covered	covered	covered	covered
 DeleteBucketReplication	extended	missing	covered	missing	covered
@@ -30,7 +30,7 @@ DeletePublicAccessBlock	extended	covered	covered	covered	covered
 GetBucketAbac	extended	covered	covered	covered	covered
 GetBucketAccelerateConfiguration	extended	covered	covered	covered	covered
 GetBucketAcl	extended	missing	covered	covered	covered
-GetBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
+GetBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	covered	covered	covered	covered
 GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
@@ -41,7 +41,7 @@ GetBucketLocation	core	covered	covered	covered	covered
 GetBucketLogging	extended	covered	covered	covered	covered
 GetBucketMetadataConfiguration	extended	missing	covered	missing	covered
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
-GetBucketMetricsConfiguration	extended	missing	covered	missing	covered
+GetBucketMetricsConfiguration	extended	covered	covered	covered	covered
 GetBucketNotification	extended	missing	partial	missing	covered
 GetBucketNotificationConfiguration	extended	missing	covered	missing	covered
 GetBucketOwnershipControls	extended	covered	covered	covered	covered
@@ -79,7 +79,7 @@ ListParts	core	covered	covered	covered	covered
 PutBucketAbac	extended	covered	covered	covered	covered
 PutBucketAccelerateConfiguration	extended	covered	covered	covered	covered
 PutBucketAcl	extended	missing	covered	missing	covered
-PutBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
+PutBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	covered	covered	covered	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
@@ -87,7 +87,7 @@ PutBucketInventoryConfiguration	extended	missing	covered	missing	covered
 PutBucketLifecycle	extended	missing	partial	missing	covered
 PutBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 PutBucketLogging	extended	covered	covered	covered	covered
-PutBucketMetricsConfiguration	extended	missing	covered	missing	covered
+PutBucketMetricsConfiguration	extended	covered	covered	covered	covered
 PutBucketNotification	extended	missing	partial	missing	covered
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
 PutBucketOwnershipControls	extended	covered	covered	covered	covered

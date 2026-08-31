@@ -73,6 +73,10 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one canonical lifecycle document.
    Bucket_Logging_Magic : constant String := "FOSLOG01";
    --  Persisted-format discriminator for one canonical logging document.
+   Bucket_Analytics_Magic : constant String := "FOSANL01";
+   --  Persisted-format discriminator for one named analytics configuration.
+   Bucket_Metrics_Magic : constant String := "FOSMET01";
+   --  Persisted-format discriminator for one named metrics configuration.
    Bucket_ABAC_Magic : constant String := "FOSABA01";
    --  Persisted-format discriminator for one bucket ABAC state.
    Bucket_Acceleration_Magic : constant String := "FOSACC01";
@@ -402,6 +406,18 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "logging.fos"));
    --  Persisted files-layout name paired with FOSLOG01.
+
+   function Bucket_Analytics_Path
+     (Item : Store; Bucket, Identifier : String) return String is
+     (Join
+        (Configuration_Path (Item, Bucket),
+         "analytics-" & GNAT.SHA256.Digest (Identifier) & ".fos"));
+
+   function Bucket_Metrics_Path
+     (Item : Store; Bucket, Identifier : String) return String is
+     (Join
+        (Configuration_Path (Item, Bucket),
+         "metrics-" & GNAT.SHA256.Digest (Identifier) & ".fos"));
 
    function Bucket_ABAC_Path
      (Item : Store; Bucket : String) return String is
@@ -1238,17 +1254,36 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Write_Bytes;
 
+   File_String_IO_Chunk_Bytes : constant Positive := 64 * 1_024;
+   --  Match the files backend's existing streaming chunk convention while
+   --  bounding the stack working set independently of the admitted value.
+
    procedure Write_String (File : in out SIO.File_Type; Value : String) is
       Data : Ada.Streams.Stream_Element_Array
-        (1 .. Ada.Streams.Stream_Element_Offset (Value'Length));
-      Position : Ada.Streams.Stream_Element_Offset := Data'First;
+        (1 .. Ada.Streams.Stream_Element_Offset
+          (File_String_IO_Chunk_Bytes));
+      Source_Position : Integer := Value'First;
    begin
-      for Character_Value of Value loop
-         Data (Position) :=
-           Ada.Streams.Stream_Element (Character'Pos (Character_Value));
-         Position := Position + 1;
+      while Source_Position <= Value'Last loop
+         declare
+            Count : constant Natural :=
+              Natural'Min
+                (File_String_IO_Chunk_Bytes,
+                 Value'Last - Source_Position + 1);
+            Last : constant Ada.Streams.Stream_Element_Offset :=
+              Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+         begin
+            for Offset in 0 .. Count - 1 loop
+               Data
+                 (Data'First
+                  + Ada.Streams.Stream_Element_Offset (Offset)) :=
+                 Ada.Streams.Stream_Element
+                   (Character'Pos (Value (Source_Position + Offset)));
+            end loop;
+            Write_Bytes (File, Data (Data'First .. Last));
+            Source_Position := Source_Position + Count;
+         end;
       end loop;
-      Write_Bytes (File, Data);
    end Write_String;
 
    procedure Write_U32 (File : in out SIO.File_Type; Value : Natural) is
@@ -1329,17 +1364,70 @@ package body Flyology.Object_Storage.Backends.Files is
    is
       Result : String (1 .. Length);
       Data   : Ada.Streams.Stream_Element_Array
-        (1 .. Ada.Streams.Stream_Element_Offset (Length));
+        (1 .. Ada.Streams.Stream_Element_Offset
+          (File_String_IO_Chunk_Bytes));
+      Target_Position : Positive := Result'First;
+      Remaining       : Natural := Length;
    begin
-      Read_Exact (File, Data);
-      for Index in Result'Range loop
-         Result (Index) := Character'Val
-           (Data
-              (Data'First
-               + Ada.Streams.Stream_Element_Offset (Index - Result'First)));
+      while Remaining > 0 loop
+         declare
+            Count : constant Natural :=
+              Natural'Min (File_String_IO_Chunk_Bytes, Remaining);
+            Last : constant Ada.Streams.Stream_Element_Offset :=
+              Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+         begin
+            Read_Exact (File, Data (Data'First .. Last));
+            for Offset in 0 .. Count - 1 loop
+               Result (Target_Position + Offset) := Character'Val
+                 (Data
+                    (Data'First
+                     + Ada.Streams.Stream_Element_Offset (Offset)));
+            end loop;
+            Target_Position := Target_Position + Count;
+            Remaining := Remaining - Count;
+         end;
       end loop;
       return Result;
    end Read_String;
+
+   procedure Read_Unbounded_String
+     (File   : in out SIO.File_Type;
+      Length : Natural;
+      Value  : out US.Unbounded_String)
+   is
+      Remaining : Natural := Length;
+   begin
+      Value := US.Null_Unbounded_String;
+      while Remaining > 0 loop
+         declare
+            Count : constant Natural :=
+              Natural'Min (File_String_IO_Chunk_Bytes, Remaining);
+         begin
+            US.Append (Value, Read_String (File, Count));
+            Remaining := Remaining - Count;
+         end;
+      end loop;
+   exception
+      when others =>
+         Value := US.Null_Unbounded_String;
+         raise;
+   end Read_Unbounded_String;
+
+   function Matches
+     (Value : US.Unbounded_String; Expected : String) return Boolean
+   is
+   begin
+      if US.Length (Value) /= Expected'Length then
+         return False;
+      end if;
+      for Offset in 0 .. Expected'Length - 1 loop
+         if US.Element (Value, Offset + 1) /= Expected (Expected'First + Offset)
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Matches;
 
    procedure Write_Tags
      (File : in out SIO.File_Type; Value : Tags.Tag_Set)
@@ -1658,6 +1746,82 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Document := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Logging;
+
+   procedure Write_Named_Bucket_Configuration
+     (File       : in out SIO.File_Type;
+      Magic      : String;
+      Document   : String;
+      Identifier : String) is
+   begin
+      if not Valid_Bucket_Named_Configuration (Identifier, Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Magic);
+      Write_U32 (File, Identifier'Length);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Identifier);
+      Write_String (File, Document);
+   end Write_Named_Bucket_Configuration;
+
+   procedure Read_Named_Bucket_Configuration
+     (File       : in out SIO.File_Type;
+      Magic      : String;
+      Document   : out US.Unbounded_String;
+      Identifier : out US.Unbounded_String)
+   is
+      File_Magic : constant String := Read_String (File, Magic'Length);
+      Identifier_Length : constant Natural := Read_U32 (File);
+      Document_Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Identifier := US.Null_Unbounded_String;
+      if File_Magic /= Magic
+        or else Byte_Count (Identifier_Length) >
+          Maximum_Bucket_Configuration_Bytes
+        or else Byte_Count (Document_Length) >
+          Maximum_Bucket_Configuration_Bytes -
+            Byte_Count (Identifier_Length)
+        or else SIO.Size (File) /=
+          SIO.Count
+            (Magic'Length + 8 + Identifier_Length + Document_Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Read_Unbounded_String (File, Identifier_Length, Identifier);
+      Read_Unbounded_String (File, Document_Length, Document);
+   end Read_Named_Bucket_Configuration;
+
+   procedure Write_Bucket_Analytics
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+   begin
+      Write_Named_Bucket_Configuration
+        (File, Bucket_Analytics_Magic, Document, Metadata);
+   end Write_Bucket_Analytics;
+
+   procedure Read_Bucket_Analytics
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String) is
+   begin
+      Read_Named_Bucket_Configuration
+        (File, Bucket_Analytics_Magic, Document, Metadata);
+   end Read_Bucket_Analytics;
+
+   procedure Write_Bucket_Metrics
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+   begin
+      Write_Named_Bucket_Configuration
+        (File, Bucket_Metrics_Magic, Document, Metadata);
+   end Write_Bucket_Metrics;
+
+   procedure Read_Bucket_Metrics
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String) is
+   begin
+      Read_Named_Bucket_Configuration
+        (File, Bucket_Metrics_Magic, Document, Metadata);
+   end Read_Bucket_Metrics;
 
    function Read_Versioning
      (Item : Store; Bucket : String) return Bucket_Versioning_Configuration
@@ -3646,6 +3810,40 @@ package body Flyology.Object_Storage.Backends.Files is
    type Valid_Bucket_Document_Access is access function
      (Document : String) return Boolean;
 
+   function Count_Named_Bucket_Configurations
+     (Item : Store; Bucket, Prefix : String) return Natural
+   is
+      Search        : Ada.Directories.Search_Type;
+      Current_Entry : Ada.Directories.Directory_Entry_Type;
+      Count         : Natural := 0;
+      Started       : Boolean := False;
+      Filter        : constant Ada.Directories.Filter_Type := (others => True);
+   begin
+      Ada.Directories.Start_Search
+        (Search, Configuration_Path (Item, Bucket), Prefix & "*.fos", Filter);
+      Started := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Current_Entry);
+         if GNAT.OS_Lib.Is_Symbolic_Link
+              (Ada.Directories.Full_Name (Current_Entry))
+           or else Ada.Directories.Kind (Current_Entry) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Count := Count + 1;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Started := False;
+      return Count;
+   exception
+      when others =>
+         if Started then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Count_Named_Bucket_Configurations;
+
    procedure Put_Bucket_Configuration_Document
      (Item        : in out Store;
       Bucket      : String;
@@ -3656,8 +3854,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Temp_Prefix : String;
       Target      : String;
       Write       : not null Write_Bucket_Document_Access;
+      Read        : Read_Bucket_Document_Access;
       Valid       : not null Valid_Bucket_Document_Access;
       Metadata_Valid : Boolean;
+      Count_Prefix : String;
       Result      : out Status)
    is
       File      : SIO.File_Type;
@@ -3714,6 +3914,32 @@ package body Flyology.Object_Storage.Backends.Files is
              Ada.Directories.Ordinary_File)
       then
          raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      if Ada.Directories.Exists (Target) and then Read /= null then
+         declare
+            Existing_Document : US.Unbounded_String;
+            Existing_Metadata : US.Unbounded_String;
+         begin
+            SIO.Open (File, SIO.In_File, Target);
+            Opened := True;
+            Read (File, Existing_Document, Existing_Metadata);
+            SIO.Close (File);
+            Opened := False;
+            if not Matches (Existing_Metadata, Metadata) then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+         end;
+      elsif not Ada.Directories.Exists (Target)
+        and then Count_Prefix'Length > 0
+        and then Count_Named_Bucket_Configurations
+          (Item, Bucket, Count_Prefix) >=
+            Maximum_Bucket_Named_Configurations
+      then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Configuration_Limit_Exceeded;
+         return;
       end if;
       GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
       if not Renamed then
@@ -3847,9 +4073,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Target   : String;
+      Read     : Read_Bucket_Document_Access;
+      Identifier : String;
       Result   : out Status)
    is
       Locked : Boolean := False;
+      File   : SIO.File_Type;
       Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
       Configuration_Directory : constant String :=
         Configuration_Path (Item, Bucket);
@@ -3880,6 +4109,19 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             raise Ada.IO_Exceptions.Data_Error;
          else
+            if Read /= null then
+               declare
+                  Document : US.Unbounded_String;
+                  Stored_Identifier : US.Unbounded_String;
+               begin
+                  SIO.Open (File, SIO.In_File, Target);
+                  Read (File, Document, Stored_Identifier);
+                  SIO.Close (File);
+                  if not Matches (Stored_Identifier, Identifier) then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+               end;
+            end if;
             Ada.Directories.Delete_File (Target);
             Sync_Directory (Item, Configuration_Directory);
             Result := Success;
@@ -3890,11 +4132,17 @@ package body Flyology.Object_Storage.Backends.Files is
    exception
       when Flyology.Cancellation.Operation_Cancelled |
            Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
          if Locked then
             Item.Publication.Release;
          end if;
          raise;
       when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
          if Locked then
             Item.Publication.Release;
          end if;
@@ -3913,7 +4161,7 @@ package body Flyology.Object_Storage.Backends.Files is
         (Item, Bucket, Document, "", Token, Deadline, "bucket-encryption-",
          Bucket_Encryption_Path (Item, Bucket),
          Write_Bucket_Encryption'Access,
-         Valid_Bucket_Encryption_Document'Access, True, Result);
+         null, Valid_Bucket_Encryption_Document'Access, True, "", Result);
    end Put_Bucket_Encryption;
 
    overriding procedure Get_Bucket_Encryption
@@ -3943,7 +4191,7 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       Delete_Bucket_Configuration_Document
         (Item, Bucket, Token, Deadline,
-         Bucket_Encryption_Path (Item, Bucket), Result);
+         Bucket_Encryption_Path (Item, Bucket), null, "", Result);
    end Delete_Bucket_Encryption;
 
    overriding procedure Put_Bucket_Ownership_Controls
@@ -3959,7 +4207,8 @@ package body Flyology.Object_Storage.Backends.Files is
          "bucket-ownership-controls-",
          Bucket_Ownership_Controls_Path (Item, Bucket),
          Write_Bucket_Ownership_Controls'Access,
-         Valid_Bucket_Ownership_Controls_Document'Access, True, Result);
+         null, Valid_Bucket_Ownership_Controls_Document'Access,
+         True, "", Result);
    end Put_Bucket_Ownership_Controls;
 
    overriding procedure Get_Bucket_Ownership_Controls
@@ -3989,7 +4238,7 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       Delete_Bucket_Configuration_Document
         (Item, Bucket, Token, Deadline,
-         Bucket_Ownership_Controls_Path (Item, Bucket), Result);
+         Bucket_Ownership_Controls_Path (Item, Bucket), null, "", Result);
    end Delete_Bucket_Ownership_Controls;
 
    overriding procedure Put_Bucket_Lifecycle
@@ -4006,10 +4255,11 @@ package body Flyology.Object_Storage.Backends.Files is
          Token, Deadline, "bucket-lifecycle-",
          Bucket_Lifecycle_Path (Item, Bucket),
          Write_Bucket_Lifecycle'Access,
+         null,
          Valid_Bucket_Lifecycle_Document'Access,
          Valid_Bucket_Lifecycle_Document
            (Document, Transition_Default_Minimum_Object_Size),
-         Result);
+         "", Result);
    end Put_Bucket_Lifecycle;
 
    overriding procedure Get_Bucket_Lifecycle
@@ -4038,7 +4288,7 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       Delete_Bucket_Configuration_Document
         (Item, Bucket, Token, Deadline,
-         Bucket_Lifecycle_Path (Item, Bucket), Result);
+         Bucket_Lifecycle_Path (Item, Bucket), null, "", Result);
    end Delete_Bucket_Lifecycle;
 
    overriding procedure Put_Bucket_Logging
@@ -4052,7 +4302,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Put_Bucket_Configuration_Document
         (Item, Bucket, Document, "", Token, Deadline, "bucket-logging-",
          Bucket_Logging_Path (Item, Bucket), Write_Bucket_Logging'Access,
-         Valid_Bucket_Logging_Document'Access, True, Result);
+         null, Valid_Bucket_Logging_Document'Access, True, "", Result);
    end Put_Bucket_Logging;
 
    overriding procedure Get_Bucket_Logging
@@ -4072,6 +4322,181 @@ package body Flyology.Object_Storage.Backends.Files is
          Read_Bucket_Logging'Access, Document, Ignored_Metadata,
          Configured, Result);
    end Get_Bucket_Logging;
+
+   procedure Put_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Temp_Prefix, Count_Prefix, Target : String;
+      Write      : not null Write_Bucket_Document_Access;
+      Read       : not null Read_Bucket_Document_Access;
+      Result     : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Put_Bucket_Configuration_Document
+           (Item, Bucket, Document, Identifier, Token, Deadline, Temp_Prefix,
+            Target, Write, Read, Valid_Bucket_Logging_Document'Access,
+            Valid_Bucket_Named_Configuration (Identifier, Document),
+            Count_Prefix, Result);
+      end if;
+   end Put_Named_Bucket_Configuration;
+
+   procedure Get_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Target     : String;
+      Read       : not null Read_Bucket_Document_Access;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Stored_Identifier : US.Unbounded_String;
+   begin
+      Document := US.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Get_Bucket_Configuration_Document
+           (Item, Bucket, Token, Deadline, Target, Read, Document,
+            Stored_Identifier, Configured, Result);
+         if Result = Success and then Configured
+           and then not Matches (Stored_Identifier, Identifier)
+         then
+            Document := US.Null_Unbounded_String;
+            Configured := False;
+            Result := Backend_Unavailable;
+         end if;
+      end if;
+   end Get_Named_Bucket_Configuration;
+
+   procedure Delete_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Target     : String;
+      Read       : not null Read_Bucket_Document_Access;
+      Result     : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Delete_Bucket_Configuration_Document
+           (Item, Bucket, Token, Deadline, Target, Read, Identifier, Result);
+      end if;
+   end Delete_Named_Bucket_Configuration;
+
+   overriding procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Document, Token, Deadline,
+         "bucket-analytics-", "analytics-",
+         Bucket_Analytics_Path (Item, Bucket, Identifier),
+         Write_Bucket_Analytics'Access, Read_Bucket_Analytics'Access,
+         Result);
+   end Put_Bucket_Analytics_Configuration;
+
+   overriding procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Analytics_Path (Item, Bucket, Identifier),
+         Read_Bucket_Analytics'Access, Document, Configured, Result);
+   end Get_Bucket_Analytics_Configuration;
+
+   overriding procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Analytics_Path (Item, Bucket, Identifier),
+         Read_Bucket_Analytics'Access, Result);
+   end Delete_Bucket_Analytics_Configuration;
+
+   overriding procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Document, Token, Deadline,
+         "bucket-metrics-", "metrics-",
+         Bucket_Metrics_Path (Item, Bucket, Identifier),
+         Write_Bucket_Metrics'Access, Read_Bucket_Metrics'Access, Result);
+   end Put_Bucket_Metrics_Configuration;
+
+   overriding procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Metrics_Path (Item, Bucket, Identifier),
+         Read_Bucket_Metrics'Access, Document, Configured, Result);
+   end Get_Bucket_Metrics_Configuration;
+
+   overriding procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Identifier, Token, Deadline,
+         Bucket_Metrics_Path (Item, Bucket, Identifier),
+         Read_Bucket_Metrics'Access, Result);
+   end Delete_Bucket_Metrics_Configuration;
 
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;

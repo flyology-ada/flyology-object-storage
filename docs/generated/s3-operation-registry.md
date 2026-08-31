@@ -18,7 +18,7 @@ remain inventory-only until their audits gain executable evidence.
 | CreateMultipartUpload | Create_Multipart_Upload | transfers | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | CreateSession | Create_Session | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucket | Delete | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketAnalyticsConfiguration | Delete_Analytics_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketAnalyticsConfiguration | Delete_Analytics_Configuration | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketCors | Delete_CORS | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketEncryption | Delete_Encryption | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketIntelligentTieringConfiguration | Delete_Intelligent_Tiering_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
@@ -26,7 +26,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeleteBucketLifecycle | Delete_Lifecycle | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketMetadataConfiguration | Delete_Metadata_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | DeleteBucketMetadataTableConfiguration | Delete_Metadata_Table_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketMetricsConfiguration | Delete_Metrics_Configuration | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketMetricsConfiguration | Delete_Metrics_Configuration | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketOwnershipControls | Delete_Ownership_Controls | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketPolicy | Delete_Policy | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketReplication | Delete_Replication | buckets | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
@@ -40,7 +40,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketAbac | Get_ABAC | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketAccelerateConfiguration | Get_Accelerate_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketAcl | Get_ACL | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | GetBucketCors | Get_CORS | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketEncryption | Get_Encryption | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
@@ -51,7 +51,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / shared_family |
 | GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketMetadataTableConfiguration | Get_Metadata_Table_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | GetBucketNotification | Get_Notification_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | partial / handwritten | missing / absent | covered / handwritten |
 | GetBucketNotificationConfiguration | Get_Notification_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketOwnershipControls | Get_Ownership_Controls | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -89,7 +89,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketAbac | Set_ABAC | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketAccelerateConfiguration | Set_Accelerate_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketAcl | Set_ACL | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
-| PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | PutBucketCors | Set_CORS | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketEncryption | Set_Encryption | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketIntelligentTieringConfiguration | Set_Intelligent_Tiering_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
@@ -97,7 +97,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketLifecycle | Set_Lifecycle_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | partial / handwritten | missing / absent | covered / handwritten |
 | PutBucketLifecycleConfiguration | Set_Lifecycle_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketLogging | Set_Logging | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / generated |
-| PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | PutBucketNotification | Set_Notification_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | partial / handwritten | missing / absent | covered / handwritten |
 | PutBucketNotificationConfiguration | Set_Notification_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketOwnershipControls | Set_Ownership_Controls | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

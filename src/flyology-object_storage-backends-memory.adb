@@ -535,6 +535,17 @@ package body Flyology.Object_Storage.Backends.Memory is
            (Ada.Strings.Unbounded.Length
               (Buckets (Index).Configuration_Metadata
                  (Lifecycle_Configuration)));
+         for Kind in Named_Configuration_Kind loop
+            for Position in
+              Buckets (Index).Named_Configurations (Kind).Iterate
+            loop
+               Bytes := Bytes - Byte_Count
+                 (Named_Configuration_Maps.Key (Position)'Length) -
+                 Byte_Count
+                   (Ada.Strings.Unbounded.Length
+                      (Named_Configuration_Maps.Element (Position)));
+            end loop;
+         end loop;
          Buckets (Index) := (others => <>);
          Result := Success;
       end Delete_Bucket;
@@ -884,6 +895,112 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_Configuration;
+
+      procedure Put_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Document   : String;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count :=
+           Byte_Count (Identifier'Length) + Byte_Count (Document'Length);
+         Present : Boolean := False;
+         Existing : Byte_Count := 0;
+         Base : Byte_Count;
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         elsif not Valid_Bucket_Named_Configuration
+           (Identifier, Document)
+         then
+            Result := Entity_Too_Large;
+            return;
+         elsif Buckets (Index).Named_Configurations (Kind).Contains
+           (Identifier)
+         then
+            Present := True;
+            Existing := Byte_Count (Identifier'Length) + Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).Named_Configurations (Kind).Element
+                    (Identifier)));
+         elsif Buckets (Index).Named_Configurations (Kind).Length >=
+           Ada.Containers.Count_Type (Maximum_Bucket_Named_Configurations)
+         then
+            Result := Configuration_Limit_Exceeded;
+            return;
+         end if;
+         Base := Bytes - Existing;
+         if Incoming > Byte_Limit - Base
+           or else Reserved_Bytes > Byte_Limit - Base - Incoming
+         then
+            Result := Capacity_Exceeded;
+         elsif Present then
+            Buckets (Index).Named_Configurations (Kind).Replace
+              (Identifier,
+               Ada.Strings.Unbounded.To_Unbounded_String (Document));
+            Bytes := Base + Incoming;
+            Result := Success;
+         else
+            Buckets (Index).Named_Configurations (Kind).Insert
+              (Identifier,
+               Ada.Strings.Unbounded.To_Unbounded_String (Document));
+            Bytes := Base + Incoming;
+            Result := Success;
+         end if;
+      end Put_Named_Bucket_Configuration;
+
+      procedure Get_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         elsif Buckets (Index).Named_Configurations (Kind).Contains
+           (Identifier)
+         then
+            Document := Buckets (Index).Named_Configurations (Kind).Element
+              (Identifier);
+            Configured := True;
+            Result := Success;
+         else
+            Result := Success;
+         end if;
+      end Get_Named_Bucket_Configuration;
+
+      procedure Delete_Named_Bucket_Configuration
+        (Name       : String;
+         Kind       : Named_Configuration_Kind;
+         Identifier : String;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         elsif Buckets (Index).Named_Configurations (Kind).Contains
+           (Identifier)
+         then
+            Bytes := Bytes - Byte_Count (Identifier'Length) - Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).Named_Configurations (Kind).Element
+                    (Identifier)));
+            Buckets (Index).Named_Configurations (Kind).Delete (Identifier);
+            Result := Success;
+         else
+            Result := Success;
+         end if;
+      end Delete_Named_Bucket_Configuration;
 
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
@@ -3081,6 +3198,160 @@ package body Flyology.Object_Storage.Backends.Memory is
             Configured, Result);
       end if;
    end Get_Bucket_Logging;
+
+   procedure Put_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Kind       : Named_Configuration_Kind;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Named_Configuration (Identifier, Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Named_Bucket_Configuration
+           (Bucket, Kind, Identifier, Document, Result);
+      end if;
+   end Put_Named_Bucket_Configuration;
+
+   procedure Get_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Kind       : Named_Configuration_Kind;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Named_Bucket_Configuration
+           (Bucket, Kind, Identifier, Document, Configured, Result);
+      end if;
+   end Get_Named_Bucket_Configuration;
+
+   procedure Delete_Named_Bucket_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Kind       : Named_Configuration_Kind;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Named_Configuration (Identifier, "")
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Named_Bucket_Configuration
+           (Bucket, Kind, Identifier, Result);
+      end if;
+   end Delete_Named_Bucket_Configuration;
+
+   overriding procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Analytics_Configuration, Identifier, Document,
+         Token, Deadline, Result);
+   end Put_Bucket_Analytics_Configuration;
+
+   overriding procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Analytics_Configuration, Identifier, Token, Deadline,
+         Document, Configured, Result);
+   end Get_Bucket_Analytics_Configuration;
+
+   overriding procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Analytics_Configuration, Identifier, Token, Deadline,
+         Result);
+   end Delete_Bucket_Analytics_Configuration;
+
+   overriding procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Put_Named_Bucket_Configuration
+        (Item, Bucket, Metrics_Configuration, Identifier, Document,
+         Token, Deadline, Result);
+   end Put_Bucket_Metrics_Configuration;
+
+   overriding procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Named_Bucket_Configuration
+        (Item, Bucket, Metrics_Configuration, Identifier, Token, Deadline,
+         Document, Configured, Result);
+   end Get_Bucket_Metrics_Configuration;
+
+   overriding procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is
+   begin
+      Delete_Named_Bucket_Configuration
+        (Item, Bucket, Metrics_Configuration, Identifier, Token, Deadline,
+         Result);
+   end Delete_Bucket_Metrics_Configuration;
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;

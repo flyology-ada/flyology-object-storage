@@ -276,6 +276,84 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Transactionally replace one query-keyed analytics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Canonical analytics XML bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status);
+
+   --  Read one query-keyed analytics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Retained canonical XML bytes
+   --  @param Configured Whether the selected configuration exists
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove one query-keyed analytics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Result Storage outcome
+   procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status);
+
+   --  Transactionally replace one query-keyed metrics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Canonical metrics XML bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status);
+
+   --  Read one query-keyed metrics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Document Retained canonical XML bytes
+   --  @param Configured Whether the selected configuration exists
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove one query-keyed metrics document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request-query identifier
+   --  @param Result Storage outcome
+   procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status);
+
    procedure Put_Bucket_Public_Access_Block
      (Item          : in out Catalog;
       Bucket        : String;

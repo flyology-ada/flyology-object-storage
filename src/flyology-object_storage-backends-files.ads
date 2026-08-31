@@ -279,6 +279,108 @@ package Flyology.Object_Storage.Backends.Files is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Retain one analytics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Canonical analytics-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one analytics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one analytics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Retain one metrics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Canonical metrics-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
+   --  Read one metrics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove one metrics configuration by its exact request identifier.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Store;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status);
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

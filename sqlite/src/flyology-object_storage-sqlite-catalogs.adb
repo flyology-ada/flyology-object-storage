@@ -15,10 +15,23 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 16 adds exactly the lifecycle and logging singleton
-   --  document tables. Changing this private value or table set requires a
+   --  Persisted schema 17 adds exact query-keyed analytics and metrics
+   --  documents. Changing this private value or table set requires a
    --  transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 16;
+   Schema_Version : constant Long_Long_Integer := 17;
+   --  The pinned S3 analytics and request-metrics contracts allow exactly
+   --  1,000 query-keyed configurations per bucket and family. This body-only
+   --  mirror keeps transactional catalog enforcement aligned with Backends.
+   Maximum_Bucket_Named_Configurations : constant Positive := 1_000;
+
+   function Valid_Bucket_Named_Configuration
+     (Identifier : String; Document : String) return Boolean is
+     (Byte_Count (Identifier'Length) <= 16_777_216
+      and then Byte_Count (Document'Length) <=
+        16_777_216 - Byte_Count (Identifier'Length));
+   --  The 16 MiB private configuration budget is owned by Backends. This
+   --  sibling catalog repeats its value so persisted rows and adapter input
+   --  enforce the same aggregate identifier-plus-document invariant.
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -186,6 +199,24 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "CREATE TABLE bucket_logging_documents (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Analytics_Schema : constant String :=
+     "CREATE TABLE bucket_analytics_configurations (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "configuration_id BLOB NOT NULL," &
+     "document BLOB NOT NULL," &
+     "CHECK(length(configuration_id)+length(document)<=16777216)," &
+     "PRIMARY KEY(bucket_name,configuration_id)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Metrics_Schema : constant String :=
+     "CREATE TABLE bucket_metrics_configurations (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "configuration_id BLOB NOT NULL," &
+     "document BLOB NOT NULL," &
+     "CHECK(length(configuration_id)+length(document)<=16777216)," &
+     "PRIMARY KEY(bucket_name,configuration_id)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    Versioning_Columns_Schema : constant String :=
@@ -1161,6 +1192,55 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_SQL ("withoutrowid");
    end Valid_Bucket_Lifecycle_Schema;
 
+   function Valid_Bucket_Point_Configuration_Schema
+     (Item : in out Catalog; Table_Name : String) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='" & Table_Name & "' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info('" & Table_Name & "')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('" & Table_Name & "') " &
+           "WHERE name IN ('bucket_name','configuration_id','document')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('" & Table_Name & "') " &
+           "WHERE (cid=0 AND name='bucket_name' AND lower(type)='text' " &
+           "AND ""notnull""=1 AND pk=1) OR " &
+           "(cid=1 AND name='configuration_id' AND lower(type)='blob' " &
+           "AND ""notnull""=1 AND pk=2) OR " &
+           "(cid=2 AND name='document' AND lower(type)='blob' " &
+           "AND ""notnull""=1 AND pk=0)") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list('" & Table_Name &
+           "')") = 1
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list('" & Table_Name &
+           "') WHERE ""table""='buckets' AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_delete='CASCADE'") = 1
+        and then Has_SQL
+          ("bucket_nametextnotnullcollatebinary")
+        and then not Has_SQL
+          ("check(length(configuration_id)>0)")
+        and then Has_SQL
+          ("check(length(configuration_id)+length(document)<=16777216)")
+        and then Has_SQL
+          ("primarykey(bucket_name,configuration_id)")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Bucket_Point_Configuration_Schema;
+
    function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
       Normalized_SQL : constant String :=
         "lower(replace(replace(replace(replace(sql,' ','')," &
@@ -1399,9 +1479,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Ownership_Controls_Schema &
          Bucket_Lifecycle_Schema &
          Bucket_Logging_Schema &
+         Bucket_Analytics_Schema &
+         Bucket_Metrics_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=16;");
+         "PRAGMA user_version=17;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1935,6 +2017,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V15;
 
+   procedure Upgrade_From_V16 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('bucket_analytics_configurations'," &
+           "'bucket_metrics_configurations')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 16";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Analytics_Schema & Bucket_Metrics_Schema &
+         "PRAGMA user_version=17;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V16;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1981,6 +2091,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 14 => null;
             when 15 => null;
             when 16 => null;
+            when 17 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2021,6 +2132,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V15 (Item);
             Version := 16;
          end if;
+         if Version = 16 then
+            Upgrade_From_V16 (Item);
+            Version := 17;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2042,7 +2157,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_encryption_documents'," &
          "'bucket_ownership_controls_documents'," &
          "'bucket_lifecycle_documents'," &
-         "'bucket_logging_documents')") /= 20
+         "'bucket_logging_documents'," &
+         "'bucket_analytics_configurations'," &
+         "'bucket_metrics_configurations')") /= 22
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2087,6 +2204,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite bucket logging schema is incomplete";
+      elsif not Valid_Bucket_Point_Configuration_Schema
+        (Item, "bucket_analytics_configurations")
+      then
+         raise Catalog_Error with
+           "SQLite bucket analytics schema is incomplete";
+      elsif not Valid_Bucket_Point_Configuration_Schema
+        (Item, "bucket_metrics_configurations")
+      then
+         raise Catalog_Error with
+           "SQLite bucket metrics schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -3286,6 +3413,206 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Delete_Bucket_Configuration_Document;
 
+   procedure Put_Bucket_Point_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Table_Name : String;
+      Label      : String;
+      Result     : out Status)
+   is
+      Exists         : DB.Statement;
+      Occupancy      : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      if not Valid_Bucket_Named_Configuration (Identifier, Document) then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with Label & " bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Occupancy, Item.Database,
+         "SELECT count(*),EXISTS(SELECT 1 FROM " & Table_Name &
+         " WHERE bucket_name=?1 AND configuration_id=?2) FROM " &
+         Table_Name & " WHERE bucket_name=?1");
+      DB.Bind (Occupancy, 1, Bucket);
+      DB.Bind_Bytes (Occupancy, 2, Identifier);
+      if DB.Step (Occupancy) /= DB.Row then
+         raise Catalog_Error with Label & " occupancy query returned no row";
+      elsif DB.Column (Occupancy, 0) >=
+          Long_Long_Integer (Maximum_Bucket_Named_Configurations)
+        and then DB.Column (Occupancy, 1) = 0
+      then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Configuration_Limit_Exceeded;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO " & Table_Name &
+         "(bucket_name,configuration_id,document) VALUES(?1,?2,?3) " &
+         "ON CONFLICT(bucket_name,configuration_id) DO UPDATE " &
+         "SET document=excluded.document");
+      DB.Bind (Upsert, 1, Bucket);
+      DB.Bind_Bytes (Upsert, 2, Identifier);
+      DB.Bind_Bytes (Upsert, 3, Document);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with Label & " upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Point_Configuration;
+
+   procedure Get_Bucket_Point_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Table_Name : String;
+      Label      : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Document := US.Null_Unbounded_String;
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with Label & " bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT document FROM " & Table_Name &
+         " WHERE bucket_name=?1 AND configuration_id=?2");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Identifier);
+      case DB.Step (Query) is
+         when DB.Row =>
+            Document := US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
+            if DB.Step (Query) /= DB.Done then
+               raise Catalog_Error with Label & " query returned multiple rows";
+            end if;
+            Configured := True;
+         when DB.Done =>
+            null;
+      end case;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Document := US.Null_Unbounded_String;
+         Configured := False;
+         raise;
+   end Get_Bucket_Point_Configuration;
+
+   procedure Delete_Bucket_Point_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Table_Name : String;
+      Label      : String;
+      Result     : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with Label & " bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM " & Table_Name &
+         " WHERE bucket_name=?1 AND configuration_id=?2");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Identifier);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with Label & " deletion returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_Point_Configuration;
+
    procedure Put_Bucket_Encryption
      (Item     : in out Catalog;
       Bucket   : String;
@@ -3510,6 +3837,80 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, "bucket_logging_documents", "bucket logging",
          Document, Configured, Result);
    end Get_Bucket_Logging;
+
+   procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status) is
+   begin
+      Put_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, Document,
+         "bucket_analytics_configurations", "bucket analytics",
+         Result);
+   end Put_Bucket_Analytics_Configuration;
+
+   procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_analytics_configurations",
+         "bucket analytics", Document, Configured, Result);
+   end Get_Bucket_Analytics_Configuration;
+
+   procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status) is
+   begin
+      Delete_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_analytics_configurations",
+         "bucket analytics", Result);
+   end Delete_Bucket_Analytics_Configuration;
+
+   procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Result     : out Status) is
+   begin
+      Put_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, Document,
+         "bucket_metrics_configurations", "bucket metrics",
+         Result);
+   end Put_Bucket_Metrics_Configuration;
+
+   procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_metrics_configurations",
+         "bucket metrics", Document, Configured, Result);
+   end Get_Bucket_Metrics_Configuration;
+
+   procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Identifier : String;
+      Result     : out Status) is
+   begin
+      Delete_Bucket_Point_Configuration
+        (Item, Bucket, Identifier, "bucket_metrics_configurations",
+         "bucket metrics", Result);
+   end Delete_Bucket_Metrics_Configuration;
 
    procedure Put_Bucket_Policy
      (Item   : in out Catalog;

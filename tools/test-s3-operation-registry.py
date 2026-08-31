@@ -9709,9 +9709,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_analytics_certainty
         assert entry.get("reconciliation") == delete_analytics_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -10532,9 +10532,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_metrics_certainty
         assert entry.get("reconciliation") == delete_metrics_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -11967,6 +11967,68 @@ def main() -> None:
         promoted, include_partial=False
     )
     assert "covered server lacks executable evidence" in findings
+
+    point_configuration_operations = {
+        "DeleteBucketAnalyticsConfiguration": "analytics report generation",
+        "GetBucketAnalyticsConfiguration": "analytics report generation",
+        "PutBucketAnalyticsConfiguration": "analytics report generation",
+        "DeleteBucketMetricsConfiguration": "CloudWatch metrics emission",
+        "GetBucketMetricsConfiguration": "CloudWatch metrics emission",
+        "PutBucketMetricsConfiguration": "CloudWatch metrics emission",
+    }
+    point_backend_evidence = {
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+    }
+    point_server_evidence = {
+        "src/flyology-object_storage-server-s3_applications.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    }
+
+    def assert_point_configuration_coverage(candidate, operation, excluded):
+        entry = candidate.operations[operation]
+        assert entry["coverage"] == {
+            "backend": "covered",
+            "client": "covered",
+            "server": "covered",
+            "corpus": "covered",
+        }
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert point_backend_evidence.issubset(entry["evidence"]["backend"])
+        assert point_server_evidence.issubset(entry["evidence"]["server"])
+        assert any(excluded in item for item in entry["exclusions"])
+        if operation.startswith("PutBucket"):
+            assert "TooManyConfigurations at HTTP 400" in entry["errors"]
+
+    for operation, excluded in point_configuration_operations.items():
+        assert_point_configuration_coverage(registry, operation, excluded)
+        for label, mutate in (
+            (
+                "missing backend coverage",
+                lambda entry: entry["coverage"].update(backend="missing"),
+            ),
+            (
+                "missing server evidence",
+                lambda entry: entry["evidence"].update(server=[]),
+            ),
+            (
+                "missing execution exclusion",
+                lambda entry: entry.update(exclusions=[]),
+            ),
+        ):
+            candidate = copy.deepcopy(registry)
+            mutate(candidate.operations[operation])
+            try:
+                assert_point_configuration_coverage(
+                    candidate, operation, excluded
+                )
+            except (AssertionError, KeyError, TypeError):
+                pass
+            else:
+                raise AssertionError(
+                    f"{label} accepted for {operation}"
+                )
 
     disconnected = copy.deepcopy(canary)
     disconnected["evidence"]["client"] = [

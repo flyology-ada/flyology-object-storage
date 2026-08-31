@@ -15,6 +15,7 @@ with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Analytics;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
@@ -28,6 +29,7 @@ with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
+with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
@@ -48,6 +50,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Buckets renames S3.Buckets;
    package Bucket_Controls renames S3.Bucket_Controls;
    package Attributes renames S3.Attributes;
+   package Analytics renames S3.Analytics;
    package Checksum_Policy renames S3.Checksum_Policy;
    package Checksums renames S3.Checksums;
    package Encoding renames S3.SigV4_Encoding;
@@ -61,6 +64,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Logging renames S3.Logging;
    package Multipart renames S3.Multipart;
    package Multipart_Uploads renames S3.Multipart_Uploads;
+   package Metrics renames S3.Metrics;
    package Model renames S3.Model;
    package Object_Reads renames S3.Object_Reads;
    package Tagging renames S3.Tagging;
@@ -435,6 +439,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Send_Error
               (X, 503, "SlowDown",
                "Please reduce your request rate", Resource);
+         when Configuration_Limit_Exceeded =>
+            Send_Error
+              (X, 400, "TooManyConfigurations",
+               "The bucket configuration limit has been reached", Resource);
          when Invalid_Request =>
             Send_Error
               (X, 400, "InvalidRequest", "Invalid request", Resource);
@@ -514,6 +522,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Get_Bucket_Lifecycle_Configuration,
          Delete_Bucket_Lifecycle,
          Put_Bucket_Logging, Get_Bucket_Logging,
+         Put_Bucket_Analytics, Get_Bucket_Analytics,
+         Delete_Bucket_Analytics,
+         Put_Bucket_Metrics, Get_Bucket_Metrics, Delete_Bucket_Metrics,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
@@ -636,6 +647,79 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          when Constraint_Error =>
             return False;
       end Query_Mentions_ACL;
+
+      type Point_Configuration_Query_Result is record
+         Valid : Boolean := False;
+         ID    : US.Unbounded_String;
+      end record;
+
+      function Parse_Point_Configuration_Query
+        (Query, Subresource, Operation_ID : String)
+         return Point_Configuration_Query_Result
+      is
+         Result           : Point_Configuration_Query_Result;
+         Seen_Subresource : Boolean := False;
+         Seen_ID          : Boolean := False;
+         Seen_Operation   : Boolean := False;
+      begin
+         if Query'Length = 0 then
+            return Result;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index = First then
+                     return Result;
+                  end if;
+                  declare
+                     Pair_Text : constant String := Raw (First .. Index - 1);
+                     Equals    : constant Natural :=
+                       Ada.Strings.Fixed.Index (Pair_Text, "=");
+                     Name      : constant String :=
+                       Decode_ACL_Query_Component
+                         ((if Equals = 0 then Pair_Text
+                           elsif Equals = Pair_Text'First then ""
+                           else Pair_Text
+                             (Pair_Text'First .. Equals - 1)));
+                     Value     : constant String :=
+                       Decode_ACL_Query_Component
+                         ((if Equals = 0 or else Equals = Pair_Text'Last then
+                              ""
+                           else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  begin
+                     if Name = Subresource then
+                        if Seen_Subresource or else Value'Length /= 0 then
+                           return Result;
+                        end if;
+                        Seen_Subresource := True;
+                     elsif Name = "id" then
+                        if Seen_ID then
+                           return Result;
+                        end if;
+                        Seen_ID := True;
+                        Result.ID := US.To_Unbounded_String (Value);
+                     elsif Name = "x-id" then
+                        if Seen_Operation or else Value /= Operation_ID then
+                           return Result;
+                        end if;
+                        Seen_Operation := True;
+                     else
+                        return Result;
+                     end if;
+                  end;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         Result.Valid := Seen_Subresource and Seen_ID;
+         return Result;
+      exception
+         when Constraint_Error =>
+            return Result;
+      end Parse_Point_Configuration_Query;
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
@@ -798,6 +882,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           ("logging",
            (if Method = "PUT" then "PutBucketLogging"
             else "GetBucketLogging"));
+      Analytics_Request : constant Point_Configuration_Query_Result :=
+        Parse_Point_Configuration_Query
+          (Query_Text, "analytics",
+           (if Method = "PUT" then "PutBucketAnalyticsConfiguration"
+            elsif Method = "GET" then "GetBucketAnalyticsConfiguration"
+            else "DeleteBucketAnalyticsConfiguration"));
+      Metrics_Request : constant Point_Configuration_Query_Result :=
+        Parse_Point_Configuration_Query
+          (Query_Text, "metrics",
+           (if Method = "PUT" then "PutBucketMetricsConfiguration"
+            elsif Method = "GET" then "GetBucketMetricsConfiguration"
+            else "DeleteBucketMetricsConfiguration"));
       Is_Legacy_Bucket_Lifecycle_Get_Query : constant Boolean :=
         Method = "GET"
         and then
@@ -876,6 +972,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&logging&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&logging=") /= 0;
+      Has_Analytics_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&analytics&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&analytics=") /= 0;
+      Has_Metrics_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&metrics&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&metrics=") /= 0;
       Has_Bucket_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketEncryption&") /= 0
@@ -901,9 +1005,32 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=PutBucketLogging&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetBucketLogging&") /= 0;
+      Has_Analytics_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketAnalyticsConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketAnalyticsConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketAnalyticsConfiguration&") /= 0;
+      Has_Metrics_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketMetricsConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketMetricsConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketMetricsConfiguration&") /= 0;
       Looks_Like_Bucket_Configuration_Query : constant Boolean :=
         Has_Bucket_Configuration_Query
         or else Has_Bucket_Configuration_Operation_ID;
+      Looks_Like_Analytics_Configuration_Query : constant Boolean :=
+        Has_Analytics_Configuration_Query
+        or else Has_Analytics_Configuration_Operation_ID;
+      Looks_Like_Metrics_Configuration_Query : constant Boolean :=
+        Has_Metrics_Configuration_Query
+        or else Has_Metrics_Configuration_Operation_ID;
+      Looks_Like_Point_Configuration_Query : constant Boolean :=
+        Looks_Like_Analytics_Configuration_Query
+        or else Looks_Like_Metrics_Configuration_Query;
       Has_Bucket_Scalar_Control_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&abac&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&abac=") /= 0
@@ -2124,6 +2251,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Looks_Like_Bucket_Configuration_Query)
         and then not
           (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Point_Configuration_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET"
            and then Looks_Like_Bucket_Scalar_Control_Query)
         and then not
@@ -2194,6 +2325,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               or else Is_Bucket_Ownership_Controls_Query
               or else Is_Bucket_Lifecycle_Query
               or else Is_Bucket_Logging_Query);
+         if Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Point_Configuration_Query
+           and then not
+             (Analytics_Request.Valid or else Metrics_Request.Valid)
+         then
+            Bucket_Configuration_Query_Invalid := True;
+         end if;
          Bucket_Scalar_Control_Query_Invalid :=
            Method in "PUT" | "GET"
            and then Looks_Like_Bucket_Scalar_Control_Query
@@ -2239,6 +2377,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Logging
             elsif Method = "GET" and then Is_Bucket_Logging_Query
             then Get_Bucket_Logging
+            elsif Method = "PUT"
+              and then Looks_Like_Analytics_Configuration_Query
+            then Put_Bucket_Analytics
+            elsif Method = "GET"
+              and then Looks_Like_Analytics_Configuration_Query
+            then Get_Bucket_Analytics
+            elsif Method = "DELETE"
+              and then Looks_Like_Analytics_Configuration_Query
+            then Delete_Bucket_Analytics
+            elsif Method = "PUT"
+              and then Looks_Like_Metrics_Configuration_Query
+            then Put_Bucket_Metrics
+            elsif Method = "GET"
+              and then Looks_Like_Metrics_Configuration_Query
+            then Get_Bucket_Metrics
+            elsif Method = "DELETE"
+              and then Looks_Like_Metrics_Configuration_Query
+            then Delete_Bucket_Metrics
             elsif Method = "PUT" and then Is_Bucket_ABAC_Query
             then Put_Bucket_ABAC
             elsif Method = "GET" and then Is_Bucket_ABAC_Query
@@ -2455,7 +2611,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Request_Payment | Put_Public_Access_Block |
          Put_Bucket_CORS | Put_Bucket_Encryption |
          Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
-         Put_Bucket_Logging | Put_Bucket_Policy |
+         Put_Bucket_Logging | Put_Bucket_Analytics |
+         Put_Bucket_Metrics | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -2603,7 +2760,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_Request_Payment | Put_Public_Access_Block |
         Put_Bucket_CORS | Put_Bucket_Encryption |
         Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
-        Put_Bucket_Logging | Put_Bucket_Policy |
+        Put_Bucket_Logging | Put_Bucket_Analytics |
+        Put_Bucket_Metrics | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -4541,6 +4699,225 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         else
                            Store.Delete_Bucket_Lifecycle
                              (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                        end if;
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Analytics | Put_Bucket_Metrics =>
+               declare
+                  Is_Analytics : constant Boolean :=
+                    Operation = Put_Bucket_Analytics;
+                  Operation_Name : constant String :=
+                    (if Is_Analytics then
+                       "PutBucketAnalyticsConfiguration"
+                     else "PutBucketMetricsConfiguration");
+                  Identifier : constant String :=
+                    US.To_String
+                      ((if Is_Analytics then Analytics_Request.ID
+                        else Metrics_Request.ID));
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Trailer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Checksum_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Owner_Accepted : Boolean;
+
+                  procedure Process is
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => S3.Core.CRC64NVME,
+                        Length_Value  => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash    =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash      => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => False,
+                        Expected_Content_MD5 => US.Null_Unbounded_String,
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => False,
+                        Checksum_From_Trailer => False,
+                        Reject_Unexpected_Trailers => True,
+                        Expected_Body_Checksum => US.Null_Unbounded_String,
+                        Observed  => 0,
+                        Maximum   => Maximum_Bucket_Configuration_Body,
+                        Completed => False,
+                        others    => <>);
+                     Document : constant String := Read_Document (Source);
+                     Canonical : US.Unbounded_String;
+                  begin
+                     if Is_Analytics then
+                        Canonical := US.To_Unbounded_String
+                          (Analytics.Serialize
+                             (Analytics.Parse (Document, XML.Default_Limits),
+                              XML.Default_Limits));
+                        Store.Put_Bucket_Analytics_Configuration
+                          (Bucket, Identifier, US.To_String (Canonical),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     else
+                        Canonical := US.To_Unbounded_String
+                          (Metrics.Serialize
+                             (Metrics.Parse (Document, XML.Default_Limits),
+                              XML.Default_Limits));
+                        Store.Put_Bucket_Metrics_Configuration
+                          (Bucket, Identifier, US.To_String (Canonical),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     end if;
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  exception
+                     when Analytics.Malformed_Analytics |
+                          Metrics.Malformed_Metrics =>
+                        Send_Error
+                          (X, 400, "MalformedXML",
+                           "The XML provided was not well-formed or did not " &
+                           "validate against the published schema",
+                           Target_Text);
+                  end Process;
+               begin
+                  if MD5_Count > 0 or else Payer_Count > 0
+                    or else SDK_Count > 0 or else Trailer_Count > 0
+                    or else Checksum_Count > 0
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The " & Operation_Name &
+                        " request header group is invalid", Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then
+                      Length.Bytes > Maximum_Bucket_Configuration_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Process;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Analytics | Get_Bucket_Metrics =>
+               declare
+                  Is_Analytics : constant Boolean :=
+                    Operation = Get_Bucket_Analytics;
+                  Operation_Name : constant String :=
+                    (if Is_Analytics then
+                       "GetBucketAnalyticsConfiguration"
+                     else "GetBucketMetricsConfiguration");
+                  Identifier : constant String :=
+                    US.To_String
+                      ((if Is_Analytics then Analytics_Request.ID
+                        else Metrics_Request.ID));
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Unexpected_Checksum : constant Boolean :=
+                    Apps.Request_Header_Count (X, "content-md5") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count (X, "x-amz-trailer") > 0
+                    or else Checksum_Value_Header_Count > 0;
+                  Owner_Accepted : Boolean;
+                  Document : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 or else Unexpected_Checksum then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " does not define the supplied request header",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if Is_Analytics then
+                           Store.Get_Bucket_Analytics_Configuration
+                             (Bucket, Identifier, Apps.Cancellation (X),
+                              Apps.Deadline (X), Document, Configured,
+                              Result);
+                        else
+                           Store.Get_Bucket_Metrics_Configuration
+                             (Bucket, Identifier, Apps.Cancellation (X),
+                              Apps.Deadline (X), Document, Configured,
+                              Result);
+                        end if;
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404, "NoSuchConfiguration",
+                              "The specified configuration does not exist",
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              US.To_String (Document));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_Analytics | Delete_Bucket_Metrics =>
+               declare
+                  Is_Analytics : constant Boolean :=
+                    Operation = Delete_Bucket_Analytics;
+                  Operation_Name : constant String :=
+                    (if Is_Analytics then
+                       "DeleteBucketAnalyticsConfiguration"
+                     else "DeleteBucketMetricsConfiguration");
+                  Identifier : constant String :=
+                    US.To_String
+                      ((if Is_Analytics then Analytics_Request.ID
+                        else Metrics_Request.ID));
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Unexpected_Checksum : constant Boolean :=
+                    Apps.Request_Header_Count (X, "content-md5") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count (X, "x-amz-trailer") > 0
+                    or else Checksum_Value_Header_Count > 0;
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 or else Unexpected_Checksum then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " does not define the supplied request header",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if Is_Analytics then
+                           Store.Delete_Bucket_Analytics_Configuration
+                             (Bucket, Identifier, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                        else
+                           Store.Delete_Bucket_Metrics_Configuration
+                             (Bucket, Identifier, Apps.Cancellation (X),
                               Apps.Deadline (X), Result);
                         end if;
                         if Result = Success then

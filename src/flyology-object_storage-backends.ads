@@ -788,6 +788,115 @@ package Flyology.Object_Storage.Backends is
    function Valid_Bucket_Logging_Document
      (Document : String) return Boolean;
 
+   --  Atomically replace one analytics configuration selected by the exact
+   --  request identifier. Identifier and the canonical payload's modeled Id
+   --  remain independent; the backend does not execute analytics reports.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Validated canonical analytics-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Analytics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Return one atomic analytics-configuration snapshot selected by the
+   --  exact request identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Analytics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove one analytics configuration. Deletion is idempotent
+   --  for an existing bucket without the selected identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Analytics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Atomically replace one request-metrics configuration selected by the
+   --  exact request identifier. The backend does not emit CloudWatch metrics.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Document Validated canonical metrics-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Metrics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Document   : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
+   --  Return one atomic request-metrics configuration snapshot selected by
+   --  the exact request identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the selected configuration is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Metrics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove one request-metrics configuration. Deletion is
+   --  idempotent for an existing bucket without the selected identifier.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Identifier Exact request query identifier
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Metrics_Configuration
+     (Item       : in out Backend;
+      Bucket     : String;
+      Identifier : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Result     : out Status) is abstract;
+
    --  Atomically replace the complete canonical CORS document of an existing
    --  bucket.  The backend treats Document as bounded opaque bytes and does
    --  not depend on S3 XML or request types.
@@ -1689,6 +1798,14 @@ private
    --  private value bounds canonical singleton bucket-configuration bytes,
    --  including encryption, ownership, lifecycle, and logging, without
    --  exposing a caller-visible resource-policy constant.
+
+   Maximum_Bucket_Named_Configurations : constant Positive := 1_000;
+   --  The pinned S3 analytics and request-metrics contracts fix this
+   --  per-family bucket limit. It remains private because it is provider wire
+   --  compatibility, not a caller-selected backend capacity.
+
+   function Valid_Bucket_Named_Configuration
+     (Identifier : String; Document : String) return Boolean;
 
    --  Monotonic publication order is backend-private metadata, not a wire or
    --  caller-visible value.  It disambiguates generations that share a
