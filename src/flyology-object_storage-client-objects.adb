@@ -63,6 +63,7 @@ package body Flyology.Object_Storage.Client.Objects is
 
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Get_Object_ACL_Outcome_Kind;
+   use type Low_Level.Get_Object_Torrent_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
@@ -1239,6 +1240,41 @@ package body Flyology.Object_Storage.Client.Objects is
          return Result;
       end;
    end Get_ACL;
+
+   function Get_Torrent
+     (Client      : aliased in out Flyology.HTTP.Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout     : Duration := 30.0;
+      Token       : access Flyology.Cancellation.Token := null;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Object_Torrent_Result
+   is
+      --  The torrent-read parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this derived capacity.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Object_Torrent_Operation :=
+           Get_Torrent
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Destination'Access, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : Get_Object_Torrent_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Torrent;
 
    function Get_Legal_Hold
      (Client     : aliased in out Flyology.HTTP.Client.Client;
@@ -5161,6 +5197,412 @@ package body Flyology.Object_Storage.Client.Objects is
       Result := Operation.Final_Result;
    end Finish;
 
+   function Normalize_Get_Object_Torrent_Response
+     (Value     : Low_Level.Get_Object_Torrent_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Get_Object_Torrent_Result is
+   begin
+      return
+        (Kind      => Get_Object_Torrent_Response_Available,
+         Failure   => No_Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_Get_Object_Torrent_Response;
+
+   function Normalize_Get_Object_Torrent_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Required  : HTTP_Client.Length_Requirement := (others => <>);
+      Detail    : String := "") return Get_Object_Torrent_Result is
+   begin
+      return
+        (Kind                 => Get_Object_Torrent_Exchange_Failed,
+         Failure              =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission            => Admission,
+         HTTP_Result          => Kind,
+         HTTP_Phase           => Phase,
+         Required_Body_Length => Required,
+         Detail               => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Object_Torrent_Failure;
+
+   function Get_Object_Torrent_Declared_Length
+     (Response : HTTP_Client.Response;
+      Total    : Byte_Count) return HTTP_Client.Length_Requirement
+   is
+      Count : constant Natural :=
+        HTTP_Client.Header_Count (Response, "content-length");
+      Value : Byte_Count := 0;
+   begin
+      if Count /= 1 then
+         return (others => <>);
+      end if;
+      declare
+         Text : constant String :=
+           HTTP_Client.Header (Response, "content-length");
+      begin
+         if Text'Length = 0 then
+            return (others => <>);
+         end if;
+         for Character_Value of Text loop
+            if Character_Value not in '0' .. '9' then
+               return (others => <>);
+            end if;
+            declare
+               Digit : constant Byte_Count :=
+                 Character'Pos (Character_Value) - Character'Pos ('0');
+            begin
+               if Value > (Byte_Count'Last - Digit) / 10 then
+                  return (others => <>);
+               end if;
+               Value := Value * 10 + Digit;
+            end;
+         end loop;
+      end;
+      if Value /= Total then
+         return (others => <>);
+      end if;
+      return
+        (Known => True,
+         Bytes => HTTP_Client.Body_Size (Value));
+   exception
+      when Constraint_Error =>
+         return (others => <>);
+   end Get_Object_Torrent_Declared_Length;
+
+   overriding procedure Write
+     (Item : in out Get_Object_Torrent_Operation;
+      Data : Ada.Streams.Stream_Element_Array)
+   is
+      Data_Length : constant Byte_Count := Byte_Count (Data'Length);
+
+      procedure Append_Destination
+        (Target : in out Ada.Streams.Stream_Element_Array;
+         Length : in out Natural)
+      is
+         Count : constant Natural :=
+           Natural'Min
+             (Natural (Data'Length), Natural (Target'Length) - Length);
+      begin
+         if Count > 0 then
+            Target
+              (Target'First + Ada.Streams.Stream_Element_Offset (Length) ..
+               Target'First + Ada.Streams.Stream_Element_Offset
+                 (Length + Count) - 1) :=
+              Data
+                (Data'First ..
+                 Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1);
+            Length := Length + Count;
+         end if;
+         if Count < Natural (Data'Length) then
+            Item.Destination_Overflow := True;
+         end if;
+      end Append_Destination;
+   begin
+      if Data_Length > Byte_Count'Last - Item.Total_Response_Bytes then
+         Item.Total_Response_Bytes := Byte_Count'Last;
+         Item.Destination_Overflow := True;
+         Item.Error_Overflow := True;
+      else
+         Item.Total_Response_Bytes :=
+           Item.Total_Response_Bytes + Data_Length;
+      end if;
+
+      if not Item.Destination_Overflow then
+         Flyology.Buffers.With_Writable_Data
+           (Item.Destination.all, Append_Destination'Access);
+      end if;
+
+      if not Item.Error_Overflow then
+         declare
+            Remaining : constant Natural :=
+              Item.Limits.Maximum_Document_Bytes -
+              Flyology.Bytes.Length (Item.Error_Data);
+            Count : constant Natural :=
+              Natural'Min (Natural (Data'Length), Remaining);
+         begin
+            if Count > 0 then
+               Flyology.Bytes.Append
+                 (Item.Error_Data,
+                  Data
+                    (Data'First ..
+                     Data'First + Ada.Streams.Stream_Element_Offset (Count)
+                       - 1));
+            end if;
+            if Count < Natural (Data'Length) then
+               Item.Error_Overflow := True;
+            end if;
+         end;
+      end if;
+   end Write;
+
+   procedure Complete_Get_Object_Torrent_Child
+     (Item : in out Get_Object_Torrent_Operation)
+   is
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response    : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            if Flyology.Buffers.Has_Buffer (Item.Destination.all) then
+               Clear_Buffer (Item.Destination.all);
+            end if;
+            Flyology.Bytes.Clear (Item.Error_Data);
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Clear_Buffer (Item.Destination.all);
+         Flyology.Bytes.Clear (Item.Error_Data);
+         Item.Final_Result :=
+           Normalize_Get_Object_Torrent_Failure
+             (HTTP_Client.Kind (HTTP_Result),
+              HTTP_Client.Certainty (HTTP_Result),
+              HTTP_Client.Phase (HTTP_Result),
+              HTTP_Client.Required_Body_Length (HTTP_Result),
+              HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            if HTTP_Client.Status (Response) = 200
+              and then Item.Destination_Overflow
+            then
+               Clear_Buffer (Item.Destination.all);
+               Item.Final_Result :=
+                 Normalize_Get_Object_Torrent_Failure
+                   (HTTP_Client.Response_Body_Too_Large,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result),
+                    Get_Object_Torrent_Declared_Length
+                      (Response, Item.Total_Response_Bytes));
+            elsif HTTP_Client.Status (Response) /= 200
+              and then Item.Error_Overflow
+            then
+               Clear_Buffer (Item.Destination.all);
+               Item.Final_Result :=
+                 Normalize_Get_Object_Torrent_Failure
+                   (HTTP_Client.Response_Invalid,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result));
+            else
+               declare
+                  Outcome : constant Low_Level.Get_Object_Torrent_Outcome :=
+                    Low_Level.Decode_Get_Object_Torrent_Complete_Response
+                      (Response,
+                       (if HTTP_Client.Status (Response) = 200
+                        then ""
+                        else Flyology.Bytes.To_Byte_String
+                          (Item.Error_Data)),
+                       Item.Limits);
+               begin
+                  if Outcome.Kind =
+                    Low_Level.Get_Object_Torrent_Rejected
+                  then
+                     Clear_Buffer (Item.Destination.all);
+                  end if;
+                  Item.Final_Result :=
+                    Normalize_Get_Object_Torrent_Response
+                      (Outcome, HTTP_Client.Certainty (HTTP_Result));
+               end;
+            end if;
+         exception
+            when Low_Level.Invalid_Response =>
+               Clear_Buffer (Item.Destination.all);
+               Item.Final_Result :=
+                 Normalize_Get_Object_Torrent_Failure
+                   (HTTP_Client.Response_Invalid,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result));
+         end;
+         Flyology.Bytes.Clear (Item.Error_Data);
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Get_Object_Torrent_Child;
+
+   overriding procedure Drive
+     (Item  : in out Get_Object_Torrent_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Get_Object_Torrent
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Get_Object_Torrent_Child (Item);
+      else
+         raise Program_Error with "invalid GetObjectTorrent driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if Flyology.Buffers.Has_Buffer (Item.Destination.all) then
+            Clear_Buffer (Item.Destination.all);
+         end if;
+         Flyology.Bytes.Clear (Item.Error_Data);
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Object_Torrent_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others =>
+         null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Object_Torrent_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others =>
+            null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Error_Data);
+      if Flyology.Buffers.Has_Buffer (Item.Destination.all)
+        and then
+          (not Item.Has_Final_Result
+           or else Item.Final_Result.Kind /=
+             Get_Object_Torrent_Response_Available
+           or else Item.Final_Result.Response.Kind /=
+             Low_Level.Torrent_Opened)
+      then
+         Clear_Buffer (Item.Destination.all);
+      end if;
+   end Finalize;
+
+   procedure Start_Get_Object_Torrent
+     (Operation   : in out Get_Object_Torrent_Operation;
+      Client      : not null access HTTP_Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Deadline    : HTTP_Client.Monotonic_Deadline;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token       : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client
+        or else Operation.Destination /= Destination
+        or else Operation.Cancellation /= Token
+      then
+         raise Program_Error with
+           "GetObjectTorrent restart changed a retained owner";
+      end if;
+      Operation.Prepared :=
+        Low_Level.Prepare_Get_Object_Torrent
+          (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+           Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Limits := Limits;
+      Clear_Buffer (Operation.Destination.all);
+      Flyology.Bytes.Clear (Operation.Error_Data);
+      Operation.Total_Response_Bytes := 0;
+      Operation.Destination_Overflow := False;
+      Operation.Error_Overflow := False;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            Clear_Buffer (Operation.Destination.all);
+            Flyology.Bytes.Clear (Operation.Error_Data);
+            raise;
+      end;
+   end Start_Get_Object_Torrent;
+
+   function Get_Torrent
+     (Set         : not null access Operations.Completion_Set'Class;
+      Client      : not null access HTTP_Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Deadline    : HTTP_Client.Monotonic_Deadline;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token       : access Flyology.Cancellation.Token := null)
+      return Get_Object_Torrent_Operation is
+   begin
+      return Result : Get_Object_Torrent_Operation
+        (Set, Client, Destination, Token)
+      do
+         Start_Get_Object_Torrent
+           (Result, Client, Origin, Bucket, Key, Parameters, Destination,
+            Identity, Deadline, Region, Style, Limits, Token);
+      end return;
+   end Get_Torrent;
+
+   procedure Finish
+     (Operation : in out Get_Object_Torrent_Operation;
+      Result    : out Get_Object_Torrent_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      Flyology.Bytes.Clear (Operation.Error_Data);
+      if Operation.Has_Saved_Error then
+         Clear_Buffer (Operation.Destination.all);
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         Clear_Buffer (Operation.Destination.all);
+         raise Program_Error with "GetObjectTorrent has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
    function Normalize_Get_Legal_Hold_Response
      (Value     : Low_Level.Get_Object_Legal_Hold_Outcome;
       Admission : HTTP_Client.Admission_Certainty)
@@ -8042,6 +8484,27 @@ package body Flyology.Object_Storage.Client.Objects is
         (Operation, Client, Origin, Bucket, Key, Parameters, Identity,
          Deadline, Region, Style, Limits, Token);
    end Get_ACL;
+
+   procedure Get_Torrent
+     (Client      : not null access Flyology.HTTP.Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Deadline    : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token       : access Flyology.Cancellation.Token := null;
+      Operation   : in out Get_Object_Torrent_Operation) is
+   begin
+      Start_Get_Object_Torrent
+        (Operation, Client, Origin, Bucket, Key, Parameters, Destination,
+         Identity, Deadline, Region, Style, Limits, Token);
+   end Get_Torrent;
 
    procedure Get_Legal_Hold
      (Client     : not null access Flyology.HTTP.Client.Client;

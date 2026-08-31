@@ -5,28 +5,44 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Buffers;
 with Flyology.Bytes;
+with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
+with Flyology.IO;
 with Flyology.IO.Sockets;
+with Flyology.Object_Storage.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.S3.XML;
+with Flyology.Operations;
 
 procedure S3_Get_Object_Torrent_Socket_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
+   package Buffers renames Flyology.Buffers;
+   package Client_API renames Flyology.Object_Storage.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+   package Objects renames Flyology.Object_Storage.Client.Objects;
+   package Operations renames Flyology.Operations;
    package Sockets renames Flyology.IO.Sockets;
    package XML renames Flyology.Object_Storage.S3.XML;
    package US renames Ada.Strings.Unbounded;
 
    use Ada.Streams;
+   use type Client_API.Failure_Reason;
+   use type HTTP_Client.Admission_Certainty;
+   use type HTTP_Client.Exchange_Result_Kind;
+   use type Flyology.IO.Descriptor;
    use type Low_Level.Get_Object_Torrent_Outcome_Kind;
+   use type Objects.Get_Object_Torrent_Result_Kind;
    use type Sockets.Selector_Status;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
-   --  Twelve named wire faults run once from each caller lane.  This is a
-   --  corpus cardinality, not production retry or capacity policy.
-   Scenarios_Per_Client : constant Positive := 12;
+   --  Twelve low-level cases and eight provider-owned lifecycle exchanges run
+   --  once from each caller lane.  This is corpus cardinality, not retry or
+   --  capacity policy.
+   Scenarios_Per_Client : constant Positive := 20;
    Request_Count : constant Positive := 2 * Scenarios_Per_Client;
    --  One client slot makes a leaked limited response observable immediately
    --  while preserving the corpus's intentionally serial exchange order.
@@ -65,6 +81,30 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
       end loop;
       return Result;
    end Bytes;
+
+   function Buffer_String (Item : Buffers.Unique_Buffer) return String is
+      Value : US.Unbounded_String;
+
+      procedure Copy (Data : Stream_Element_Array) is
+      begin
+         for Element of Data loop
+            US.Append (Value, Character'Val (Element));
+         end loop;
+      end Copy;
+   begin
+      Buffers.With_Readable_Data (Item, Copy'Access);
+      return US.To_String (Value);
+   end Buffer_String;
+
+   type Discard_Sink is new HTTP_Client.Response_Body_Sink with null record;
+
+   overriding procedure Write
+     (Item : in out Discard_Sink;
+      Data : Stream_Element_Array) is
+   begin
+      pragma Unreferenced (Item, Data);
+      null;
+   end Write;
 
    function HTTP_Response
      (Status, Payload : String; Headers : String := "") return String is
@@ -130,7 +170,13 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
          Passed := Server_Passed;
          Detail := Server_Detail;
       end Wait_Server;
+
    end State;
+
+   Cancel_Admission_Native : aliased Flyology.Cancellation.Token;
+   Cancel_Admission_Lightweight : aliased Flyology.Cancellation.Token;
+   Cancel_Drain_Native : aliased Flyology.Cancellation.Token;
+   Cancel_Drain_Lightweight : aliased Flyology.Cancellation.Token;
 
    protected Clients is
       procedure Report (Passed : Boolean; Detail : String := "");
@@ -170,6 +216,7 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
       Peer : Sockets.Socket_Type;
       Address : Sockets.Endpoint;
       Status : Sockets.Selector_Status;
+      Cancellation_Round : Natural := 0;
    begin
       Sockets.Create_Socket (Listener);
       Sockets.Bind_Socket
@@ -184,7 +231,8 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
             Status => Status);
          if Status /= Sockets.Completed then
             raise Program_Error with
-              "GetObjectTorrent socket accept timed out";
+              "GetObjectTorrent socket accept timed out at exchange" &
+              Positive'Image (Exchange);
          end if;
          declare
             Buffer : Stream_Element_Array
@@ -224,6 +272,7 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
                   then Request_Line (Scenario_First .. Scenario_Last)
                   else "");
                Response : US.Unbounded_String;
+               Withhold_Response : Boolean := False;
             begin
                if Request_Line'Length <= Prefix'Length + Suffix'Length
                  or else Request_Line
@@ -300,29 +349,69 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
                elsif Scenario = "success-limit" then
                   Response := US.To_Unbounded_String
                     (HTTP_Response ("200 OK", "four"));
+               elsif Scenario in "provider-success" | "restart-first"
+                 | "restart-second" | "cancel-restart"
+                 | "sync-equivalence"
+               then
+                  Response := US.To_Unbounded_String
+                    (HTTP_Response
+                       ("200 OK", Success_Body,
+                        "x-amz-request-charged: requester" & CRLF));
+               elsif Scenario = "provider-rejection" then
+                  Response := US.To_Unbounded_String
+                    (HTTP_Response ("404 Not Found", Error_XML));
+               elsif Scenario = "provider-capacity" then
+                  Response := US.To_Unbounded_String
+                    (HTTP_Response ("200 OK", "four"));
+               elsif Scenario = "cancel-admitted" then
+                  Withhold_Response := True;
+                  Cancellation_Round := Cancellation_Round + 1;
+                  if Cancellation_Round = 1 then
+                     Cancel_Admission_Native.Request;
+                  elsif Cancellation_Round = 2 then
+                     Cancel_Admission_Lightweight.Request;
+                  else
+                     raise Program_Error with
+                       "invalid cancellation exchange round";
+                  end if;
+                  Sockets.Receive
+                    (Peer, Buffer, Last, Timeout => Socket_Timeout);
+                  if Last >= Buffer'First then
+                     raise Program_Error with
+                       "cancel peer sent data before drain";
+                  end if;
+                  if Cancellation_Round = 1 then
+                     Cancel_Drain_Native.Request;
+                  else
+                     Cancel_Drain_Lightweight.Request;
+                  end if;
                else
                   raise Program_Error with
                     "unknown GetObjectTorrent socket scenario";
                end if;
 
-               --  Send the complete head separately from the body octets so
-               --  every scenario crosses a real response fragmentation edge.
-               declare
-                  Wire : constant String := US.To_String (Response);
-                  Separator : constant Natural :=
-                    Ada.Strings.Fixed.Index (Wire, CRLF & CRLF);
-               begin
-                  Sockets.Send_All
-                    (Peer, Bytes (Wire (Wire'First .. Separator + 3)),
-                     Timeout => Socket_Timeout);
-                  if Separator + 4 <= Wire'Last then
+               if not Withhold_Response then
+                  --  Send the complete head separately from the body octets
+                  --  so every scenario crosses a real fragmentation edge.
+                  declare
+                     Wire : constant String := US.To_String (Response);
+                     Separator : constant Natural :=
+                       Ada.Strings.Fixed.Index (Wire, CRLF & CRLF);
+                  begin
                      Sockets.Send_All
-                       (Peer, Bytes (Wire (Separator + 4 .. Wire'Last)),
+                       (Peer, Bytes (Wire (Wire'First .. Separator + 3)),
                         Timeout => Socket_Timeout);
-                  end if;
-               end;
+                     if Separator + 4 <= Wire'Last then
+                        Sockets.Send_All
+                          (Peer, Bytes (Wire (Separator + 4 .. Wire'Last)),
+                           Timeout => Socket_Timeout);
+                     end if;
+                  end;
+               end if;
             end;
-            Sockets.Close_Socket (Peer);
+            if Sockets.Is_Open (Peer) then
+               Sockets.Close_Socket (Peer);
+            end if;
          exception
             when others =>
                if Sockets.Is_Open (Peer) then
@@ -345,7 +434,7 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
            (False, Ada.Exceptions.Exception_Information (Occurrence));
    end Raw_Server;
 
-   procedure Run_Client is
+   procedure Run_Client (Round : Positive) is
       Port : Sockets.Port;
       Server_Ready : Boolean;
       Server_Failure : US.Unbounded_String;
@@ -504,13 +593,372 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
             end if;
          end;
 
+         declare
+            Wrong : aliased constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Legal_Hold
+                (Origin, Low_Level.Path_Style, "example-bucket", "wrong",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 1);
+            Destination : Buffers.Unique_Buffer (Pool'Access);
+            Sink : aliased Discard_Sink;
+            Set : aliased Operations.Completion_Set (2);
+            Buffer_Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Sink_Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Buffer_Raised : Boolean := False;
+            Sink_Raised : Boolean := False;
+         begin
+            Buffers.Acquire (Destination);
+            begin
+               Low_Level.Get_Object_Torrent
+                 (HTTP'Access, Wrong'Access, Destination,
+                  HTTP_Client.Deadline_After (Socket_Timeout),
+                  Operation => Buffer_Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Buffer_Raised := True;
+            end;
+            begin
+               Low_Level.Get_Object_Torrent
+                 (HTTP'Access, Wrong'Access, Sink'Access,
+                  HTTP_Client.Deadline_After (Socket_Timeout),
+                  Operation => Sink_Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Sink_Raised := True;
+            end;
+            if not Buffer_Raised or else Operations.Id (Buffer_Child) /= 0
+            then
+               raise Program_Error with
+                 "buffer exact-operation pre-admission rejection failed";
+            end if;
+            if not Sink_Raised or else Operations.Id (Sink_Child) /= 0 then
+               raise Program_Error with
+                 "sink exact-operation pre-admission rejection failed";
+            end if;
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 1);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Set : aliased Operations.Completion_Set (3);
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+         begin
+            Buffers.Acquire (Destination);
+            declare
+               Operation : Objects.Get_Object_Torrent_Operation :=
+                 Objects.Get_Torrent
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "provider-success", Parameters, Destination'Access,
+                    Identity, HTTP_Client.Deadline_After (Socket_Timeout));
+            begin
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+            end;
+            if Result.Kind /=
+                Objects.Get_Object_Torrent_Response_Available
+              or else Result.Failure /= Client_API.No_Failure
+              or else Result.Response.Kind /= Low_Level.Torrent_Opened
+              or else US.To_String
+                (Result.Response.Result.Request_Charged) /= "requester"
+              or else Buffer_String (Destination) /= Success_Body
+            then
+               raise Program_Error with
+                 "limited-root binary success mismatch";
+            end if;
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 1);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Set : aliased Operations.Completion_Set (3);
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+         begin
+            Buffers.Acquire (Destination);
+            declare
+               Operation : Objects.Get_Object_Torrent_Operation :=
+                 Objects.Get_Torrent
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "provider-rejection", Parameters, Destination'Access,
+                    Identity, HTTP_Client.Deadline_After (Socket_Timeout));
+            begin
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+            end;
+            if Result.Kind /=
+                Objects.Get_Object_Torrent_Response_Available
+              or else Result.Failure /= Client_API.No_Failure
+              or else Result.Response.Kind /=
+                Low_Level.Get_Object_Torrent_Rejected
+              or else Result.Response.Status /= 404
+              or else Buffers.Length (Destination) /= 0
+            then
+               raise Program_Error with
+                 "typed rejection restored a nonempty buffer";
+            end if;
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Caller_Body_Limit, Capacity => 1);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Set : aliased Operations.Completion_Set (3);
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+         begin
+            Buffers.Acquire (Destination);
+            declare
+               Operation : Objects.Get_Object_Torrent_Operation :=
+                 Objects.Get_Torrent
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "provider-capacity", Parameters, Destination'Access,
+                    Identity, HTTP_Client.Deadline_After (Socket_Timeout));
+            begin
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+            end;
+            if Result.Kind /= Objects.Get_Object_Torrent_Exchange_Failed
+              or else Result.Failure /= Client_API.Response_Too_Large
+              or else Result.HTTP_Result /=
+                HTTP_Client.Response_Body_Too_Large
+              or else not Result.Required_Body_Length.Known
+              or else Result.Required_Body_Length.Bytes /= 4
+              or else Buffers.Length (Destination) /= 0
+            then
+               raise Program_Error with "known capacity failure mismatch";
+            end if;
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 2);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Other_Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Other_HTTP : aliased HTTP_Client.Client
+              (Capacity => HTTP_Client_Capacity);
+            Token : aliased Flyology.Cancellation.Token;
+            Other_Token : aliased Flyology.Cancellation.Token;
+            Set : aliased Operations.Completion_Set (3);
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+
+            procedure Reject_Owner_Change
+              (Replacement_HTTP : not null access HTTP_Client.Client;
+               Replacement_Destination : not null access
+                 Buffers.Unique_Buffer;
+               Replacement_Token : access Flyology.Cancellation.Token;
+               Message : String;
+               Operation : in out Objects.Get_Object_Torrent_Operation)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  Objects.Get_Torrent
+                    (Replacement_HTTP, Origin, "example-bucket", "not-sent",
+                     Parameters, Replacement_Destination, Identity,
+                     HTTP_Client.Deadline_After (Socket_Timeout),
+                     Token => Replacement_Token, Operation => Operation);
+               exception
+                  when Program_Error => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Reject_Owner_Change;
+         begin
+            HTTP_Client.Configure (Other_HTTP, Origin);
+            Buffers.Acquire (Destination);
+            Buffers.Acquire (Other_Destination);
+            declare
+               Operation : Objects.Get_Object_Torrent_Operation :=
+                 Objects.Get_Torrent
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "restart-first", Parameters, Destination'Access,
+                    Identity, HTTP_Client.Deadline_After (Socket_Timeout),
+                    Token => Token'Access);
+            begin
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+               Reject_Owner_Change
+                 (Other_HTTP'Access, Destination'Access, Token'Access,
+                  "retained HTTP owner was replaceable", Operation);
+               Reject_Owner_Change
+                 (HTTP'Access, Other_Destination'Access, Token'Access,
+                  "retained destination owner was replaceable", Operation);
+               Reject_Owner_Change
+                 (HTTP'Access, Destination'Access, Other_Token'Access,
+                  "retained cancellation owner was replaceable", Operation);
+               Objects.Get_Torrent
+                 (HTTP'Access, Origin, "example-bucket", "restart-second",
+                  Parameters, Destination'Access, Identity,
+                  HTTP_Client.Deadline_After (Socket_Timeout),
+                  Token => Token'Access, Operation => Operation);
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+            end;
+            if Result.Kind /=
+                Objects.Get_Object_Torrent_Response_Available
+              or else Result.Response.Kind /= Low_Level.Torrent_Opened
+              or else Buffer_String (Destination) /= Success_Body
+            then
+               raise Program_Error with "operation-last restart mismatch";
+            end if;
+            HTTP_Client.Shutdown (Other_HTTP);
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 1);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Token : aliased Flyology.Cancellation.Token;
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+            Admission_FD, Drain_FD : Flyology.IO.Descriptor;
+            Admission_Requested, Drain_Requested : Boolean;
+         begin
+            if Round = 1 then
+               Cancel_Admission_Native.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Cancel_Drain_Native.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            elsif Round = 2 then
+               Cancel_Admission_Lightweight.Wait_Source
+                 (Admission_FD, Admission_Requested);
+               Cancel_Drain_Lightweight.Wait_Source
+                 (Drain_FD, Drain_Requested);
+            else
+               raise Program_Error with
+                 "invalid cancellation client round";
+            end if;
+            if Admission_Requested or else Drain_Requested
+              or else Admission_FD < 0 or else Drain_FD < 0
+            then
+               raise Program_Error with
+                 "stale GetObjectTorrent cancellation readiness";
+            end if;
+            Buffers.Acquire (Destination);
+            declare
+               Cancel_Set : aliased Operations.Completion_Set (5);
+               Operation : Objects.Get_Object_Torrent_Operation :=
+                 Objects.Get_Torrent
+                   (Cancel_Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "cancel-admitted", Parameters, Destination'Access,
+                    Identity, HTTP_Client.Deadline_After (Socket_Timeout),
+                    Token => Token'Access);
+               Admission_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Admission_FD, Flyology.IO.For_Read);
+               Drain_Ready : Flyology.IO.Readiness_Operation :=
+                 Flyology.IO.Wait
+                   (Cancel_Set'Access, Drain_FD, Flyology.IO.For_Read);
+               Batch : Operations.Completion_Batch (Cancel_Set.Capacity);
+            begin
+               Operations.Wait_Some (Cancel_Set, Batch);
+               if Batch.Count = 0
+                 or else not Operations.Is_Terminal (Admission_Ready)
+                 or else not Operations.Is_Active (Drain_Ready)
+                 or else not Operations.Is_Active (Operation)
+               then
+                  raise Program_Error with
+                    "GetObjectTorrent did not remain active through admission";
+               end if;
+               Flyology.IO.Finish (Admission_Ready);
+               Operations.Cancel (Operation);
+               Operations.Wait_All (Cancel_Set);
+               Objects.Finish (Operation, Result);
+               if Result.Kind /= Objects.Get_Object_Torrent_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+                 or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "admitted cancellation terminal result mismatch";
+               end if;
+               if not Operations.Is_Terminal (Drain_Ready) then
+                  raise Program_Error with
+                    "GetObjectTorrent transport drain was not acknowledged";
+               end if;
+               Flyology.IO.Finish (Drain_Ready);
+               Objects.Get_Torrent
+                 (HTTP'Access, Origin, "example-bucket", "cancel-restart",
+                  Parameters, Destination'Access, Identity,
+                  HTTP_Client.Deadline_After (Socket_Timeout),
+                  Token => Token'Access, Operation => Operation);
+               Operations.Wait_All (Cancel_Set);
+               Objects.Finish (Operation, Result);
+            end;
+            if Result.Kind /=
+                Objects.Get_Object_Torrent_Response_Available
+              or else Result.Response.Kind /= Low_Level.Torrent_Opened
+              or else Buffer_String (Destination) /= Success_Body
+            then
+               raise Program_Error with
+                 "admitted cancellation did not drain before restart";
+            end if;
+         end;
+
+         declare
+            Pool : aliased Buffers.Pool
+              (Block_Size => Error_XML'Length, Capacity => 1);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+            Parameters : constant
+              Low_Level.Get_Object_Torrent_Parameters :=
+                (Request_Payer => US.To_Unbounded_String ("requester"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : Objects.Get_Object_Torrent_Result;
+         begin
+            Buffers.Acquire (Destination);
+            Result := Objects.Get_Torrent
+              (HTTP, Origin, "example-bucket", "sync-equivalence",
+               Parameters, Destination, Identity,
+               Timeout => Socket_Timeout);
+            if Result.Kind /=
+                Objects.Get_Object_Torrent_Response_Available
+              or else Result.Failure /= Client_API.No_Failure
+              or else Result.Response.Kind /= Low_Level.Torrent_Opened
+              or else US.To_String
+                (Result.Response.Result.Request_Charged) /= "requester"
+              or else Buffer_String (Destination) /= Success_Body
+            then
+               raise Program_Error with
+                 "synchronous/composable equivalence mismatch";
+            end if;
+         end;
+
          HTTP_Client.Shutdown (HTTP);
       end;
    end Run_Client;
 
-   procedure Run_And_Report is
+   procedure Run_And_Report (Round : Positive) is
    begin
-      Run_Client;
+      Run_Client (Round);
       Clients.Report (True);
    exception
       when Occurrence : others =>
@@ -523,7 +971,7 @@ procedure S3_Get_Object_Torrent_Socket_Corpus is
    Server_Detail : US.Unbounded_String;
    Client_Detail : US.Unbounded_String;
 begin
-   Run_And_Report;
+   Run_And_Report (1);
    declare
       task Lightweight_Client is
          pragma Task_Info (Flyology.Lightweight_Task);
@@ -531,7 +979,7 @@ begin
 
       task body Lightweight_Client is
       begin
-         Run_And_Report;
+         Run_And_Report (2);
       end Lightweight_Client;
    begin
       null;

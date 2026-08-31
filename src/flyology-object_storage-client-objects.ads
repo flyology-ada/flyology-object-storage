@@ -1513,6 +1513,174 @@ package Flyology.Object_Storage.Client.Objects is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Get_Object_ACL_Result;
 
+   --  Shape of a terminal bounded GetObjectTorrent read.
+   --  @enum Get_Object_Torrent_Response_Available Modeled response exists
+   --  @enum Get_Object_Torrent_Exchange_Failed No complete response exists
+   type Get_Object_Torrent_Result_Kind is
+     (Get_Object_Torrent_Response_Available,
+      Get_Object_Torrent_Exchange_Failed);
+
+   --  Typed GetObjectTorrent metadata or composable HTTP failure. Successful
+   --  torrent bytes remain in the caller-owned Destination buffer. Admission
+   --  is diagnostic because this operation is read-only.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response metadata
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Required_Body_Length Exact known capacity requirement
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Object_Torrent_Result
+     (Kind : Get_Object_Torrent_Result_Kind :=
+        Get_Object_Torrent_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Object_Torrent_Response_Available =>
+            Response : Low_Level.Get_Object_Torrent_Outcome;
+         when Get_Object_Torrent_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Required_Body_Length : Flyology.HTTP.Client.Length_Requirement :=
+              (others => <>);
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded GetObjectTorrent parent with one hidden HTTP child.
+   --  Destination, HTTP, and Cancellation are retained identities that must
+   --  outlive terminal Finish. Destination must not be inspected while active;
+   --  each response slice is copied into its retained buffer without moving
+   --  the buffer or cancellation token through the child. Non-success leaves
+   --  Destination readable with length zero.
+   type Get_Object_Torrent_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded GetObjectTorrent read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled payer and owner controls
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected structured error XML limits; Destination
+   --  capacity bounds a successful torrent body
+   --  @param Token Optional cancellation source retained, not moved through
+   --  the child, until terminal drain
+   --  @param Operation Fresh or consumed established torrent read
+   procedure Get_Torrent
+     (Client      : not null access Flyology.HTTP.Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Deadline    : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token       : access Flyology.Cancellation.Token := null;
+      Operation   : in out Get_Object_Torrent_Operation)
+   with
+     Pre =>
+       Flyology.Buffers.Has_Buffer (Destination.all)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetObjectTorrent read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled payer and owner controls
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected structured error XML limits; Destination
+   --  capacity bounds a successful torrent body
+   --  @param Token Optional cancellation source retained, not moved through
+   --  the child, until terminal drain
+   --  @return Started owner-driven torrent read
+   function Get_Torrent
+     (Set         : not null access
+        Flyology.Operations.Completion_Set'Class;
+      Client      : not null access Flyology.HTTP.Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Deadline    : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token       : access Flyology.Cancellation.Token := null)
+      return Get_Object_Torrent_Operation
+   with Pre => Flyology.Buffers.Has_Buffer (Destination.all);
+
+   --  Consume one terminal GetObjectTorrent operation. Destination already
+   --  owns its exact token; success leaves complete torrent bytes readable.
+   --  @param Operation Terminal torrent read
+   --  @param Result Typed response metadata or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Object_Torrent_Operation;
+      Result    : out Get_Object_Torrent_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one bounded torrent representation through the provider-owned
+   --  composable operation and its shared state machine.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled payer and owner controls
+   --  @param Destination Acquired caller-owned bounded output handle
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected structured error XML limits; Destination
+   --  capacity bounds a successful torrent body
+   --  @return Typed response metadata or bounded exchange failure
+   function Get_Torrent
+     (Client      : aliased in out Flyology.HTTP.Client.Client;
+      Origin      : Flyology.HTTP.Origin;
+      Bucket      : String;
+      Key         : String;
+      Parameters  : Low_Level.Get_Object_Torrent_Parameters;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity    : Low_Level.Credentials;
+      Region      : String := "us-east-1";
+      Style       : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout     : Duration := 30.0;
+      Token       : access Flyology.Cancellation.Token := null;
+      Limits      : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Object_Torrent_Result
+   with Pre => Flyology.Buffers.Has_Buffer (Destination);
+
    --  Shape of a terminal GetObjectLegalHold read.
    --  @enum Get_Legal_Hold_Response_Available Modeled response exists
    --  @enum Get_Legal_Hold_Exchange_Failed No modeled response exists
@@ -3804,6 +3972,45 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Get_Object_ACL_Operation);
+
+   --  @exclude
+   type Get_Object_Torrent_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Error_Data       : Flyology.Bytes.Unbounded_Bytes;
+      Total_Response_Bytes : Byte_Count := 0;
+      Destination_Overflow : Boolean := False;
+      Error_Overflow   : Boolean := False;
+      Final_Result     : Get_Object_Torrent_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Get_Object_Torrent_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Object_Torrent_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Object_Torrent_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Object_Torrent_Operation);
 
    type Get_Legal_Hold_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;

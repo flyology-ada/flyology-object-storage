@@ -3,5 +3,5 @@ request	289	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bi
 request	289	2	Key	471	uri-label	true	projected	Require one valid object key and preserve its exact path encoding before the torrent subresource.	GOT-RQ-001,GOT-RQ-003,GOT-RQ-004
 request	289	3	RequestPayer	599	header	false	projected	Preserve omission or sign the sole modeled requester value exactly once.	GOT-RQ-002,GOT-RQ-003,GOT-RQ-004
 request	289	4	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GOT-RQ-002,GOT-RQ-003,GOT-RQ-004
-output	288	1	Body	46	body	false	streamed	Leave successful torrent octets unread in the limited HTTP response for caller-bounded streaming consumption.	GOT-RS-001,GOT-RS-002,GOT-RS-006,GOT-TR-001,GOT-TR-002
-output	288	2	RequestCharged	598	header	false	projected	Preserve omission or the sole modeled requester value and reject duplicate physical fields.	GOT-RS-003,GOT-TR-001,GOT-TR-002
+output	288	1	Body	46	body	false	streamed	Leave successful torrent octets unread in the limited HTTP response or move them exactly once into a caller-owned bounded buffer.	GOT-RS-001,GOT-RS-002,GOT-RS-006,GOT-TR-001,GOT-TR-002,GOT-TR-003,GOT-TR-004,GOT-TR-005,GOT-TR-006,GOT-TR-007,GOT-TR-008
+output	288	2	RequestCharged	598	header	false	projected	Preserve omission or the sole modeled requester value and reject duplicate physical fields.	GOT-RS-003,GOT-TR-001,GOT-TR-002,GOT-TR-003,GOT-TR-008

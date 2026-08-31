@@ -14,6 +14,10 @@ CORPUS = ROOT / "tests" / "corpora" / "get-object-torrent"
 MODEL = ROOT / "src" / "flyology-object_storage-s3-model.adb"
 LOW_SPEC = ROOT / "src" / "flyology-object_storage-client-low_level.ads"
 LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
+OBJECTS_SPEC = ROOT / "src" / "flyology-object_storage-client-objects.ads"
+OBJECTS_BODY = ROOT / "src" / "flyology-object_storage-client-objects.adb"
+SOCKET_CORPUS = ROOT / "tests" / "src" / \
+    "s3_get_object_torrent_socket_corpus.adb"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 
 # These values identify the reviewed upstream model. A change is a model
@@ -239,6 +243,9 @@ def main() -> int:
                 "operation:GetObjectTorrent" not in refs:
             fail(f"{vector_id}: unreachable vector")
 
+    if len(vectors) != 21:
+        fail(f"expected 21 reciprocal vectors, found {len(vectors)}")
+
     spec = LOW_SPEC.read_text(encoding="utf-8")
     body = LOW_BODY.read_text(encoding="utf-8")
     for token in (
@@ -250,10 +257,113 @@ def main() -> int:
     for token in (
         "function Prepare_Get_Object_Torrent",
         "function Execute_Get_Object_Torrent",
+        "procedure Get_Object_Torrent",
+        "function Decode_Get_Object_Torrent_Complete_Response",
         "function Decode_Get_Object_Torrent_Response_Head",
     ):
         if token not in spec or token not in body:
             fail(f"typed client surface lacks {token}")
+
+    objects_spec = OBJECTS_SPEC.read_text(encoding="utf-8")
+    objects_body = OBJECTS_BODY.read_text(encoding="utf-8")
+    for token in (
+        "type Get_Object_Torrent_Operation",
+        "type Get_Object_Torrent_Result_Kind",
+        "type Get_Object_Torrent_Result",
+        "function Get_Torrent",
+        "procedure Get_Torrent",
+        "procedure Finish",
+    ):
+        if token not in objects_spec:
+            fail(f"provider composable surface lacks {token}")
+    for token in (
+        "Get_Object_Torrent_Response_Available",
+        "Get_Object_Torrent_Exchange_Failed",
+        "function Get_Torrent",
+        "procedure Get_Torrent",
+        "procedure Finish",
+    ):
+        if token not in objects_body:
+            fail(f"provider lifecycle implementation lacks {token}")
+    visible_operation = re.findall(
+        r"   type Get_Object_Torrent_Operation\s*"
+        r"\(Set : not null access "
+        r"Flyology\.Operations\.Completion_Set'Class;\s*"
+        r"HTTP : not null access Flyology\.HTTP\.Client\.Client;\s*"
+        r"Destination : not null access Flyology\.Buffers\.Unique_Buffer;\s*"
+        r"Cancellation : access Flyology\.Cancellation\.Token\) is\s*"
+        r"new Flyology\.Operations\.Operation and\s*"
+        r"Flyology\.HTTP\.Client\.Response_Body_Sink with private;",
+        objects_spec,
+        re.DOTALL,
+    )
+    private_operation = re.findall(
+        r"   --  @exclude\s*"
+        r"type Get_Object_Torrent_Operation\s*"
+        r"\(Set : not null access "
+        r"Flyology\.Operations\.Completion_Set'Class;\s*"
+        r"HTTP : not null access Flyology\.HTTP\.Client\.Client;\s*"
+        r"Destination : not null access Flyology\.Buffers\.Unique_Buffer;\s*"
+        r"Cancellation : access Flyology\.Cancellation\.Token\) is\s*"
+        r"new Flyology\.Operations\.Operation \(Set\) and\s*"
+        r"Flyology\.HTTP\.Client\.Response_Body_Sink\s*with record",
+        objects_spec,
+        re.DOTALL,
+    )
+    if len(visible_operation) != 1 or len(private_operation) != 1:
+        fail("provider operation type geometry changed")
+    provider_signatures = re.findall(
+        r"(?:function|procedure) Get_Torrent\s*\((.*?)\)\s*"
+        r"(?:return\s+[^;]+)?(?:;|with)",
+        objects_spec,
+        re.DOTALL,
+    )
+    if len(provider_signatures) != 3:
+        fail("provider must expose exactly three Get_Torrent overloads")
+    for signature in provider_signatures:
+        positions = [
+            signature.find("Parameters"),
+            signature.find("Destination"),
+            signature.find("Identity"),
+        ]
+        if positions != sorted(positions) or \
+                any(item < 0 for item in positions):
+            fail("provider Get_Torrent parameter order changed")
+    for token in (
+        "Operation.HTTP /= Client",
+        "Operation.Destination /= Destination",
+        "Operation.Cancellation /= Token",
+        "Response_Body_Too_Large",
+        "Response_Too_Large",
+        "Low_Level.Get_Object_Torrent",
+        "Operations.Wait_All",
+        "Finish (Operation, Result)",
+    ):
+        if token not in objects_body:
+            fail(f"provider lifecycle implementation lacks {token}")
+
+    socket_corpus = SOCKET_CORPUS.read_text(encoding="utf-8")
+    if "Scenarios_Per_Client : constant Positive := 20;" not in socket_corpus:
+        fail("socket lifecycle corpus scenario cardinality changed")
+    for token in (
+        "limited-root binary success",
+        "typed rejection restored a nonempty buffer",
+        "known capacity failure mismatch",
+        "operation-last restart mismatch",
+        "admitted cancellation did not drain",
+        "Completion_Set (5)",
+        "Operations.Wait_Some",
+        "GetObjectTorrent transport drain was not acknowledged",
+        "synchronous/composable equivalence mismatch",
+        "retained HTTP owner was replaceable",
+        "retained destination owner was replaceable",
+        "retained cancellation owner was replaceable",
+        "buffer exact-operation pre-admission rejection failed",
+        "sink exact-operation pre-admission rejection failed",
+        "Result.Admission /= HTTP_Client.Possibly_Admitted",
+    ):
+        if token not in socket_corpus:
+            fail(f"socket lifecycle corpus lacks {token}")
 
     print(
         "GetObjectTorrent preparation: 4 request members, 2 output members, "

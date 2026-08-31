@@ -6317,6 +6317,33 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Status : constant Flyology.HTTP.Status_Code :=
         Flyology.HTTP.Client.Status (Response);
+   begin
+      if Status = 200 then
+         return Decode_Get_Object_Torrent_Complete_Response
+           (Response, "", Limits);
+      end if;
+      declare
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Torrent_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetObjectTorrent error exceeds XML limit";
+   end Decode_Get_Object_Torrent_Response_Head;
+
+   function Decode_Get_Object_Torrent_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
 
       function Singleton_Header (Name : String) return String is
          Count : constant Natural :=
@@ -6347,24 +6374,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Request_ID : constant String := Singleton_Header ("x-amz-request-id");
       Host_ID : constant String := Singleton_Header ("x-amz-id-2");
    begin
-      if Status = 200 then
-         return Decode_Get_Object_Torrent_Response_Head
-           (Status, "", Request_Charged, Request_ID, Host_ID, Limits);
-      end if;
-      declare
-         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
-           Flyology.HTTP.Client.Read_All
-             (Response, Limits.Maximum_Document_Bytes, Token);
-      begin
-         return Decode_Get_Object_Torrent_Response_Head
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_Charged,
-            Request_ID, Host_ID, Limits);
-      end;
-   exception
-      when Flyology.HTTP.Client.Response_Too_Large =>
-         raise Invalid_Response with
-           "GetObjectTorrent error exceeds XML limit";
-   end Decode_Get_Object_Torrent_Response_Head;
+      return Decode_Get_Object_Torrent_Response_Head
+        (Status,
+         (if Status = 200 then "" else Payload),
+         Request_Charged,
+         Request_ID,
+         Host_ID,
+         Limits);
+   end Decode_Get_Object_Torrent_Complete_Response;
 
    function Prepare_Get_Object_Legal_Hold
      (Origin     : Flyology.HTTP.Origin;
@@ -15019,6 +15036,44 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared.Message'Access, Destination, Deadline, Token,
          Operation);
    end Get_Object;
+
+   procedure Get_Object_Torrent
+     (Client      : not null access Flyology.HTTP.Client.Client;
+      Prepared    : not null access constant Prepared_Request;
+      Destination : in out Flyology.Buffers.Unique_Buffer;
+      Deadline    : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token       : access Flyology.Cancellation.Token := null;
+      Operation   : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Object_Torrent_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Object_Torrent_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Exchange_To_Buffer
+        (Client, Prepared.Message'Access, Destination, Deadline, Token,
+         Operation);
+   end Get_Object_Torrent;
+
+   procedure Get_Object_Torrent
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Object_Torrent_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Object_Torrent_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
+   end Get_Object_Torrent;
 
    procedure List_Objects
      (Client    : not null access Flyology.HTTP.Client.Client;

@@ -1570,14 +1570,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
-   --  Terminal interpretation of a GetObjectTorrent response head.
-   --  @enum Torrent_Opened Exact 200 response with an unread streaming body
+   --  Terminal interpretation of GetObjectTorrent response metadata.
+   --  @enum Torrent_Opened Exact 200 response with caller-owned body bytes
    --  @enum Get_Object_Torrent_Rejected Bounded non-200 S3 rejection
    type Get_Object_Torrent_Outcome_Kind is
      (Torrent_Opened, Get_Object_Torrent_Rejected);
 
-   --  Typed response head.  Torrent_Opened deliberately carries no body:
-   --  the caller consumes the still-open limited HTTP response incrementally.
+   --  Typed response metadata. Torrent_Opened deliberately carries no body;
+   --  the executing API documents whether bytes remain in an HTTP response or
+   --  have moved into a caller-owned bounded buffer.
    --  Status defaults to the established low-level rejection initializer;
    --  the value is local state and is never transmitted as an HTTP status.
    --  @field Kind Whether the response opened a body or returned an S3 error
@@ -1641,6 +1642,19 @@ package Flyology.Object_Storage.Client.Low_Level is
    function Decode_Get_Object_Torrent_Response_Head
      (Response : in out Flyology.HTTP.Client.Response;
       Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome;
+
+   --  Decode response metadata after a bounded exchange has retained the
+   --  complete body. On 200, Payload is caller-owned torrent data and is not
+   --  interpreted. On other statuses it is the bounded S3 error document.
+   --  @param Response Complete lease-free HTTP response metadata
+   --  @param Payload Complete torrent bytes or bounded S3 error document
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Validated response metadata or structured S3 rejection
+   function Decode_Get_Object_Torrent_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Torrent_Outcome;
 
@@ -6173,6 +6187,38 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token       : access Flyology.Cancellation.Token := null;
       Operation   : in out Flyology.HTTP.Client.Exchange_Operation)
      with Pre => Flyology.Buffers.Has_Buffer (Destination);
+
+   --  Start a prepared GetObjectTorrent exchange into an acquired buffer.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Exact prepared GetObjectTorrent request
+   --  @param Destination Acquired caller-owned bounded output handle
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @param Operation Fresh HTTP exchange operation
+   procedure Get_Object_Torrent
+     (Client      : not null access Flyology.HTTP.Client.Client;
+      Prepared    : not null access constant Prepared_Request;
+      Destination : in out Flyology.Buffers.Unique_Buffer;
+      Deadline    : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token       : access Flyology.Cancellation.Token := null;
+      Operation   : in out Flyology.HTTP.Client.Exchange_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Destination);
+
+   --  Start an exact prepared GetObjectTorrent exchange into a bounded sink.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Exact prepared GetObjectTorrent request
+   --  @param Sink Caller-owned bounded response-body sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @param Operation Fresh HTTP exchange operation
+   procedure Get_Object_Torrent
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared ListObjects v1 exchange into a bounded sink.
    procedure List_Objects
