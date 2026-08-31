@@ -95,12 +95,16 @@ def function_body(model: str, function: str) -> str:
     return tail.split(marker, 1)[0]
 
 
-def operation_scalar(model: str, function: str) -> str:
+def operation_scalar(
+    model: str,
+    function: str,
+    operation: str = "Get_Bucket_Lifecycle_Configuration_Operation",
+) -> str:
     match = re.search(
-        r"when Get_Bucket_Lifecycle_Configuration_Operation =>\s+"
+        rf"when {re.escape(operation)} =>\s+"
         r"return\s+([^;]+);", function_body(model, function))
     if match is None:
-        fail(f"GetBucketLifecycleConfiguration lacks {function}")
+        fail(f"{operation} lacks {function}")
     return match.group(1).strip().strip('"')
 
 
@@ -174,6 +178,47 @@ def main() -> int:
     for function, expected in scalars.items():
         if operation_scalar(model, function) != expected:
             fail(f"generated {function} changed")
+
+    legacy_scalars = {
+        "Method": "Get_Method",
+        "Request_URI": "/{Bucket}?lifecycle",
+        "Response_Code": "200",
+        "Input_Shape": "240",
+        "Output_Shape": "239",
+        "Request_Checksum_Required": "False",
+    }
+    for function, expected in legacy_scalars.items():
+        if operation_scalar(
+            model, function, "Get_Bucket_Lifecycle_Operation"
+        ) != expected:
+            fail(f"generated legacy {function} changed")
+
+    for function in (
+        "Member_Name",
+        "Member_Shape",
+        "Location",
+        "Member_Location_Name",
+        "Member_Required",
+    ):
+        if case_values(model, function, 240) != case_values(
+            model, function, 238
+        ):
+            fail(f"legacy lifecycle request {function} diverged")
+    if case_values(model, "Member_Name", 239) != ["Rules"] or \
+            case_values(model, "Member_Shape", 239) != ["622"] or \
+            case_values(model, "Member_Location_Name", 239) != ["Rule"] or \
+            case_values(model, "Member_Required", 239) != ["False"]:
+        fail("legacy lifecycle output projection changed")
+    if shape_scalar(model, "Kind", 622) != "List_Shape" or \
+            shape_scalar(model, "List_Member_Shape", 622) != "621" or \
+            shape_scalar(model, "Is_Flattened", 622) != "True":
+        fail("legacy lifecycle Rules list changed")
+    legacy_rule_wire = case_values(model, "Member_Location_Name", 621)
+    modern_rule_wire = case_values(model, "Member_Location_Name", 374)
+    if legacy_rule_wire != [
+        name for name in modern_rule_wire if name != "Filter"
+    ]:
+        fail("legacy lifecycle Rule is not the maintained wire subset")
 
     for list_shape, item_shape, flattened in (
             (377, 374, "True"), (694, 692, "True"),
@@ -264,9 +309,9 @@ def main() -> int:
             "Parse_Transition_Default_Minimum_Size"):
         if token not in source:
             fail(f"typed implementation lacks {token}")
-    print("GetBucketLifecycleConfiguration preparation: 36 modeled members, "
-          "four exact list projections, 10 enum values, five unbounded "
-          f"numeric shapes, {len(vectors)} vectors")
+    print("GetBucketLifecycleConfiguration preparation: legacy exact wire "
+          "subset; 36 modeled members, four exact list projections, 10 enum "
+          f"values, five unbounded numeric shapes, {len(vectors)} vectors")
     return 0
 
 

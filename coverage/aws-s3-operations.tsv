@@ -35,7 +35,7 @@ GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	missing	covered	missing	covered
 GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 GetBucketInventoryConfiguration	extended	missing	covered	missing	covered
-GetBucketLifecycle	extended	missing	partial	missing	missing
+GetBucketLifecycle	extended	missing	covered	missing	covered
 GetBucketLifecycleConfiguration	extended	missing	covered	missing	covered
 GetBucketLocation	core	covered	covered	covered	covered
 GetBucketLogging	extended	missing	covered	missing	covered

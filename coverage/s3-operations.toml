@@ -698,6 +698,16 @@ get_bucket_lifecycle_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_lifecycle = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-lifecycle-configuration-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_lifecycle_configuration_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-lifecycle-gnatdoc", "--operation", "GetBucketLifecycle"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_bucket_notification_configuration = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-bucket-notification-configuration-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -2211,18 +2221,22 @@ tier = "extended"
 provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = ["deprecated in the pinned service model; GetBucketLifecycleConfiguration is the maintained replacement"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
-implementation_mode = "generated"
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Get_Lifecycle_Configuration"
+absence = "the deprecated operation shares exact GET ?lifecycle transport with GetBucketLifecycleConfiguration; a validated exact 200 preserves absent lifecycle configuration separately from present legacy Rule values, while exact 404 NoSuchLifecycleConfiguration reports no configured lifecycle policy and remains distinct from NoSuchBucket"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read-only compatibility alias; only one complete validated exact 200 Bucket_Control_Found response observed exposes lifecycle state, every incomplete, invalid, or non-observed response exposes no configuration state, and the client performs no automatic retry"
+reconciliation = "a later GetBucketLifecycle or GetBucketLifecycleConfiguration observes only the bucket lifecycle configuration current at read time; it does not prove that a prior mutation caused the observed state or authorize automatic replay"
+exclusions = ["the pinned model deprecates GetBucketLifecycle in favor of GetBucketLifecycleConfiguration; the public compatibility surface deliberately uses the maintained Get_Lifecycle_Configuration name and its exact shared wire endpoint rather than duplicating an obsolete Ada API", "the legacy Rules output is a structural subset of the maintained lifecycle decoder; the compatibility surface does not claim legacy support for Filter-only distinctions or the modern transition-minimum response header", "lifecycle persistence, lifecycle action execution, and an authenticated Flyology GetBucketLifecycle server route are absent and not claimed", "directory-bucket endpoint and session semantics, access-point and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "get_bucket_lifecycle"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.ads", "src/flyology-object_storage-client-buckets.adb", "src/flyology-object_storage-s3-lifecycle.ads", "src/flyology-object_storage-s3-lifecycle.adb", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-get-bucket-lifecycle-configuration-preparation.py", "docs/qualification/get-bucket-lifecycle-configuration.md", "tests/corpora/get-bucket-lifecycle-configuration/members.tsv", "tests/corpora/get-bucket-lifecycle-configuration/vectors.tsv", "tests/src/flyology-object_storage-client-buckets-testing.adb", "tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Get_Bucket_Lifecycle_Configuration", "Decode_Get_Bucket_Lifecycle_Configuration_Response", "Execute_Get_Bucket_Lifecycle_Configuration", "Get_Bucket_Lifecycle_Operation", "Get_Lifecycle_Configuration", "Finish"]
 
 [[operation]]
 name = "GetBucketLifecycleConfiguration"

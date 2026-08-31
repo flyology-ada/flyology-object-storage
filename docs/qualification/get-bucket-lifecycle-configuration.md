@@ -5,6 +5,15 @@ client for `GetBucketLifecycleConfiguration`. It does not claim lifecycle
 configuration persistence in a Flyology backend, an authenticated Flyology
 server route, lifecycle action execution, or external server interoperability.
 
+The pinned model also retains deprecated `GetBucketLifecycle`. Its method,
+resource path, required bucket, and optional owner precondition are identical
+to the maintained operation, while its Rules response is a structural subset.
+The client therefore exposes that compatibility operation through the same
+`Get_Lifecycle_Configuration` API and strict decoder rather than duplicating
+an obsolete public name. Its separate registry lane appends only
+`GetBucketLifecycle`; this shared evidence is conditional on that lane and is
+not an external-provider or server-compatibility claim.
+
 ## Pinned authority and complete inventory
 
 The machine inventory is tied to botocore S3 model revision

@@ -45,7 +45,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketEncryption | Get_Encryption | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketInventoryConfiguration | Get_Inventory_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketLifecycle | Get_Lifecycle_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketLifecycleConfiguration | Get_Lifecycle_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketLocation | Get_Location | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
