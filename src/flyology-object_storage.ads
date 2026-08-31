@@ -8,9 +8,33 @@ is
 
    --  Nonnegative byte count used for object and multipart sizes.
    subtype Byte_Count is Long_Long_Integer range 0 .. Long_Long_Integer'Last;
+
+   --  Nonnegative Unix timestamp retained with stored object metadata.
    subtype Unix_Time is Long_Long_Integer range 0 .. Long_Long_Integer'Last;
 
    --  Storage operation outcome.
+   --  @enum Success Operation completed successfully
+   --  @enum Not_Found Requested resource was not found
+   --  @enum Bucket_Not_Found Requested bucket was not found
+   --  @enum Tag_Set_Not_Found Requested tag set was not found
+   --  @enum Already_Exists Requested resource already exists
+   --  @enum Bucket_Not_Empty Bucket still contains objects
+   --  @enum Capacity_Exceeded Bounded backend capacity was exceeded
+   --  @enum Invalid_Request Request did not satisfy the storage contract
+   --  @enum Invalid_Range Requested byte range is invalid
+   --  @enum Invalid_Part Multipart part is invalid
+   --  @enum Invalid_Part_Order Multipart parts are not in valid order
+   --  @enum Bad_Digest Supplied content digest does not match the content
+   --  @enum Entity_Too_Small Supplied entity is below the accepted size
+   --  @enum Entity_Too_Large Supplied entity exceeds the accepted size
+   --  @enum Source_Bucket_Not_Found Copy source bucket was not found
+   --  @enum Source_Not_Found Copy source object was not found
+   --  @enum Precondition_Failed A requested condition was not satisfied
+   --  @enum Not_Modified Conditional read found no modification
+   --  @enum Conflict Operation conflicts with current storage state
+   --  @enum Access_Denied Operation is not permitted
+   --  @enum Not_Implemented Backend does not implement the operation
+   --  @enum Backend_Unavailable Backend cannot currently serve the operation
    type Status is
      (Success,
       Not_Found,
@@ -38,6 +62,17 @@ is
    --  Storage-domain checksum metadata. Wire spelling and Base64 validation
    --  remain in the S3 boundary; backends retain the selected algorithm,
    --  checksum method, and canonical encoded value with the object or part.
+   --  @enum No_Checksum No checksum metadata is present
+   --  @enum Checksum_CRC32 CRC-32 checksum
+   --  @enum Checksum_CRC32C CRC-32C checksum
+   --  @enum Checksum_CRC64NVME CRC-64/NVME checksum
+   --  @enum Checksum_SHA1 SHA-1 checksum
+   --  @enum Checksum_SHA256 SHA-256 checksum
+   --  @enum Checksum_SHA512 SHA-512 checksum
+   --  @enum Checksum_MD5 MD5 checksum
+   --  @enum Checksum_XXHASH64 XXH64 checksum
+   --  @enum Checksum_XXHASH3 XXH3 64-bit checksum
+   --  @enum Checksum_XXHASH128 XXH3 128-bit checksum
    type Checksum_Algorithm is
      (No_Checksum,
       Checksum_CRC32,
@@ -51,20 +86,34 @@ is
       Checksum_XXHASH3,
       Checksum_XXHASH128);
 
+   --  Method used to calculate stored checksum metadata.
+   --  @enum No_Checksum_Method No checksum calculation method is present
+   --  @enum Composite_Checksum Checksum is composed from part checksums
+   --  @enum Full_Object_Checksum Checksum covers the complete object
    type Checksum_Method is
      (No_Checksum_Method, Composite_Checksum, Full_Object_Checksum);
 
+   --  Checksum metadata retained with an object or multipart part.
+   --  @field Algorithm Selected checksum algorithm
+   --  @field Method Method used to calculate the checksum
+   --  @field Value Canonical encoded checksum value
    type Checksum_Information is record
       Algorithm : Checksum_Algorithm := No_Checksum;
       Method    : Checksum_Method := No_Checksum_Method;
       Value     : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Checksum metadata representing the absence of a checksum.
    No_Checksum_Information : constant Checksum_Information;
 
    --  Evaluate HTTP entity-tag predicates for one atomic object publication.
    --  Missing objects never satisfy If-Match and always satisfy a valid
    --  If-None-Match. Malformed or excessively large fields are rejected.
+   --  @param If_Match Optional If-Match field value
+   --  @param If_None_Match Optional If-None-Match field value
+   --  @param Exists Whether the destination object exists
+   --  @param Entity_Tag Stored unquoted entity tag when the object exists
+   --  @return Condition evaluation outcome
    function Evaluate_Object_Write_Conditions
      (If_Match, If_None_Match : String;
       Exists                  : Boolean;
@@ -73,11 +122,16 @@ is
    --  Validate one If-Match or If-None-Match field for an object read.
    --  Weak entity tags are valid syntax; comparison semantics are selected by
    --  Evaluate_Object_Read_Conditions. Oversized fields are rejected.
+   --  @param Value Entity-tag condition field value
+   --  @return True when Value has valid bounded entity-tag list syntax
    function Valid_Object_Read_Entity_Tag_Condition
      (Value : String) return Boolean;
 
    --  Validate both optional entity-tag predicates before an operation
    --  acquires a snapshot or other bounded backend resources.
+   --  @param If_Match Optional If-Match field value
+   --  @param If_None_Match Optional If-None-Match field value
+   --  @return True when both fields have valid bounded syntax
    function Valid_Object_Write_Conditions
      (If_Match, If_None_Match : String) return Boolean;
 
@@ -85,6 +139,15 @@ is
    --  snapshot. Entity_Tag is the stored unquoted opaque tag. The two Boolean
    --  arguments distinguish an absent date condition from every signed HTTP
    --  date value, including dates before the Unix epoch.
+   --  @param If_Match Optional If-Match field value
+   --  @param If_None_Match Optional If-None-Match field value
+   --  @param Has_If_Modified_Since Whether the modified-since date is present
+   --  @param If_Modified_Since Modified-since date in signed Unix seconds
+   --  @param Has_If_Unmodified_Since Whether the unmodified date is present
+   --  @param If_Unmodified_Since Unmodified-since date in signed Unix seconds
+   --  @param Entity_Tag Stored unquoted entity tag
+   --  @param Modified Stored nonnegative modification time
+   --  @return Conditional-read outcome
    function Evaluate_Object_Read_Conditions
      (If_Match, If_None_Match : String;
       Has_If_Modified_Since   : Boolean;
@@ -100,6 +163,15 @@ is
    --  snapshot. Entity-tag predicates take precedence over their paired date
    --  predicates. A failed If-None-Match is a 412 copy precondition rather
    --  than the 304 result used by GetObject and HeadObject.
+   --  @param If_Match Optional copy-source If-Match field value
+   --  @param If_None_Match Optional copy-source If-None-Match field value
+   --  @param Has_If_Modified_Since Whether the modified-since date is present
+   --  @param If_Modified_Since Modified-since date in signed Unix seconds
+   --  @param Has_If_Unmodified_Since Whether the unmodified date is present
+   --  @param If_Unmodified_Since Unmodified-since date in signed Unix seconds
+   --  @param Entity_Tag Stored unquoted source entity tag
+   --  @param Modified Stored nonnegative source modification time
+   --  @return Copy-source condition outcome
    function Evaluate_Object_Copy_Conditions
      (If_Match, If_None_Match : String;
       Has_If_Modified_Since   : Boolean;
@@ -114,6 +186,8 @@ is
    --  Validate the S3 DeleteObjects ETag condition. The wildcard, an exact
    --  unquoted opaque tag, and the corresponding quoted form are accepted;
    --  lists, weak validators, whitespace decoration, and controls are not.
+   --  @param Value DeleteObjects ETag condition value
+   --  @return True when Value is a valid DeleteObjects ETag condition
    function Valid_Object_Delete_ETag_Condition
      (Value : String) return Boolean;
 
@@ -121,6 +195,17 @@ is
    --  snapshot. An unconditioned missing key is an idempotent success, while
    --  a conditioned missing key is Not_Found. Last_Modified_Time is already
    --  parsed to signed Unix seconds by the protocol boundary.
+   --  @param Has_ETag Whether the ETag condition is present
+   --  @param ETag ETag condition value
+   --  @param Has_Last_Modified_Time Whether the time condition is present
+   --  @param Last_Modified_Time Expected modification time in Unix seconds
+   --  @param Has_Size Whether the size condition is present
+   --  @param Expected_Size Expected object size
+   --  @param Exists Whether the object exists in the catalog snapshot
+   --  @param Entity_Tag Stored unquoted entity tag when the object exists
+   --  @param Modified Stored nonnegative modification time
+   --  @param Size Stored object size
+   --  @return DeleteObjects member condition outcome
    function Evaluate_Object_Delete_Conditions
      (Has_ETag               : Boolean;
       ETag                   : String;
@@ -137,12 +222,18 @@ is
 
    --  Persisted bucket-versioning state. Unconfigured denotes that no value
    --  has ever been supplied; it is distinct from Suspended on the S3 wire.
+   --  @enum Versioning_Unconfigured No versioning value has been supplied
+   --  @enum Versioning_Enabled Versioning is enabled
+   --  @enum Versioning_Suspended Versioning is suspended
    type Bucket_Versioning_Status is
      (Versioning_Unconfigured, Versioning_Enabled, Versioning_Suspended);
 
    --  Persisted MFA-delete state. The storage contract can preserve this
    --  value, but an S3 boundary must not accept a change without independently
    --  enforcing its MFA policy.
+   --  @enum MFA_Delete_Unconfigured No MFA-delete value has been supplied
+   --  @enum MFA_Delete_Enabled MFA delete is enabled
+   --  @enum MFA_Delete_Disabled MFA delete is disabled
    type MFA_Delete_Status is
      (MFA_Delete_Unconfigured, MFA_Delete_Enabled, MFA_Delete_Disabled);
 
@@ -150,6 +241,8 @@ is
    --  backends apply Status to object publication and selection under the
    --  same backend state boundary; a backend that has not qualified those
    --  semantics returns Not_Implemented from its version-specific surface.
+   --  @field Status Persisted versioning status
+   --  @field MFA_Delete Persisted MFA-delete status
    type Bucket_Versioning_Configuration is record
       Status     : Bucket_Versioning_Status := Versioning_Unconfigured;
       MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;
@@ -182,6 +275,9 @@ is
 
    --  Merge independently optional configuration fields. An Unconfigured
    --  update field preserves the current field.
+   --  @param Current Existing versioning configuration
+   --  @param Update Presence-preserving configuration update
+   --  @return Configuration with supplied fields merged into Current
    function Merge_Bucket_Versioning
      (Current, Update : Bucket_Versioning_Configuration)
       return Bucket_Versioning_Configuration
@@ -197,18 +293,34 @@ is
    --  Bytewise prefix and exclusive-cursor predicates shared by every
    --  ListObjects backend. Delimiter projection is applied before the cursor
    --  predicate so a collapsed CommonPrefixes entry counts as one item.
+   --  @param Key Candidate object key
+   --  @param Prefix Required bytewise prefix
+   --  @return True when Key begins with Prefix
    function Listing_Matches_Prefix
      (Key, Prefix : String) return Boolean;
 
+   --  Test whether a projected listing key follows an exclusive cursor.
+   --  @param Projected_Key Object key or collapsed common prefix
+   --  @param After Exclusive bytewise cursor
+   --  @return True when Projected_Key sorts after After
    function Listing_Follows_Cursor
      (Projected_Key, After : String) return Boolean;
 
    --  Requested object byte interval. Backends resolve this request against
    --  the same immutable object snapshot that they stream, including suffix
    --  requests, so callers never need a racy Head_Object/Get_Object pair.
+   --  @enum Whole_Range Complete object body
+   --  @enum Bounded_Range Inclusive first and last byte positions
+   --  @enum Open_Ended_Range First byte position through the object end
+   --  @enum Suffix_Range Requested number of trailing bytes
    type Byte_Range_Kind is
      (Whole_Range, Bounded_Range, Open_Ended_Range, Suffix_Range);
 
+   --  Requested object byte interval.
+   --  @field Kind Form of range request
+   --  @field First First requested byte for bounded or open-ended ranges
+   --  @field Last Last requested byte for bounded ranges
+   --  @field Count Requested trailing byte count for suffix ranges
    type Byte_Range is record
       Kind  : Byte_Range_Kind := Whole_Range;
       First : Byte_Count := 0;
@@ -219,9 +331,18 @@ is
    --  Complete object body range.
    Whole_Object : constant Byte_Range := (others => <>);
 
+   --  Outcome of resolving a range against an immutable object size.
+   --  @enum Empty_Object_Range Whole-body request for an empty object
+   --  @enum Satisfied_Range Nonempty resolved byte interval
+   --  @enum Unsatisfiable_Range Request cannot be satisfied for the object
    type Range_Resolution_Kind is
      (Empty_Object_Range, Satisfied_Range, Unsatisfiable_Range);
 
+   --  Resolved object byte interval.
+   --  @field Kind Resolution outcome
+   --  @field First First resolved byte position when satisfied
+   --  @field Last Last resolved byte position when satisfied
+   --  @field Length Number of resolved bytes when satisfied
    type Range_Resolution
      (Kind : Range_Resolution_Kind := Unsatisfiable_Range)
    is record
@@ -236,6 +357,9 @@ is
    end record;
 
    --  Resolve a request against one immutable object size.
+   --  @param Size Immutable object size
+   --  @param Request Requested byte interval
+   --  @return Resolved interval or an empty/unsatisfiable outcome
    function Resolve_Range
      (Size : Byte_Count; Request : Byte_Range) return Range_Resolution
    with
