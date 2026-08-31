@@ -40,12 +40,22 @@ with Flyology.Object_Storage.Tags;
 --  Prepared model-driven S3 operations over a caller-owned Flyology client.
 package Flyology.Object_Storage.Client.Low_Level is
 
+   --  Raised when supplied request inputs or a prepared operation are invalid.
    Invalid_Request : exception;
 
+   --  Supported S3 request-target addressing forms.
+   --  @enum Path_Style Bucket name carried in the request path
+   --  @enum Virtual_Hosted_Style Bucket name required in the origin authority
    type Addressing_Style is (Path_Style, Virtual_Hosted_Style);
 
+   --  Signing identity for prepared S3 requests.
    type Credentials is limited private;
 
+   --  Construct one signing identity.
+   --  @param Access_Key Access-key identifier
+   --  @param Secret_Key Secret signing key
+   --  @param Session_Token Optional session token
+   --  @return Retained signing identity
    function Make_Credentials
      (Access_Key, Secret_Key : String;
       Session_Token         : String := "") return Credentials;
@@ -53,6 +63,18 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every non-bucket member in the pinned ListObjects v1 input shape.
    --  Include_Restore_Status represents the model's sole
    --  OptionalObjectAttributes list value, RestoreStatus.
+   --  @field Prefix Requested key prefix
+   --  @field Has_Prefix Whether Prefix is present even when empty
+   --  @field Delimiter Requested grouping delimiter
+   --  @field Has_Delimiter Whether Delimiter is present even when empty
+   --  @field Marker Key after which listing starts
+   --  @field Has_Marker Whether Marker is present even when empty
+   --  @field Max_Keys Requested maximum page size
+   --  @field Has_Max_Keys Whether Max_Keys is present
+   --  @field URL_Encoding Whether URL encoding is requested
+   --  @field Request_Payer Request-payer header value
+   --  @field Expected_Bucket_Owner Expected bucket-owner identifier
+   --  @field Include_Restore_Status Whether restore status is requested
    type List_Objects_Parameters is record
       Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
       Has_Prefix              : Boolean := False;
@@ -68,6 +90,19 @@ package Flyology.Object_Storage.Client.Low_Level is
       Include_Restore_Status  : Boolean := False;
    end record;
 
+   --  Complete non-bucket ListObjectsV2 request controls.
+   --  @field Prefix Requested key prefix
+   --  @field Delimiter Requested grouping delimiter
+   --  @field Continuation_Token Opaque listing continuation token
+   --  @field Has_Continuation_Token Whether presence includes an empty token
+   --  @field Start_After Key after which listing starts
+   --  @field Max_Keys Requested maximum page size
+   --  @field Fetch_Owner Whether owner data is requested
+   --  @field Has_Fetch_Owner Whether Fetch_Owner is present even when false
+   --  @field URL_Encoding Whether URL encoding is requested
+   --  @field Request_Payer Request-payer header value
+   --  @field Expected_Bucket_Owner Expected bucket-owner identifier
+   --  @field Include_Restore_Status Whether restore status is requested
    type List_Objects_V2_Parameters is record
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter          : Ada.Strings.Unbounded.Unbounded_String;
@@ -83,47 +118,75 @@ package Flyology.Object_Storage.Client.Low_Level is
       Include_Restore_Status : Boolean := False;
    end record;
 
+   --  Prepared HTTP request and signing state.
    type Prepared_Request is private;
 
    --  Optional boolean wire value that preserves absent versus explicit false.
+   --  @field Is_Set Whether the wire value is present
+   --  @field Value Present boolean value
    type Optional_Boolean is record
       Is_Set : Boolean := False;
       Value  : Boolean := False;
    end record;
 
    --  Optional nonnegative 64-bit byte count.
+   --  @field Is_Set Whether the byte count is present
+   --  @field Value Present byte count
    type Optional_Byte_Count is record
       Is_Set : Boolean := False;
       Value  : Byte_Count := 0;
    end record;
 
+   --  Optional natural-number wire value.
+   --  @field Is_Set Whether the number is present
+   --  @field Value Present natural-number value
    type Optional_Natural is record
       Is_Set : Boolean := False;
       Value  : Natural := 0;
    end record;
 
+   --  Optional modeled multipart part number.
+   --  @field Is_Set Whether the part number is present
+   --  @field Value Present part number
    type Optional_Part_Number is record
       Is_Set : Boolean := False;
       Value  : S3.Core.Part_Number := S3.Core.Part_Number'First;
    end record;
 
+   --  Return the prepared HTTP request target.
+   --  @param Item Prepared request
+   --  @return Exact request-target text
    function Target (Item : Prepared_Request) return String;
+   --  Return the prepared HTTP authority.
+   --  @param Item Prepared request
+   --  @return Exact authority text
    function Authority (Item : Prepared_Request) return String;
+   --  Return the SigV4 canonical request.
+   --  @param Item Prepared request
+   --  @return Exact canonical-request text
    function Canonical_Request (Item : Prepared_Request) return String;
+   --  Return the signed-header inventory.
+   --  @param Item Prepared request
+   --  @return Exact signed-header text
    function Signed_Headers (Item : Prepared_Request) return String;
 
    --  One top-level member supplied to the generated model-driven request
    --  projector. Map_Key is used only by `headers` map members such as S3
    --  user metadata. Body members are represented by the raw REST/XML
    --  payload parameters of Prepare_Model_Request.
+   --  @field Member_Name Modeled top-level member name
+   --  @field Map_Key Header-map key when the member is a map
+   --  @field Value Modeled member value before request encoding
    type Model_Value is record
       Member_Name : Ada.Strings.Unbounded.Unbounded_String;
       Map_Key     : Ada.Strings.Unbounded.Unbounded_String;
       Value       : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Ordered top-level values for model-driven request preparation.
    type Model_Value_Array is array (Positive range <>) of Model_Value;
 
+   --  Empty model-value inventory.
    No_Model_Values : constant Model_Value_Array (1 .. 0) :=
      (others => <>);
 
@@ -133,6 +196,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  the signed payload hash. Structured body serialization remains a
    --  separate codec concern; Payload_Is_Set distinguishes an absent body
    --  from an explicitly empty REST/XML or blob payload.
+   --  @param Operation Pinned S3 operation
+   --  @param Origin Exact configured HTTP origin
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Values Top-level modeled member values
+   --  @param Payload Exact request-body bytes
+   --  @param Payload_Is_Set Whether the request body is present
+   --  @param Payload_SHA256 Optional explicit payload hash or UNSIGNED-PAYLOAD
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Prepared model-driven request
    function Prepare_Model_Request
      (Operation      : S3.Model.Operation_Id;
       Origin         : Flyology.HTTP.Origin;
