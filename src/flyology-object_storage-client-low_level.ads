@@ -7027,6 +7027,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Complete_Multipart_Outcome;
 
+   --  Prepare one signed bodyless AbortMultipartUpload request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Upload_ID Required multipart upload identifier
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless abort request metadata
    function Prepare_Abort_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;
       Style     : Addressing_Style;
@@ -7039,12 +7049,26 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every non-resource member in the pinned AbortMultipartUpload input
    --  shape. If_Match_Initiated_Time is an RFC 822 HTTP date.
+   --  @field Request_Payer Optional requester-pays header value
+   --  @field Expected_Bucket_Owner Optional owner precondition
+   --  @field If_Match_Initiated_Time Optional initiation-time precondition
    type Abort_Multipart_Parameters is record
       Request_Payer           : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner   : Ada.Strings.Unbounded.Unbounded_String;
       If_Match_Initiated_Time : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one controlled bodyless AbortMultipartUpload request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Key Target object key
+   --  @param Upload_ID Required multipart upload identifier
+   --  @param Parameters Complete modeled abort controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless abort request metadata
    function Prepare_Abort_Multipart_Upload
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7057,12 +7081,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    --  The sole member in the pinned AbortMultipartUpload output shape.
+   --  @field Request_Charged Optional returned requester-charge value
    type Abort_Multipart_Result is record
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish validated abort response from structured S3 rejection.
+   --  @enum Aborted Validated HTTP-204 abort response was decoded
+   --  @enum Abort_Rejected Structured S3 error was decoded
    type Abort_Multipart_Outcome_Kind is (Aborted, Abort_Rejected);
 
+   --  Result of decoding or executing one AbortMultipartUpload operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated abort response metadata
+   --  @field Error Structured S3 error on rejection
    type Abort_Multipart_Outcome
      (Kind : Abort_Multipart_Outcome_Kind := Abort_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -7074,6 +7107,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded abort response without modeled headers.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Abort response or structured S3 rejection
    function Decode_Abort_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -7082,6 +7122,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Abort_Multipart_Outcome;
 
+   --  Decode one bounded abort response from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Abort response or structured S3 rejection
    function Decode_Abort_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -7108,6 +7156,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Abort_Multipart_Outcome;
 
+   --  Execute one bodyless abort attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Abort response or structured S3 rejection
    function Execute_Abort_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -9113,6 +9168,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared AbortMultipartUpload exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Source One-shot request source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Abort_Multipart_Upload
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
