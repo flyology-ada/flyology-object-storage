@@ -138,6 +138,21 @@ package Flyology.Object_Storage.S3.Multipart is
 
    --  Body fields returned by CompleteMultipartUpload. Header fields remain
    --  the responsibility of the HTTP operation layer.
+   --  @field Location Modeled completed-object location
+   --  @field Bucket Bucket name
+   --  @field Key Object key
+   --  @field Entity_Tag Modeled completed-object entity tag
+   --  @field Checksum_CRC32 Optional CRC-32 checksum value
+   --  @field Checksum_CRC32C Optional CRC-32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC-64/NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA-1 checksum value
+   --  @field Checksum_SHA256 Optional SHA-256 checksum value
+   --  @field Checksum_SHA512 Optional SHA-512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXH3 64-bit checksum value
+   --  @field Checksum_XXHASH128 Optional XXH3 128-bit checksum value
+   --  @field Checksum_Type Optional modeled checksum type
    type Complete_Multipart_Upload_Result is record
       Location           : Ada.Strings.Unbounded.Unbounded_String;
       Bucket             : Ada.Strings.Unbounded.Unbounded_String;
@@ -156,16 +171,35 @@ package Flyology.Object_Storage.S3.Multipart is
       Checksum_Type      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Parse one bounded CompleteMultipartUpload result document.
+   --  @param Document CompleteMultipartUpload result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded completion result body
    function Parse_Complete_Result
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Complete_Multipart_Upload_Result;
 
+   --  Serialize one CompleteMultipartUpload result document.
+   --  @param Value Completion result body to serialize
+   --  @return Namespaced CompleteMultipartUpload result XML
    function Serialize_Complete_Result
      (Value : Complete_Multipart_Upload_Result) return String;
 
    --  Body fields returned by UploadPartCopy. Header fields remain the
    --  responsibility of the HTTP operation layer.
+   --  @field Entity_Tag Modeled copied-part entity tag
+   --  @field Last_Modified Modeled copied-part modification time
+   --  @field Checksum_CRC32 Optional CRC-32 checksum value
+   --  @field Checksum_CRC32C Optional CRC-32C checksum value
+   --  @field Checksum_CRC64NVME Optional CRC-64/NVME checksum value
+   --  @field Checksum_SHA1 Optional SHA-1 checksum value
+   --  @field Checksum_SHA256 Optional SHA-256 checksum value
+   --  @field Checksum_SHA512 Optional SHA-512 checksum value
+   --  @field Checksum_MD5 Optional MD5 checksum value
+   --  @field Checksum_XXHASH64 Optional XXH64 checksum value
+   --  @field Checksum_XXHASH3 Optional XXH3 64-bit checksum value
+   --  @field Checksum_XXHASH128 Optional XXH3 128-bit checksum value
    type Copy_Part_Result is record
       Entity_Tag         : Ada.Strings.Unbounded.Unbounded_String;
       Last_Modified      : Ada.Strings.Unbounded.Unbounded_String;
@@ -181,11 +215,18 @@ package Flyology.Object_Storage.S3.Multipart is
       Checksum_XXHASH128 : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Parse one bounded UploadPartCopy result document.
+   --  @param Document UploadPartCopy result XML
+   --  @param Limits XML parsing limits
+   --  @return Decoded copied-part result body
    function Parse_Copy_Part_Result
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Copy_Part_Result;
 
+   --  Serialize one UploadPartCopy result document.
+   --  @param Value Copied-part result body to serialize
+   --  @return Namespaced UploadPartCopy result XML
    function Serialize_Copy_Part_Result
      (Value : Copy_Part_Result) return String;
 
