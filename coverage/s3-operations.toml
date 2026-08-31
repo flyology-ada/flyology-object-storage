@@ -648,43 +648,49 @@ get_object = [
   ["git", "diff", "--check"],
 ]
 get_object_annotation = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-get-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 put_object_acl = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-acl-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-put-object-acl-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 rename_object = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-rename-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-rename-object-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 restore_object = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-restore-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-restore-object-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 select_object_content = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-select-object-content-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-select-object-content-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 update_object_encryption = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-update-object-encryption-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-update-object-encryption-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+write_get_object_response = [
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-write-get-object-response-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
 put_object_annotation = [
-  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -1083,7 +1089,7 @@ list_object_annotations = [
 [test_registration]
 # These counts and the three corpus repetitions preserve the pre-registry
 # maintained suite. Change them only with a reviewed registration update.
-model_verifier_count = 29
+model_verifier_count = 37
 corpus_count = 33
 socket_qualifier_count = 21
 corpus_repetitions = 3
@@ -1117,6 +1123,14 @@ model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-metadata-table-configuration-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-acl-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-acl-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-get-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-put-object-acl-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-put-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-rename-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-restore-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-select-object-content-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-update-object-encryption-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-write-get-object-response-model.py"],
 ]
 corpora = [
   ["./bin/s3_list_object_versions_corpus"],
@@ -3165,7 +3179,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "get_object_annotation"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-get-object-annotation-model.py"], server = [], corpus = ["tools/verify-get-object-annotation-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-get-object-annotation-model.py"], server = [], corpus = ["tests/scripts/verify-get-object-annotation-model.py"] }
 
 [[operation]]
 name = "GetObjectAttributes"
@@ -4990,7 +5004,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "put_object_acl"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-put-object-acl-model.py"], server = [], corpus = ["tools/verify-put-object-acl-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-put-object-acl-model.py"], server = [], corpus = ["tests/scripts/verify-put-object-acl-model.py"] }
 
 [[operation]]
 name = "PutObjectAnnotation"
@@ -5012,7 +5026,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "put_object_annotation"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-put-object-annotation-model.py"], server = [], corpus = ["tools/verify-put-object-annotation-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-put-object-annotation-model.py"], server = [], corpus = ["tests/scripts/verify-put-object-annotation-model.py"] }
 
 [[operation]]
 name = "PutObjectLegalHold"
@@ -5150,7 +5164,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "rename_object"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-rename-object-model.py"], server = [], corpus = ["tools/verify-rename-object-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-rename-object-model.py"], server = [], corpus = ["tests/scripts/verify-rename-object-model.py"] }
 
 [[operation]]
 name = "RestoreObject"
@@ -5172,7 +5186,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "restore_object"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-restore-object-model.py"], server = [], corpus = ["tools/verify-restore-object-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-restore-object-model.py"], server = [], corpus = ["tests/scripts/verify-restore-object-model.py"] }
 
 [[operation]]
 name = "SelectObjectContent"
@@ -5194,7 +5208,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "select_object_content"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-select-object-content-model.py"], server = [], corpus = ["tools/verify-select-object-content-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-select-object-content-model.py"], server = [], corpus = ["tests/scripts/verify-select-object-content-model.py"] }
 
 [[operation]]
 name = "UpdateBucketMetadataAnnotationTableConfiguration"
@@ -5291,7 +5305,7 @@ generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "update_object_encryption"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-update-object-encryption-model.py"], server = [], corpus = ["tools/verify-update-object-encryption-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-update-object-encryption-model.py"], server = [], corpus = ["tests/scripts/verify-update-object-encryption-model.py"] }
 
 [[operation]]
 name = "UploadPart"
@@ -5345,15 +5359,18 @@ tier = "extended"
 provider = "objects"
 family = "streaming_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "streaming_request_and_headers"
+public_name = "Not_Exposed"
+codec = "generated_model_only_unsigned_stream_and_forwarded_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "streaming mutation model coverage only; no public request, source ownership, endpoint routing, response decoder, admission evidence, or runtime path exists, so this review reports no accepted or completed callback and permits no automatic replay of the single-use request token"
+reconciliation = "the modeled callback has no output or operation errors and no implemented observation can bind a later GetObject result to a particular token, body, or forwarded-header set; later state cannot prove completion or causation"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects WriteGetObjectResponse API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the Object Lambda host prefix, static endpoint context, RequestRoute validation, and external endpoint construction are model inventory only; directory buckets are documented as unsupported", "RequestToken is modeled as a required unbounded string and described as single-use, but retention, redaction, admission, idempotency, retry, and replay policy are not implemented", "the optional streaming Body and its length, backpressure, cancellation, drain, rewind, source ownership, and lifetime are not implemented or bounded", "the modeled forwarded status, error, metadata, checksum, encryption, Object Lock, version, and content headers are inventory only; documentation-only mutual exclusions, status lists, error-code syntax, checksum one-of rules, signed-space encoding, metadata ordering, duplicate handling, and sensitive KMS forwarding are not enforced", "the operation uses v4-unsigned-body and an unsigned payload and has no modeled output, operation error shapes, or request checksum trait; no success, failure, malformed-response, or token-admission decoder is implemented", "a later GetObject result can reflect concurrent or already-matching state and cannot prove that this callback delivered the body or headers"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "write_get_object_response"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-write-get-object-response-model.py"], server = [], corpus = ["tests/scripts/verify-write-get-object-response-model.py"] }

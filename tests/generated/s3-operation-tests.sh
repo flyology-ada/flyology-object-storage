@@ -33,6 +33,14 @@ run_s3_model_verifiers() {
   uv run --python 3.13 -- tools/verify-get-bucket-metadata-table-configuration-preparation.py
   uv run --python 3.13 -- tools/verify-get-bucket-acl-preparation.py
   uv run --python 3.13 -- tools/verify-get-object-acl-preparation.py
+  uv run --python 3.13 -- tests/scripts/verify-get-object-annotation-model.py
+  uv run --python 3.13 -- tests/scripts/verify-put-object-acl-model.py
+  uv run --python 3.13 -- tests/scripts/verify-put-object-annotation-model.py
+  uv run --python 3.13 -- tests/scripts/verify-rename-object-model.py
+  uv run --python 3.13 -- tests/scripts/verify-restore-object-model.py
+  uv run --python 3.13 -- tests/scripts/verify-select-object-content-model.py
+  uv run --python 3.13 -- tests/scripts/verify-update-object-encryption-model.py
+  uv run --python 3.13 -- tests/scripts/verify-write-get-object-response-model.py
 }
 
 run_s3_operation_corpora() {

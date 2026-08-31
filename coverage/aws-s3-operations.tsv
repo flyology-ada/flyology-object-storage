@@ -114,4 +114,4 @@ UpdateBucketMetadataJournalTableConfiguration	extended	missing	covered	missing	c
 UpdateObjectEncryption	extended	missing	partial	missing	covered
 UploadPart	core	covered	covered	covered	covered
 UploadPartCopy	core	covered	covered	covered	covered
-WriteGetObjectResponse	extended	missing	partial	missing	missing
+WriteGetObjectResponse	extended	missing	partial	missing	covered

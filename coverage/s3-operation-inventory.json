@@ -2385,10 +2385,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-get-object-annotation-model.py"
+          "tests/scripts/verify-get-object-annotation-model.py"
         ],
         "corpus": [
-          "tools/verify-get-object-annotation-model.py"
+          "tests/scripts/verify-get-object-annotation-model.py"
         ],
         "server": []
       },
@@ -4228,10 +4228,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-put-object-acl-model.py"
+          "tests/scripts/verify-put-object-acl-model.py"
         ],
         "corpus": [
-          "tools/verify-put-object-acl-model.py"
+          "tests/scripts/verify-put-object-acl-model.py"
         ],
         "server": []
       },
@@ -4258,10 +4258,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-put-object-annotation-model.py"
+          "tests/scripts/verify-put-object-annotation-model.py"
         ],
         "corpus": [
-          "tools/verify-put-object-annotation-model.py"
+          "tests/scripts/verify-put-object-annotation-model.py"
         ],
         "server": []
       },
@@ -4515,10 +4515,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-rename-object-model.py"
+          "tests/scripts/verify-rename-object-model.py"
         ],
         "corpus": [
-          "tools/verify-rename-object-model.py"
+          "tests/scripts/verify-rename-object-model.py"
         ],
         "server": []
       },
@@ -4545,10 +4545,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-restore-object-model.py"
+          "tests/scripts/verify-restore-object-model.py"
         ],
         "corpus": [
-          "tools/verify-restore-object-model.py"
+          "tests/scripts/verify-restore-object-model.py"
         ],
         "server": []
       },
@@ -4575,10 +4575,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-select-object-content-model.py"
+          "tests/scripts/verify-select-object-content-model.py"
         ],
         "corpus": [
-          "tools/verify-select-object-content-model.py"
+          "tests/scripts/verify-select-object-content-model.py"
         ],
         "server": []
       },
@@ -4716,10 +4716,10 @@
         "backend": [],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
-          "tools/verify-update-object-encryption-model.py"
+          "tests/scripts/verify-update-object-encryption-model.py"
         ],
         "corpus": [
-          "tools/verify-update-object-encryption-model.py"
+          "tests/scripts/verify-update-object-encryption-model.py"
         ],
         "server": []
       },
@@ -4844,24 +4844,29 @@
       "coverage": {
         "backend": "missing",
         "client": "partial",
-        "corpus": "missing",
+        "corpus": "covered",
         "server": "missing"
       },
       "evidence": {
         "backend": [],
-        "client": [],
-        "corpus": [],
+        "client": [
+          "src/flyology-object_storage-s3-model.adb",
+          "tests/scripts/verify-write-get-object-response-model.py"
+        ],
+        "corpus": [
+          "tests/scripts/verify-write-get-object-response-model.py"
+        ],
         "server": []
       },
       "family": "streaming_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
         "backend": "absent",
         "client": "generated",
         "server": "absent",
-        "tests": "absent"
+        "tests": "handwritten"
       },
       "provider": "objects"
     }

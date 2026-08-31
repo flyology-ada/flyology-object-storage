@@ -3114,11 +3114,11 @@ def main() -> None:
         assert "does not invent a public bound" in entry["exclusions"][2]
         assert entry["evidence"]["client"] == [
             "src/flyology-object_storage-s3-model.adb",
-            "tools/verify-get-object-annotation-model.py",
+            "tests/scripts/verify-get-object-annotation-model.py",
         ]
         assert candidate.qualification["get_object_annotation"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-get-object-annotation-model.py"],
+             "tests/scripts/verify-get-object-annotation-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -3271,14 +3271,14 @@ def main() -> None:
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
-                "tools/verify-put-object-acl-model.py",
+                "tests/scripts/verify-put-object-acl-model.py",
             ],
             "server": [],
-            "corpus": ["tools/verify-put-object-acl-model.py"],
+            "corpus": ["tests/scripts/verify-put-object-acl-model.py"],
         }
         assert candidate.qualification["put_object_acl"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-put-object-acl-model.py"],
+             "tests/scripts/verify-put-object-acl-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -3427,14 +3427,14 @@ def main() -> None:
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
-                "tools/verify-rename-object-model.py",
+                "tests/scripts/verify-rename-object-model.py",
             ],
             "server": [],
-            "corpus": ["tools/verify-rename-object-model.py"],
+            "corpus": ["tests/scripts/verify-rename-object-model.py"],
         }
         assert candidate.qualification["rename_object"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-rename-object-model.py"],
+             "tests/scripts/verify-rename-object-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -3616,14 +3616,14 @@ def main() -> None:
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
-                "tools/verify-restore-object-model.py",
+                "tests/scripts/verify-restore-object-model.py",
             ],
             "server": [],
-            "corpus": ["tools/verify-restore-object-model.py"],
+            "corpus": ["tests/scripts/verify-restore-object-model.py"],
         }
         assert candidate.qualification["restore_object"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-restore-object-model.py"],
+             "tests/scripts/verify-restore-object-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -3817,14 +3817,14 @@ def main() -> None:
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
-                "tools/verify-select-object-content-model.py",
+                "tests/scripts/verify-select-object-content-model.py",
             ],
             "server": [],
-            "corpus": ["tools/verify-select-object-content-model.py"],
+            "corpus": ["tests/scripts/verify-select-object-content-model.py"],
         }
         assert candidate.qualification["select_object_content"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-select-object-content-model.py"],
+             "tests/scripts/verify-select-object-content-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -4036,14 +4036,14 @@ def main() -> None:
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
-                "tools/verify-update-object-encryption-model.py",
+                "tests/scripts/verify-update-object-encryption-model.py",
             ],
             "server": [],
-            "corpus": ["tools/verify-update-object-encryption-model.py"],
+            "corpus": ["tests/scripts/verify-update-object-encryption-model.py"],
         }
         assert candidate.qualification["update_object_encryption"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-update-object-encryption-model.py"],
+             "tests/scripts/verify-update-object-encryption-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -4173,6 +4173,263 @@ def main() -> None:
     else:
         raise AssertionError("duplicate UpdateObjectEncryption lane accepted")
 
+    write_get_object_response_certainty = (
+        "streaming mutation model coverage only; no public request, source "
+        "ownership, endpoint routing, response decoder, admission evidence, "
+        "or runtime path exists, so this review reports no accepted or "
+        "completed callback and permits no automatic replay of the "
+        "single-use request token"
+    )
+    write_get_object_response_reconciliation = (
+        "the modeled callback has no output or operation errors and no "
+        "implemented observation can bind a later GetObject result to a "
+        "particular token, body, or forwarded-header set; later state cannot "
+        "prove completion or causation"
+    )
+    write_get_object_response_errors = [
+        "authentication", "authorization", "invalid_request",
+        "unavailable_or_retryable", "corrupt_or_invalid_response",
+    ]
+    write_get_object_response_exclusions = [
+        "Not_Exposed is a registry sentinel and not an Ada declaration; no "
+        "Low_Level or Objects WriteGetObjectResponse API, composable "
+        "operation, synchronous wrapper, Finish path, or GNATdoc "
+        "qualification is claimed",
+        "the Object Lambda host prefix, static endpoint context, RequestRoute "
+        "validation, and external endpoint construction are model inventory "
+        "only; directory buckets are documented as unsupported",
+        "RequestToken is modeled as a required unbounded string and described "
+        "as single-use, but retention, redaction, admission, idempotency, "
+        "retry, and replay policy are not implemented",
+        "the optional streaming Body and its length, backpressure, "
+        "cancellation, drain, rewind, source ownership, and lifetime are not "
+        "implemented or bounded",
+        "the modeled forwarded status, error, metadata, checksum, encryption, "
+        "Object Lock, version, and content headers are inventory only; "
+        "documentation-only mutual exclusions, status lists, error-code "
+        "syntax, checksum one-of rules, signed-space encoding, metadata "
+        "ordering, duplicate handling, and sensitive KMS forwarding are not "
+        "enforced",
+        "the operation uses v4-unsigned-body and an unsigned payload and has "
+        "no modeled output, operation error shapes, or request checksum "
+        "trait; no success, failure, malformed-response, or token-admission "
+        "decoder is implemented",
+        "a later GetObject result can reflect concurrent or already-matching "
+        "state and cannot prove that this callback delivered the body or "
+        "headers",
+    ]
+    model_only_verifier_commands = [
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-get-object-annotation-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-put-object-acl-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-put-object-annotation-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-rename-object-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-restore-object-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-select-object-content-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-update-object-encryption-model.py"],
+        ["uv", "run", "--python", "3.13", "--",
+         "tests/scripts/verify-write-get-object-response-model.py"],
+    ]
+
+    def assert_write_get_object_response_registry(candidate):
+        entry = candidate.operations["WriteGetObjectResponse"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "write_get_object_response"
+        assert entry.get("family") == "streaming_mutation"
+        assert entry.get("codec") == (
+            "generated_model_only_unsigned_stream_and_forwarded_headers"
+        )
+        assert entry.get("certainty") == write_get_object_response_certainty
+        assert entry.get("reconciliation") == (
+            write_get_object_response_reconciliation
+        )
+        assert entry.get("errors") == write_get_object_response_errors
+        assert entry.get("exclusions") == write_get_object_response_exclusions
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tests/scripts/verify-write-get-object-response-model.py",
+            ],
+            "server": [],
+            "corpus": [
+                "tests/scripts/verify-write-get-object-response-model.py",
+            ],
+        }
+        assert candidate.qualification["write_get_object_response"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tests/scripts/verify-write-get-object-response-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+        registration = candidate.metadata["test_registration"]
+        assert registration["model_verifier_count"] == 37
+        for command in model_only_verifier_commands:
+            assert registration["model_verifiers"].count(command) == 1
+
+    def reject_write_get_object_response_registry(candidate, label):
+        try:
+            assert_write_get_object_response_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} WriteGetObjectResponse registry accepted"
+        )
+
+    assert_write_get_object_response_registry(registry)
+    public_write_response = copy.deepcopy(registry)
+    public_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["public_name"] = "Write_Get_Object_Response"
+    reject_write_get_object_response_registry(
+        public_write_response, "invented public API"
+    )
+    complete_write_response = copy.deepcopy(registry)
+    complete_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["coverage"]["client"] = "covered"
+    reject_write_get_object_response_registry(
+        complete_write_response, "invented complete client coverage"
+    )
+    bodyless_write_response = copy.deepcopy(registry)
+    bodyless_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["family"] = "bodyless_mutation"
+    reject_write_get_object_response_registry(
+        bodyless_write_response, "missing streaming body"
+    )
+    signed_write_response = copy.deepcopy(registry)
+    signed_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][5] += "; the payload is signed and checksummed"
+    reject_write_get_object_response_registry(
+        signed_write_response, "invented signed payload"
+    )
+    routed_write_response = copy.deepcopy(registry)
+    routed_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][1] += "; every access point route is implemented"
+    reject_write_get_object_response_registry(
+        routed_write_response, "invented endpoint routing"
+    )
+    owned_write_response = copy.deepcopy(registry)
+    owned_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][3] += "; the body is bounded, rewindable, and retained"
+    reject_write_get_object_response_registry(
+        owned_write_response, "invented body ownership"
+    )
+    validated_write_response = copy.deepcopy(registry)
+    validated_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][4] += "; all status and error combinations are validated"
+    reject_write_get_object_response_registry(
+        validated_write_response, "invented cross-field validation"
+    )
+    normalized_write_response = copy.deepcopy(registry)
+    normalized_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][4] += "; metadata and checksums are normalized"
+    reject_write_get_object_response_registry(
+        normalized_write_response, "invented forwarded-header normalization"
+    )
+    replayed_write_response = copy.deepcopy(registry)
+    replayed_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["certainty"] = "the single-use token is idempotent and replayable"
+    reject_write_get_object_response_registry(
+        replayed_write_response, "invented token replay"
+    )
+    admitted_write_response = copy.deepcopy(registry)
+    admitted_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["certainty"] = "a transport write proves callback admission"
+    reject_write_get_object_response_registry(
+        admitted_write_response, "invented admission certainty"
+    )
+    decoded_write_response = copy.deepcopy(registry)
+    decoded_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][5] += "; completion and failures are decoded"
+    reject_write_get_object_response_registry(
+        decoded_write_response, "invented response decoder"
+    )
+    causal_write_response = copy.deepcopy(registry)
+    causal_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["reconciliation"] = "a later GetObject proves callback completion"
+    reject_write_get_object_response_registry(
+        causal_write_response, "causal reconciliation"
+    )
+    missing_write_response_model = copy.deepcopy(registry)
+    missing_write_response_model.operations[
+        "WriteGetObjectResponse"
+    ]["evidence"]["client"] = []
+    reject_write_get_object_response_registry(
+        missing_write_response_model, "missing model evidence"
+    )
+    documented_write_response = copy.deepcopy(registry)
+    documented_write_response.qualification[
+        "write_get_object_response"
+    ].insert(1, ["./tools/build-api-docs.sh", "/tmp/impossible"])
+    reject_write_get_object_response_registry(
+        documented_write_response, "invented GNATdoc gate"
+    )
+    missing_model_test = copy.deepcopy(registry)
+    missing_model_test.metadata["test_registration"][
+        "model_verifiers"
+    ].remove(model_only_verifier_commands[0])
+    reject_write_get_object_response_registry(
+        missing_model_test, "missing model-only test registration"
+    )
+    duplicated_model_test = copy.deepcopy(registry)
+    duplicated_model_test.metadata["test_registration"][
+        "model_verifiers"
+    ].append(model_only_verifier_commands[0])
+    reject_write_get_object_response_registry(
+        duplicated_model_test, "duplicate model-only test registration"
+    )
+    crossed_model_test = copy.deepcopy(registry)
+    crossed_model_test.metadata["test_registration"][
+        "model_verifiers"
+    ][-1] = model_only_verifier_commands[0]
+    reject_write_get_object_response_registry(
+        crossed_model_test, "cross-operation model-test registration"
+    )
+    write_response_lane, write_response_commands = (
+        s3_operation.qualification_plan(registry, ["WriteGetObjectResponse"])
+    )
+    assert write_response_lane == "write_get_object_response"
+    assert write_response_commands == (
+        registry.qualification["write_get_object_response"]
+    )
+    try:
+        s3_operation.qualification_plan(
+            registry, ["WriteGetObjectResponse", "WriteGetObjectResponse"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate WriteGetObjectResponse lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "
@@ -4203,11 +4460,11 @@ def main() -> None:
         assert "does not invent public limits" in entry["exclusions"][2]
         assert entry["evidence"]["client"] == [
             "src/flyology-object_storage-s3-model.adb",
-            "tools/verify-put-object-annotation-model.py",
+            "tests/scripts/verify-put-object-annotation-model.py",
         ]
         assert candidate.qualification["put_object_annotation"] == [
             ["uv", "run", "--python", "3.13", "--",
-             "tools/verify-put-object-annotation-model.py"],
+             "tests/scripts/verify-put-object-annotation-model.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],

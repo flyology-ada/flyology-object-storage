@@ -124,4 +124,4 @@ remain inventory-only until their audits gain executable evidence.
 | UpdateObjectEncryption | Not_Exposed | objects | rest_xml_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | UploadPart | Upload_Part | transfers | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | UploadPartCopy | Upload_Part_Copy | transfers | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| WriteGetObjectResponse | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| WriteGetObjectResponse | Not_Exposed | objects | streaming_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |

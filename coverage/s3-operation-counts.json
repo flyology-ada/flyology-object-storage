@@ -10,13 +10,12 @@
     "partial": 11
   },
   "corpus": {
-    "covered": 115,
-    "missing": 1,
+    "covered": 116,
+    "missing": 0,
     "partial": 0
   },
   "decision_status": {
-    "inventory_only": 1,
-    "reviewed": 115
+    "reviewed": 116
   },
   "families": {
     "bodyless_mutation": 21,
@@ -60,9 +59,9 @@
       "shared_family": 0
     },
     "tests": {
-      "absent": 1,
+      "absent": 0,
       "generated": 8,
-      "handwritten": 91,
+      "handwritten": 92,
       "shared_family": 16
     }
   },
