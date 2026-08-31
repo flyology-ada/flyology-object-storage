@@ -8790,6 +8790,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Public_Access_Block_Result;
 
    --  Remove the complete public-access-block configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose public-access block is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -8805,7 +8815,18 @@ package Flyology.Object_Storage.Client.Buckets is
    --  behavior-incompatible across this package.
    --  Read the optional transfer-acceleration status and requester-charged
    --  response header for one bucket.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose acceleration configuration is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Request_Payer Optional requester-pays header value
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
    --  @param Limits Caller-selected shared S3 XML and byte limits
+   --  @return Modeled acceleration response or structured S3 rejection
    function Get_Accelerate_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -8964,6 +8985,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Get_Bucket_Accelerate_Configuration_Result;
 
    --  Read the optional bucket ABAC status.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose ABAC status is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected shared S3 XML limits
+   --  @return Modeled ABAC response or structured S3 rejection
    function Get_ABAC
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9255,7 +9287,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Get_Bucket_Policy_Result;
 
    --  Read the complete raw bucket-policy document.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose policy document is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
    --  @param Limits Caller-selected response byte limit
+   --  @return Raw policy document or structured S3 rejection
    function Get_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9863,7 +9905,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Policy_Result;
 
    --  Read the optional public-policy assessment for one bucket.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose policy status is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
    --  @param Limits Caller-selected shared S3 XML limits
+   --  @return Modeled policy status or structured S3 rejection
    function Get_Policy_Status
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9876,7 +9928,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Get_Bucket_Policy_Status_Outcome;
 
    --  Read the optional requester-pays configuration for one bucket.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose requester-pays configuration is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
    --  @param Limits Caller-selected shared S3 XML limits
+   --  @return Modeled requester-payment response or S3 rejection
    function Get_Request_Payment
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9889,7 +9951,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Get_Bucket_Request_Payment_Outcome;
 
    --  Read the presence-preserving four-field public-access block.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose public-access block is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
    --  @param Limits Caller-selected shared S3 XML limits
+   --  @return Presence-preserving block or structured S3 rejection
    function Get_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9902,6 +9974,19 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Get_Public_Access_Block_Outcome;
 
    --  Replace the optional bucket ABAC status document.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose ABAC status is replaced
+   --  @param Value Complete modeled ABAC status
+   --  @param Identity Credentials used only while signing this request
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Modeled update response or structured S3 rejection
    function Set_ABAC
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9916,6 +10001,19 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Put_Bucket_Control_Outcome;
 
    --  Replace the optional transfer-acceleration status document.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose acceleration status is replaced
+   --  @param Value Complete modeled acceleration status
+   --  @param Identity Credentials used only while signing this request
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Modeled update response or structured S3 rejection
    function Set_Accelerate_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9930,6 +10028,19 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Put_Bucket_Control_Outcome;
 
    --  Replace the required requester-payment configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose requester-payment setting is replaced
+   --  @param Value Complete modeled payer selection
+   --  @param Identity Credentials used only while signing this request
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Modeled update response or structured S3 rejection
    function Set_Request_Payment
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9944,6 +10055,19 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Put_Bucket_Control_Outcome;
 
    --  Replace the four-field public-access-block document.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose public-access block is replaced
+   --  @param Value Complete presence-preserving four-field configuration
+   --  @param Identity Credentials used only while signing this request
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Modeled update response or structured S3 rejection
    function Set_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -9960,6 +10084,20 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Put_Bucket_Control_Outcome;
 
    --  Replace the complete bounded raw bucket-policy document.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose policy is replaced
+   --  @param Policy Complete bounded raw policy document
+   --  @param Identity Credentials used only while signing this request
+   --  @param Confirm_Remove_Self_Access Optional confirmation request header
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Modeled update response or structured S3 rejection
    function Set_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String; Policy : String;
