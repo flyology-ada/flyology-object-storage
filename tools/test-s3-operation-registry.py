@@ -3957,6 +3957,145 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed GetObjectRetention lane accepted")
+    put_object_retention_certainty = (
+        "only a complete validated 200 reports "
+        "Retention_Mutation_Completed; an exact recognized S3 rejection or "
+        "definite non-admission reports "
+        "Retention_Mutation_Definitely_Not_Applied, pre-admission "
+        "cancellation reports "
+        "Retention_Mutation_Cancelled_Before_Admission, and every other "
+        "possibly admitted or incomplete outcome reports "
+        "Retention_Mutation_Outcome_Unknown; no automatic replay"
+    )
+    put_object_retention_reconciliation = (
+        "an explicit VersionId permits a read-only GetObjectRetention "
+        "observation of that selected object generation and an omitted "
+        "VersionId permits only an observation of the generation current at "
+        "reconciliation time; neither observation proves that the lost "
+        "mutation caused the state or upgrades mutation certainty without "
+        "caller-supplied serialization authority"
+    )
+    put_object_retention_symbols = [
+        "Prepare_Put_Object_Retention",
+        "Decode_Put_Object_Retention_Response",
+        "Execute_Put_Object_Retention",
+        "Put_Retention_Operation",
+        "Put_Retention",
+        "Finish",
+    ]
+
+    def assert_put_object_retention_registry(candidate):
+        entry = candidate.operations["PutObjectRetention"]
+        assert entry.get("public_name") == "Put_Retention"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_object_retention"
+        assert entry.get("certainty") == put_object_retention_certainty
+        assert (
+            entry.get("reconciliation") == put_object_retention_reconciliation
+        )
+        assert entry.get("ada_symbols") == put_object_retention_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "no automatic replay" in entry["certainty"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert (
+            candidate.qualification["put_object_retention"][0][-1]
+            == "tools/verify-put-object-retention-preparation.py"
+        )
+
+    def reject_put_object_retention_registry(candidate, label):
+        try:
+            assert_put_object_retention_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutObjectRetention registry accepted")
+
+    assert_put_object_retention_registry(registry)
+    missing_put_object_retention_name = copy.deepcopy(registry)
+    del missing_put_object_retention_name.operations["PutObjectRetention"][
+        "public_name"
+    ]
+    reject_put_object_retention_registry(
+        missing_put_object_retention_name, "missing name"
+    )
+    wrong_put_object_retention_name = copy.deepcopy(registry)
+    wrong_put_object_retention_name.operations["PutObjectRetention"][
+        "public_name"
+    ] = "Put_Legal_Hold"
+    reject_put_object_retention_registry(
+        wrong_put_object_retention_name, "wrong name"
+    )
+    retry_put_object_retention = copy.deepcopy(registry)
+    retry_put_object_retention.operations["PutObjectRetention"][
+        "certainty"
+    ] = "mutation; retry automatically after a lost response"
+    reject_put_object_retention_registry(
+        retry_put_object_retention, "automatic retry"
+    )
+    causal_put_object_retention = copy.deepcopy(registry)
+    causal_put_object_retention.operations["PutObjectRetention"][
+        "reconciliation"
+    ] = "GetObjectRetention proves the lost mutation caused the state"
+    reject_put_object_retention_registry(
+        causal_put_object_retention, "causal reconciliation"
+    )
+    server_put_object_retention = copy.deepcopy(registry)
+    server_put_object_retention.operations["PutObjectRetention"]["coverage"][
+        "server"
+    ] = "covered"
+    reject_put_object_retention_registry(
+        server_put_object_retention, "invented server coverage"
+    )
+    cross_put_object_retention_symbol = copy.deepcopy(registry)
+    cross_put_object_retention_symbol.operations["PutObjectRetention"][
+        "ada_symbols"
+    ][0] = "Prepare_Put_Object_Legal_Hold"
+    reject_put_object_retention_registry(
+        cross_put_object_retention_symbol, "cross-operation symbol"
+    )
+    put_object_retention_qualification, put_object_retention_commands = (
+        s3_operation.qualification_plan(registry, ["PutObjectRetention"])
+    )
+    assert put_object_retention_qualification == "put_object_retention"
+    assert put_object_retention_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-object-retention-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_object_retention_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert put_object_retention_commands[4] == ["./tools/verify-coverage.sh"]
+    assert put_object_retention_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-object-retention-gnatdoc",
+        "--operation",
+        "PutObjectRetention",
+    ]
+    assert put_object_retention_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectRetention", "PutObjectRetention"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutObjectRetention lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectRetention", "GetObjectRetention"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutObjectRetention lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",
