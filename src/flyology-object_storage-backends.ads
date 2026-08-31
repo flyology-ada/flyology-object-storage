@@ -613,6 +613,99 @@ package Flyology.Object_Storage.Backends is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status) is abstract;
 
+   --  Atomically replace the ABAC state of an existing bucket.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving ABAC state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   procedure Put_Bucket_ABAC
+     (Item     : in out Backend;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic ABAC snapshot. Newly created buckets are disabled.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving ABAC snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_ABAC
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the transfer-acceleration state of an existing
+   --  bucket.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving acceleration state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Acceleration
+     (Item     : in out Backend;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic acceleration snapshot, retaining Unconfigured as
+   --  distinct from Suspended.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving acceleration snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Acceleration
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the request-payment state of an existing bucket.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete request-payment state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Request_Payment
+     (Item     : in out Backend;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic request-payment snapshot. Newly created buckets use
+   --  bucket-owner payment.
+   --  @param Item Backend that owns the bucket
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete request-payment snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Request_Payment
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status) is abstract;
+
    procedure Delete_Bucket
      (Item   : in out Backend;
       Bucket : String;

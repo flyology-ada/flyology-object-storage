@@ -109,6 +109,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the shared caller-overridable XML resource policy used by
    --  the PublicAccessBlock codec; changing that source changes admission.
+   Maximum_Bucket_Scalar_Control_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared caller-overridable XML resource policy used by
+   --  the scalar bucket-control codecs; changing that source changes server
+   --  admission.
    Maximum_Bucket_CORS_Body : constant Byte_Count :=
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the shared caller-overridable XML resource policy used by
@@ -462,6 +467,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Get_Bucket_ACL,
+         Put_Bucket_ABAC, Get_Bucket_ABAC,
+         Put_Bucket_Acceleration, Get_Bucket_Acceleration,
+         Put_Bucket_Request_Payment, Get_Bucket_Request_Payment,
          Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
          Put_Public_Access_Block, Get_Public_Access_Block,
          Delete_Public_Access_Block,
@@ -626,6 +634,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "location="
         or else Query_Text = "location=&x-id=GetBucketLocation"
         or else Query_Text = "x-id=GetBucketLocation&location=";
+      function Is_Exact_Bucket_Control_Query
+        (Subresource, Operation_ID : String) return Boolean is
+        (Query_Text = Subresource
+         or else Query_Text = Subresource & "="
+         or else
+           Query_Text = Subresource & "=&x-id=" & Operation_ID
+         or else
+           Query_Text = "x-id=" & Operation_ID & "&" & Subresource & "=");
+      Is_Bucket_ABAC_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("abac",
+           (if Method = "PUT" then "PutBucketAbac" else "GetBucketAbac"));
+      Is_Bucket_Acceleration_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("accelerate",
+           (if Method = "PUT"
+            then "PutBucketAccelerateConfiguration"
+            else "GetBucketAccelerateConfiguration"));
+      Is_Bucket_Request_Payment_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("requestPayment",
+           (if Method = "PUT"
+            then "PutBucketRequestPayment"
+            else "GetBucketRequestPayment"));
       Looks_Like_ACL_Query : constant Boolean :=
         Query_Mentions_ACL (Query_Text);
       Is_Put_Bucket_Tagging_Query : constant Boolean :=
@@ -742,6 +774,33 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=DeleteBucketCors&") /= 0;
       Looks_Like_Bucket_CORS_Query : constant Boolean :=
         Has_Bucket_CORS_Query or else Has_Bucket_CORS_Operation_ID;
+      Has_Bucket_Scalar_Control_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&abac&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&abac=") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&accelerate&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&accelerate=") /= 0
+        or else
+          Ada.Strings.Fixed.Index (Padded_Query, "&requestPayment&") /= 0
+        or else
+          Ada.Strings.Fixed.Index (Padded_Query, "&requestPayment=") /= 0;
+      Has_Bucket_Scalar_Control_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketAbac&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketAbac&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=PutBucketAccelerateConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=GetBucketAccelerateConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketRequestPayment&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketRequestPayment&") /= 0;
+      Looks_Like_Bucket_Scalar_Control_Query : constant Boolean :=
+        Has_Bucket_Scalar_Control_Query
+        or else Has_Bucket_Scalar_Control_Operation_ID;
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
         or else
@@ -892,6 +951,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
       Bucket_CORS_Query_Invalid : Boolean := False;
+      Bucket_Scalar_Control_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -964,6 +1024,59 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Wire_Optional (Value.Block_Public_Policy),
          Restrict_Public_Buckets =>
            Wire_Optional (Value.Restrict_Public_Buckets));
+
+      function Storage_ABAC
+        (Value : Bucket_Controls.Abac_Status) return Bucket_ABAC_Status is
+        (case Value is
+            when Bucket_Controls.Abac_Status_Absent =>
+              Bucket_ABAC_Unconfigured,
+            when Bucket_Controls.Abac_Enabled => Bucket_ABAC_Enabled,
+            when Bucket_Controls.Abac_Disabled => Bucket_ABAC_Disabled);
+
+      function Wire_ABAC
+        (Value : Bucket_ABAC_Status) return Bucket_Controls.Abac_Status is
+        (case Value is
+            when Bucket_ABAC_Unconfigured =>
+              Bucket_Controls.Abac_Status_Absent,
+            when Bucket_ABAC_Enabled => Bucket_Controls.Abac_Enabled,
+            when Bucket_ABAC_Disabled => Bucket_Controls.Abac_Disabled);
+
+      function Storage_Acceleration
+        (Value : Bucket_Controls.Accelerate_Status)
+         return Bucket_Acceleration_Status is
+        (case Value is
+            when Bucket_Controls.Accelerate_Status_Absent =>
+              Bucket_Acceleration_Unconfigured,
+            when Bucket_Controls.Accelerate_Enabled =>
+              Bucket_Acceleration_Enabled,
+            when Bucket_Controls.Accelerate_Suspended =>
+              Bucket_Acceleration_Suspended);
+
+      function Wire_Acceleration
+        (Value : Bucket_Acceleration_Status)
+         return Bucket_Controls.Accelerate_Status is
+        (case Value is
+            when Bucket_Acceleration_Unconfigured =>
+              Bucket_Controls.Accelerate_Status_Absent,
+            when Bucket_Acceleration_Enabled =>
+              Bucket_Controls.Accelerate_Enabled,
+            when Bucket_Acceleration_Suspended =>
+              Bucket_Controls.Accelerate_Suspended);
+
+      function Storage_Request_Payment
+        (Value : Bucket_Controls.Payer)
+         return Bucket_Request_Payment_Status is
+        (case Value is
+            when Bucket_Controls.Requester => Requester_Pays,
+            when Bucket_Controls.Bucket_Owner => Bucket_Owner_Pays,
+            when Bucket_Controls.Payer_Absent =>
+              raise Bucket_Controls.Malformed_Configuration);
+
+      function Wire_Request_Payment
+        (Value : Bucket_Request_Payment_Status) return Bucket_Controls.Payer is
+        (case Value is
+            when Requester_Pays => Bucket_Controls.Requester,
+            when Bucket_Owner_Pays => Bucket_Controls.Bucket_Owner);
 
       function Has_Encryption_Header return Boolean is
       begin
@@ -1675,6 +1788,112 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end;
       end Verify_Document_Checksum;
 
+      procedure Read_Bucket_Scalar_Control
+        (Operation_Name    : String;
+         Allow_Content_MD5 : Boolean;
+         Require_Checksum  : Boolean;
+         Auth_Value        : Authentication.Outcome;
+         Length_Value      : Backends.Source_Length;
+         Document          : out US.Unbounded_String;
+         Accepted          : out Boolean)
+      is
+         MD5_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "content-md5");
+         SDK_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-sdk-checksum-algorithm");
+         Payer_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-request-payer");
+      begin
+         Document := US.Null_Unbounded_String;
+         Accepted := False;
+         if MD5_Count > 1
+           or else Payer_Count > 1
+           or else Apps.Request_Header_Count (X, "content-type") > 1
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "A " & Operation_Name & " header is duplicated", Target_Text);
+         elsif not Allow_Content_MD5 and then MD5_Count > 0 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " does not define Content-MD5", Target_Text);
+         elsif Require_Checksum
+           and then MD5_Count = 0
+           and then SDK_Count = 0
+           and then Checksum_Value_Header_Count = 0
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " requires a request checksum", Target_Text);
+         elsif MD5_Count = 1
+           and then not S3.Wire_Core.Valid_Base64
+             (Apps.Request_Header (X, "content-md5"), 16)
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The Content-MD5 header is invalid", Target_Text);
+         elsif Payer_Count > 0 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " does not define RequestPayer", Target_Text);
+         elsif Length_Value.Kind = Backends.Known
+           and then Length_Value.Bytes > Maximum_Bucket_Scalar_Control_Body
+         then
+            Send_Error
+              (X, 400, "EntityTooLarge",
+               "Your proposed upload exceeds the maximum allowed size",
+               Target_Text);
+         else
+            declare
+               Source : Request_IO.Request_Source :=
+                 (Checksum_Kind => S3.Core.CRC64NVME,
+                  Length_Value  => Length_Value,
+                  Expected_Hash => Auth_Value.Payload_Hash,
+                  Check_Hash    =>
+                    US.To_String (Auth_Value.Payload_Hash) /=
+                      S3.SigV4.Unsigned_Payload,
+                  Hash          => GNAT.SHA256.Initial_Context,
+                  Check_Content_MD5 => MD5_Count = 1,
+                  Expected_Content_MD5 =>
+                    (if MD5_Count = 1 then
+                       US.To_Unbounded_String
+                         (Apps.Request_Header (X, "content-md5"))
+                     else US.Null_Unbounded_String),
+                  Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                  Check_Body_Checksum => False,
+                  Checksum_From_Trailer => False,
+                  Reject_Unexpected_Trailers => False,
+                  Expected_Body_Checksum => US.Null_Unbounded_String,
+                  Observed      => 0,
+                  Maximum       => Maximum_Bucket_Scalar_Control_Body,
+                  Completed     => False,
+                  others        => <>);
+               Value : constant String := Read_Document (Source);
+            begin
+               case Verify_Document_Checksum (Value) is
+                  when Document_Checksum_OK =>
+                     Document := US.To_Unbounded_String (Value);
+                     Accepted := True;
+                  when Document_Checksum_Group_Invalid =>
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The " & Operation_Name &
+                        " checksum group is invalid", Target_Text);
+                  when Document_Checksum_Value_Invalid =>
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The checksum value or trailer is invalid",
+                        Target_Text);
+                  when Document_Checksum_Mismatch =>
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The checksum does not match the request body",
+                        Target_Text);
+               end case;
+            end;
+         end if;
+      end Read_Bucket_Scalar_Control;
+
       function Verify_MFA_Credential
         (Principal, Credential : String) return MFA.Authorization_Status
       is
@@ -1769,6 +1988,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query)
         and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET"
+           and then Looks_Like_Bucket_Scalar_Control_Query)
+        and then not
           (Parsed.Kind in Requests.Bucket_Target | Requests.Object_Target
            and then Looks_Like_ACL_Query)
         and then not
@@ -1828,6 +2051,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query
            and then not Is_Bucket_CORS_Query;
+         Bucket_Scalar_Control_Query_Invalid :=
+           Method in "PUT" | "GET"
+           and then Looks_Like_Bucket_Scalar_Control_Query
+           and then not
+             (Is_Bucket_ABAC_Query
+              or else Is_Bucket_Acceleration_Query
+              or else Is_Bucket_Request_Payment_Query);
          Operation :=
            (if Looks_Like_ACL_Query
             then
@@ -1838,6 +2068,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Get_Bucket_CORS
             elsif Method = "DELETE" and then Looks_Like_Bucket_CORS_Query
             then Delete_Bucket_CORS
+            elsif Method = "PUT" and then Is_Bucket_ABAC_Query
+            then Put_Bucket_ABAC
+            elsif Method = "GET" and then Is_Bucket_ABAC_Query
+            then Get_Bucket_ABAC
+            elsif Method = "PUT" and then Is_Bucket_Acceleration_Query
+            then Put_Bucket_Acceleration
+            elsif Method = "GET" and then Is_Bucket_Acceleration_Query
+            then Get_Bucket_Acceleration
+            elsif Method = "PUT" and then Is_Bucket_Request_Payment_Query
+            then Put_Bucket_Request_Payment
+            elsif Method = "GET" and then Is_Bucket_Request_Payment_Query
+            then Get_Bucket_Request_Payment
             elsif Method = "PUT" and then Looks_Like_Bucket_Policy_Query
             then Put_Bucket_Policy
             elsif Method = "GET" and then Looks_Like_Bucket_Policy_Query
@@ -2038,7 +2280,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Configure_Route
          (X, "s3", Target_Text,
          (if Operation in Create_Bucket | Put_Bucket_Tagging |
-         Put_Public_Access_Block | Put_Bucket_CORS | Put_Bucket_Policy |
+         Put_Bucket_ABAC | Put_Bucket_Acceleration |
+         Put_Bucket_Request_Payment | Put_Public_Access_Block |
+         Put_Bucket_CORS | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -2148,6 +2392,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The bucket CORS request query is invalid", Target_Text);
          return;
+      elsif Bucket_Scalar_Control_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket-control request query is invalid", Target_Text);
+         return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -2171,7 +2420,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
 
       if Operation not in Create_Bucket | Put_Bucket_Tagging |
-        Put_Public_Access_Block | Put_Bucket_CORS | Put_Bucket_Policy |
+        Put_Bucket_ABAC | Put_Bucket_Acceleration |
+        Put_Bucket_Request_Payment | Put_Public_Access_Block |
+        Put_Bucket_CORS | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -2646,6 +2897,227 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         end;
                      else
                         Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_ABAC =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Body_Accepted  : Boolean;
+                  Document       : US.Unbounded_String;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Read_Bucket_Scalar_Control
+                       ("PutBucketAbac", True, False, Auth, Length,
+                        Document, Body_Accepted);
+                     if Body_Accepted then
+                        Store.Put_Bucket_ABAC
+                          (Bucket,
+                           Storage_ABAC
+                             (Bucket_Controls.Parse_Abac
+                                (US.To_String (Document))),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               exception
+                  when Bucket_Controls.Malformed_Configuration =>
+                     Send_Error
+                       (X, 400, "MalformedXML",
+                        "The XML provided was not well-formed or did not " &
+                        "validate against the published schema",
+                        Target_Text);
+               end;
+
+            when Get_Bucket_ABAC =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Value : Bucket_ABAC_Status;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketAbac does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_ABAC
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Value, Result);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Bucket_Controls.Serialize_Abac
+                                (Wire_ABAC (Value)));
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Acceleration =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Body_Accepted  : Boolean;
+                  Document       : US.Unbounded_String;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Read_Bucket_Scalar_Control
+                       ("PutBucketAccelerateConfiguration", False, False,
+                        Auth, Length, Document, Body_Accepted);
+                     if Body_Accepted then
+                        Store.Put_Bucket_Acceleration
+                          (Bucket,
+                           Storage_Acceleration
+                             (Bucket_Controls.Parse_Accelerate
+                                (US.To_String (Document))),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               exception
+                  when Bucket_Controls.Malformed_Configuration =>
+                     Send_Error
+                       (X, 400, "MalformedXML",
+                        "The XML provided was not well-formed or did not " &
+                        "validate against the published schema",
+                        Target_Text);
+               end;
+
+            when Get_Bucket_Acceleration =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Value : Bucket_Acceleration_Status;
+                  Payment : Bucket_Request_Payment_Status := Bucket_Owner_Pays;
+               begin
+                  if Payer_Count > 1
+                    or else
+                      (Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The GetBucketAccelerateConfiguration " &
+                        "RequestPayer header is invalid", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Acceleration
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Value, Result);
+                        if Result = Success and then Payer_Count = 1 then
+                           Store.Get_Bucket_Request_Payment
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Payment, Result);
+                        end if;
+                        if Result = Success then
+                           if Payer_Count = 1
+                             and then Payment = Requester_Pays
+                           then
+                              Apps.Set_Header
+                                (X, "x-amz-request-charged", "requester");
+                           end if;
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Bucket_Controls.Serialize_Accelerate
+                                (Wire_Acceleration (Value)));
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Request_Payment =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Body_Accepted  : Boolean;
+                  Document       : US.Unbounded_String;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Read_Bucket_Scalar_Control
+                       ("PutBucketRequestPayment", True, True, Auth, Length,
+                        Document, Body_Accepted);
+                     if Body_Accepted then
+                        Store.Put_Bucket_Request_Payment
+                          (Bucket,
+                           Storage_Request_Payment
+                             (Bucket_Controls.Parse_Request_Payment
+                                (US.To_String (Document))),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               exception
+                  when Bucket_Controls.Malformed_Configuration =>
+                     Send_Error
+                       (X, 400, "MalformedXML",
+                        "The XML provided was not well-formed or did not " &
+                        "validate against the published schema",
+                        Target_Text);
+               end;
+
+            when Get_Bucket_Request_Payment =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Value : Bucket_Request_Payment_Status;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketRequestPayment does not define " &
+                        "RequestPayer", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Request_Payment
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Value, Result);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Bucket_Controls.Serialize_Request_Payment
+                                (Wire_Request_Payment (Value)));
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
                      end if;
                   end if;
                end;

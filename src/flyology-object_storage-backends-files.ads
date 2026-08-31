@@ -170,6 +170,96 @@ package Flyology.Object_Storage.Backends.Files is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   --  Replace the persisted ABAC state through one crash-atomic publication.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving ABAC state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read and validate one persisted ABAC snapshot.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving ABAC snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status);
+
+   --  Replace acceleration state through one crash-atomic publication.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving acceleration state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read and validate one persisted acceleration snapshot.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving acceleration snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status);
+
+   --  Replace request-payment state through one crash-atomic publication.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete request-payment state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read and validate one persisted request-payment snapshot.
+   --  @param Item Filesystem store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete request-payment snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status);
+
    --  Publish an unversioned current object, a suspended null generation, or
    --  an enabled opaque retained generation. The returned identity and object
    --  bytes cross the same atomic rename boundary. A failure after rename and

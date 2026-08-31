@@ -15,11 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 13 introduces atomic canonical bucket-CORS records.
-   --  The value follows bucket-policy schema 12; older readers must reject it
-   --  because they cannot preserve this bucket configuration. Never renumber
-   --  or reuse it.
-   Schema_Version : constant Long_Long_Integer := 13;
+   --  Persisted schema 14 introduces the three scalar bucket-control columns.
+   --  The value follows bucket-CORS schema 13; older readers must reject it
+   --  because they cannot preserve these bucket configurations. Never
+   --  renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 14;
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -167,6 +167,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "DEFAULT 0 CHECK(versioning_status BETWEEN 0 AND 2);" &
      "ALTER TABLE buckets ADD COLUMN mfa_delete_status INTEGER NOT NULL " &
      "DEFAULT 0 CHECK(mfa_delete_status BETWEEN 0 AND 2);";
+   Bucket_Control_Columns_Schema : constant String :=
+     "ALTER TABLE buckets ADD COLUMN abac_status INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(abac_status BETWEEN 0 AND 2);" &
+     "ALTER TABLE buckets ADD COLUMN acceleration_status INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(acceleration_status BETWEEN 0 AND 2);" &
+     "ALTER TABLE buckets ADD COLUMN request_payment_status INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(request_payment_status BETWEEN 0 AND 1);";
    Checksum_Columns_Schema : constant String :=
      "ALTER TABLE objects ADD COLUMN checksum_algorithm INTEGER NOT NULL " &
      "DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
@@ -1180,7 +1187,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "versioning_status INTEGER NOT NULL DEFAULT 0 " &
          "CHECK(versioning_status BETWEEN 0 AND 2)," &
          "mfa_delete_status INTEGER NOT NULL DEFAULT 0 " &
-         "CHECK(mfa_delete_status BETWEEN 0 AND 2)" &
+         "CHECK(mfa_delete_status BETWEEN 0 AND 2)," &
+         "abac_status INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(abac_status BETWEEN 0 AND 2)," &
+         "acceleration_status INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(acceleration_status BETWEEN 0 AND 2)," &
+         "request_payment_status INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(request_payment_status BETWEEN 0 AND 1)" &
          ") WITHOUT ROWID;" &
          "CREATE TABLE objects (" &
          "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -1264,7 +1277,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_CORS_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=13;");
+         "PRAGMA user_version=14;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1715,6 +1728,33 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V12;
 
+   procedure Upgrade_From_V13 (Item : in out Catalog) is
+      Existing_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('buckets') " &
+           "WHERE name IN ('abac_status','acceleration_status'," &
+           "'request_payment_status')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Columns /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 13";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Control_Columns_Schema & "PRAGMA user_version=14;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V13;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1758,6 +1798,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 11 => null;
             when 12 => null;
             when 13 => null;
+            when 14 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1785,6 +1826,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Version = 12 then
             Upgrade_From_V12 (Item);
             Version := 13;
+         end if;
+         if Version = 13 then
+            Upgrade_From_V13 (Item);
+            Version := 14;
          end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
@@ -1832,7 +1877,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
-         "WHERE name IN ('versioning_status','mfa_delete_status')") /= 2
+         "WHERE name IN ('versioning_status','mfa_delete_status'," &
+         "'abac_status','acceleration_status'," &
+         "'request_payment_status')") /= 5
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif Text_Scalar (Item, "PRAGMA quick_check(1)") /= "ok" then
@@ -2094,6 +2141,153 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Get_Bucket_Versioning;
+
+   procedure Put_Bucket_Control
+     (Item   : in out Catalog;
+      Bucket : String;
+      Column : String;
+      Value  : Long_Long_Integer;
+      Result : out Status)
+   is
+      Update : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Update, Item.Database,
+         "UPDATE buckets SET " & Column & "=?2 WHERE name=?1");
+      DB.Bind (Update, 1, Bucket);
+      DB.Bind (Update, 2, Value);
+      if DB.Step (Update) /= DB.Done then
+         raise Catalog_Error with "bucket control update returned a row";
+      end if;
+      Result :=
+        (if DB.Changes (Item.Database) = 1 then Success else Not_Found);
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Control;
+
+   procedure Get_Bucket_Control
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Column  : String;
+      Maximum : Long_Long_Integer;
+      Default : Long_Long_Integer;
+      Value   : out Long_Long_Integer;
+      Result  : out Status)
+   is
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Value := Default;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT " & Column & " FROM buckets WHERE name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) = DB.Row then
+         Value := DB.Column (Query, 0);
+         if Value not in 0 .. Maximum then
+            raise Catalog_Error with "bucket control value is invalid";
+         end if;
+         Result := Success;
+      else
+         Result := Not_Found;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Value := Default;
+         raise;
+   end Get_Bucket_Control;
+
+   procedure Put_Bucket_ABAC
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_ABAC_Status;
+      Result : out Status)
+   is
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, "abac_status",
+         Long_Long_Integer (Bucket_ABAC_Status'Pos (Value)), Result);
+   end Put_Bucket_ABAC;
+
+   procedure Get_Bucket_ABAC
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_ABAC_Status;
+      Result : out Status)
+   is
+      Raw : Long_Long_Integer;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, "abac_status", 2, 0, Raw, Result);
+      Value := Bucket_ABAC_Status'Val (Natural (Raw));
+   end Get_Bucket_ABAC;
+
+   procedure Put_Bucket_Acceleration
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_Acceleration_Status;
+      Result : out Status)
+   is
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, "acceleration_status",
+         Long_Long_Integer (Bucket_Acceleration_Status'Pos (Value)), Result);
+   end Put_Bucket_Acceleration;
+
+   procedure Get_Bucket_Acceleration
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_Acceleration_Status;
+      Result : out Status)
+   is
+      Raw : Long_Long_Integer;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, "acceleration_status", 2, 0, Raw, Result);
+      Value := Bucket_Acceleration_Status'Val (Natural (Raw));
+   end Get_Bucket_Acceleration;
+
+   procedure Put_Bucket_Request_Payment
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_Request_Payment_Status;
+      Result : out Status)
+   is
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, "request_payment_status",
+         Long_Long_Integer (Bucket_Request_Payment_Status'Pos (Value)),
+         Result);
+   end Put_Bucket_Request_Payment;
+
+   procedure Get_Bucket_Request_Payment
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_Request_Payment_Status;
+      Result : out Status)
+   is
+      Raw : Long_Long_Integer;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, "request_payment_status", 1, 0, Raw, Result);
+      Value := Bucket_Request_Payment_Status'Val (Natural (Raw));
+   end Get_Bucket_Request_Payment;
 
    procedure Delete_Bucket
      (Item : in out Catalog; Name : String; Result : out Status)

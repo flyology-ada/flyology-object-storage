@@ -399,6 +399,95 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
       end Get_Bucket_Versioning;
 
+      procedure Put_Bucket_ABAC
+        (Name : String; Value : Bucket_ABAC_Status; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).ABAC := Value;
+            Result := Success;
+         end if;
+      end Put_Bucket_ABAC;
+
+      procedure Get_Bucket_ABAC
+        (Name : String; Value : out Bucket_ABAC_Status; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Value := Bucket_ABAC_Disabled;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Buckets (Index).ABAC;
+            Result := Success;
+         end if;
+      end Get_Bucket_ABAC;
+
+      procedure Put_Bucket_Acceleration
+        (Name : String;
+         Value : Bucket_Acceleration_Status;
+         Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Acceleration := Value;
+            Result := Success;
+         end if;
+      end Put_Bucket_Acceleration;
+
+      procedure Get_Bucket_Acceleration
+        (Name : String;
+         Value : out Bucket_Acceleration_Status;
+         Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Value := Bucket_Acceleration_Unconfigured;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Buckets (Index).Acceleration;
+            Result := Success;
+         end if;
+      end Get_Bucket_Acceleration;
+
+      procedure Put_Bucket_Request_Payment
+        (Name : String;
+         Value : Bucket_Request_Payment_Status;
+         Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Request_Payment := Value;
+            Result := Success;
+         end if;
+      end Put_Bucket_Request_Payment;
+
+      procedure Get_Bucket_Request_Payment
+        (Name : String;
+         Value : out Bucket_Request_Payment_Status;
+         Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Value := Bucket_Owner_Pays;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Buckets (Index).Request_Payment;
+            Result := Success;
+         end if;
+      end Get_Bucket_Request_Payment;
+
       procedure Delete_Bucket (Name : String; Result : out Status) is
          Index : constant Natural := Bucket_Index (Name);
       begin
@@ -2303,6 +2392,111 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket (Bucket, Result);
       end if;
    end Delete_Bucket;
+
+   overriding procedure Put_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_ABAC (Bucket, Value, Result);
+      end if;
+   end Put_Bucket_ABAC;
+
+   overriding procedure Get_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_ABAC_Disabled;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_ABAC (Bucket, Value, Result);
+      end if;
+   end Get_Bucket_ABAC;
+
+   overriding procedure Put_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Acceleration (Bucket, Value, Result);
+      end if;
+   end Put_Bucket_Acceleration;
+
+   overriding procedure Get_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_Acceleration_Unconfigured;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Acceleration (Bucket, Value, Result);
+      end if;
+   end Get_Bucket_Acceleration;
+
+   overriding procedure Put_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Request_Payment (Bucket, Value, Result);
+      end if;
+   end Put_Bucket_Request_Payment;
+
+   overriding procedure Get_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_Owner_Pays;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Request_Payment (Bucket, Value, Result);
+      end if;
+   end Get_Bucket_Request_Payment;
 
    overriding procedure Put_Bucket_Tags
      (Item     : in out Store;

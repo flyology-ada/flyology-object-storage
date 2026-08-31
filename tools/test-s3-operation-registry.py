@@ -12722,6 +12722,20 @@ def main() -> None:
         "Finish",
     ]
 
+    def assert_bucket_control_backend_server(entry):
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert entry["evidence"]["backend"] == [
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        ]
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+
     def assert_accelerate_registry(candidate):
         entry = candidate.operations["GetBucketAccelerateConfiguration"]
         assert entry.get("public_name") == "Get_Accelerate_Configuration"
@@ -12733,8 +12747,8 @@ def main() -> None:
         assert entry.get("certainty") == accelerate_certainty
         assert entry.get("reconciliation") == accelerate_reconciliation
         assert entry.get("ada_symbols") == accelerate_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry.get("evidence_tokens") == ["Get_Bucket_Acceleration"]
+        assert_bucket_control_backend_server(entry)
         assert "absent, Enabled, or Suspended" in entry["absence"]
         assert "billing or effective acceleration policy" in (
             entry["exclusions"][3]
@@ -12873,8 +12887,7 @@ def main() -> None:
         assert entry.get("certainty") == abac_certainty
         assert entry.get("reconciliation") == abac_reconciliation
         assert entry.get("ada_symbols") == abac_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert_bucket_control_backend_server(entry)
         assert "absent, Enabled, or Disabled" in entry["absence"]
         assert "effective ABAC policy" in entry["exclusions"][3]
         assert candidate.qualification["get_bucket_abac"][0][-1] == (
@@ -13117,8 +13130,7 @@ def main() -> None:
         assert entry.get("certainty") == request_payment_certainty
         assert entry.get("reconciliation") == request_payment_reconciliation
         assert entry.get("ada_symbols") == request_payment_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert_bucket_control_backend_server(entry)
         assert "absent, Requester, or BucketOwner" in entry["absence"]
         assert "enforcing Requester Pays" in entry["exclusions"][3]
         assert candidate.qualification["get_bucket_request_payment"][0][
@@ -13256,8 +13268,7 @@ def main() -> None:
         assert entry.get("certainty") == put_abac_certainty
         assert entry.get("reconciliation") == put_abac_reconciliation
         assert entry.get("ada_symbols") == put_abac_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert_bucket_control_backend_server(entry)
         assert entry["absence"] == "not_applicable"
         assert "exact same immutable serialized ABAC document" in (
             entry["exclusions"][3]
@@ -13381,8 +13392,8 @@ def main() -> None:
         assert entry.get("certainty") == put_accelerate_certainty
         assert entry.get("reconciliation") == put_accelerate_reconciliation
         assert entry.get("ada_symbols") == put_accelerate_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry.get("evidence_tokens") == ["Put_Bucket_Acceleration"]
+        assert_bucket_control_backend_server(entry)
         assert "no Content-MD5 member" in entry["exclusions"][3]
         assert candidate.qualification[
             "put_bucket_accelerate_configuration"
@@ -13526,8 +13537,7 @@ def main() -> None:
         assert entry.get("certainty") == put_payment_certainty
         assert entry.get("reconciliation") == put_payment_reconciliation
         assert entry.get("ada_symbols") == put_payment_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert_bucket_control_backend_server(entry)
         assert "required generated-checksum path" in entry["exclusions"][3]
         assert "Requester or BucketOwner" in entry["exclusions"][4]
         assert candidate.qualification["put_bucket_request_payment"][0][

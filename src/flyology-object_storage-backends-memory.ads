@@ -163,6 +163,96 @@ package Flyology.Object_Storage.Backends.Memory is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   --  Replace the ABAC state in the protected in-memory catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving ABAC state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic ABAC snapshot from the in-memory catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving ABAC snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status);
+
+   --  Replace the acceleration state in the protected in-memory catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving acceleration state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic acceleration snapshot from the in-memory catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete presence-preserving acceleration snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status);
+
+   --  Replace the request-payment state in the protected catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete request-payment state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic request-payment snapshot from the in-memory catalog.
+   --  @param Item In-memory store
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete request-payment snapshot
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status);
+
    --  Publish one buffered generation and return its version identity from
    --  the same protected-state commit.
    --  @param Item In-memory store
@@ -475,6 +565,10 @@ private
       Created : Unix_Time := 0;
       Tags    : Flyology.Object_Storage.Tags.Tag_Set;
       Versioning : Bucket_Versioning_Configuration := (others => <>);
+      ABAC : Bucket_ABAC_Status := Bucket_ABAC_Disabled;
+      Acceleration : Bucket_Acceleration_Status :=
+        Bucket_Acceleration_Unconfigured;
+      Request_Payment : Bucket_Request_Payment_Status := Bucket_Owner_Pays;
       CORS_Configured : Boolean := False;
       CORS_Document : Ada.Strings.Unbounded.Unbounded_String;
       Public_Access_Block_Configured : Boolean := False;
@@ -542,6 +636,26 @@ private
         (Name          : String;
          Configuration : out Bucket_Versioning_Configuration;
          Result        : out Status);
+      procedure Put_Bucket_ABAC
+        (Name : String; Value : Bucket_ABAC_Status; Result : out Status);
+      procedure Get_Bucket_ABAC
+        (Name : String; Value : out Bucket_ABAC_Status; Result : out Status);
+      procedure Put_Bucket_Acceleration
+        (Name : String;
+         Value : Bucket_Acceleration_Status;
+         Result : out Status);
+      procedure Get_Bucket_Acceleration
+        (Name : String;
+         Value : out Bucket_Acceleration_Status;
+         Result : out Status);
+      procedure Put_Bucket_Request_Payment
+        (Name : String;
+         Value : Bucket_Request_Payment_Status;
+         Result : out Status);
+      procedure Get_Bucket_Request_Payment
+        (Name : String;
+         Value : out Bucket_Request_Payment_Status;
+         Result : out Status);
       procedure Delete_Bucket (Name : String; Result : out Status);
       procedure Put_Bucket_Tags
         (Name : String; Value : Tags.Tag_Set; Result : out Status);

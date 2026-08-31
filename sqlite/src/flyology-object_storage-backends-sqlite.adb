@@ -736,6 +736,154 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Get_Bucket_Versioning;
 
+   overriding procedure Put_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Bucket_ABAC (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_ABAC;
+
+   overriding procedure Get_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_ABAC_Disabled;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_ABAC (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_ABAC_Disabled;
+         Result := Backend_Unavailable;
+   end Get_Bucket_ABAC;
+
+   overriding procedure Put_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Bucket_Acceleration
+           (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Acceleration;
+
+   overriding procedure Get_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_Acceleration_Unconfigured;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Acceleration
+           (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_Acceleration_Unconfigured;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Acceleration;
+
+   overriding procedure Put_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Bucket_Request_Payment
+           (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Request_Payment;
+
+   overriding procedure Get_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status)
+   is
+   begin
+      Value := Bucket_Owner_Pays;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Request_Payment
+           (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_Owner_Pays;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Request_Payment;
+
    procedure Create_Staging_File
      (Item    : in out Store;
       Bucket  : String;

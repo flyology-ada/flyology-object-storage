@@ -32,6 +32,9 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Ada.Strings.Unbounded.Unbounded_String;
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Flyology.Object_Storage.Bucket_ABAC_Status;
+   use type Flyology.Object_Storage.Bucket_Acceleration_Status;
+   use type Flyology.Object_Storage.Bucket_Request_Payment_Status;
    use type Flyology.Object_Storage.MFA_Delete_Status;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Flyology.Object_Storage.Optional_Metadata_Time;
@@ -481,6 +484,9 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE bucket_public_access_blocks;" &
          "DROP TABLE bucket_policies;" &
          "DROP TABLE bucket_cors_documents;" &
+         "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
+         "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
+         "ALTER TABLE buckets DROP COLUMN abac_status;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-bucket',17);" &
          "INSERT INTO objects(bucket_name,object_key,payload,size,modified," &
          "entity_tag,content_type) VALUES(" &
@@ -514,6 +520,9 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Legacy,
          "DROP TABLE bucket_policies;" &
          "DROP TABLE bucket_cors_documents;" &
+         "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
+         "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
+         "ALTER TABLE buckets DROP COLUMN abac_status;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-policy',23);" &
          "PRAGMA user_version=11;");
       Databases.Close (Legacy);
@@ -536,6 +545,9 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Execute
         (Legacy,
          "DROP TABLE bucket_cors_documents;" &
+         "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
+         "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
+         "ALTER TABLE buckets DROP COLUMN abac_status;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-cors',29);" &
          "PRAGMA user_version=12;");
       Databases.Close (Legacy);
@@ -546,6 +558,30 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V12_Database;
+
+   procedure Create_V13_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "ALTER TABLE buckets DROP COLUMN request_payment_status;" &
+         "ALTER TABLE buckets DROP COLUMN acceleration_status;" &
+         "ALTER TABLE buckets DROP COLUMN abac_status;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-controls',31);" &
+         "PRAGMA user_version=13;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V13_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1448,7 +1484,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1494,7 +1530,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1538,10 +1574,67 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 13 atomically");
+         "schema-v12 migration did not publish schema 14 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V13_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      ABAC         : Bucket_ABAC_Status;
+      Acceleration : Bucket_Acceleration_Status;
+      Payment      : Bucket_Request_Payment_Status;
+      Result       : Status;
+   begin
+      Catalogs.Get_Bucket_ABAC
+        (Catalog, "legacy-controls", ABAC, Result);
+      Assert
+        (Result = Success and then ABAC = Bucket_ABAC_Disabled,
+         "schema-v13 migration did not default ABAC to disabled");
+      Catalogs.Get_Bucket_Acceleration
+        (Catalog, "legacy-controls", Acceleration, Result);
+      Assert
+        (Result = Success
+         and then Acceleration = Bucket_Acceleration_Unconfigured,
+         "schema-v13 migration invented acceleration state");
+      Catalogs.Get_Bucket_Request_Payment
+        (Catalog, "legacy-controls", Payment, Result);
+      Assert
+        (Result = Success and then Payment = Bucket_Owner_Pays,
+         "schema-v13 migration did not default bucket-owner payment");
+      Catalogs.Put_Bucket_ABAC
+        (Catalog, "legacy-controls", Bucket_ABAC_Unconfigured, Result);
+      Catalogs.Put_Bucket_Acceleration
+        (Catalog, "legacy-controls", Bucket_Acceleration_Suspended, Result);
+      Catalogs.Put_Bucket_Request_Payment
+        (Catalog, "legacy-controls", Requester_Pays, Result);
+      Assert
+        (Result = Success,
+         "schema-v13 migration did not install scalar-control storage");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Columns : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Columns, Database,
+         "SELECT count(*) FROM pragma_table_info('buckets') " &
+         "WHERE name IN ('abac_status','acceleration_status'," &
+         "'request_payment_status')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 14
+         and then Databases.Step (Columns) = Databases.Row
+         and then Databases.Column (Columns, 0) = 3,
+         "schema-v13 migration did not publish schema 14 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2646,8 +2739,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13,
-         "schema-v1 migration did not publish version 13");
+         and then Databases.Column (Version, 0) = 14,
+         "schema-v1 migration did not publish version 14");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2725,8 +2818,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13,
-         "schema-v2 migration did not publish version 13");
+         and then Databases.Column (Version, 0) = 14,
+         "schema-v2 migration did not publish version 14");
    end;
    declare
       Tables : Databases.Statement;
@@ -2762,10 +2855,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 13 tables");
+         "schema-v3 migration did not publish schema 14 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2836,8 +2929,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 13,
-            "schema-v4 migration did not publish version 13");
+            and then Databases.Column (Version, 0) = 14,
+            "schema-v4 migration did not publish version 14");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2904,7 +2997,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 13
+            and then Databases.Column (Version, 0) = 14
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -2982,8 +3075,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13,
-         "schema-v6 migration did not publish version 13");
+         and then Databases.Column (Version, 0) = 14,
+         "schema-v6 migration did not publish version 14");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3114,7 +3207,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -3185,7 +3278,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 13
+         and then Databases.Column (Version, 0) = 14
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -3703,6 +3796,268 @@ begin
          Assert
            (Result = Success,
             "SQLite public access state could not be restored");
+      end;
+      declare
+         ABAC         : Bucket_ABAC_Status;
+         Acceleration : Bucket_Acceleration_Status;
+         Payment      : Bucket_Request_Payment_Status;
+      begin
+         Store.Get_Bucket_ABAC
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, ABAC, Result);
+         Assert
+           (Result = Not_Found and then ABAC = Bucket_ABAC_Disabled,
+            "SQLite ABAC get retained output for an absent bucket");
+         Store.Get_Bucket_Acceleration
+           ("missing-bucket", null, Ada.Real_Time.Time_Last,
+            Acceleration, Result);
+         Assert
+           (Result = Not_Found
+            and then Acceleration = Bucket_Acceleration_Unconfigured,
+            "SQLite acceleration get retained output for an absent bucket");
+         Store.Get_Bucket_Request_Payment
+           ("missing-bucket", null, Ada.Real_Time.Time_Last,
+            Payment, Result);
+         Assert
+           (Result = Not_Found and then Payment = Bucket_Owner_Pays,
+            "SQLite payment get retained output for an absent bucket");
+
+         Store.Get_Bucket_ABAC
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, ABAC, Result);
+         Store.Get_Bucket_Acceleration
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Acceleration, Result);
+         Store.Get_Bucket_Request_Payment
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Payment, Result);
+         Assert
+           (Result = Success and then ABAC = Bucket_ABAC_Disabled
+            and then Acceleration = Bucket_Acceleration_Unconfigured
+            and then Payment = Bucket_Owner_Pays,
+            "SQLite new bucket scalar-control defaults are incorrect");
+
+         for Expected in Bucket_ABAC_Status loop
+            Store.Put_Bucket_ABAC
+              ("sqlite-bucket", Expected, null,
+               Ada.Real_Time.Time_Last, Result);
+            Store.Get_Bucket_ABAC
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               ABAC, Result);
+            Assert
+              (Result = Success and then ABAC = Expected,
+               "SQLite ABAC replacement did not round trip");
+         end loop;
+         for Expected in Bucket_Acceleration_Status loop
+            Store.Put_Bucket_Acceleration
+              ("sqlite-bucket", Expected, null,
+               Ada.Real_Time.Time_Last, Result);
+            Store.Get_Bucket_Acceleration
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               Acceleration, Result);
+            Assert
+              (Result = Success and then Acceleration = Expected,
+               "SQLite acceleration replacement did not round trip");
+         end loop;
+         for Expected in Bucket_Request_Payment_Status loop
+            Store.Put_Bucket_Request_Payment
+              ("sqlite-bucket", Expected, null,
+               Ada.Real_Time.Time_Last, Result);
+            Store.Get_Bucket_Request_Payment
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               Payment, Result);
+            Assert
+              (Result = Success and then Payment = Expected,
+               "SQLite payment replacement did not round trip");
+         end loop;
+
+         declare
+            Cancel : aliased Flyology.Cancellation.Token;
+            Raised : Boolean;
+         begin
+            Cancel.Request;
+            Raised := False;
+            begin
+               Store.Put_Bucket_ABAC
+                 ("sqlite-bucket", Bucket_ABAC_Enabled, Cancel'Access,
+                  Ada.Real_Time.Time_Last, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite ABAC put ignored cancellation");
+            Raised := False;
+            begin
+               Store.Get_Bucket_ABAC
+                 ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+                  ABAC, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite ABAC get ignored cancellation");
+            Raised := False;
+            begin
+               Store.Put_Bucket_Acceleration
+                 ("sqlite-bucket", Bucket_Acceleration_Enabled,
+                  Cancel'Access, Ada.Real_Time.Time_Last, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite acceleration put ignored cancellation");
+            Raised := False;
+            begin
+               Store.Get_Bucket_Acceleration
+                 ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+                  Acceleration, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite acceleration get ignored cancellation");
+            Raised := False;
+            begin
+               Store.Put_Bucket_Request_Payment
+                 ("sqlite-bucket", Requester_Pays, Cancel'Access,
+                  Ada.Real_Time.Time_Last, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite payment put ignored cancellation");
+            Raised := False;
+            begin
+               Store.Get_Bucket_Request_Payment
+                 ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+                  Payment, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite payment get ignored cancellation");
+         end;
+
+         declare
+            procedure Expect_Timeout
+              (Run : not null access procedure; Message : String)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  Run.all;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Raised := True;
+               end;
+               Assert (Raised, Message);
+            end Expect_Timeout;
+
+            procedure Put_ABAC is
+            begin
+               Store.Put_Bucket_ABAC
+                 ("sqlite-bucket", Bucket_ABAC_Enabled, null,
+                  Ada.Real_Time.Time_First, Result);
+            end Put_ABAC;
+            procedure Get_ABAC is
+            begin
+               Store.Get_Bucket_ABAC
+                 ("sqlite-bucket", null, Ada.Real_Time.Time_First,
+                  ABAC, Result);
+            end Get_ABAC;
+            procedure Put_Acceleration is
+            begin
+               Store.Put_Bucket_Acceleration
+                 ("sqlite-bucket", Bucket_Acceleration_Enabled, null,
+                  Ada.Real_Time.Time_First, Result);
+            end Put_Acceleration;
+            procedure Get_Acceleration is
+            begin
+               Store.Get_Bucket_Acceleration
+                 ("sqlite-bucket", null, Ada.Real_Time.Time_First,
+                  Acceleration, Result);
+            end Get_Acceleration;
+            procedure Put_Payment is
+            begin
+               Store.Put_Bucket_Request_Payment
+                 ("sqlite-bucket", Requester_Pays, null,
+                  Ada.Real_Time.Time_First, Result);
+            end Put_Payment;
+            procedure Get_Payment is
+            begin
+               Store.Get_Bucket_Request_Payment
+                 ("sqlite-bucket", null, Ada.Real_Time.Time_First,
+                  Payment, Result);
+            end Get_Payment;
+         begin
+            Expect_Timeout
+              (Put_ABAC'Access, "SQLite ABAC put ignored deadline");
+            Expect_Timeout
+              (Get_ABAC'Access, "SQLite ABAC get ignored deadline");
+            Expect_Timeout
+              (Put_Acceleration'Access,
+               "SQLite acceleration put ignored deadline");
+            Expect_Timeout
+              (Get_Acceleration'Access,
+               "SQLite acceleration get ignored deadline");
+            Expect_Timeout
+              (Put_Payment'Access,
+               "SQLite request-payment put ignored deadline");
+            Expect_Timeout
+              (Get_Payment'Access,
+               "SQLite request-payment get ignored deadline");
+         end;
+
+         Store.Put_Bucket_ABAC
+           ("sqlite-bucket", Bucket_ABAC_Disabled, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "SQLite rollback fixture setup failed");
+         declare
+            Injector : Databases.Database;
+         begin
+            Databases.Open
+              (Injector, Backend_Root & "/catalog.sqlite3");
+            Databases.Execute
+              (Injector,
+               "CREATE TRIGGER fail_scalar_control " &
+               "BEFORE UPDATE OF abac_status ON buckets BEGIN " &
+               "SELECT RAISE(ABORT,'scalar-control failpoint'); END;");
+            Databases.Close (Injector);
+            Store.Put_Bucket_ABAC
+              ("sqlite-bucket", Bucket_ABAC_Enabled, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "SQLite scalar-control failpoint was not surfaced");
+            Store.Get_Bucket_ABAC
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               ABAC, Result);
+            Assert
+              (Result = Success and then ABAC = Bucket_ABAC_Disabled,
+               "failed SQLite scalar-control update changed state");
+            Databases.Open
+              (Injector, Backend_Root & "/catalog.sqlite3");
+            Databases.Execute
+              (Injector, "DROP TRIGGER fail_scalar_control;");
+            Databases.Close (Injector);
+         exception
+            when others =>
+               if Databases.Is_Open (Injector) then
+                  Databases.Close (Injector);
+               end if;
+               raise;
+         end;
+
+         Store.Put_Bucket_ABAC
+           ("sqlite-bucket", Bucket_ABAC_Enabled, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Acceleration
+           ("sqlite-bucket", Bucket_Acceleration_Suspended, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Request_Payment
+           ("sqlite-bucket", Requester_Pays, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite scalar-control persistence fixture failed");
       end;
       declare
          First : constant String :=
@@ -4589,6 +4944,25 @@ begin
             and then Configuration.Status = Versioning_Suspended
             and then Configuration.MFA_Delete = MFA_Delete_Enabled,
             "SQLite backend versioning configuration did not survive reopen");
+      end;
+      declare
+         ABAC         : Bucket_ABAC_Status;
+         Acceleration : Bucket_Acceleration_Status;
+         Payment      : Bucket_Request_Payment_Status;
+      begin
+         Store.Get_Bucket_ABAC
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, ABAC, Result);
+         Store.Get_Bucket_Acceleration
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Acceleration, Result);
+         Store.Get_Bucket_Request_Payment
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Payment, Result);
+         Assert
+           (Result = Success and then ABAC = Bucket_ABAC_Enabled
+            and then Acceleration = Bucket_Acceleration_Suspended
+            and then Payment = Requester_Pays,
+            "SQLite scalar-control state did not survive reopen");
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

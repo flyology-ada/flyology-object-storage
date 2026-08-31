@@ -248,6 +248,36 @@ is
       MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;
    end record;
 
+   --  Persisted attribute-based access-control state for a general purpose
+   --  bucket. AWS defines newly created general purpose buckets as disabled;
+   --  HTTP and XML spelling remain at the S3 boundary.
+   --  @enum Bucket_ABAC_Disabled Bucket tags do not participate in access
+   --    control
+   --  @enum Bucket_ABAC_Enabled Bucket tags may participate in access control
+   --  @enum Bucket_ABAC_Unconfigured An explicit configuration omitted Status
+   type Bucket_ABAC_Status is
+     (Bucket_ABAC_Disabled,
+      Bucket_ABAC_Enabled,
+      Bucket_ABAC_Unconfigured);
+
+   --  Persisted transfer-acceleration state. Unconfigured is distinct from
+   --  Suspended because GetBucketAccelerateConfiguration omits Status until
+   --  the bucket has received an explicit acceleration configuration.
+   --  @enum Bucket_Acceleration_Unconfigured No state has been supplied
+   --  @enum Bucket_Acceleration_Enabled Transfer acceleration is enabled
+   --  @enum Bucket_Acceleration_Suspended Transfer acceleration is suspended
+   type Bucket_Acceleration_Status is
+     (Bucket_Acceleration_Unconfigured,
+      Bucket_Acceleration_Enabled,
+      Bucket_Acceleration_Suspended);
+
+   --  Persisted request-payment state. AWS defines bucket-owner payment as
+   --  the initial state of a newly created bucket.
+   --  @enum Bucket_Owner_Pays The bucket owner pays request and transfer fees
+   --  @enum Requester_Pays The requester pays request and transfer fees
+   type Bucket_Request_Payment_Status is
+     (Bucket_Owner_Pays, Requester_Pays);
+
    --  Presence-preserving Boolean storage used by bucket configuration
    --  records.  The value has no meaning while Is_Set is False.  This is a
    --  storage-domain representation; XML spelling remains at the S3 boundary.

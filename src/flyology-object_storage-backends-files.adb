@@ -65,6 +65,12 @@ package body Flyology.Object_Storage.Backends.Files is
    Bucket_CORS_Magic : constant String := "FOSCOR01";
    --  Persisted-format discriminator for one length-prefixed canonical CORS
    --  document. Changing it would make existing CORS files unreadable.
+   Bucket_ABAC_Magic : constant String := "FOSABA01";
+   --  Persisted-format discriminator for one bucket ABAC state.
+   Bucket_Acceleration_Magic : constant String := "FOSACC01";
+   --  Persisted-format discriminator for one bucket acceleration state.
+   Bucket_Request_Payment_Magic : constant String := "FOSPAY01";
+   --  Persisted-format discriminator for one bucket request-payment state.
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
    Maximum_Checksum_Length : constant Natural := 96;
    Maximum_Tag_Key_Bytes : constant Natural :=
@@ -368,6 +374,18 @@ package body Flyology.Object_Storage.Backends.Files is
    function Bucket_CORS_Path
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "cors.fos"));
+
+   function Bucket_ABAC_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "abac.fos"));
+
+   function Bucket_Acceleration_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "acceleration.fos"));
+
+   function Bucket_Request_Payment_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "request-payment.fos"));
 
    function Upload_Path
      (Item : Store; Bucket : String; Upload_ID : String) return String is
@@ -3695,6 +3713,346 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          Result := Backend_Unavailable;
    end Delete_Bucket_Policy;
+
+   procedure Put_Bucket_Control
+     (Item     : in out Store;
+      Bucket   : String;
+      Target   : String;
+      Stem     : String;
+      Magic    : String;
+      Value    : Character;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Locked    : Boolean := False;
+      Published : Boolean := False;
+      Temp      : US.Unbounded_String;
+      Number    : Long_Long_Integer;
+      Renamed   : Boolean := False;
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            Stem & "-" & GNAT.SHA256.Digest
+              (Bucket & Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+      Validate_New_Temp_Target (Item, US.To_String (Temp));
+      SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+      Opened := True;
+      Write_String (File, Magic);
+      Write_String (File, (1 => Value));
+      SIO.Close (File);
+      Opened := False;
+      Sync_File (Item, US.To_String (Temp));
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Not_Found;
+         return;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Validate_Configuration_Path (Item, Bucket);
+      if GNAT.OS_Lib.Is_Symbolic_Link (Target)
+        or else
+          (Ada.Directories.Exists (Target)
+           and then Ada.Directories.Kind (Target) /=
+             Ada.Directories.Ordinary_File)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
+      if not Renamed then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      Published := True;
+      Sync_Directory (Item, Configuration_Path (Item, Bucket));
+      Sync_Directory (Item, Temp_Path (Item));
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Result := Backend_Unavailable;
+   end Put_Bucket_Control;
+
+   procedure Get_Bucket_Control
+     (Item     : in out Store;
+      Bucket   : String;
+      Target   : String;
+      Magic    : String;
+      Default  : Character;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Character;
+      Result   : out Status)
+   is
+      File   : SIO.File_Type;
+      Opened : Boolean := False;
+      Locked : Boolean := False;
+   begin
+      Value := Default;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Ada.Directories.Exists (Target) then
+            Result := Success;
+         elsif Ada.Directories.Kind (Target) /=
+           Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         else
+            SIO.Open (File, SIO.In_File, Target);
+            Opened := True;
+            if SIO.Size (File) /= SIO.Count (Magic'Length + 1)
+              or else Read_String (File, Magic'Length) /= Magic
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            declare
+               Encoded : constant String := Read_String (File, 1);
+            begin
+               Value := Encoded (Encoded'First);
+            end;
+            SIO.Close (File);
+            Opened := False;
+            Result := Success;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Value := Default;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Control;
+
+   overriding procedure Put_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_ABAC_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, Bucket_ABAC_Path (Item, Bucket), "abac",
+         Bucket_ABAC_Magic,
+         (case Value is
+             when Bucket_ABAC_Disabled     => 'D',
+             when Bucket_ABAC_Enabled      => 'E',
+             when Bucket_ABAC_Unconfigured => 'U'),
+         Token, Deadline, Result);
+   end Put_Bucket_ABAC;
+
+   overriding procedure Get_Bucket_ABAC
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_ABAC_Status;
+      Result   : out Status)
+   is
+      Encoded : Character;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, Bucket_ABAC_Path (Item, Bucket), Bucket_ABAC_Magic,
+         'D', Token, Deadline, Encoded, Result);
+      if Result = Success then
+         Value :=
+           (case Encoded is
+               when 'D' => Bucket_ABAC_Disabled,
+               when 'E' => Bucket_ABAC_Enabled,
+               when 'U' => Bucket_ABAC_Unconfigured,
+               when others => raise Ada.IO_Exceptions.Data_Error);
+      else
+         Value := Bucket_ABAC_Disabled;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_ABAC_Disabled;
+         Result := Backend_Unavailable;
+   end Get_Bucket_ABAC;
+
+   overriding procedure Put_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Acceleration_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      Encoded : constant Character :=
+        (case Value is
+            when Bucket_Acceleration_Unconfigured => 'U',
+            when Bucket_Acceleration_Enabled      => 'E',
+            when Bucket_Acceleration_Suspended    => 'S');
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, Bucket_Acceleration_Path (Item, Bucket),
+         "acceleration", Bucket_Acceleration_Magic, Encoded,
+         Token, Deadline, Result);
+   end Put_Bucket_Acceleration;
+
+   overriding procedure Get_Bucket_Acceleration
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Acceleration_Status;
+      Result   : out Status)
+   is
+      Encoded : Character;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, Bucket_Acceleration_Path (Item, Bucket),
+         Bucket_Acceleration_Magic, 'U', Token, Deadline, Encoded, Result);
+      if Result = Success then
+         Value :=
+           (case Encoded is
+               when 'U' => Bucket_Acceleration_Unconfigured,
+               when 'E' => Bucket_Acceleration_Enabled,
+               when 'S' => Bucket_Acceleration_Suspended,
+               when others => raise Ada.IO_Exceptions.Data_Error);
+      else
+         Value := Bucket_Acceleration_Unconfigured;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_Acceleration_Unconfigured;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Acceleration;
+
+   overriding procedure Put_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Request_Payment_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Put_Bucket_Control
+        (Item, Bucket, Bucket_Request_Payment_Path (Item, Bucket),
+         "request-payment", Bucket_Request_Payment_Magic,
+         (if Value = Requester_Pays then 'R' else 'O'),
+         Token, Deadline, Result);
+   end Put_Bucket_Request_Payment;
+
+   overriding procedure Get_Bucket_Request_Payment
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Bucket_Request_Payment_Status;
+      Result   : out Status)
+   is
+      Encoded : Character;
+   begin
+      Get_Bucket_Control
+        (Item, Bucket, Bucket_Request_Payment_Path (Item, Bucket),
+         Bucket_Request_Payment_Magic, 'O', Token, Deadline, Encoded, Result);
+      if Result = Success then
+         Value :=
+           (case Encoded is
+               when 'O' => Bucket_Owner_Pays,
+               when 'R' => Requester_Pays,
+               when others => raise Ada.IO_Exceptions.Data_Error);
+      else
+         Value := Bucket_Owner_Pays;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Bucket_Owner_Pays;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Request_Payment;
 
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;

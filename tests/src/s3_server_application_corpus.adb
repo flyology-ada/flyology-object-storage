@@ -74,6 +74,9 @@ procedure S3_Server_Application_Corpus is
    use type Flyology.Object_Storage.Metadata_Time;
    use type Flyology.Object_Storage.Checksum_Algorithm;
    use type Checksum_Policy.Algorithm;
+   use type Bucket_Controls.Abac_Status;
+   use type Bucket_Controls.Accelerate_Status;
+   use type Bucket_Controls.Payer;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
@@ -5291,6 +5294,243 @@ begin
                    SigV4.Pair ("location", "")))),
             "400 Bad Request"),
          "GetBucketLocation accepted a duplicate subresource");
+   end;
+
+   declare
+      Put_ABAC_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("abac", ""),
+         SigV4.Pair ("x-id", "PutBucketAbac"));
+      Get_ABAC_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("abac", ""),
+         SigV4.Pair ("x-id", "GetBucketAbac"));
+      Put_Acceleration_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("accelerate", ""),
+         SigV4.Pair ("x-id", "PutBucketAccelerateConfiguration"));
+      Get_Acceleration_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("accelerate", ""),
+         SigV4.Pair ("x-id", "GetBucketAccelerateConfiguration"));
+      Put_Payment_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("requestPayment", ""),
+         SigV4.Pair ("x-id", "PutBucketRequestPayment"));
+      Get_Payment_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("requestPayment", ""),
+         SigV4.Pair ("x-id", "GetBucketRequestPayment"));
+      Enabled_ABAC : constant String :=
+        Bucket_Controls.Serialize_Abac (Bucket_Controls.Abac_Enabled);
+      Empty_ABAC : constant String :=
+        Bucket_Controls.Serialize_Abac
+          (Bucket_Controls.Abac_Status_Absent);
+      Suspended_Acceleration : constant String :=
+        Bucket_Controls.Serialize_Accelerate
+          (Bucket_Controls.Accelerate_Suspended);
+      Requester_Payment : constant String :=
+        Bucket_Controls.Serialize_Request_Payment
+          (Bucket_Controls.Requester);
+   begin
+      Require
+        (Bucket_Controls.Parse_Abac
+           (Response_Body
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket", Get_ABAC_Query)))) =
+           Bucket_Controls.Abac_Disabled,
+         "GetBucketAbac did not expose the disabled bucket default");
+      Require
+        (Bucket_Controls.Parse_Accelerate
+           (Response_Body
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket", Get_Acceleration_Query)))) =
+           Bucket_Controls.Accelerate_Status_Absent,
+         "GetBucketAccelerateConfiguration invented initial state");
+      Require
+        (Bucket_Controls.Parse_Request_Payment
+           (Response_Body
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket", Get_Payment_Query)))) =
+           Bucket_Controls.Bucket_Owner,
+         "GetBucketRequestPayment did not expose bucket-owner payment");
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_ABAC_Query, Enabled_ABAC,
+                  "Content-MD5: " & Content_MD5 (Enabled_ABAC) & CRLF)),
+            "200 OK"),
+         "PutBucketAbac rejected an enabled configuration");
+      Require
+        (Bucket_Controls.Parse_Abac
+           (Response_Body
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket", Get_ABAC_Query)))) =
+           Bucket_Controls.Abac_Enabled,
+         "GetBucketAbac did not return the replaced state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_ABAC_Query, Empty_ABAC)),
+            "200 OK")
+         and then
+           Bucket_Controls.Parse_Abac
+             (Response_Body
+                (Run
+                   (Signed_Query_Request
+                      ("GET", "/test-bucket", Get_ABAC_Query)))) =
+             Bucket_Controls.Abac_Status_Absent,
+         "PutBucketAbac did not preserve an omitted Status");
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Payment_Query,
+                  Requester_Payment)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketRequestPayment accepted a missing checksum");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Acceleration_Query,
+                  Suspended_Acceleration,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Suspended_Acceleration) &
+                  CRLF)),
+            "200 OK"),
+         "PutBucketAccelerateConfiguration rejected a valid checksum");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Get_Acceleration_Query,
+                 "x-amz-request-payer", "requester"));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "x-amz-request-charged:")
+            and then Bucket_Controls.Parse_Accelerate
+              (Response_Body (Response)) =
+                Bucket_Controls.Accelerate_Suspended,
+            "owner-pays acceleration GET reported a requester charge");
+      end;
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Payment_Query,
+                  Requester_Payment,
+                  "Content-MD5: " & Content_MD5 (Requester_Payment) &
+                  CRLF)),
+            "200 OK"),
+         "PutBucketRequestPayment rejected requester payment");
+      Require
+        (Bucket_Controls.Parse_Request_Payment
+           (Response_Body
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket", Get_Payment_Query)))) =
+           Bucket_Controls.Requester,
+         "GetBucketRequestPayment did not return requester payment");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Get_Acceleration_Query,
+                 "x-amz-request-payer", "requester"));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "x-amz-request-charged: requester")
+            and then Bucket_Controls.Parse_Accelerate
+              (Response_Body (Response)) =
+                Bucket_Controls.Accelerate_Suspended,
+            "requester-pays acceleration GET omitted its charge marker");
+      end;
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Acceleration_Query,
+                  Suspended_Acceleration,
+                  "Content-MD5: " & Content_MD5 (Suspended_Acceleration) &
+                  CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAccelerateConfiguration accepted Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_ABAC_Query, Enabled_ABAC,
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Empty_ABAC) & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketAbac accepted a mismatched checksum");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Payment_Query,
+                  "<RequestPaymentConfiguration/>",
+                  "Content-MD5: " &
+                  Content_MD5 ("<RequestPaymentConfiguration/>") &
+                  CRLF)),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketRequestPayment accepted a missing Payer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_ABAC_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketAbac ignored the expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Acceleration_Query,
+                  "x-amz-request-payer", "owner")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketAccelerateConfiguration accepted an invalid payer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Get_Payment_Query,
+                  "unexpected")),
+            "400 Bad Request"),
+         "GetBucketRequestPayment accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (1 => SigV4.Pair ("x-id", "GetBucketAbac")))),
+            "400 Bad Request"),
+         "GetBucketAbac accepted x-id without its subresource");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("accelerate", ""),
+                   SigV4.Pair ("requestPayment", "")))),
+            "400 Bad Request"),
+         "bucket scalar controls accepted mixed subresources");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Get_Payment_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketRequestPayment did not check bucket existence");
    end;
 
    declare

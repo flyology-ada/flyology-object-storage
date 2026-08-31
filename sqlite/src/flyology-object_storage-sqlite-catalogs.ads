@@ -44,6 +44,72 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   --  Replace the ABAC state in one catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving ABAC state
+   --  @param Result Storage outcome
+   procedure Put_Bucket_ABAC
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_ABAC_Status;
+      Result : out Status);
+
+   --  Read one ABAC snapshot from a catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving ABAC snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_ABAC
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_ABAC_Status;
+      Result : out Status);
+
+   --  Replace the acceleration state in one catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving acceleration state
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Acceleration
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_Acceleration_Status;
+      Result : out Status);
+
+   --  Read one acceleration snapshot from a catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete presence-preserving acceleration snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Acceleration
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_Acceleration_Status;
+      Result : out Status);
+
+   --  Replace request-payment state in one catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete request-payment state
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Request_Payment
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Bucket_Request_Payment_Status;
+      Result : out Status);
+
+   --  Read one request-payment snapshot from a catalog transaction.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete request-payment snapshot
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Request_Payment
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Bucket_Request_Payment_Status;
+      Result : out Status);
+
    procedure Delete_Bucket
      (Item : in out Catalog; Name : String; Result : out Status);
 

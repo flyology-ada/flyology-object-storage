@@ -741,6 +741,385 @@ package body Object_Storage_Test_Cases is
          "bucket CORS persistence fixture put failed");
    end Exercise_Bucket_CORS;
 
+   procedure Exercise_Bucket_Scalar_Controls
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      ABAC         : Bucket_ABAC_Status;
+      Acceleration : Bucket_Acceleration_Status;
+      Payment      : Bucket_Request_Payment_Status;
+      Result       : Status;
+   begin
+      Store.Get_Bucket_ABAC
+        ("missing-scalar-control-bucket", null, Ada.Real_Time.Time_Last,
+         ABAC, Result);
+      Assert
+        (Result = Not_Found and then ABAC = Bucket_ABAC_Disabled,
+         "ABAC get did not reset output for an absent bucket");
+      Store.Get_Bucket_Acceleration
+        ("missing-scalar-control-bucket", null, Ada.Real_Time.Time_Last,
+         Acceleration, Result);
+      Assert
+        (Result = Not_Found
+         and then Acceleration = Bucket_Acceleration_Unconfigured,
+         "acceleration get did not reset output for an absent bucket");
+      Store.Get_Bucket_Request_Payment
+        ("missing-scalar-control-bucket", null, Ada.Real_Time.Time_Last,
+         Payment, Result);
+      Assert
+        (Result = Not_Found and then Payment = Bucket_Owner_Pays,
+         "request-payment get did not reset output for an absent bucket");
+
+      Store.Get_Bucket_ABAC
+        (Bucket, null, Ada.Real_Time.Time_Last, ABAC, Result);
+      Assert
+        (Result = Success and then ABAC = Bucket_ABAC_Disabled,
+         "new bucket did not default ABAC to disabled");
+      Store.Get_Bucket_Acceleration
+        (Bucket, null, Ada.Real_Time.Time_Last, Acceleration, Result);
+      Assert
+        (Result = Success
+         and then Acceleration = Bucket_Acceleration_Unconfigured,
+         "new bucket exposed an acceleration configuration");
+      Store.Get_Bucket_Request_Payment
+        (Bucket, null, Ada.Real_Time.Time_Last, Payment, Result);
+      Assert
+        (Result = Success and then Payment = Bucket_Owner_Pays,
+         "new bucket did not default to bucket-owner payment");
+
+      for Expected in Bucket_ABAC_Status loop
+         Store.Put_Bucket_ABAC
+           (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "ABAC put failed");
+         Store.Get_Bucket_ABAC
+           (Bucket, null, Ada.Real_Time.Time_Last, ABAC, Result);
+         Assert
+           (Result = Success and then ABAC = Expected,
+            "ABAC replacement did not round trip atomically");
+      end loop;
+      for Expected in Bucket_Acceleration_Status loop
+         Store.Put_Bucket_Acceleration
+           (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "acceleration put failed");
+         Store.Get_Bucket_Acceleration
+           (Bucket, null, Ada.Real_Time.Time_Last, Acceleration, Result);
+         Assert
+           (Result = Success and then Acceleration = Expected,
+            "acceleration replacement did not round trip atomically");
+      end loop;
+      for Expected in Bucket_Request_Payment_Status loop
+         Store.Put_Bucket_Request_Payment
+           (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "request-payment put failed");
+         Store.Get_Bucket_Request_Payment
+           (Bucket, null, Ada.Real_Time.Time_Last, Payment, Result);
+         Assert
+           (Result = Success and then Payment = Expected,
+            "request-payment replacement did not round trip atomically");
+      end loop;
+
+      Store.Put_Bucket_ABAC
+        ("missing-scalar-control-bucket", Bucket_ABAC_Enabled,
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Not_Found, "ABAC put created an absent bucket");
+      Store.Put_Bucket_Acceleration
+        ("missing-scalar-control-bucket", Bucket_Acceleration_Enabled,
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Not_Found, "acceleration put created an absent bucket");
+      Store.Put_Bucket_Request_Payment
+        ("missing-scalar-control-bucket", Requester_Pays,
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Not_Found,
+         "request-payment put created an absent bucket");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+
+         procedure Expect_Cancelled
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Cancelled;
+
+         procedure Put_ABAC is
+         begin
+            Store.Put_Bucket_ABAC
+              (Bucket, Bucket_ABAC_Enabled, Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_ABAC;
+         procedure Get_ABAC is
+         begin
+            Store.Get_Bucket_ABAC
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last, ABAC, Result);
+         end Get_ABAC;
+         procedure Put_Acceleration is
+         begin
+            Store.Put_Bucket_Acceleration
+              (Bucket, Bucket_Acceleration_Enabled, Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_Acceleration;
+         procedure Get_Acceleration is
+         begin
+            Store.Get_Bucket_Acceleration
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Acceleration, Result);
+         end Get_Acceleration;
+         procedure Put_Payment is
+         begin
+            Store.Put_Bucket_Request_Payment
+              (Bucket, Requester_Pays, Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         end Put_Payment;
+         procedure Get_Payment is
+         begin
+            Store.Get_Bucket_Request_Payment
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Payment, Result);
+         end Get_Payment;
+      begin
+         Cancel.Request;
+         Expect_Cancelled
+           (Put_ABAC'Access, "ABAC put ignored cancellation");
+         Expect_Cancelled
+           (Get_ABAC'Access, "ABAC get ignored cancellation");
+         Expect_Cancelled
+           (Put_Acceleration'Access,
+            "acceleration put ignored cancellation");
+         Expect_Cancelled
+           (Get_Acceleration'Access,
+            "acceleration get ignored cancellation");
+         Expect_Cancelled
+           (Put_Payment'Access,
+            "request-payment put ignored cancellation");
+         Expect_Cancelled
+           (Get_Payment'Access,
+            "request-payment get ignored cancellation");
+      end;
+
+      declare
+         procedure Expect_Timeout
+           (Run : not null access procedure; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               Run.all;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Timeout;
+
+         procedure Put_ABAC is
+         begin
+            Store.Put_Bucket_ABAC
+              (Bucket, Bucket_ABAC_Enabled, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_ABAC;
+         procedure Get_ABAC is
+         begin
+            Store.Get_Bucket_ABAC
+              (Bucket, null, Ada.Real_Time.Time_First, ABAC, Result);
+         end Get_ABAC;
+         procedure Put_Acceleration is
+         begin
+            Store.Put_Bucket_Acceleration
+              (Bucket, Bucket_Acceleration_Enabled, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_Acceleration;
+         procedure Get_Acceleration is
+         begin
+            Store.Get_Bucket_Acceleration
+              (Bucket, null, Ada.Real_Time.Time_First,
+               Acceleration, Result);
+         end Get_Acceleration;
+         procedure Put_Payment is
+         begin
+            Store.Put_Bucket_Request_Payment
+              (Bucket, Requester_Pays, null,
+               Ada.Real_Time.Time_First, Result);
+         end Put_Payment;
+         procedure Get_Payment is
+         begin
+            Store.Get_Bucket_Request_Payment
+              (Bucket, null, Ada.Real_Time.Time_First, Payment, Result);
+         end Get_Payment;
+      begin
+         Expect_Timeout (Put_ABAC'Access, "ABAC put ignored deadline");
+         Expect_Timeout (Get_ABAC'Access, "ABAC get ignored deadline");
+         Expect_Timeout
+           (Put_Acceleration'Access,
+            "acceleration put ignored deadline");
+         Expect_Timeout
+           (Get_Acceleration'Access,
+            "acceleration get ignored deadline");
+         Expect_Timeout
+           (Put_Payment'Access,
+            "request-payment put ignored deadline");
+         Expect_Timeout
+           (Get_Payment'Access,
+            "request-payment get ignored deadline");
+      end;
+
+      Store.Put_Bucket_ABAC
+        (Bucket, Bucket_ABAC_Disabled, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "ABAC contention setup failed");
+      Store.Put_Bucket_Acceleration
+        (Bucket, Bucket_Acceleration_Suspended, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "acceleration contention setup failed");
+      Store.Put_Bucket_Request_Payment
+        (Bucket, Bucket_Owner_Pays, null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "request-payment contention setup failed");
+
+      declare
+         protected Monitor is
+            procedure Record_Failure;
+            procedure Complete;
+            entry Wait_Complete;
+            function Failures return Natural;
+         private
+            Count      : Natural := 0;
+            Completed  : Natural range 0 .. 2 := 0;
+         end Monitor;
+
+         protected body Monitor is
+            procedure Record_Failure is
+            begin
+               Count := Count + 1;
+            end Record_Failure;
+
+            procedure Complete is
+            begin
+               Completed := Completed + 1;
+            end Complete;
+
+            entry Wait_Complete when Completed = 2 is
+            begin
+               null;
+            end Wait_Complete;
+
+            function Failures return Natural is (Count);
+         end Monitor;
+
+         task Writer;
+         task Reader;
+
+         task body Writer is
+            Local_Result : Status;
+         begin
+            for Iteration in 1 .. 64 loop
+               Store.Put_Bucket_ABAC
+                 (Bucket,
+                  (if Iteration mod 2 = 0
+                   then Bucket_ABAC_Enabled
+                   else Bucket_ABAC_Disabled),
+                  null, Ada.Real_Time.Time_Last, Local_Result);
+               if Local_Result /= Success then
+                  Monitor.Record_Failure;
+               end if;
+               Store.Put_Bucket_Acceleration
+                 (Bucket,
+                  (if Iteration mod 2 = 0
+                   then Bucket_Acceleration_Enabled
+                   else Bucket_Acceleration_Suspended),
+                  null, Ada.Real_Time.Time_Last, Local_Result);
+               if Local_Result /= Success then
+                  Monitor.Record_Failure;
+               end if;
+               Store.Put_Bucket_Request_Payment
+                 (Bucket,
+                  (if Iteration mod 2 = 0
+                   then Requester_Pays
+                   else Bucket_Owner_Pays),
+                  null, Ada.Real_Time.Time_Last, Local_Result);
+               if Local_Result /= Success then
+                  Monitor.Record_Failure;
+               end if;
+            end loop;
+            Monitor.Complete;
+         exception
+            when others =>
+               Monitor.Record_Failure;
+               Monitor.Complete;
+         end Writer;
+
+         task body Reader is
+            Local_ABAC         : Bucket_ABAC_Status;
+            Local_Acceleration : Bucket_Acceleration_Status;
+            Local_Payment      : Bucket_Request_Payment_Status;
+            Local_Result       : Status;
+         begin
+            for Iteration in 1 .. 64 loop
+               Store.Get_Bucket_ABAC
+                 (Bucket, null, Ada.Real_Time.Time_Last,
+                  Local_ABAC, Local_Result);
+               if Local_Result /= Success
+                 or else Local_ABAC not in
+                   Bucket_ABAC_Disabled | Bucket_ABAC_Enabled
+               then
+                  Monitor.Record_Failure;
+               end if;
+               Store.Get_Bucket_Acceleration
+                  (Bucket, null, Ada.Real_Time.Time_Last,
+                   Local_Acceleration, Local_Result);
+               if Local_Result /= Success
+                 or else Local_Acceleration not in
+                   Bucket_Acceleration_Enabled |
+                   Bucket_Acceleration_Suspended
+               then
+                  Monitor.Record_Failure;
+               end if;
+               Store.Get_Bucket_Request_Payment
+                  (Bucket, null, Ada.Real_Time.Time_Last,
+                   Local_Payment, Local_Result);
+               if Local_Result /= Success
+                 or else Local_Payment not in
+                   Bucket_Owner_Pays | Requester_Pays
+               then
+                  Monitor.Record_Failure;
+               end if;
+            end loop;
+            Monitor.Complete;
+         exception
+            when others =>
+               Monitor.Record_Failure;
+               Monitor.Complete;
+         end Reader;
+      begin
+         Monitor.Wait_Complete;
+         Assert
+           (Monitor.Failures = 0,
+            "concurrent scalar-control snapshots were not atomic");
+      end;
+
+      Store.Put_Bucket_ABAC
+        (Bucket, Bucket_ABAC_Enabled, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Acceleration
+        (Bucket, Bucket_Acceleration_Suspended, null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Request_Payment
+        (Bucket, Requester_Pays, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "scalar-control persistence fixture failed");
+   end Exercise_Bucket_Scalar_Controls;
+
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
    is
@@ -2550,6 +2929,7 @@ package body Object_Storage_Test_Cases is
       Assert (Result = Success, "head existing memory bucket");
       Exercise_Bucket_Tags (Store, "test-bucket");
       Exercise_Bucket_Public_Access_Block (Store, "test-bucket");
+      Exercise_Bucket_Scalar_Controls (Store, "test-bucket");
       Exercise_Bucket_Policy (Store, "test-bucket");
       declare
          Policy     : Ada.Strings.Unbounded.Unbounded_String;
@@ -4059,6 +4439,7 @@ package body Object_Storage_Test_Cases is
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Exercise_Bucket_CORS (Store, "file-bucket");
+         Exercise_Bucket_Scalar_Controls (Store, "file-bucket");
          declare
             package SIO renames Ada.Streams.Stream_IO;
             File       : SIO.File_Type;
@@ -4894,6 +5275,32 @@ package body Object_Storage_Test_Cases is
             end;
             Assert (Propagated, "sink exception propagates");
          end;
+         declare
+            Reopened : Files.Store :=
+              Files.Open (Root, Maximum_Object_Size => 64);
+            ABAC : Bucket_ABAC_Status;
+            Acceleration : Bucket_Acceleration_Status;
+            Payment : Bucket_Request_Payment_Status;
+         begin
+            Reopened.Get_Bucket_ABAC
+              ("file-bucket", null, Ada.Real_Time.Time_Last, ABAC, Result);
+            Assert
+              (Result = Success and then ABAC = Bucket_ABAC_Enabled,
+               "files ABAC state did not survive reopen");
+            Reopened.Get_Bucket_Acceleration
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Acceleration, Result);
+            Assert
+              (Result = Success
+               and then Acceleration = Bucket_Acceleration_Suspended,
+               "files acceleration state did not survive reopen");
+            Reopened.Get_Bucket_Request_Payment
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Payment, Result);
+            Assert
+              (Result = Success and then Payment = Requester_Pays,
+               "files request-payment state did not survive reopen");
+         end;
          Store.Delete_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Bucket_Not_Empty, "files nonempty bucket");
@@ -4968,6 +5375,14 @@ package body Object_Storage_Test_Cases is
           (Ada.Directories.Compose
              (Ada.Directories.Current_Directory, "obj"),
            "fs-durability-faults");
+      type Scalar_Control_Kind is
+        (ABAC_Control, Acceleration_Control, Request_Payment_Control);
+
+      function Control_Name (Kind : Scalar_Control_Kind) return String is
+        (case Kind is
+            when ABAC_Control            => "abac",
+            when Acceleration_Control    => "acceleration",
+            when Request_Payment_Control => "request-payment");
 
       function Path (Name : String; Point : Natural) return String is
         (Ada.Directories.Compose
@@ -5126,6 +5541,120 @@ package body Object_Storage_Test_Cases is
                Clean (Root);
                raise;
          end;
+      end loop;
+
+      for Kind in Scalar_Control_Kind loop
+         for Point in 0 .. 4 loop
+            declare
+               Root : constant String :=
+                 Path ("scalar-" & Control_Name (Kind), Point);
+               Result : Status;
+            begin
+               declare
+                  Store : Files.Store := Files.Open (Root);
+               begin
+                  Create_Bucket (Store, Result);
+                  Assert
+                    (Result = Success,
+                     Control_Name (Kind) & " fault setup bucket");
+                  case Kind is
+                     when ABAC_Control =>
+                        Store.Put_Bucket_ABAC
+                          ("durability-bucket", Bucket_ABAC_Disabled, null,
+                           Ada.Real_Time.Time_Last, Result);
+                     when Acceleration_Control =>
+                        Store.Put_Bucket_Acceleration
+                          ("durability-bucket",
+                           Bucket_Acceleration_Unconfigured, null,
+                           Ada.Real_Time.Time_Last, Result);
+                     when Request_Payment_Control =>
+                        Store.Put_Bucket_Request_Payment
+                          ("durability-bucket", Bucket_Owner_Pays, null,
+                           Ada.Real_Time.Time_Last, Result);
+                  end case;
+                  Assert
+                    (Result = Success,
+                     Control_Name (Kind) & " fault setup value");
+                  Faults.Fail_Next_Barrier_After (Point);
+                  case Kind is
+                     when ABAC_Control =>
+                        Store.Put_Bucket_ABAC
+                          ("durability-bucket", Bucket_ABAC_Enabled, null,
+                           Ada.Real_Time.Time_Last, Result);
+                     when Acceleration_Control =>
+                        Store.Put_Bucket_Acceleration
+                          ("durability-bucket",
+                           Bucket_Acceleration_Suspended, null,
+                           Ada.Real_Time.Time_Last, Result);
+                     when Request_Payment_Control =>
+                        Store.Put_Bucket_Request_Payment
+                          ("durability-bucket", Requester_Pays, null,
+                           Ada.Real_Time.Time_Last, Result);
+                  end case;
+                  Faults.Clear_Failure;
+               end;
+               Assert
+                 (Result =
+                    (if Point < 3 then Backend_Unavailable else Success),
+                  Control_Name (Kind) &
+                    " publication durability barrier count changed");
+               declare
+                  Store : Files.Store := Files.Open (Root);
+                  ABAC : Bucket_ABAC_Status;
+                  Acceleration : Bucket_Acceleration_Status;
+                  Payment : Bucket_Request_Payment_Status;
+                  Observed : Status;
+                  Valid : Boolean;
+               begin
+                  case Kind is
+                     when ABAC_Control =>
+                        Store.Get_Bucket_ABAC
+                          ("durability-bucket", null,
+                           Ada.Real_Time.Time_Last, ABAC, Observed);
+                        Valid :=
+                          Observed = Success
+                          and then ABAC in
+                            Bucket_ABAC_Disabled | Bucket_ABAC_Enabled
+                          and then
+                            (if Result = Success
+                             then ABAC = Bucket_ABAC_Enabled);
+                     when Acceleration_Control =>
+                        Store.Get_Bucket_Acceleration
+                          ("durability-bucket", null,
+                           Ada.Real_Time.Time_Last, Acceleration, Observed);
+                        Valid :=
+                          Observed = Success
+                          and then Acceleration in
+                            Bucket_Acceleration_Unconfigured |
+                            Bucket_Acceleration_Suspended
+                          and then
+                            (if Result = Success
+                             then Acceleration =
+                               Bucket_Acceleration_Suspended);
+                     when Request_Payment_Control =>
+                        Store.Get_Bucket_Request_Payment
+                          ("durability-bucket", null,
+                           Ada.Real_Time.Time_Last, Payment, Observed);
+                        Valid :=
+                          Observed = Success
+                          and then Payment in
+                            Bucket_Owner_Pays | Requester_Pays
+                          and then
+                            (if Result = Success
+                             then Payment = Requester_Pays);
+                  end case;
+                  Assert
+                    (Valid,
+                     Control_Name (Kind) &
+                       " sync fault exposed a partial scalar value");
+               end;
+               Clean (Root);
+            exception
+               when others =>
+                  Clean (Root);
+                  raise;
+            end;
+         end loop;
       end loop;
 
       for Point in 0 .. 4 loop
