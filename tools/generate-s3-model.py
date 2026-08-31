@@ -42,6 +42,7 @@ OPERATION_DOCUMENTATION = {
     "DeleteBucketWebsite": "Delete bucket website",
     "DeleteBucketTagging": "Delete bucket tagging operation",
     "DeletePublicAccessBlock": "Delete public access block",
+    "GetBucketCors": "Get bucket CORS operation",
     "GetBucketTagging": "Get bucket tagging operation",
     "GetBucketPolicy": "Get bucket policy",
     "GetPublicAccessBlock": "Get public access block",
