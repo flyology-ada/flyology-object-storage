@@ -100,7 +100,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | PutBucketNotification | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutBucketNotificationConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketOwnershipControls | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketOwnershipControls | Set_Ownership_Controls | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketPolicy | Set_Policy | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketReplication | legacy_preserved | buckets | rest_xml_mutation | shared-family | false | false | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
 | PutBucketRequestPayment | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |

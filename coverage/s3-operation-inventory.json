@@ -3673,18 +3673,30 @@
       "evidence": {
         "backend": [],
         "client": [
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+          "src/flyology-object_storage-client-low_level.ads",
+          "src/flyology-object_storage-client-low_level.adb",
+          "src/flyology-object_storage-client-buckets.ads",
+          "src/flyology-object_storage-client-buckets.adb",
+          "src/flyology-object_storage-s3-bucket_controls.ads",
+          "src/flyology-object_storage-s3-bucket_controls.adb",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "corpus": [
-          "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_bucket_ownership_controls_corpus.adb"
+          "tools/verify-put-bucket-ownership-controls-preparation.py",
+          "docs/qualification/put-bucket-ownership-controls.md",
+          "tests/corpora/put-bucket-ownership-controls/members.tsv",
+          "tests/corpora/put-bucket-ownership-controls/vectors.tsv",
+          "tests/src/flyology-object_storage-client-buckets-testing.adb",
+          "tests/src/s3_put_bucket_ownership_controls_corpus.adb",
+          "tests/src/s3_http_socket_corpus.adb"
         ],
         "server": []
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
         "backend": "absent",

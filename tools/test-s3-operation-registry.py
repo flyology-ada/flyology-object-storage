@@ -4525,6 +4525,161 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed OwnershipControls lane accepted")
+    put_bucket_ownership_controls_certainty = (
+        "only a complete validated exact 200 Bucket_Control_Updated response "
+        "observed reports Bucket_Ownership_Controls_Mutation_Completed; a "
+        "response-observed exact recognized authentication, authorization, "
+        "not-found, invalid-request, checksum, malformed-XML, or "
+        "NotImplemented rejection or definite non-admission reports "
+        "Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied; "
+        "pre-admission cancellation reports "
+        "Bucket_Ownership_Controls_Mutation_Cancelled_Before_Admission; every "
+        "other possibly admitted, incomplete, retryable, or corrupt outcome "
+        "reports Bucket_Ownership_Controls_Mutation_Outcome_Unknown; no "
+        "automatic replay"
+    )
+    put_bucket_ownership_controls_reconciliation = (
+        "a later GetBucketOwnershipControls may observe the bucket "
+        "ownership-controls configuration current at read time before a "
+        "caller-selected retry, but it neither proves that the lost mutation "
+        "caused the observed state nor upgrades mutation certainty; no "
+        "automatic replay"
+    )
+    put_bucket_ownership_controls_symbols = [
+        "Prepare_Put_Bucket_Ownership_Controls",
+        "Execute_Put_Bucket_Ownership_Controls",
+        "Put_Bucket_Ownership_Controls_Operation",
+        "Set_Ownership_Controls",
+        "Finish",
+    ]
+
+    def assert_put_bucket_ownership_controls_registry(candidate):
+        entry = candidate.operations["PutBucketOwnershipControls"]
+        assert entry.get("public_name") == "Set_Ownership_Controls"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == (
+            "put_bucket_ownership_controls"
+        )
+        assert entry.get("certainty") == (
+            put_bucket_ownership_controls_certainty
+        )
+        assert entry.get("reconciliation") == (
+            put_bucket_ownership_controls_reconciliation
+        )
+        assert entry.get("ada_symbols") == (
+            put_bucket_ownership_controls_symbols
+        )
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert entry.get("absence") == "not_applicable"
+        assert "server route are absent" in entry["exclusions"][0]
+        assert "exact same immutable" in entry["exclusions"][2]
+        assert candidate.qualification[
+            "put_bucket_ownership_controls"
+        ][0][-1] == "tools/verify-put-bucket-ownership-controls-preparation.py"
+
+    def reject_put_bucket_ownership_controls_registry(candidate, label):
+        try:
+            assert_put_bucket_ownership_controls_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} PutBucketOwnershipControls registry accepted"
+        )
+
+    assert_put_bucket_ownership_controls_registry(registry)
+    missing_put_bucket_ownership_controls_name = copy.deepcopy(registry)
+    del missing_put_bucket_ownership_controls_name.operations[
+        "PutBucketOwnershipControls"
+    ]["public_name"]
+    reject_put_bucket_ownership_controls_registry(
+        missing_put_bucket_ownership_controls_name, "missing name"
+    )
+    wrong_put_bucket_ownership_controls_name = copy.deepcopy(registry)
+    wrong_put_bucket_ownership_controls_name.operations[
+        "PutBucketOwnershipControls"
+    ]["public_name"] = "Get_Ownership_Controls"
+    reject_put_bucket_ownership_controls_registry(
+        wrong_put_bucket_ownership_controls_name, "wrong name"
+    )
+    replay_put_bucket_ownership_controls = copy.deepcopy(registry)
+    replay_put_bucket_ownership_controls.operations[
+        "PutBucketOwnershipControls"
+    ]["certainty"] = "automatically replay PutBucketOwnershipControls"
+    reject_put_bucket_ownership_controls_registry(
+        replay_put_bucket_ownership_controls, "automatic replay"
+    )
+    causal_put_bucket_ownership_controls = copy.deepcopy(registry)
+    causal_put_bucket_ownership_controls.operations[
+        "PutBucketOwnershipControls"
+    ]["reconciliation"] = "the read proves the mutation caused state"
+    reject_put_bucket_ownership_controls_registry(
+        causal_put_bucket_ownership_controls, "causal reconciliation"
+    )
+    server_put_bucket_ownership_controls = copy.deepcopy(registry)
+    server_put_bucket_ownership_controls.operations[
+        "PutBucketOwnershipControls"
+    ]["coverage"]["server"] = "covered"
+    reject_put_bucket_ownership_controls_registry(
+        server_put_bucket_ownership_controls, "invented server coverage"
+    )
+    cross_put_bucket_ownership_controls_symbol = copy.deepcopy(registry)
+    cross_put_bucket_ownership_controls_symbol.operations[
+        "PutBucketOwnershipControls"
+    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Ownership_Controls"
+    reject_put_bucket_ownership_controls_registry(
+        cross_put_bucket_ownership_controls_symbol,
+        "cross-operation symbol",
+    )
+    put_ownership_qualification, put_ownership_commands = (
+        s3_operation.qualification_plan(
+            registry, ["PutBucketOwnershipControls"]
+        )
+    )
+    assert put_ownership_qualification == "put_bucket_ownership_controls"
+    assert put_ownership_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-ownership-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_bucket_ownership_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert put_ownership_commands[4] == ["./tools/verify-coverage.sh"]
+    assert put_ownership_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-ownership-controls-gnatdoc",
+        "--operation",
+        "PutBucketOwnershipControls",
+    ]
+    assert put_ownership_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketOwnershipControls", "PutBucketOwnershipControls"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError(
+            "duplicate PutBucketOwnershipControls lane accepted"
+        )
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            ["PutBucketOwnershipControls", "GetBucketOwnershipControls"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketOwnershipControls lane accepted")
     get_object_lock_configuration_certainty = (
         "read-only; only one complete validated 200 "
         "Object_Lock_Configuration_Found response observed exposes the "
