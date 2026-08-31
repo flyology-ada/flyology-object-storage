@@ -10866,6 +10866,128 @@ def main() -> None:
             "mixed GetBucketRequestPayment lane accepted"
         )
 
+    put_abac_certainty = (
+        "only a complete validated exact 200 response observed with an empty "
+        "or whitespace-only body reports ABAC_Mutation_Completed; an exact "
+        "recognized non-mutating rejection or definite non-admission reports "
+        "ABAC_Mutation_Definitely_Not_Applied; pre-admission cancellation "
+        "reports ABAC_Mutation_Cancelled_Before_Admission; possible or "
+        "incomplete admission, retryable responses, and malformed or "
+        "oversized responses report ABAC_Mutation_Outcome_Unknown; no "
+        "automatic replay"
+    )
+    put_abac_reconciliation = (
+        "caller-selected Get_ABAC may observe only the bucket ABAC status "
+        "current at read time before a retry, but does not prove that the "
+        "lost mutation caused the observed state or upgrade mutation "
+        "certainty; no automatic replay"
+    )
+    put_abac_symbols = [
+        "Prepare_Put_Bucket_Abac",
+        "Execute_Put_Bucket_Abac",
+        "Put_Bucket_ABAC_Operation",
+        "Set_ABAC",
+        "Finish",
+    ]
+
+    def assert_put_abac_registry(candidate):
+        entry = candidate.operations["PutBucketAbac"]
+        assert entry.get("public_name") == "Set_ABAC"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_bucket_abac"
+        assert entry.get("certainty") == put_abac_certainty
+        assert entry.get("reconciliation") == put_abac_reconciliation
+        assert entry.get("ada_symbols") == put_abac_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["absence"] == "not_applicable"
+        assert "exact same immutable serialized ABAC document" in (
+            entry["exclusions"][3]
+        )
+        assert candidate.qualification["put_bucket_abac"][0][-1] == (
+            "tools/verify-put-bucket-controls-preparation.py"
+        )
+
+    def reject_put_abac_registry(candidate, label):
+        try:
+            assert_put_abac_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutBucketAbac registry accepted")
+
+    assert_put_abac_registry(registry)
+    put_abac_mutations = [
+        ("missing name", "public_name", None),
+        ("wrong name", "public_name", "Put_ABAC"),
+        ("automatic retry", "certainty", "retry automatically"),
+        (
+            "causal reconciliation",
+            "reconciliation",
+            "Get_ABAC proves the lost mutation succeeded",
+        ),
+        ("wrong success", "certainty", "HTTP 204 proves completion"),
+    ]
+    for label, key, value in put_abac_mutations:
+        candidate = copy.deepcopy(registry)
+        entry = candidate.operations["PutBucketAbac"]
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+        assert candidate != registry
+        reject_put_abac_registry(candidate, label)
+    cross_put_abac_symbol = copy.deepcopy(registry)
+    cross_put_abac_symbol.operations["PutBucketAbac"]["ada_symbols"][0] = (
+        "Prepare_Get_Bucket_Abac"
+    )
+    assert cross_put_abac_symbol != registry
+    reject_put_abac_registry(cross_put_abac_symbol, "cross-operation")
+    missing_put_abac_lane = copy.deepcopy(registry)
+    del missing_put_abac_lane.qualification["put_bucket_abac"]
+    assert missing_put_abac_lane != registry
+    reject_put_abac_registry(missing_put_abac_lane, "missing lane")
+    put_abac_qualification, put_abac_commands = (
+        s3_operation.qualification_plan(registry, ["PutBucketAbac"])
+    )
+    assert put_abac_qualification == "put_bucket_abac"
+    assert put_abac_commands[:5] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-bucket-controls-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_bucket_controls_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+        ["./tools/verify-coverage.sh"],
+    ]
+    assert put_abac_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-bucket-abac-gnatdoc",
+        "--operation",
+        "PutBucketAbac",
+    ]
+    assert put_abac_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketAbac", "PutBucketAbac"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutBucketAbac lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutBucketAbac", "GetBucketAbac"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutBucketAbac lane accepted")
+
     print("S3 operation registry evidence negative oracles: OK")
 
 
