@@ -56,6 +56,250 @@ OPERATION_DOCUMENTATION = {
     "UploadPartCopy": "Upload multipart part from a source object",
 }
 
+FUNCTION_DOCUMENTATION = {
+    "Operation_Name": (
+        "Return the pinned-model operation name.",
+        (("Operation", "Modeled operation identifier"),),
+        "Pinned service-model operation name",
+    ),
+    "Method": (
+        "Return the modeled HTTP method.",
+        (("Operation", "Modeled operation identifier"),),
+        "HTTP method for the operation",
+    ),
+    "Request_URI": (
+        "Return the modeled request URI template.",
+        (("Operation", "Modeled operation identifier"),),
+        "Request URI template for the operation",
+    ),
+    "Response_Code": (
+        "Return the modeled success response status.",
+        (("Operation", "Modeled operation identifier"),),
+        "Success response status for the operation",
+    ),
+    "Input_Shape": (
+        "Return the modeled input shape.",
+        (("Operation", "Modeled operation identifier"),),
+        "Input shape reference or No_Shape",
+    ),
+    "Output_Shape": (
+        "Return the modeled output shape.",
+        (("Operation", "Modeled operation identifier"),),
+        "Output shape reference or No_Shape",
+    ),
+    "Error_Count": (
+        "Return the number of modeled error shapes.",
+        (("Operation", "Modeled operation identifier"),),
+        "Number of error shapes for the operation",
+    ),
+    "Error_Shape": (
+        "Return one modeled error shape.",
+        (
+            ("Operation", "Modeled operation identifier"),
+            ("Index", "One-based error-shape index"),
+        ),
+        "Indexed error shape reference",
+    ),
+    "Unsigned_Payload": (
+        "Report whether the modeled payload is unsigned.",
+        (("Operation", "Modeled operation identifier"),),
+        "True when the model selects an unsigned payload",
+    ),
+    "Authentication_Type": (
+        "Return the modeled authentication type.",
+        (("Operation", "Modeled operation identifier"),),
+        "Authentication type or an empty string",
+    ),
+    "Request_Checksum_Required": (
+        "Report whether the model requires a request checksum.",
+        (("Operation", "Modeled operation identifier"),),
+        "True when a request checksum is required",
+    ),
+    "Request_Checksum_Algorithm_Member": (
+        "Return the modeled request-checksum algorithm member.",
+        (("Operation", "Modeled operation identifier"),),
+        "Algorithm member name or an empty string",
+    ),
+    "Request_Validation_Mode_Member": (
+        "Return the modeled request validation-mode member.",
+        (("Operation", "Modeled operation identifier"),),
+        "Validation-mode member name or an empty string",
+    ),
+    "Response_Checksum_Algorithms": (
+        "Return the modeled response-checksum algorithms.",
+        (("Operation", "Modeled operation identifier"),),
+        "Semicolon-separated algorithm names or an empty string",
+    ),
+    "Shape_Name": (
+        "Return the pinned-model shape name.",
+        (("Shape", "Modeled shape index"),),
+        "Pinned service-model shape name",
+    ),
+    "Kind": (
+        "Return the modeled shape kind.",
+        (("Shape", "Modeled shape index"),),
+        "Kind of the modeled shape",
+    ),
+    "Location_Name": (
+        "Return the modeled shape location name.",
+        (("Shape", "Modeled shape index"),),
+        "Location name or an empty string",
+    ),
+    "Payload_Member": (
+        "Return the modeled payload member name.",
+        (("Shape", "Modeled shape index"),),
+        "Payload member name or an empty string",
+    ),
+    "Timestamp_Format": (
+        "Return the modeled timestamp format.",
+        (("Shape", "Modeled shape index"),),
+        "Timestamp format or an empty string",
+    ),
+    "Pattern": (
+        "Return the modeled string pattern.",
+        (("Shape", "Modeled shape index"),),
+        "Pattern or an empty string",
+    ),
+    "Minimum": (
+        "Return the modeled minimum constraint.",
+        (("Shape", "Modeled shape index"),),
+        "Minimum image or an empty string",
+    ),
+    "Maximum": (
+        "Return the modeled maximum constraint.",
+        (("Shape", "Modeled shape index"),),
+        "Maximum image or an empty string",
+    ),
+    "Is_Flattened": (
+        "Report whether the modeled shape is flattened.",
+        (("Shape", "Modeled shape index"),),
+        "True when the shape is flattened",
+    ),
+    "Is_Sensitive": (
+        "Report whether the modeled shape is sensitive.",
+        (("Shape", "Modeled shape index"),),
+        "True when the shape is sensitive",
+    ),
+    "XML_Namespace": (
+        "Return the modeled XML namespace.",
+        (("Shape", "Modeled shape index"),),
+        "Namespace URI or an empty string",
+    ),
+    "List_Member_Shape": (
+        "Return the modeled list-member shape.",
+        (("Shape", "Modeled list shape index"),),
+        "List-member shape reference or No_Shape",
+    ),
+    "Map_Key_Shape": (
+        "Return the modeled map-key shape.",
+        (("Shape", "Modeled map shape index"),),
+        "Map-key shape reference or No_Shape",
+    ),
+    "Map_Value_Shape": (
+        "Return the modeled map-value shape.",
+        (("Shape", "Modeled map shape index"),),
+        "Map-value shape reference or No_Shape",
+    ),
+    "Enumeration_Count": (
+        "Return the number of modeled enumeration values.",
+        (("Shape", "Modeled shape index"),),
+        "Number of enumeration values",
+    ),
+    "Enumeration_Value": (
+        "Return one modeled enumeration value.",
+        (
+            ("Shape", "Modeled shape index"),
+            ("Index", "One-based enumeration-value index"),
+        ),
+        "Indexed enumeration value",
+    ),
+    "Member_Count": (
+        "Return the number of modeled structure members.",
+        (("Shape", "Modeled structure shape index"),),
+        "Number of modeled members",
+    ),
+    "Member_Name": (
+        "Return one modeled member name.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Indexed member name",
+    ),
+    "Member_Shape": (
+        "Return one modeled member shape.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Indexed member shape",
+    ),
+    "Location": (
+        "Return one modeled member location.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Indexed member location",
+    ),
+    "Member_Location_Name": (
+        "Return one modeled member location name.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Location name or an empty string",
+    ),
+    "Member_Required": (
+        "Report whether one modeled member is required.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "True when the member is required",
+    ),
+    "Member_Flattened": (
+        "Report whether one modeled member is flattened.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "True when the member is flattened",
+    ),
+    "Member_Streaming": (
+        "Report whether one modeled member is streaming.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "True when the member is streaming",
+    ),
+    "Member_XML_Attribute": (
+        "Report whether one modeled member is an XML attribute.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "True when the member is an XML attribute",
+    ),
+    "Member_XML_Namespace": (
+        "Return one modeled member XML namespace.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Namespace URI or an empty string",
+    ),
+    "Member_Context_Parameter": (
+        "Return one modeled member context parameter.",
+        (
+            ("Shape", "Modeled structure shape index"),
+            ("Member", "One-based member index"),
+        ),
+        "Context parameter name or an empty string",
+    ),
+}
+
 
 def ada_name(value: str, suffix: str) -> str:
     value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", value)
@@ -82,6 +326,67 @@ def operation_documentation(literal: str, description: str) -> list[str]:
     if len(association) > 79 or len(continuation) > 79:
         raise ValueError("operation documentation exceeds source width")
     return [association, continuation]
+
+
+def association_documentation(
+    tag: str, name: str, description: str
+) -> list[str]:
+    association = "   --  @" + tag
+    if name:
+        association += " " + name
+    one_line = association + " " + description
+    if len(one_line) <= 79:
+        return [one_line]
+    continuation = "   --    " + description
+    if len(association) > 79 or len(continuation) > 79:
+        raise ValueError("entity documentation exceeds source width")
+    return [association, continuation]
+
+
+def entity_documentation(
+    description: str,
+    parameters: tuple[tuple[str, str], ...],
+    result: str,
+) -> list[str]:
+    entity = "   --  " + description
+    if len(entity) > 79:
+        raise ValueError("entity description exceeds source width")
+    lines = [entity]
+    for name, parameter_description in parameters:
+        lines.extend(
+            association_documentation(
+                "param", name, parameter_description
+            )
+        )
+    lines.extend(association_documentation("return", "", result))
+    return lines
+
+
+def document_functions(spec: list[str]) -> list[str]:
+    result: list[str] = []
+    documented: set[str] = set()
+    for line in spec:
+        match = re.match(r"   function ([A-Za-z0-9_]+)", line)
+        if match is not None:
+            name = match.group(1)
+            if name not in FUNCTION_DOCUMENTATION:
+                raise ValueError(f"missing function documentation: {name}")
+            description, parameters, return_description = (
+                FUNCTION_DOCUMENTATION[name]
+            )
+            result.extend(
+                entity_documentation(
+                    description, parameters, return_description
+                )
+            )
+            documented.add(name)
+        result.append(line)
+    missing = set(FUNCTION_DOCUMENTATION) - documented
+    if missing:
+        raise ValueError(
+            "unused function documentation: " + ", ".join(sorted(missing))
+        )
+    return result
 
 
 def line_case_function(
@@ -194,23 +499,30 @@ def generate(model_path: pathlib.Path) -> tuple[str, str]:
         "--  Generated by tools/generate-s3-model.py; do not edit.",
         "--  Source: pinned botocore service-2.json recorded below.",
         "pragma Style_Checks (Off);",
+        "",
+        "--  Pinned S3 REST/XML service-model descriptor.",
         "package Flyology.Object_Storage.S3.Model",
         "  with SPARK_Mode => On",
         "is",
         "",
+        "   --  SHA-256 digest of the pinned service model.",
         f"   Model_SHA256 : constant String := {quote(digest)};",
+        "   --  Number of operations in the pinned service model.",
         f"   Operation_Count : constant := {len(operations)};",
+        "   --  Number of shapes in the pinned service model.",
         f"   Shape_Count : constant := {len(shapes)};",
         "",
         "   --  Identifiers for operations in the pinned S3 model.",
     ]
     for name in operations:
-        if name in OPERATION_DOCUMENTATION:
-            spec.extend(
-                operation_documentation(
-                    operation_literal[name], OPERATION_DOCUMENTATION[name]
-                )
+        spec.extend(
+            operation_documentation(
+                operation_literal[name],
+                OPERATION_DOCUMENTATION.get(
+                    name, "Pinned S3 operation " + name
+                ),
             )
+        )
     spec.extend(
         [
             "   type Operation_Id is",
@@ -223,21 +535,46 @@ def generate(model_path: pathlib.Path) -> tuple[str, str]:
     spec.extend(
         [
             "",
+            "   --  HTTP methods used by modeled operations.",
+            "   --  @enum Delete_Method HTTP DELETE method",
+            "   --  @enum Get_Method HTTP GET method",
+            "   --  @enum Head_Method HTTP HEAD method",
+            "   --  @enum Post_Method HTTP POST method",
+            "   --  @enum Put_Method HTTP PUT method",
             "   type HTTP_Method is",
             "     (Delete_Method, Get_Method, Head_Method, Post_Method,",
             "      Put_Method);",
             "",
+            "   --  Structural kinds used by modeled shapes.",
+            "   --  @enum Blob_Shape Blob shape",
+            "   --  @enum Boolean_Shape Boolean shape",
+            "   --  @enum Integer_Shape Integer shape",
+            "   --  @enum List_Shape List shape",
+            "   --  @enum Long_Shape Long-integer shape",
+            "   --  @enum Map_Shape Map shape",
+            "   --  @enum String_Shape String shape",
+            "   --  @enum Structure_Shape Structure shape",
+            "   --  @enum Timestamp_Shape Timestamp shape",
             "   type Shape_Kind is",
             "     (Blob_Shape, Boolean_Shape, Integer_Shape, List_Shape,",
             "      Long_Shape, Map_Shape, String_Shape, Structure_Shape,",
             "      Timestamp_Shape);",
             "",
+            "   --  Wire locations used by modeled structure members.",
+            "   --  @enum Body_Location Serialized body member",
+            "   --  @enum Header_Location Single HTTP header",
+            "   --  @enum Headers_Location HTTP header map",
+            "   --  @enum Query_Location URI query parameter",
+            "   --  @enum URI_Location URI path label",
             "   type Member_Location is",
             "     (Body_Location, Header_Location, Headers_Location,",
             "      Query_Location, URI_Location);",
             "",
+            "   --  Optional one-based reference to a modeled shape.",
             "   subtype Shape_Reference is Natural range 0 .. Shape_Count;",
+            "   --  One-based reference to a modeled shape.",
             "   subtype Shape_Index is Shape_Reference range 1 .. Shape_Count;",
+            "   --  Sentinel for an absent shape reference.",
             "   No_Shape : constant Shape_Reference := 0;",
             "",
             "   function Operation_Name (Operation : Operation_Id) return String;",
@@ -324,6 +661,7 @@ def generate(model_path: pathlib.Path) -> tuple[str, str]:
             "",
         ]
     )
+    spec = document_functions(spec)
 
     body = [
         "--  Generated by tools/generate-s3-model.py; do not edit.",
