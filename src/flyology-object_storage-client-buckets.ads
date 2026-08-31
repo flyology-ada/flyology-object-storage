@@ -13508,21 +13508,38 @@ private
    end record;
 
    --  @exclude
+   --  @param Item Owner-driven session operation receiving response bytes
+   --  @param Data Response bytes appended to the session payload
    overriding procedure Write
      (Item : in out Create_Session_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
+   --  @param Item Owner-driven session operation advanced by the event
+   --  @param Event Driver event advancing the session exchange
    overriding procedure Drive
      (Item  : in out Create_Session_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
+   --  @param Item Owner-driven session operation requesting cancellation
    overriding procedure Request_Cancellation
      (Item : in out Create_Session_Operation);
    --  @exclude
+   --  @param Item Owner-driven session operation releasing retained state
    overriding procedure Finalize
      (Item : in out Create_Session_Operation);
 
    --  @exclude
+   --  @param Operation Session operation initialized and started
+   --  @param Client HTTP client retained by the operation
+   --  @param Origin HTTP origin for the service endpoint
+   --  @param Bucket Exact target bucket name
+   --  @param Parameters Complete modeled CreateSession parameters
+   --  @param Identity Signing credentials for the request
+   --  @param Deadline Monotonic deadline for the exchange
+   --  @param Region Signing region for the request
+   --  @param Style Bucket addressing style for the request
+   --  @param Limits XML parsing limits retained for Finish
+   --  @param Token Optional cancellation source retained by the operation
    procedure Start_Create_Session
      (Operation  : in out Create_Session_Operation;
       Client     : not null access Flyology.HTTP.Client.Client;
@@ -13537,6 +13554,8 @@ private
       Token      : access Flyology.Cancellation.Token);
 
    --  @exclude
+   --  @param Operation Terminal session operation consumed by Finish
+   --  @return Decoded CreateSession response outcome
    function Finish_Create_Session_Response
      (Operation : in out Create_Session_Operation)
       return Low_Level.Create_Session_Outcome;
