@@ -4566,6 +4566,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
 
    --  Prepare one exact PutBucketAbac request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose ABAC status is replaced
+   --  @param Value Required modeled ABAC status
+   --  @param Parameters Optional integrity and owner controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared request owning the exact one-shot ABAC body
    function Prepare_Put_Bucket_Abac
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Value : S3.Bucket_Controls.Abac_Status;
@@ -4574,6 +4583,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
 
    --  Prepare one exact PutBucketAccelerateConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose acceleration status is replaced
+   --  @param Value Required modeled acceleration status
+   --  @param Parameters Checksum and owner controls with no Content-MD5
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared request owning the exact one-shot acceleration body
    function Prepare_Put_Bucket_Accelerate_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Value : S3.Bucket_Controls.Accelerate_Status;
@@ -4582,6 +4600,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
 
    --  Prepare one exact PutBucketRequestPayment request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose payer setting is replaced
+   --  @param Value Required modeled payer setting
+   --  @param Parameters Optional integrity and owner controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared request owning the exact one-shot payer body
    function Prepare_Put_Bucket_Request_Payment
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Value : S3.Bucket_Controls.Payer;
@@ -4590,6 +4617,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
 
    --  Prepare one exact PutPublicAccessBlock request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose public-access block is replaced
+   --  @param Value Required public-access-block configuration
+   --  @param Parameters Optional integrity and owner controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared request owning the exact one-shot access-block body
    function Prepare_Put_Public_Access_Block
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String;
@@ -4785,12 +4821,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Prepared_Request;
 
+   --  Terminal body-only bucket-control response classification.
+   --  @enum Bucket_Control_Updated The control update completed
+   --  @enum Put_Bucket_Control_Rejected A structured rejection is present
    type Put_Bucket_Control_Outcome_Kind is
      (Bucket_Control_Updated, Put_Bucket_Control_Rejected);
 
    --  Terminal result shared by body-only bucket-control updates.
    --  Existing API-policy classification: 500 is the aggregate sentinel;
    --  decoded outcomes preserve the physical status.
+   --  @field Kind Active response variant
    --  @field Status Physical HTTP status
    --  @field Error Structured S3 error on rejection
    type Put_Bucket_Control_Outcome
@@ -4822,7 +4862,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error : S3.Errors.Error_Response;
    end record;
 
-   --  Decode one bounded bodyless bucket-control mutation response.
+   --  Decode a whitespace-only 200 or bounded S3 rejection.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional request identifier for an S3 rejection
+   --  @param Host_ID Optional host identifier for an S3 rejection
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Decode_Put_Bucket_Control_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -4864,6 +4910,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome;
 
    --  Execute one exact prepared PutBucketAbac request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared PutBucketAbac request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Bucket_Abac
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4871,6 +4923,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
    --  Execute one exact prepared PutBucketAccelerateConfiguration request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared acceleration request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Bucket_Accelerate_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4878,6 +4936,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
    --  Execute one exact prepared PutBucketRequestPayment request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared request-payment request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Bucket_Request_Payment
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -4885,6 +4949,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
    --  Execute one exact prepared PutPublicAccessBlock request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared PutPublicAccessBlock request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -5050,6 +5120,16 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    --  Prepare one exact bounded PutBucketPolicy request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose policy is replaced
+   --  @param Policy Raw policy bytes bounded only by Limits
+   --  @param Parameters Integrity, safety, and owner controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @param Limits Policy byte bound
+   --  @return Prepared request owning the exact one-shot policy body
    function Prepare_Put_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Policy : String;
@@ -5059,6 +5139,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
 
    --  Execute one exact prepared PutBucketPolicy request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared PutBucketPolicy request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded S3 error parsing limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Bucket_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
