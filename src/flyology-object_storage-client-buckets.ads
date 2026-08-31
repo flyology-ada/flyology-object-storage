@@ -2513,6 +2513,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Inventory_Configuration_Result;
 
    --  Remove one named inventory configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose inventory configuration is removed
+   --  @param Identifier Inventory configuration identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Inventory_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
@@ -2523,6 +2534,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove the complete lifecycle configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose lifecycle configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Lifecycle
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -2533,6 +2554,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove the complete metadata configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose metadata configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Metadata_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -2883,6 +2914,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Metadata_Table_Result;
 
    --  Remove the complete metadata-table configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose metadata-table configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Metadata_Table_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -3212,6 +3253,17 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Metrics_Result;
 
    --  Remove one named metrics configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose metrics configuration is removed
+   --  @param Identifier Metrics configuration identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Metrics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
@@ -3222,6 +3274,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove the complete ownership-controls configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose ownership controls are removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Ownership_Controls
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -3232,6 +3294,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Outcome;
 
    --  Remove the complete bucket policy.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose policy is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -3405,6 +3477,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Replication_Result;
 
    --  Remove the complete replication configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose replication configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Replication
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
@@ -3578,6 +3660,16 @@ package Flyology.Object_Storage.Client.Buckets is
       return Delete_Bucket_Website_Result;
 
    --  Remove the complete website configuration.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose website configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional expected owner account identifier
+   --  @param Timeout Whole operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled deletion response or structured S3 rejection
    function Delete_Website
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
