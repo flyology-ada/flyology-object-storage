@@ -3846,6 +3846,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketMetricsConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Modeled Id and optional owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact metrics-configuration request
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -3864,6 +3872,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketAnalyticsConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Modeled Id and optional owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact analytics-configuration request
    function Prepare_Get_Bucket_Analytics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -3871,6 +3887,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketIntelligentTieringConfiguration
    --  request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Modeled Id and optional owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact Intelligent-Tiering request
    function Prepare_Get_Bucket_Intelligent_Tiering_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -3884,6 +3908,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketInventoryConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Target bucket
+   --  @param Parameters Modeled Id and optional owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared exact inventory-configuration request
    function Prepare_Get_Bucket_Inventory_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -4503,6 +4535,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Replication_Outcome;
    --  Decode one complete bounded GetBucketMetricsConfiguration response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete metrics configuration or structured S3 rejection
    function Decode_Get_Bucket_Metrics_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
@@ -4521,6 +4559,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Analytics_Configurations_Outcome;
    --  Decode one complete bounded GetBucketAnalyticsConfiguration response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete analytics configuration or structured S3 rejection
    function Decode_Get_Bucket_Analytics_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
@@ -4528,6 +4572,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Get_Bucket_Analytics_Configuration_Outcome;
    --  Decode one complete bounded GetBucketIntelligentTieringConfiguration
    --  response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete Intelligent-Tiering configuration or S3 rejection
    function Decode_Get_Bucket_Intelligent_Tiering_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
@@ -4541,6 +4591,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Intelligent_Tiering_Configurations_Outcome;
    --  Decode one complete bounded GetBucketInventoryConfiguration response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete inventory configuration or structured S3 rejection
    function Decode_Get_Bucket_Inventory_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String; Host_ID : String;
@@ -4772,6 +4828,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Replication_Outcome;
    --  Execute one exact prepared GetBucketMetricsConfiguration exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete metrics configuration or structured S3 rejection
    function Execute_Get_Bucket_Metrics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
@@ -4793,6 +4855,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Analytics_Configurations_Outcome;
    --  Execute one exact prepared GetBucketAnalyticsConfiguration exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete analytics configuration or structured S3 rejection
    function Execute_Get_Bucket_Analytics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
@@ -4801,6 +4869,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Get_Bucket_Analytics_Configuration_Outcome;
    --  Execute one exact prepared GetBucketIntelligentTieringConfiguration
    --  exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete Intelligent-Tiering configuration or S3 rejection
    function Execute_Get_Bucket_Intelligent_Tiering_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
@@ -4816,6 +4890,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits)
       return List_Bucket_Intelligent_Tiering_Configurations_Outcome;
    --  Execute one exact prepared GetBucketInventoryConfiguration exchange.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Caller-selected whole-exchange timeout
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Complete inventory configuration or structured S3 rejection
    function Execute_Get_Bucket_Inventory_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
