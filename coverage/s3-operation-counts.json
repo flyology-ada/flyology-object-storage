@@ -10,23 +10,23 @@
     "partial": 11
   },
   "corpus": {
-    "covered": 111,
-    "missing": 5,
+    "covered": 112,
+    "missing": 4,
     "partial": 0
   },
   "decision_status": {
-    "inventory_only": 5,
-    "reviewed": 111
+    "inventory_only": 4,
+    "reviewed": 112
   },
   "families": {
-    "bodyless_mutation": 20,
+    "bodyless_mutation": 21,
     "bounded_binary_read": 1,
     "bounded_document_read": 1,
     "bounded_rest_xml_read": 32,
     "event_stream_read": 1,
     "paginated_rest_xml_read": 12,
     "response_head_read": 2,
-    "rest_xml_mutation": 41,
+    "rest_xml_mutation": 40,
     "streaming_mutation": 4,
     "streaming_read": 2
   },
@@ -60,9 +60,9 @@
       "shared_family": 0
     },
     "tests": {
-      "absent": 5,
+      "absent": 4,
       "generated": 8,
-      "handwritten": 87,
+      "handwritten": 88,
       "shared_family": 16
     }
   },

@@ -659,6 +659,12 @@ put_object_acl = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+rename_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-rename-object-model.py"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-annotation-model.py"],
   ["./tools/verify-coverage.sh"],
@@ -5110,20 +5116,23 @@ ada_symbols = ["Prepare_Put_Public_Access_Block", "Execute_Put_Public_Access_Blo
 name = "RenameObject"
 tier = "extended"
 provider = "objects"
-family = "rest_xml_mutation"
+family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+public_name = "Not_Exposed"
+codec = "generated_model_only_bodyless_conditional_headers"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "mutation model coverage only; no public rename request, conditional-header encoder, client-token binding, response decoder, or runtime evidence exists, so this review reports no successful mutation, no admission certainty, and no automatic replay"
+reconciliation = "the model describes a caller-supplied idempotency token for exact repeated parameters, but no implemented token generation, persistence, parameter binding, response binding, or retry path exists; this review claims no idempotent completion, causal proof, certainty upgrade, or automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RenameObject API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled rename-source, destination and source preconditions, client token, empty response, and IdempotencyParameterMismatch error are inventory only; no URL encoding, conditional-header formatting, token validation, response validation, or retry behavior is implemented", "directory-bucket S3 Express One Zone endpoint and session semantics are not implemented or qualified; no same-bucket enforcement, atomicity, overwrite prevention, persistence, or external-provider behavior is claimed", "the model prose describes a maximum 64-character ASCII client token, but its generated ClientToken shape carries no corresponding bound or pattern; this review does not invent a public token limit, encoding policy, or token-generation policy"]
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "rename_object"
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tools/verify-rename-object-model.py"], server = [], corpus = ["tools/verify-rename-object-model.py"] }
 
 [[operation]]
 name = "RestoreObject"

@@ -115,7 +115,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutObjectRetention | Put_Retention | objects | rest_xml_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutObjectTagging | Put_Tags | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutPublicAccessBlock | Set_Public_Access_Block | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| RenameObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| RenameObject | Not_Exposed | objects | bodyless_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | RestoreObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | SelectObjectContent | legacy_preserved | objects | event_stream_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | UpdateBucketMetadataAnnotationTableConfiguration | Set_Metadata_Annotation_Table_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |

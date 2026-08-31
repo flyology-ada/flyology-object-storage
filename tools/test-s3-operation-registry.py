@@ -3362,6 +3362,190 @@ def main() -> None:
     else:
         raise AssertionError("duplicate PutObjectAcl lane accepted")
 
+    rename_object_certainty = (
+        "mutation model coverage only; no public rename request, "
+        "conditional-header encoder, client-token binding, response "
+        "decoder, or runtime evidence exists, so this review reports no "
+        "successful mutation, no admission certainty, and no automatic "
+        "replay"
+    )
+    rename_object_reconciliation = (
+        "the model describes a caller-supplied idempotency token for exact "
+        "repeated parameters, but no implemented token generation, "
+        "persistence, parameter binding, response binding, or retry path "
+        "exists; this review claims no idempotent completion, causal proof, "
+        "certainty upgrade, or automatic replay"
+    )
+    rename_object_errors = [
+        "authentication", "authorization", "not_found", "invalid_request",
+        "unavailable_or_retryable", "corrupt_or_invalid_response",
+    ]
+    rename_object_exclusions = [
+        "Not_Exposed is a registry sentinel and not an Ada declaration; no "
+        "Low_Level or Objects RenameObject API, composable operation, "
+        "synchronous wrapper, Finish path, or GNATdoc qualification is "
+        "claimed",
+        "the modeled rename-source, destination and source preconditions, "
+        "client token, empty response, and IdempotencyParameterMismatch "
+        "error are inventory only; no URL encoding, conditional-header "
+        "formatting, token validation, response validation, or retry "
+        "behavior is implemented",
+        "directory-bucket S3 Express One Zone endpoint and session semantics "
+        "are not implemented or qualified; no same-bucket enforcement, "
+        "atomicity, overwrite prevention, persistence, or external-provider "
+        "behavior is claimed",
+        "the model prose describes a maximum 64-character ASCII client "
+        "token, but its generated ClientToken shape carries no corresponding "
+        "bound or pattern; this review does not invent a public token limit, "
+        "encoding policy, or token-generation policy",
+    ]
+
+    def assert_rename_object_registry(candidate):
+        entry = candidate.operations["RenameObject"]
+        assert entry.get("public_name") == "Not_Exposed"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "rename_object"
+        assert entry.get("family") == "bodyless_mutation"
+        assert entry.get("codec") == (
+            "generated_model_only_bodyless_conditional_headers"
+        )
+        assert entry.get("certainty") == rename_object_certainty
+        assert entry.get("reconciliation") == rename_object_reconciliation
+        assert entry.get("errors") == rename_object_errors
+        assert entry.get("exclusions") == rename_object_exclusions
+        assert entry.get("ada_symbols") is None
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "partial",
+            "server": "missing", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "absent", "tests": "handwritten",
+        }
+        assert entry["evidence"] == {
+            "backend": [],
+            "client": [
+                "src/flyology-object_storage-s3-model.adb",
+                "tools/verify-rename-object-model.py",
+            ],
+            "server": [],
+            "corpus": ["tools/verify-rename-object-model.py"],
+        }
+        assert candidate.qualification["rename_object"] == [
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-rename-object-model.py"],
+            ["./tools/verify-coverage.sh"],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_rename_object_registry(candidate, label):
+        try:
+            assert_rename_object_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} RenameObject registry accepted")
+
+    assert_rename_object_registry(registry)
+    invented_rename_object_api = copy.deepcopy(registry)
+    invented_rename_object_api.operations[
+        "RenameObject"
+    ]["public_name"] = "Rename_Object"
+    reject_rename_object_registry(
+        invented_rename_object_api, "invented public API"
+    )
+    full_rename_object = copy.deepcopy(registry)
+    full_rename_object.operations[
+        "RenameObject"
+    ]["coverage"]["client"] = "covered"
+    reject_rename_object_registry(
+        full_rename_object, "invented complete client coverage"
+    )
+    bodied_rename_object = copy.deepcopy(registry)
+    bodied_rename_object.operations[
+        "RenameObject"
+    ]["family"] = "rest_xml_mutation"
+    reject_rename_object_registry(
+        bodied_rename_object, "invented request body"
+    )
+    conditional_rename_object = copy.deepcopy(registry)
+    conditional_rename_object.operations[
+        "RenameObject"
+    ]["exclusions"][1] = "the client validates every precondition"
+    reject_rename_object_registry(
+        conditional_rename_object, "invented conditional-header binding"
+    )
+    encoded_rename_source = copy.deepcopy(registry)
+    encoded_rename_source.operations[
+        "RenameObject"
+    ]["exclusions"][1] += "; the client URL-encodes RenameSource"
+    reject_rename_object_registry(
+        encoded_rename_source, "invented RenameSource encoding"
+    )
+    automated_rename_session = copy.deepcopy(registry)
+    automated_rename_session.operations[
+        "RenameObject"
+    ]["exclusions"][2] += "; the client refreshes S3 Express sessions"
+    reject_rename_object_registry(
+        automated_rename_session, "invented session automation"
+    )
+    decoded_rename_error = copy.deepcopy(registry)
+    decoded_rename_error.operations[
+        "RenameObject"
+    ]["errors"] = ["idempotency_parameter_mismatch"]
+    reject_rename_object_registry(
+        decoded_rename_error, "invented error decoder"
+    )
+    token_rename_object = copy.deepcopy(registry)
+    token_rename_object.operations[
+        "RenameObject"
+    ]["reconciliation"] = "the client token proves exact completion"
+    reject_rename_object_registry(
+        token_rename_object, "invented idempotency-token binding"
+    )
+    replay_rename_object = copy.deepcopy(registry)
+    replay_rename_object.operations[
+        "RenameObject"
+    ]["certainty"] = "automatically replay after transport failure"
+    reject_rename_object_registry(
+        replay_rename_object, "automatic replay"
+    )
+    causal_rename_object = copy.deepcopy(registry)
+    causal_rename_object.operations[
+        "RenameObject"
+    ]["reconciliation"] = "a later object read proves rename causation"
+    reject_rename_object_registry(
+        causal_rename_object, "causal reconciliation"
+    )
+    bounded_rename_token = copy.deepcopy(registry)
+    bounded_rename_token.operations[
+        "RenameObject"
+    ]["exclusions"][3] = "the public client token is limited to 64 bytes"
+    reject_rename_object_registry(
+        bounded_rename_token, "invented client-token policy"
+    )
+    missing_rename_object_model = copy.deepcopy(registry)
+    missing_rename_object_model.operations[
+        "RenameObject"
+    ]["evidence"]["client"] = []
+    reject_rename_object_registry(
+        missing_rename_object_model, "missing model evidence"
+    )
+    rename_object_lane, rename_object_commands = (
+        s3_operation.qualification_plan(registry, ["RenameObject"])
+    )
+    assert rename_object_lane == "rename_object"
+    assert rename_object_commands == registry.qualification["rename_object"]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["RenameObject", "RenameObject"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate RenameObject lane accepted")
+
     put_object_annotation_certainty = (
         "mutation model coverage only; no public request-body source, "
         "checksum binding, response decoder, or runtime evidence exists, "

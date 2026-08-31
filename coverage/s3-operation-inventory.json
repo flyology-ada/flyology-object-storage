@@ -4508,24 +4508,29 @@
       "coverage": {
         "backend": "missing",
         "client": "partial",
-        "corpus": "missing",
+        "corpus": "covered",
         "server": "missing"
       },
       "evidence": {
         "backend": [],
-        "client": [],
-        "corpus": [],
+        "client": [
+          "src/flyology-object_storage-s3-model.adb",
+          "tools/verify-rename-object-model.py"
+        ],
+        "corpus": [
+          "tools/verify-rename-object-model.py"
+        ],
         "server": []
       },
-      "family": "rest_xml_mutation",
+      "family": "bodyless_mutation",
       "generator_eligible": false,
-      "human_decisions_resolved": false,
+      "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
         "backend": "absent",
         "client": "generated",
         "server": "absent",
-        "tests": "absent"
+        "tests": "handwritten"
       },
       "provider": "objects"
     },
