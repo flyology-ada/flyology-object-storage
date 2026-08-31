@@ -3957,6 +3957,145 @@ def main() -> None:
         )
     else:
         raise AssertionError("mixed GetObjectLegalHold lane accepted")
+    put_object_legal_hold_certainty = (
+        "only a complete validated 200 reports "
+        "Legal_Hold_Mutation_Completed; an exact recognized S3 rejection or "
+        "definite non-admission reports "
+        "Legal_Hold_Mutation_Definitely_Not_Applied, pre-admission "
+        "cancellation reports "
+        "Legal_Hold_Mutation_Cancelled_Before_Admission, and every other "
+        "possibly admitted or incomplete outcome reports "
+        "Legal_Hold_Mutation_Outcome_Unknown; no automatic replay"
+    )
+    put_object_legal_hold_reconciliation = (
+        "an explicit VersionId permits a read-only GetObjectLegalHold "
+        "observation of that selected object generation and an omitted "
+        "VersionId permits only an observation of the generation current at "
+        "reconciliation time; neither observation proves that the lost "
+        "mutation caused the state or upgrades mutation certainty without "
+        "caller-supplied serialization authority"
+    )
+    put_object_legal_hold_symbols = [
+        "Prepare_Put_Object_Legal_Hold",
+        "Decode_Put_Object_Legal_Hold_Response",
+        "Execute_Put_Object_Legal_Hold",
+        "Put_Legal_Hold_Operation",
+        "Put_Legal_Hold",
+        "Finish",
+    ]
+
+    def assert_put_object_legal_hold_registry(candidate):
+        entry = candidate.operations["PutObjectLegalHold"]
+        assert entry.get("public_name") == "Put_Legal_Hold"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "put_object_legal_hold"
+        assert entry.get("certainty") == put_object_legal_hold_certainty
+        assert (
+            entry.get("reconciliation") == put_object_legal_hold_reconciliation
+        )
+        assert entry.get("ada_symbols") == put_object_legal_hold_symbols
+        assert entry["coverage"]["backend"] == "missing"
+        assert entry["coverage"]["server"] == "missing"
+        assert entry["provenance"]["backend"] == "absent"
+        assert entry["provenance"]["server"] == "absent"
+        assert "no automatic replay" in entry["certainty"]
+        assert "server route are absent" in entry["exclusions"][0]
+        assert (
+            candidate.qualification["put_object_legal_hold"][0][-1]
+            == "tools/verify-put-object-legal-hold-preparation.py"
+        )
+
+    def reject_put_object_legal_hold_registry(candidate, label):
+        try:
+            assert_put_object_legal_hold_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutObjectLegalHold registry accepted")
+
+    assert_put_object_legal_hold_registry(registry)
+    missing_put_object_legal_hold_name = copy.deepcopy(registry)
+    del missing_put_object_legal_hold_name.operations["PutObjectLegalHold"][
+        "public_name"
+    ]
+    reject_put_object_legal_hold_registry(
+        missing_put_object_legal_hold_name, "missing name"
+    )
+    wrong_put_object_legal_hold_name = copy.deepcopy(registry)
+    wrong_put_object_legal_hold_name.operations["PutObjectLegalHold"][
+        "public_name"
+    ] = "Put_Retention"
+    reject_put_object_legal_hold_registry(
+        wrong_put_object_legal_hold_name, "wrong name"
+    )
+    retry_put_object_legal_hold = copy.deepcopy(registry)
+    retry_put_object_legal_hold.operations["PutObjectLegalHold"][
+        "certainty"
+    ] = "mutation; retry automatically after a lost response"
+    reject_put_object_legal_hold_registry(
+        retry_put_object_legal_hold, "automatic retry"
+    )
+    causal_put_object_legal_hold = copy.deepcopy(registry)
+    causal_put_object_legal_hold.operations["PutObjectLegalHold"][
+        "reconciliation"
+    ] = "GetObjectLegalHold proves the lost mutation caused the state"
+    reject_put_object_legal_hold_registry(
+        causal_put_object_legal_hold, "causal reconciliation"
+    )
+    server_put_object_legal_hold = copy.deepcopy(registry)
+    server_put_object_legal_hold.operations["PutObjectLegalHold"]["coverage"][
+        "server"
+    ] = "covered"
+    reject_put_object_legal_hold_registry(
+        server_put_object_legal_hold, "invented server coverage"
+    )
+    cross_put_object_legal_hold_symbol = copy.deepcopy(registry)
+    cross_put_object_legal_hold_symbol.operations["PutObjectLegalHold"][
+        "ada_symbols"
+    ][0] = "Prepare_Put_Object_Retention"
+    reject_put_object_legal_hold_registry(
+        cross_put_object_legal_hold_symbol, "cross-operation symbol"
+    )
+    put_object_legal_hold_qualification, put_object_legal_hold_commands = (
+        s3_operation.qualification_plan(registry, ["PutObjectLegalHold"])
+    )
+    assert put_object_legal_hold_qualification == "put_object_legal_hold"
+    assert put_object_legal_hold_commands[:4] == [
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-put-object-legal-hold-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_put_object_legal_hold_corpus"],
+        ["@tests", "./bin/s3_http_socket_corpus"],
+    ]
+    assert put_object_legal_hold_commands[4] == ["./tools/verify-coverage.sh"]
+    assert put_object_legal_hold_commands[5] == [
+        "./tools/build-api-docs.sh",
+        "/private/tmp/fos-put-object-legal-hold-gnatdoc",
+        "--operation",
+        "PutObjectLegalHold",
+    ]
+    assert put_object_legal_hold_commands[6:] == [
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectLegalHold", "PutObjectLegalHold"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate PutObjectLegalHold lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry, ["PutObjectLegalHold", "GetObjectLegalHold"]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "do not share one qualification lane" in str(error)
+    else:
+        raise AssertionError("mixed PutObjectLegalHold lane accepted")
     get_object_retention_certainty = (
         "read-only; only one complete validated 200 Object_Retention_Found "
         "response observed exposes the presence-preserving retention value; "

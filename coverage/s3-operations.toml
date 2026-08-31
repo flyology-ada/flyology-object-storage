@@ -542,6 +542,16 @@ get_object_legal_hold = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_object_legal_hold = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-legal-hold-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_put_object_legal_hold_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-object-legal-hold-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 get_object_retention = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-retention-preparation.py"],
   ["@tests", "alr", "-n", "build"],
@@ -4567,18 +4577,22 @@ tier = "extended"
 provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
-codec = "rest_xml_and_headers"
+codec = "strict_rest_xml_request_and_bounded_response"
+public_name = "Put_Legal_Hold"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "only a complete validated 200 reports Legal_Hold_Mutation_Completed; an exact recognized S3 rejection or definite non-admission reports Legal_Hold_Mutation_Definitely_Not_Applied, pre-admission cancellation reports Legal_Hold_Mutation_Cancelled_Before_Admission, and every other possibly admitted or incomplete outcome reports Legal_Hold_Mutation_Outcome_Unknown; no automatic replay"
+reconciliation = "an explicit VersionId permits a read-only GetObjectLegalHold observation of that selected object generation and an omitted VersionId permits only an observation of the generation current at reconciliation time; neither observation proves that the lost mutation caused the state or upgrades mutation certainty without caller-supplied serialization authority"
+exclusions = ["Object Lock persistence and an authenticated Flyology PutObjectLegalHold server route are absent and not claimed", "configured server Requester Pays accounting is not claimed; exact RequestPayer and RequestCharged client handling remains covered", "same-version and current-version observations do not establish causation or authorize automatic replay", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "external-provider behavior beyond the maintained signed client and socket corpus is not claimed"]
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
 provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"] }
+human_decisions_resolved = true
+decision_status = "reviewed"
+qualification = "put_object_legal_hold"
+evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "src/flyology-object_storage-s3-object_lock.ads", "src/flyology-object_storage-s3-object_lock.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-put-object-legal-hold-preparation.py", "docs/qualification/put-object-legal-hold.md", "tests/corpora/put-object-legal-hold/members.tsv", "tests/corpora/put-object-legal-hold/vectors.tsv", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+ada_symbols = ["Prepare_Put_Object_Legal_Hold", "Decode_Put_Object_Legal_Hold_Response", "Execute_Put_Object_Legal_Hold", "Put_Legal_Hold_Operation", "Put_Legal_Hold", "Finish"]
 
 [[operation]]
 name = "PutObjectLockConfiguration"
