@@ -5894,6 +5894,20 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed PutObjectLegalHold lane accepted")
+    def assert_bucket_control_backend_server(entry):
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert entry["evidence"]["backend"] == [
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        ]
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+
     get_bucket_encryption_certainty = (
         "read-only; only one complete validated exact 200 "
         "Bucket_Control_Found response observed exposes the "
@@ -5926,12 +5940,11 @@ def main() -> None:
             get_bucket_encryption_reconciliation
         )
         assert entry.get("ada_symbols") == get_bucket_encryption_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert "absent optional" in entry["absence"]
-        assert "server route are absent" in entry["exclusions"][0]
+        assert "preserve the exact modeled encryption" in (
+            entry["exclusions"][0]
+        )
         assert candidate.qualification["get_bucket_encryption"][0][-1] == (
             "tools/verify-get-bucket-encryption-preparation.py"
         )
@@ -5974,12 +5987,12 @@ def main() -> None:
     reject_get_bucket_encryption_registry(
         causal_get_bucket_encryption, "causal reconciliation"
     )
-    server_get_bucket_encryption = copy.deepcopy(registry)
-    server_get_bucket_encryption.operations[
+    missing_server_get_bucket_encryption = copy.deepcopy(registry)
+    missing_server_get_bucket_encryption.operations[
         "GetBucketEncryption"
-    ]["coverage"]["server"] = "covered"
+    ]["coverage"]["server"] = "missing"
     reject_get_bucket_encryption_registry(
-        server_get_bucket_encryption, "invented server coverage"
+        missing_server_get_bucket_encryption, "missing server coverage"
     )
     cross_get_bucket_encryption_symbol = copy.deepcopy(registry)
     cross_get_bucket_encryption_symbol.operations[
@@ -6069,13 +6082,12 @@ def main() -> None:
             put_bucket_encryption_reconciliation
         )
         assert entry.get("ada_symbols") == put_bucket_encryption_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert entry.get("absence") == "not_applicable"
-        assert "server route are absent" in entry["exclusions"][0]
-        assert "exact same immutable" in entry["exclusions"][2]
+        assert "preserve caller-selected modeled algorithms" in (
+            entry["exclusions"][0]
+        )
+        assert "exact same immutable" in entry["exclusions"][1]
         assert candidate.qualification["put_bucket_encryption"][0][-1] == (
             "tools/verify-put-bucket-encryption-preparation.py"
         )
@@ -6118,12 +6130,12 @@ def main() -> None:
     reject_put_bucket_encryption_registry(
         causal_put_bucket_encryption, "causal reconciliation"
     )
-    server_put_bucket_encryption = copy.deepcopy(registry)
-    server_put_bucket_encryption.operations[
+    missing_server_put_bucket_encryption = copy.deepcopy(registry)
+    missing_server_put_bucket_encryption.operations[
         "PutBucketEncryption"
-    ]["coverage"]["server"] = "covered"
+    ]["coverage"]["server"] = "missing"
     reject_put_bucket_encryption_registry(
-        server_put_bucket_encryption, "invented server coverage"
+        missing_server_put_bucket_encryption, "missing server coverage"
     )
     cross_put_bucket_encryption_symbol = copy.deepcopy(registry)
     cross_put_bucket_encryption_symbol.operations[
@@ -6211,12 +6223,9 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             get_bucket_ownership_controls_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert "OwnershipControlsNotFoundError" in entry["absence"]
-        assert "server route are absent" in entry["exclusions"][0]
+        assert "preserve caller-observed" in entry["exclusions"][0]
         assert candidate.qualification[
             "get_bucket_ownership_controls"
         ][0][-1] == "tools/verify-get-bucket-ownership-controls-preparation.py"
@@ -6259,12 +6268,13 @@ def main() -> None:
     reject_get_bucket_ownership_controls_registry(
         causal_get_bucket_ownership_controls, "causal reconciliation"
     )
-    server_get_bucket_ownership_controls = copy.deepcopy(registry)
-    server_get_bucket_ownership_controls.operations[
+    missing_server_get_bucket_ownership_controls = copy.deepcopy(registry)
+    missing_server_get_bucket_ownership_controls.operations[
         "GetBucketOwnershipControls"
-    ]["coverage"]["server"] = "covered"
+    ]["coverage"]["server"] = "missing"
     reject_get_bucket_ownership_controls_registry(
-        server_get_bucket_ownership_controls, "invented server coverage"
+        missing_server_get_bucket_ownership_controls,
+        "missing server coverage",
     )
     cross_get_bucket_ownership_controls_symbol = copy.deepcopy(registry)
     cross_get_bucket_ownership_controls_symbol.operations[
@@ -6368,13 +6378,12 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             put_bucket_ownership_controls_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert_bucket_control_backend_server(entry)
         assert entry.get("absence") == "not_applicable"
-        assert "server route are absent" in entry["exclusions"][0]
-        assert "exact same immutable" in entry["exclusions"][2]
+        assert "preserve caller-selected modeled ownership rules" in (
+            entry["exclusions"][0]
+        )
+        assert "exact same immutable" in entry["exclusions"][1]
         assert candidate.qualification[
             "put_bucket_ownership_controls"
         ][0][-1] == "tools/verify-put-bucket-ownership-controls-preparation.py"
@@ -6417,12 +6426,13 @@ def main() -> None:
     reject_put_bucket_ownership_controls_registry(
         causal_put_bucket_ownership_controls, "causal reconciliation"
     )
-    server_put_bucket_ownership_controls = copy.deepcopy(registry)
-    server_put_bucket_ownership_controls.operations[
+    missing_server_put_bucket_ownership_controls = copy.deepcopy(registry)
+    missing_server_put_bucket_ownership_controls.operations[
         "PutBucketOwnershipControls"
-    ]["coverage"]["server"] = "covered"
+    ]["coverage"]["server"] = "missing"
     reject_put_bucket_ownership_controls_registry(
-        server_put_bucket_ownership_controls, "invented server coverage"
+        missing_server_put_bucket_ownership_controls,
+        "missing server coverage",
     )
     cross_put_bucket_ownership_controls_symbol = copy.deepcopy(registry)
     cross_put_bucket_ownership_controls_symbol.operations[
@@ -9065,12 +9075,7 @@ def main() -> None:
         assert entry.get("reconciliation") == (
             delete_encryption_reconciliation
         )
-        assert entry.get("coverage") == {
-            "backend": "missing",
-            "client": "covered",
-            "server": "missing",
-            "corpus": "covered",
-        }
+        assert_bucket_control_backend_server(entry)
         assert entry.get("ada_symbols") == [
             "Prepare_Delete_Bucket_Encryption",
             "Execute_Delete_Bucket_Encryption",
@@ -9133,6 +9138,14 @@ def main() -> None:
     reject_delete_encryption_registry(
         causal_delete_encryption_reconciliation,
         "causal reconciliation",
+    )
+    missing_delete_encryption_server = copy.deepcopy(registry)
+    missing_delete_encryption_server.operations[
+        "DeleteBucketEncryption"
+    ]["coverage"]["server"] = "missing"
+    reject_delete_encryption_registry(
+        missing_delete_encryption_server,
+        "missing server coverage",
     )
     cross_delete_encryption_symbol = copy.deepcopy(registry)
     cross_delete_encryption_symbol.operations["DeleteBucketEncryption"][
@@ -10645,12 +10658,7 @@ def main() -> None:
         assert entry.get("reconciliation") == (
             delete_ownership_controls_reconciliation
         )
-        assert entry.get("coverage") == {
-            "backend": "missing",
-            "client": "covered",
-            "server": "missing",
-            "corpus": "covered",
-        }
+        assert_bucket_control_backend_server(entry)
         assert entry.get("ada_symbols") == [
             "Prepare_Delete_Bucket_Ownership_Controls",
             "Execute_Delete_Bucket_Ownership_Controls",
@@ -10710,6 +10718,14 @@ def main() -> None:
     reject_delete_ownership_controls_registry(
         causal_delete_ownership_controls_reconciliation,
         "causal reconciliation",
+    )
+    missing_delete_ownership_controls_server = copy.deepcopy(registry)
+    missing_delete_ownership_controls_server.operations[
+        "DeleteBucketOwnershipControls"
+    ]["coverage"]["server"] = "missing"
+    reject_delete_ownership_controls_registry(
+        missing_delete_ownership_controls_server,
+        "missing server coverage",
     )
     cross_delete_ownership_controls_symbol = copy.deepcopy(registry)
     cross_delete_ownership_controls_symbol.operations[
@@ -12721,20 +12737,6 @@ def main() -> None:
         "Get_Accelerate_Configuration",
         "Finish",
     ]
-
-    def assert_bucket_control_backend_server(entry):
-        assert entry["coverage"]["backend"] == "covered"
-        assert entry["coverage"]["server"] == "covered"
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert entry["evidence"]["backend"] == [
-            "tests/src/object_storage_test_cases.adb",
-            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
-        ]
-        assert entry["evidence"]["server"] == [
-            "src/flyology-object_storage-server-s3_applications.adb",
-            "tests/src/s3_server_application_corpus.adb",
-        ]
 
     def assert_accelerate_registry(candidate):
         entry = candidate.operations["GetBucketAccelerateConfiguration"]

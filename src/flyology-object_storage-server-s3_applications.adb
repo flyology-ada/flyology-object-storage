@@ -19,6 +19,7 @@ with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Listings;
@@ -48,6 +49,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Checksums renames S3.Checksums;
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
+   package Encryption renames S3.Encryption;
    package IMF_Dates renames S3.IMF_Dates;
    package Listings renames S3.Listings;
    package Multipart renames S3.Multipart;
@@ -119,6 +121,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Derived from the shared caller-overridable XML resource policy used by
    --  the CORS codec; changing that source changes server admission and
    --  backend persistence compatibility together.
+   Maximum_Bucket_Configuration_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared caller-overridable XML resource policy used by
+   --  the encryption and ownership-controls codecs; changing that source
+   --  changes server admission and backend persistence compatibility.
    Maximum_Bucket_Policy_Body : constant Byte_Count :=
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the established caller-overridable document resource
@@ -128,6 +135,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
         (Byte_Count'Image (Value), Ada.Strings.Both));
+
+   function Default_Encryption_Document return String is
+      Configuration : Encryption.Encryption_Configuration :=
+        (Is_Set => True, Rules => <>);
+      Rule : Encryption.Encryption_Rule := (others => <>);
+   begin
+      Rule.Default_Encryption.Is_Set := True;
+      Rule.Default_Encryption.Algorithm := Encryption.AES256_Encryption;
+      Configuration.Rules.Append (Rule);
+      return Encryption.Serialize (Configuration);
+   end Default_Encryption_Document;
 
    function Storage_Algorithm
      (Value : Checksum_Policy.Algorithm) return Checksum_Algorithm is
@@ -474,6 +492,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Public_Access_Block, Get_Public_Access_Block,
          Delete_Public_Access_Block,
          Put_Bucket_CORS, Get_Bucket_CORS, Delete_Bucket_CORS,
+         Put_Bucket_Encryption, Get_Bucket_Encryption,
+         Delete_Bucket_Encryption,
+         Put_Bucket_Ownership_Controls, Get_Bucket_Ownership_Controls,
+         Delete_Bucket_Ownership_Controls,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
@@ -717,6 +739,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              elsif Method = "GET" then "GetBucketCors"
              else "DeleteBucketCors") &
           "&cors=";
+      Is_Bucket_Encryption_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("encryption",
+           (if Method = "PUT" then "PutBucketEncryption"
+            elsif Method = "GET" then "GetBucketEncryption"
+            else "DeleteBucketEncryption"));
+      Is_Bucket_Ownership_Controls_Query : constant Boolean :=
+        Is_Exact_Bucket_Control_Query
+          ("ownershipControls",
+           (if Method = "PUT" then "PutBucketOwnershipControls"
+            elsif Method = "GET" then "GetBucketOwnershipControls"
+            else "DeleteBucketOwnershipControls"));
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
@@ -774,6 +808,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=DeleteBucketCors&") /= 0;
       Looks_Like_Bucket_CORS_Query : constant Boolean :=
         Has_Bucket_CORS_Query or else Has_Bucket_CORS_Operation_ID;
+      Has_Bucket_Configuration_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&encryption&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&encryption=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&ownershipControls&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&ownershipControls=") /= 0;
+      Has_Bucket_Configuration_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketEncryption&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketEncryption&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketEncryption&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketOwnershipControls&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketOwnershipControls&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketOwnershipControls&") /= 0;
+      Looks_Like_Bucket_Configuration_Query : constant Boolean :=
+        Has_Bucket_Configuration_Query
+        or else Has_Bucket_Configuration_Operation_ID;
       Has_Bucket_Scalar_Control_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&abac&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&abac=") /= 0
@@ -951,6 +1009,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
       Bucket_CORS_Query_Invalid : Boolean := False;
+      Bucket_Configuration_Query_Invalid : Boolean := False;
       Bucket_Scalar_Control_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
@@ -1989,6 +2048,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Looks_Like_Bucket_CORS_Query)
         and then not
           (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Configuration_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET"
            and then Looks_Like_Bucket_Scalar_Control_Query)
         and then not
@@ -2051,6 +2114,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query
            and then not Is_Bucket_CORS_Query;
+         Bucket_Configuration_Query_Invalid :=
+           Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Configuration_Query
+           and then not
+             (Is_Bucket_Encryption_Query
+              or else Is_Bucket_Ownership_Controls_Query);
          Bucket_Scalar_Control_Query_Invalid :=
            Method in "PUT" | "GET"
            and then Looks_Like_Bucket_Scalar_Control_Query
@@ -2068,6 +2137,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Get_Bucket_CORS
             elsif Method = "DELETE" and then Looks_Like_Bucket_CORS_Query
             then Delete_Bucket_CORS
+            elsif Method = "PUT" and then Is_Bucket_Encryption_Query
+            then Put_Bucket_Encryption
+            elsif Method = "GET" and then Is_Bucket_Encryption_Query
+            then Get_Bucket_Encryption
+            elsif Method = "DELETE" and then Is_Bucket_Encryption_Query
+            then Delete_Bucket_Encryption
+            elsif Method = "PUT"
+              and then Is_Bucket_Ownership_Controls_Query
+            then Put_Bucket_Ownership_Controls
+            elsif Method = "GET"
+              and then Is_Bucket_Ownership_Controls_Query
+            then Get_Bucket_Ownership_Controls
+            elsif Method = "DELETE"
+              and then Is_Bucket_Ownership_Controls_Query
+            then Delete_Bucket_Ownership_Controls
             elsif Method = "PUT" and then Is_Bucket_ABAC_Query
             then Put_Bucket_ABAC
             elsif Method = "GET" and then Is_Bucket_ABAC_Query
@@ -2282,7 +2366,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          (if Operation in Create_Bucket | Put_Bucket_Tagging |
          Put_Bucket_ABAC | Put_Bucket_Acceleration |
          Put_Bucket_Request_Payment | Put_Public_Access_Block |
-         Put_Bucket_CORS | Put_Bucket_Policy |
+         Put_Bucket_CORS | Put_Bucket_Encryption |
+         Put_Bucket_Ownership_Controls | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -2392,6 +2477,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The bucket CORS request query is invalid", Target_Text);
          return;
+      elsif Bucket_Configuration_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket-configuration request query is invalid",
+            Target_Text);
+         return;
       elsif Bucket_Scalar_Control_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -2422,7 +2513,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       if Operation not in Create_Bucket | Put_Bucket_Tagging |
         Put_Bucket_ABAC | Put_Bucket_Acceleration |
         Put_Bucket_Request_Payment | Put_Public_Access_Block |
-        Put_Bucket_CORS | Put_Bucket_Policy |
+        Put_Bucket_CORS | Put_Bucket_Encryption |
+        Put_Bucket_Ownership_Controls | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -3961,6 +4053,274 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Apps.Respond (X, 204, "", "");
                         else
                            Send_Backend_Error (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Encryption |
+                 Put_Bucket_Ownership_Controls =>
+               declare
+                  Is_Encryption : constant Boolean :=
+                    Operation = Put_Bucket_Encryption;
+                  Operation_Name : constant String :=
+                    (if Is_Encryption then "PutBucketEncryption"
+                     else "PutBucketOwnershipControls");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Trailer_Declaration_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Checksum_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Selected : constant
+                    Checksum_Policy.Algorithm_Parse_Result :=
+                      (if SDK_Count = 1 then
+                         Checksum_Policy.Parse_Algorithm
+                           (Apps.Request_Header
+                              (X, "x-amz-sdk-checksum-algorithm"))
+                       else (Valid => False));
+                  Owner_Accepted : Boolean;
+
+                  procedure Process
+                    (Algorithm    : Checksum_Policy.Algorithm;
+                     Check_Body   : Boolean;
+                     From_Trailer : Boolean;
+                     Expected     : String)
+                  is
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => Algorithm,
+                        Length_Value  => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash    =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash      => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => MD5_Count = 1,
+                        Expected_Content_MD5 =>
+                          (if MD5_Count = 1 then
+                             US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                           else US.Null_Unbounded_String),
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => Check_Body,
+                        Checksum_From_Trailer => From_Trailer,
+                        Reject_Unexpected_Trailers => True,
+                        Expected_Body_Checksum =>
+                          US.To_Unbounded_String (Expected),
+                        Observed  => 0,
+                        Maximum   => Maximum_Bucket_Configuration_Body,
+                        Completed => False,
+                        others    => <>);
+                     Document : constant String := Read_Document (Source);
+                     Canonical : US.Unbounded_String;
+                  begin
+                     if Is_Encryption then
+                        Canonical := US.To_Unbounded_String
+                          (Encryption.Serialize
+                             (Encryption.Parse (Document)));
+                        Store.Put_Bucket_Encryption
+                          (Bucket, US.To_String (Canonical),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     else
+                        Canonical := US.To_Unbounded_String
+                          (Bucket_Controls.Serialize_Ownership_Controls
+                             (Bucket_Controls.Parse_Ownership_Controls
+                                (Document)));
+                        Store.Put_Bucket_Ownership_Controls
+                          (Bucket, US.To_String (Canonical),
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     end if;
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  exception
+                     when Encryption.Malformed_Encryption |
+                          Bucket_Controls.Malformed_Configuration =>
+                        Send_Error
+                          (X, 400, "MalformedXML",
+                           "The XML provided was not well-formed or did not " &
+                           "validate against the published schema",
+                           Target_Text);
+                  end Process;
+               begin
+                  if MD5_Count > 1
+                    or else Payer_Count > 1
+                    or else SDK_Count > 1
+                    or else Trailer_Declaration_Count > 1
+                    or else Checksum_Count > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A " & Operation_Name & " header is duplicated",
+                        Target_Text);
+                  elsif MD5_Count /= 1
+                    or else not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A valid Content-MD5 header is required",
+                        Target_Text);
+                  elsif Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name & " does not define RequestPayer",
+                        Target_Text);
+                  elsif
+                    (SDK_Count = 0
+                     and then
+                       (Trailer_Declaration_Count /= 0
+                        or else Checksum_Count /= 0))
+                    or else (SDK_Count = 1 and then not Selected.Valid)
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 1
+                       and then
+                         (Checksum_Count /= 0
+                          or else
+                            Ada.Characters.Handling.To_Lower
+                              (Apps.Request_Header (X, "x-amz-trailer")) /=
+                            Checksum_Header_Name
+                              (Storage_Algorithm (Selected.Value))))
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 0
+                       and then
+                         (Checksum_Count /= 1
+                          or else Apps.Request_Header_Count
+                            (X, Checksum_Header_Name
+                               (Storage_Algorithm (Selected.Value))) /= 1))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The " & Operation_Name &
+                        " checksum group is invalid", Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then
+                      Length.Bytes > Maximum_Bucket_Configuration_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if SDK_Count = 0 then
+                           Process (S3.Core.CRC64NVME, False, False, "");
+                        elsif Trailer_Declaration_Count = 1 then
+                           Process (Selected.Value, True, True, "");
+                        else
+                           Process
+                             (Selected.Value, True, False,
+                              Apps.Request_Header
+                                (X, Checksum_Header_Name
+                                   (Storage_Algorithm (Selected.Value))));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Encryption |
+                 Get_Bucket_Ownership_Controls =>
+               declare
+                  Is_Encryption : constant Boolean :=
+                    Operation = Get_Bucket_Encryption;
+                  Operation_Name : constant String :=
+                    (if Is_Encryption then "GetBucketEncryption"
+                     else "GetBucketOwnershipControls");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Document : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name & " does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if Is_Encryption then
+                           Store.Get_Bucket_Encryption
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Document, Configured,
+                              Result);
+                        else
+                           Store.Get_Bucket_Ownership_Controls
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Document, Configured,
+                              Result);
+                        end if;
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif Is_Encryption then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              (if Configured then US.To_String (Document)
+                               else Default_Encryption_Document));
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404, "OwnershipControlsNotFoundError",
+                              "The ownership controls were not found",
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              US.To_String (Document));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_Encryption |
+                 Delete_Bucket_Ownership_Controls =>
+               declare
+                  Is_Encryption : constant Boolean :=
+                    Operation = Delete_Bucket_Encryption;
+                  Operation_Name : constant String :=
+                    (if Is_Encryption then "DeleteBucketEncryption"
+                     else "DeleteBucketOwnershipControls");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name & " does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if Is_Encryption then
+                           Store.Delete_Bucket_Encryption
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                        else
+                           Store.Delete_Bucket_Ownership_Controls
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                        end if;
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
                         end if;
                      end if;
                   end if;

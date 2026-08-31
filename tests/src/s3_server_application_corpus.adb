@@ -24,6 +24,7 @@ with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
@@ -52,6 +53,7 @@ procedure S3_Server_Application_Corpus is
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
+   package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Multipart_Uploads renames
@@ -6220,6 +6222,159 @@ begin
                  ("DELETE", "/absent-bucket", Delete_Query)),
             "<Code>NoSuchBucket</Code>"),
          "DeleteBucketCors did not distinguish an absent bucket");
+   end;
+
+   declare
+      Namespace : constant String :=
+        "http://s3.amazonaws.com/doc/2006-03-01/";
+      Encryption_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("encryption", ""),
+         SigV4.Pair ("x-id", "PutBucketEncryption"));
+      Encryption_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("encryption", ""),
+         SigV4.Pair ("x-id", "GetBucketEncryption"));
+      Encryption_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("encryption", ""),
+         SigV4.Pair ("x-id", "DeleteBucketEncryption"));
+      Ownership_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("ownershipControls", ""),
+         SigV4.Pair ("x-id", "PutBucketOwnershipControls"));
+      Ownership_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("ownershipControls", ""),
+         SigV4.Pair ("x-id", "GetBucketOwnershipControls"));
+      Ownership_Delete : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("ownershipControls", ""),
+         SigV4.Pair ("x-id", "DeleteBucketOwnershipControls"));
+      Encryption_Document : constant String :=
+        "<ServerSideEncryptionConfiguration xmlns=""" & Namespace &
+        """><Rule><ApplyServerSideEncryptionByDefault>" &
+        "<SSEAlgorithm>aws:kms</SSEAlgorithm>" &
+        "<KMSMasterKeyID>key</KMSMasterKeyID>" &
+        "</ApplyServerSideEncryptionByDefault></Rule>" &
+        "</ServerSideEncryptionConfiguration>";
+      Ownership_Document : constant String :=
+        "<OwnershipControls xmlns=""" & Namespace & """>" &
+        "<Rule><ObjectOwnership>BucketOwnerPreferred</ObjectOwnership>" &
+        "</Rule></OwnershipControls>";
+      Canonical_Encryption : constant String :=
+        Encryption.Serialize (Encryption.Parse (Encryption_Document));
+      Canonical_Ownership : constant String :=
+        Bucket_Controls.Serialize_Ownership_Controls
+          (Bucket_Controls.Parse_Ownership_Controls (Ownership_Document));
+
+      function Put
+        (Query : SigV4.Name_Value_Array;
+         Document : String;
+         Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Query, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF & Extra)));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Encryption_Get)),
+            "<SSEAlgorithm>AES256</SSEAlgorithm>"),
+         "GetBucketEncryption did not return the SSE-S3 default");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket", Ownership_Get)),
+            "OwnershipControlsNotFoundError"),
+         "GetBucketOwnershipControls did not report absence");
+      Require
+        (Has (Put (Encryption_Put, Encryption_Document), "200 OK"),
+         "PutBucketEncryption rejected a valid configuration");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Encryption_Get))) =
+           Canonical_Encryption,
+         "GetBucketEncryption did not return canonical state");
+      Require
+        (Has (Put (Ownership_Put, Ownership_Document), "200 OK"),
+         "PutBucketOwnershipControls rejected a valid configuration");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Ownership_Get))) =
+           Canonical_Ownership,
+         "GetBucketOwnershipControls did not return canonical state");
+      Require
+        (Has (Put (Encryption_Put, "<bad/>"), "<Code>MalformedXML</Code>"),
+         "PutBucketEncryption accepted malformed XML");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Ownership_Put,
+                  Ownership_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketOwnershipControls accepted a missing Content-MD5");
+      Require
+        (Has
+           (Put
+              (Ownership_Put, Ownership_Document,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
+               "AAAAAAAAAAA=" & CRLF),
+            "<Code>BadDigest</Code>"),
+         "PutBucketOwnershipControls accepted a checksum mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Encryption_Get,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketEncryption ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("ownershipControls", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketOwnershipControls accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Encryption_Delete)),
+            "204 No Content"),
+         "DeleteBucketEncryption failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Encryption_Get)),
+            "<SSEAlgorithm>AES256</SSEAlgorithm>"),
+         "DeleteBucketEncryption did not restore SSE-S3");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Ownership_Delete)),
+            "204 No Content"),
+         "DeleteBucketOwnershipControls failed");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket", Ownership_Get)),
+            "OwnershipControlsNotFoundError"),
+         "DeleteBucketOwnershipControls left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Ownership_Delete)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketOwnershipControls did not distinguish absent bucket");
    end;
 
    declare

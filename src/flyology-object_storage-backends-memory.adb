@@ -516,7 +516,13 @@ package body Flyology.Object_Storage.Backends.Memory is
            (Ada.Strings.Unbounded.Length (Buckets (Index).Policy)) -
            Byte_Count
              (Ada.Strings.Unbounded.Length
-                (Buckets (Index).CORS_Document));
+                (Buckets (Index).CORS_Document)) -
+           Byte_Count
+             (Ada.Strings.Unbounded.Length
+                (Buckets (Index).Encryption_Document)) -
+           Byte_Count
+             (Ada.Strings.Unbounded.Length
+                (Buckets (Index).Ownership_Controls_Document));
          Buckets (Index) := (others => <>);
          Result := Success;
       end Delete_Bucket;
@@ -631,6 +637,144 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_CORS;
+
+      procedure Put_Bucket_Encryption
+        (Name : String; Document : String; Result : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Byte_Count (Document'Length);
+         Existing : Byte_Count := 0;
+         Base     : Byte_Count;
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         elsif not Valid_Bucket_Encryption_Document (Document) then
+            Result := Entity_Too_Large;
+            return;
+         end if;
+         Existing := Byte_Count
+           (Ada.Strings.Unbounded.Length
+              (Buckets (Index).Encryption_Document));
+         Base := Bytes - Existing;
+         if Incoming > Byte_Limit - Base
+           or else Reserved_Bytes > Byte_Limit - Base - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).Encryption_Document :=
+              Ada.Strings.Unbounded.To_Unbounded_String (Document);
+            Buckets (Index).Encryption_Configured := True;
+            Bytes := Base + Incoming;
+            Result := Success;
+         end if;
+      end Put_Bucket_Encryption;
+
+      procedure Get_Bucket_Encryption
+        (Name       : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Document := Buckets (Index).Encryption_Document;
+            Configured := Buckets (Index).Encryption_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_Encryption;
+
+      procedure Delete_Bucket_Encryption
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Bytes := Bytes - Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).Encryption_Document));
+            Buckets (Index).Encryption_Document :=
+              Ada.Strings.Unbounded.Null_Unbounded_String;
+            Buckets (Index).Encryption_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Encryption;
+
+      procedure Put_Bucket_Ownership_Controls
+        (Name : String; Document : String; Result : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Byte_Count (Document'Length);
+         Existing : Byte_Count := 0;
+         Base     : Byte_Count;
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         elsif not Valid_Bucket_Ownership_Controls_Document (Document) then
+            Result := Entity_Too_Large;
+            return;
+         end if;
+         Existing := Byte_Count
+           (Ada.Strings.Unbounded.Length
+              (Buckets (Index).Ownership_Controls_Document));
+         Base := Bytes - Existing;
+         if Incoming > Byte_Limit - Base
+           or else Reserved_Bytes > Byte_Limit - Base - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).Ownership_Controls_Document :=
+              Ada.Strings.Unbounded.To_Unbounded_String (Document);
+            Buckets (Index).Ownership_Controls_Configured := True;
+            Bytes := Base + Incoming;
+            Result := Success;
+         end if;
+      end Put_Bucket_Ownership_Controls;
+
+      procedure Get_Bucket_Ownership_Controls
+        (Name       : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Document := Buckets (Index).Ownership_Controls_Document;
+            Configured := Buckets (Index).Ownership_Controls_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_Ownership_Controls;
+
+      procedure Delete_Bucket_Ownership_Controls
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Bytes := Bytes - Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).Ownership_Controls_Document));
+            Buckets (Index).Ownership_Controls_Document :=
+              Ada.Strings.Unbounded.Null_Unbounded_String;
+            Buckets (Index).Ownership_Controls_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Ownership_Controls;
 
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
@@ -2606,6 +2750,118 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket_CORS (Bucket, Result);
       end if;
    end Delete_Bucket_CORS;
+
+   overriding procedure Put_Bucket_Encryption
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Encryption_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_Encryption (Bucket, Document, Result);
+      end if;
+   end Put_Bucket_Encryption;
+
+   overriding procedure Get_Bucket_Encryption
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Encryption
+           (Bucket, Document, Configured, Result);
+      end if;
+   end Get_Bucket_Encryption;
+
+   overriding procedure Delete_Bucket_Encryption
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Encryption (Bucket, Result);
+      end if;
+   end Delete_Bucket_Encryption;
+
+   overriding procedure Put_Bucket_Ownership_Controls
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Ownership_Controls_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_Ownership_Controls (Bucket, Document, Result);
+      end if;
+   end Put_Bucket_Ownership_Controls;
+
+   overriding procedure Get_Bucket_Ownership_Controls
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Ownership_Controls
+           (Bucket, Document, Configured, Result);
+      end if;
+   end Get_Bucket_Ownership_Controls;
+
+   overriding procedure Delete_Bucket_Ownership_Controls
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Ownership_Controls (Bucket, Result);
+      end if;
+   end Delete_Bucket_Ownership_Controls;
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;

@@ -148,6 +148,72 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   --  Transactionally retain one encryption override.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical encryption bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Encryption
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional encryption-override snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether an override is retained
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Encryption
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove the retained encryption override.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Result Storage outcome
+   procedure Delete_Bucket_Encryption
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
+   --  Transactionally retain one ownership-controls document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical ownership-controls bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Ownership_Controls
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional ownership-controls snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether ownership controls are retained
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Ownership_Controls
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally remove retained ownership controls.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Result Storage outcome
+   procedure Delete_Bucket_Ownership_Controls
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
    procedure Put_Bucket_Public_Access_Block
      (Item          : in out Catalog;
       Bucket        : String;

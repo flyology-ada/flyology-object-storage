@@ -741,6 +741,138 @@ package body Object_Storage_Test_Cases is
          "bucket CORS persistence fixture put failed");
    end Exercise_Bucket_CORS;
 
+   procedure Exercise_Bucket_Configuration_Documents
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package US renames Ada.Strings.Unbounded;
+      Encryption_First : constant String :=
+        "<ServerSideEncryptionConfiguration><Rule>" &
+        "<ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256" &
+        "</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule>" &
+        "</ServerSideEncryptionConfiguration>";
+      Encryption_Second : constant String :=
+        "<ServerSideEncryptionConfiguration><Rule>" &
+        "<ApplyServerSideEncryptionByDefault><SSEAlgorithm>aws:kms" &
+        "</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule>" &
+        "</ServerSideEncryptionConfiguration>";
+      Ownership : constant String :=
+        "<OwnershipControls><Rule><ObjectOwnership>BucketOwnerEnforced" &
+        "</ObjectOwnership></Rule></OwnershipControls>";
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Store.Get_Bucket_Encryption
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket encryption get did not distinguish an absent bucket");
+      Store.Get_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "new bucket exposed an encryption override");
+      Store.Put_Bucket_Encryption
+        (Bucket, Encryption_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Encryption_First,
+         "bucket encryption override did not round trip");
+      Store.Put_Bucket_Encryption
+        (Bucket, Encryption_Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Encryption_Second,
+         "bucket encryption replacement did not preserve exact bytes");
+      Store.Delete_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket encryption reset left a retained override");
+      Store.Delete_Bucket_Encryption
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "bucket encryption reset was not idempotent");
+
+      Store.Get_Bucket_Ownership_Controls
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "new bucket exposed ownership controls");
+      Store.Put_Bucket_Ownership_Controls
+        (Bucket, Ownership, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Ownership_Controls
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Ownership,
+         "bucket ownership controls did not round trip");
+      Store.Delete_Bucket_Ownership_Controls
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Ownership_Controls
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "bucket ownership-controls deletion left visible state");
+      Store.Delete_Bucket_Ownership_Controls
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket ownership-controls deletion was not idempotent");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Ownership_Controls
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket ownership-controls get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Encryption
+              (Bucket, Encryption_First, null, Ada.Real_Time.Time_First,
+               Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket encryption put ignored deadline");
+      end;
+      Store.Put_Bucket_Encryption
+        (Bucket, Encryption_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Ownership_Controls
+        (Bucket, Ownership, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket configuration persistence fixtures failed");
+   end Exercise_Bucket_Configuration_Documents;
+
    procedure Exercise_Bucket_Scalar_Controls
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String)
@@ -2974,6 +3106,23 @@ package body Object_Storage_Test_Cases is
            (Result = Success and then CORS_Store.Bytes_Used = 0,
             "memory CORS cleanup did not release byte capacity");
       end;
+      declare
+         Configuration_Store : Memory.Store (2, 4, 600);
+      begin
+         Configuration_Store.Create_Bucket
+           ("configuration-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "create memory configuration bucket");
+         Exercise_Bucket_Configuration_Documents
+           (Configuration_Store, "configuration-bucket");
+         Assert
+           (Configuration_Store.Bytes_Used > 0,
+            "memory configuration documents were not charged to capacity");
+         Configuration_Store.Delete_Bucket
+           ("configuration-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Configuration_Store.Bytes_Used = 0,
+            "memory configuration cleanup did not release byte capacity");
+      end;
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -4439,6 +4588,7 @@ package body Object_Storage_Test_Cases is
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Exercise_Bucket_CORS (Store, "file-bucket");
+         Exercise_Bucket_Configuration_Documents (Store, "file-bucket");
          Exercise_Bucket_Scalar_Controls (Store, "file-bucket");
          declare
             package SIO renames Ada.Streams.Stream_IO;
@@ -4675,6 +4825,25 @@ package body Object_Storage_Test_Cases is
                and then US.To_String (Policy) =
                  "{""Version"":""2012-10-17"",""Statement"":[]}",
                "files bucket policy did not persist across reopen");
+         end;
+         declare
+            Document   : US.Unbounded_String;
+            Configured : Boolean;
+         begin
+            Store.Get_Bucket_Encryption
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0,
+               "files bucket encryption did not persist across reopen");
+            Store.Get_Bucket_Ownership_Controls
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document)'Length > 0,
+               "files ownership controls did not persist across reopen");
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

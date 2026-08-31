@@ -10,14 +10,14 @@ CreateSession	extended	missing	covered	missing	covered
 DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 DeleteBucketCors	extended	covered	covered	covered	covered
-DeleteBucketEncryption	extended	missing	covered	missing	covered
+DeleteBucketEncryption	extended	covered	covered	covered	covered
 DeleteBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 DeleteBucketInventoryConfiguration	extended	missing	covered	missing	covered
 DeleteBucketLifecycle	extended	missing	covered	missing	covered
 DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetricsConfiguration	extended	missing	covered	missing	covered
-DeleteBucketOwnershipControls	extended	missing	covered	missing	covered
+DeleteBucketOwnershipControls	extended	covered	covered	covered	covered
 DeleteBucketPolicy	extended	covered	covered	covered	covered
 DeleteBucketReplication	extended	missing	covered	missing	covered
 DeleteBucketTagging	extended	covered	covered	covered	covered
@@ -32,7 +32,7 @@ GetBucketAccelerateConfiguration	extended	covered	covered	covered	covered
 GetBucketAcl	extended	missing	covered	covered	covered
 GetBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 GetBucketCors	extended	covered	covered	covered	covered
-GetBucketEncryption	extended	missing	covered	missing	covered
+GetBucketEncryption	extended	covered	covered	covered	covered
 GetBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 GetBucketInventoryConfiguration	extended	missing	covered	missing	covered
 GetBucketLifecycle	extended	missing	covered	missing	covered
@@ -44,7 +44,7 @@ GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	covered	missing	covered
 GetBucketNotification	extended	missing	partial	missing	covered
 GetBucketNotificationConfiguration	extended	missing	covered	missing	covered
-GetBucketOwnershipControls	extended	missing	covered	missing	covered
+GetBucketOwnershipControls	extended	covered	covered	covered	covered
 GetBucketPolicy	extended	covered	covered	covered	covered
 GetBucketPolicyStatus	extended	missing	covered	missing	covered
 GetBucketReplication	extended	missing	covered	missing	covered
@@ -81,7 +81,7 @@ PutBucketAccelerateConfiguration	extended	covered	covered	covered	covered
 PutBucketAcl	extended	missing	covered	missing	covered
 PutBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 PutBucketCors	extended	covered	covered	covered	covered
-PutBucketEncryption	extended	missing	covered	missing	covered
+PutBucketEncryption	extended	covered	covered	covered	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 PutBucketInventoryConfiguration	extended	missing	covered	missing	covered
 PutBucketLifecycle	extended	missing	partial	missing	covered
@@ -90,7 +90,7 @@ PutBucketLogging	extended	missing	covered	missing	covered
 PutBucketMetricsConfiguration	extended	missing	covered	missing	covered
 PutBucketNotification	extended	missing	partial	missing	covered
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
-PutBucketOwnershipControls	extended	missing	covered	missing	covered
+PutBucketOwnershipControls	extended	covered	covered	covered	covered
 PutBucketPolicy	extended	covered	covered	covered	covered
 PutBucketReplication	extended	missing	covered	missing	covered
 PutBucketRequestPayment	extended	covered	covered	covered	covered

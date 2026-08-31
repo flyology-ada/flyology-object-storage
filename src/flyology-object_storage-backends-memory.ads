@@ -9,8 +9,9 @@ with Flyology.Object_Storage.Tags;
 --  independently bounds retained object generations (including markers),
 --  uploads, and parts; retaining history therefore consumes object slots.
 --  Byte_Capacity covers retained committed, staged, and in-progress object
---  payload buffers plus retained opaque bucket-policy bytes; atomic
---  replacement and multipart assembly therefore require coexistence headroom.
+--  payload buffers plus retained opaque bucket-configuration bytes, including
+--  policy, CORS, encryption, and ownership controls; atomic replacement and
+--  multipart assembly therefore require coexistence headroom.
 --  It implements the same contract as durable backends and is the reference
 --  oracle for conformance tests; capacity exhaustion is an ordinary reported
 --  outcome.
@@ -92,6 +93,96 @@ package Flyology.Object_Storage.Backends.Memory is
       Result     : out Status);
 
    overriding procedure Delete_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Retain one bounded encryption override in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical encryption bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Encryption
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory encryption-override snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether an override is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Encryption
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove the retained in-memory encryption override.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Encryption
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Retain one bounded ownership-controls document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical ownership-controls bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Ownership_Controls
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory ownership-controls snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether ownership controls are retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Ownership_Controls
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Remove retained in-memory ownership controls.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Ownership_Controls
      (Item     : in out Store;
       Bucket   : String;
       Token    : access Flyology.Cancellation.Token;
@@ -571,6 +662,11 @@ private
       Request_Payment : Bucket_Request_Payment_Status := Bucket_Owner_Pays;
       CORS_Configured : Boolean := False;
       CORS_Document : Ada.Strings.Unbounded.Unbounded_String;
+      Encryption_Configured : Boolean := False;
+      Encryption_Document : Ada.Strings.Unbounded.Unbounded_String;
+      Ownership_Controls_Configured : Boolean := False;
+      Ownership_Controls_Document :
+        Ada.Strings.Unbounded.Unbounded_String;
       Public_Access_Block_Configured : Boolean := False;
       Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
         (others => <>);
@@ -670,6 +766,24 @@ private
          Configured : out Boolean;
          Result     : out Status);
       procedure Delete_Bucket_CORS
+        (Name : String; Result : out Status);
+      procedure Put_Bucket_Encryption
+        (Name : String; Document : String; Result : out Status);
+      procedure Get_Bucket_Encryption
+        (Name       : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Delete_Bucket_Encryption
+        (Name : String; Result : out Status);
+      procedure Put_Bucket_Ownership_Controls
+        (Name : String; Document : String; Result : out Status);
+      procedure Get_Bucket_Ownership_Controls
+        (Name       : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Delete_Bucket_Ownership_Controls
         (Name : String; Result : out Status);
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;

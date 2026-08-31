@@ -750,6 +750,20 @@ package Flyology.Object_Storage.Backends is
    --  @return True when every backend can retain the document
    function Valid_Bucket_CORS_Document (Document : String) return Boolean;
 
+   --  Check the shared persistence bound for one canonical bucket-encryption
+   --  document. XML parsing and semantic validation remain at the S3 boundary.
+   --  @param Document Exact canonical encryption-configuration bytes
+   --  @return True when every backend can retain the document
+   function Valid_Bucket_Encryption_Document
+     (Document : String) return Boolean;
+
+   --  Check the shared persistence bound for one canonical ownership-controls
+   --  document. XML parsing and semantic validation remain at the S3 boundary.
+   --  @param Document Exact canonical ownership-controls bytes
+   --  @return True when every backend can retain the document
+   function Valid_Bucket_Ownership_Controls_Document
+     (Document : String) return Boolean;
+
    --  Atomically replace the complete canonical CORS document of an existing
    --  bucket.  The backend treats Document as bounded opaque bytes and does
    --  not depend on S3 XML or request types.
@@ -794,6 +808,101 @@ package Flyology.Object_Storage.Backends is
    --  @param Deadline Absolute operation deadline
    --  @param Result Mutation result
    procedure Delete_Bucket_CORS
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the complete canonical bucket-encryption document.
+   --  The backend treats Document as bounded opaque bytes.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical encryption-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Encryption
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical bucket-encryption override snapshot.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the bucket has a retained encryption override
+   --  @param Result Read result
+   procedure Get_Bucket_Encryption
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove the retained bucket-encryption override. The S3
+   --  boundary maps an absent override to its established SSE-S3 default;
+   --  deletion is idempotent when no override is retained.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Encryption
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Atomically replace the complete canonical ownership-controls document.
+   --  The backend treats Document as bounded opaque bytes.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical ownership-controls bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Ownership_Controls
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical ownership-controls snapshot.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the existing bucket has ownership controls
+   --  @param Result Read result
+   procedure Get_Bucket_Ownership_Controls
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove ownership-controls state. Deletion is idempotent for
+   --  an existing bucket without ownership controls.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_Ownership_Controls
      (Item     : in out Backend;
       Bucket   : String;
       Token    : access Flyology.Cancellation.Token;
@@ -1460,6 +1569,12 @@ private
    --  as bucket policy.  This private project-policy value bounds persisted
    --  canonical CORS bytes without creating a caller-visible resource limit;
    --  changing it changes accepted and durable CORS compatibility.
+
+   Maximum_Bucket_Configuration_Bytes : constant Byte_Count :=
+     Maximum_Bucket_CORS_Bytes;
+   --  Derived from the same established XML resource budget as CORS. This
+   --  private value bounds canonical encryption and ownership-control bytes
+   --  without exposing a caller-visible resource-policy constant.
 
    --  Monotonic publication order is backend-private metadata, not a wire or
    --  caller-visible value.  It disambiguates generations that share a
