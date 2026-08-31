@@ -1065,6 +1065,11 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Every modeled PutBucketVersioning input outside the bucket path. An
    --  empty Content_MD5 asks the client to generate the required digest from
    --  the exact serialized configuration document.
+   --  @field Content_MD5 Supplied digest or empty for generated MD5
+   --  @field Checksum_Algorithm Optional generated-checksum algorithm
+   --  @field MFA Optional exact multifactor-authentication value
+   --  @field Configuration Complete bucket-versioning configuration
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
    type Put_Bucket_Versioning_Parameters is record
       Content_MD5          : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_Algorithm   : Ada.Strings.Unbounded.Unbounded_String;
@@ -1073,6 +1078,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one PutBucketVersioning request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose versioning is updated
+   --  @param Parameters Configuration, integrity, and request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared PutBucketVersioning request
    function Prepare_Put_Bucket_Versioning
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -1082,9 +1096,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Terminal PutBucketVersioning response classification.
+   --  @enum Bucket_Versioning_Updated The update completed
+   --  @enum Put_Bucket_Versioning_Rejected An S3 rejection is present
    type Put_Bucket_Versioning_Outcome_Kind is
      (Bucket_Versioning_Updated, Put_Bucket_Versioning_Rejected);
 
+   --  Completed PutBucketVersioning response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Error Structured S3 rejection
    type Put_Bucket_Versioning_Outcome
      (Kind : Put_Bucket_Versioning_Outcome_Kind :=
        Put_Bucket_Versioning_Rejected)
@@ -1098,6 +1119,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded PutBucketVersioning HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Completed update or structured S3 rejection
    function Decode_Put_Bucket_Versioning_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -1106,6 +1134,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
       return Put_Bucket_Versioning_Outcome;
 
+   --  Execute one prepared PutBucketVersioning request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared PutBucketVersioning request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Completed update or structured S3 rejection
    function Execute_Put_Bucket_Versioning
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -1114,10 +1149,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
       return Put_Bucket_Versioning_Outcome;
 
+   --  Modeled GetBucketVersioning input outside the bucket path.
+   --  @field Expected_Bucket_Owner Optional bucket-owner precondition
    type Get_Bucket_Versioning_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Build and sign one bodyless GetBucketVersioning request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose versioning is requested
+   --  @param Parameters Optional request headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared GetBucketVersioning request
    function Prepare_Get_Bucket_Versioning
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -1127,9 +1173,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Terminal GetBucketVersioning response classification.
+   --  @enum Bucket_Versioning_Found Modeled configuration result is available
+   --  @enum Get_Bucket_Versioning_Rejected An S3 rejection is present
    type Get_Bucket_Versioning_Outcome_Kind is
      (Bucket_Versioning_Found, Get_Bucket_Versioning_Rejected);
 
+   --  Completed GetBucketVersioning response.
+   --  @field Kind Active response variant
+   --  @field Status Carried HTTP response status
+   --  @field Configuration Presence-preserving versioning configuration
+   --  @field Error Structured S3 rejection
    type Get_Bucket_Versioning_Outcome
      (Kind : Get_Bucket_Versioning_Outcome_Kind :=
        Get_Bucket_Versioning_Rejected)
@@ -1143,6 +1197,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one already bounded GetBucketVersioning HTTP result.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Versioning configuration or structured S3 rejection
    function Decode_Get_Bucket_Versioning_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -1151,6 +1212,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
       return Get_Bucket_Versioning_Outcome;
 
+   --  Execute one prepared GetBucketVersioning request.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact prepared GetBucketVersioning request
+   --  @param Timeout Whole-exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Versioning configuration or structured S3 rejection
    function Execute_Get_Bucket_Versioning
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
