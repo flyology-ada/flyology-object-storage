@@ -194,6 +194,11 @@ GENERATED_MUTATION_START_LABELS = (
         "bucket metadata configuration",
         "CreateBucketMetadataConfiguration",
     ),
+    (
+        "Set_Metadata_Inventory_Table_Configuration",
+        "metadata inventory-table configuration",
+        "UpdateBucketMetadataInventoryTableConfiguration",
+    ),
     ("Set_ACL", "bucket access-control policy", "PutBucketAcl"),
     (
         "Set_Inventory_Configuration",
@@ -496,6 +501,12 @@ def assert_generated_mutation_constructor_documentation(source: str) -> None:
         for line in comment[1:]:
             if line.startswith("@param ") or line.startswith("@return "):
                 logical.append(line)
+            elif len(logical) == 1:
+                assert line and not line.startswith("@"), (
+                    f"generated {public_name} constructor summary "
+                    "continuation is malformed"
+                )
+                logical[0] += " " + line
             else:
                 assert (
                     logical[-1].startswith("@param ")
@@ -9776,6 +9787,7 @@ def main() -> None:
         "PutBucketInventoryConfiguration",
         "PutBucketLogging",
         "PutBucketWebsite",
+        "UpdateBucketMetadataInventoryTableConfiguration",
     }
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(

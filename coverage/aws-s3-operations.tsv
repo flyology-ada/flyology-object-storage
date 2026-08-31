@@ -109,7 +109,7 @@ RenameObject	extended	missing	partial	missing	missing
 RestoreObject	extended	missing	partial	missing	missing
 SelectObjectContent	extended	missing	partial	missing	missing
 UpdateBucketMetadataAnnotationTableConfiguration	extended	missing	partial	missing	missing
-UpdateBucketMetadataInventoryTableConfiguration	extended	missing	partial	missing	missing
+UpdateBucketMetadataInventoryTableConfiguration	extended	missing	covered	missing	covered
 UpdateBucketMetadataJournalTableConfiguration	extended	missing	partial	missing	missing
 UpdateObjectEncryption	extended	missing	partial	missing	missing
 UploadPart	core	covered	covered	covered	covered

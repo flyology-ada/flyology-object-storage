@@ -2014,6 +2014,20 @@ GENERATED_MUTATIONS = (
         reconciliation="Get_Metadata_Configuration",
     ),
     Generated_Mutation(
+        operation="UpdateBucketMetadataInventoryTableConfiguration",
+        ada_stem="Set_Metadata_Inventory_Table_Configuration",
+        model_stem="Update_Bucket_Metadata_Inventory_Table_Configuration",
+        public_name="Set_Metadata_Inventory_Table_Configuration",
+        label="metadata inventory-table configuration",
+        value_unit="Metadata_Configurations",
+        value_type="Inventory_Table_Configuration",
+        parameters_type="Bucket_Control_Mutation_Parameters",
+        disposition_stem="Bucket_Metadata_Configuration_Mutation",
+        declares_disposition=False,
+        has_identifier=False,
+        reconciliation="Get_Metadata_Configuration",
+    ),
+    Generated_Mutation(
         operation="PutBucketAcl",
         ada_stem="Put_Bucket_ACL",
         model_stem="Put_Bucket_Acl",
@@ -2777,10 +2791,17 @@ def _generated_mutation_low_level_body(
             if http.requires_checksum
             else ""
         )
-        serializer = (
-            "S3.Metadata_Configurations.Serialize_Create"
-            if item.operation == "CreateBucketMetadataConfiguration"
-            else f"S3.Generated_{item.ada_stem}_XML.Serialize"
+        metadata_serializers = {
+            "CreateBucketMetadataConfiguration": (
+                "S3.Metadata_Configurations.Serialize_Create"
+            ),
+            "UpdateBucketMetadataInventoryTableConfiguration": (
+                "S3.Metadata_Configurations.Serialize_Update_Inventory"
+            ),
+        }
+        serializer = metadata_serializers.get(
+            item.operation,
+            f"S3.Generated_{item.ada_stem}_XML.Serialize",
         )
         declarations = common + (
             "\n" if common else ""
@@ -2819,7 +2840,7 @@ def _generated_mutation_low_level_body(
 {declarations}
    begin
       return Prepare_Bucket_Control_Mutation
-        (Model.{item.ada_stem}_Operation,
+        (Model.{item.model_stem}_Operation,
          "{http.method}", "{http.subresource}",
          Origin, Style, Bucket, Payload, {md5}, (others => <>),
          False, {parameters}, Identity, Region, Timestamp,
@@ -2827,7 +2848,7 @@ def _generated_mutation_low_level_body(
    exception
       when S3.{item.value_unit}.{(
           'Malformed_Metadata_Configuration'
-          if item.operation == 'CreateBucketMetadataConfiguration'
+          if item.operation in METADATA_MUTATION_OPERATIONS
           else 'Malformed_' + item.value_unit
       )} =>
          raise Invalid_Request with
@@ -2856,7 +2877,7 @@ def _generated_mutation_low_level_body(
    begin
       if Prepared.Operation /= Bucket_Control_Mutation_Operation
         or else Prepared.Modeled_Operation /=
-          Model.{item.ada_stem}_Operation
+          Model.{item.model_stem}_Operation
       then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
@@ -2903,6 +2924,9 @@ def _generated_mutation_provider_spec(
                 f"@enum {item.exchange_failed} No complete modeled "
                 "response exists",
             )
+        )
+        result_header = ada_comment(
+            f"Shape of one terminal {item.operation} call."
         )
         typed_comment = ada_comment(
             f"Typed {item.label} replacement result. The defaults are "
@@ -2995,7 +3019,7 @@ def _generated_mutation_provider_spec(
             )
         )
         parts.append(
-            f"""   --  Shape of one terminal {item.operation} call.
+            f"""{result_header}
 {result_comments}
    type {item.result_kind} is
      ({item.response_available},
@@ -3105,6 +3129,31 @@ def _generated_mutation_provider_private_spec(
     parts: list[str] = []
     for item in mutations:
         family = item.ada_stem + "_Mutations"
+        failure_result = (
+            f"      Detail    : String) return {item.result_type};"
+        )
+        if len(failure_result) > 79:
+            failure_result = (
+                "      Detail    : String)\n"
+                f"      return {item.result_type};"
+            )
+        start_exchange = (
+            f"        Start_Exchange    => Low_Level.{item.ada_stem},"
+        )
+        if len(start_exchange) > 79:
+            start_exchange = (
+                "        Start_Exchange    =>\n"
+                f"          Low_Level.{item.ada_stem},"
+            )
+        operation_name = (
+            f'        Operation_Name    => "{item.operation}",'
+            if len('        Operation_Name    => "' + item.operation + '",')
+            <= 79
+            else (
+                "        Operation_Name    =>\n"
+                f'          "{item.operation}",'
+            )
+        )
         parts.append(
             f"""   --  @exclude
    function Decode_{item.ada_stem}_Family_Response
@@ -3123,14 +3172,14 @@ def _generated_mutation_provider_private_spec(
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
-      Detail    : String) return {item.result_type};
+{failure_result}
 
    --  @exclude
    package {family} is new
      Flyology.Object_Storage.Client.REST_XML_Mutations
        (Result_Type       => {item.result_type},
-        Operation_Name    => "{item.operation}",
-        Start_Exchange    => Low_Level.{item.ada_stem},
+{operation_name}
+{start_exchange}
         Decode_Response   =>
           Decode_{item.ada_stem}_Family_Response,
         Normalize_Failure =>
@@ -3230,6 +3279,15 @@ def _generated_mutation_provider_body(
     ]
     for item in mutations:
         family = item.ada_stem + "_Mutations"
+        restart_message = item.operation + " restart changed retained owner"
+        restart_expression = (
+            f'           "{restart_message}";'
+            if len('           "' + restart_message + '";') <= 79
+            else (
+                f'           "{item.operation} restart " &\n'
+                '           "changed retained owner";'
+            )
+        )
         response_kind_line = (
             f"        (Kind        => {item.response_available},"
         )
@@ -3247,6 +3305,51 @@ def _generated_mutation_provider_body(
             if len(release_source_line) <= 79
             else f"      {family}.Release_Source\n        (Item.State);"
         )
+        failure_result = (
+            f"      Detail    : String) return {item.result_type} is"
+        )
+        if len(failure_result) > 79:
+            failure_result = (
+                "      Detail    : String)\n"
+                f"      return {item.result_type} is"
+            )
+        exchange_failed_line = (
+            f"        (Kind        => {item.exchange_failed},"
+        )
+        exchange_failed = (
+            exchange_failed_line
+            if len(exchange_failed_line) <= 79
+            else (
+                "        (Kind        =>\n"
+                f"           {item.exchange_failed},"
+            )
+        )
+        write_line = f"      {family}.Write (Item.State, Data);"
+        write_call = (
+            write_line
+            if len(write_line) <= 79
+            else f"      {family}.Write\n        (Item.State, Data);"
+        )
+        finalize_line = f"      {family}.Finalize (Item.State);"
+        finalize_call = (
+            finalize_line
+            if len(finalize_line) <= 79
+            else f"      {family}.Finalize\n        (Item.State);"
+        )
+        restart_operation = (
+            f"      Operation  : in out {item.operation_type}) is"
+        )
+        if len(restart_operation) > 79:
+            restart_operation = (
+                "      Operation  : in out\n"
+                f"        {item.operation_type}) is"
+            )
+        constructor_type = f"        {item.operation_type} (Set, Client, Token)"
+        if len(constructor_type) > 79:
+            constructor_type = (
+                f"        {item.operation_type}\n"
+                "          (Set, Client, Token)"
+            )
         parts.append(
             f"""   function Failed_{item.ada_stem}_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
@@ -3295,10 +3398,10 @@ def _generated_mutation_provider_body(
      (Kind      : HTTP_Client.Exchange_Result_Kind;
       Admission : HTTP_Client.Admission_Certainty;
       Phase     : HTTP_Client.Exchange_Phase;
-      Detail    : String) return {item.result_type} is
+{failure_result}
    begin
       return
-        (Kind        => {item.exchange_failed},
+{exchange_failed}
          Disposition =>
            Failed_{item.ada_stem}_Disposition
              (Kind, Admission),
@@ -3368,7 +3471,7 @@ def _generated_mutation_provider_body(
      (Item : in out {item.operation_type};
       Data : Ada.Streams.Stream_Element_Array) is
    begin
-      {family}.Write (Item.State, Data);
+{write_call}
    end Write;
 
    overriding procedure Drive
@@ -3395,7 +3498,7 @@ def _generated_mutation_provider_body(
       exception
          when others => null;
       end;
-      {family}.Finalize (Item.State);
+{finalize_call}
    end Finalize;
 
    procedure Start_{item.ada_stem}
@@ -3414,7 +3517,7 @@ def _generated_mutation_provider_body(
    begin
       if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
          raise Program_Error with
-           "{item.operation} restart changed retained owner";
+{restart_expression}
       end if;
       {family}.Start
         (Operation.State, Operation'Access,
@@ -3436,7 +3539,7 @@ def _generated_mutation_provider_body(
       Style      : Low_Level.Addressing_Style;
       Limits     : S3.XML.Parse_Limits;
       Token      : access Flyology.Cancellation.Token;
-      Operation  : in out {item.operation_type}) is
+{restart_operation}
    begin
       Start_{item.ada_stem}
         (Operation, Client, Origin, Bucket, Value, Parameters, Identity,
@@ -3459,7 +3562,7 @@ def _generated_mutation_provider_body(
       return {item.operation_type} is
    begin
       return Result :
-        {item.operation_type} (Set, Client, Token)
+{constructor_type}
       do
          Start_{item.ada_stem}
            (Result, Client, Origin, Bucket, Value, Parameters, Identity,
@@ -3513,6 +3616,20 @@ def _generated_mutation_qualification_text(
     item: Generated_Mutation,
 ) -> tuple[str, str]:
     """Generate one typed adapter from the reviewed mutation-family oracle."""
+    def selected_name(
+        prefix: str,
+        package: str,
+        name: str,
+        continuation: str,
+        suffix: str = "",
+    ) -> str:
+        one_line = prefix + package + "." + name + suffix
+        return (
+            one_line
+            if len(one_line) <= 79
+            else prefix + package + ".\n" + continuation + name + suffix
+        )
+
     main = "S3_" + item.ada_stem + "_Qualification"
     unit = main.lower()
     value_package = "Flyology.Object_Storage.S3." + item.value_unit
@@ -3556,6 +3673,21 @@ def _generated_mutation_qualification_text(
          Role =>
            (Is_Set => True,
             Value => US.To_Unbounded_String ("qualified-role"))));'''
+    elif item.operation == (
+        "UpdateBucketMetadataInventoryTableConfiguration"
+    ):
+        identifier_declaration = ""
+        value_document = ""
+        parameters = f'''   Parameters : constant
+     Low_Level.{item.parameters_type} :=
+     (Content_MD5           => US.Null_Unbounded_String,
+      Checksum_Algorithm    => US.To_Unbounded_String ("SHA256"),
+      Expected_Bucket_Owner =>
+        US.To_Unbounded_String (Expected_Bucket_Owner));'''
+        value_declarations = f'''   Value : constant {value_type} :=
+     (Is_Set              => True,
+      Configuration_State => {item.value_unit}.Inventory_Enabled,
+      Encryption          => (Is_Set => False, others => <>));'''
     elif item.operation == "PutBucketInventoryConfiguration":
         identifier_declaration = '''   Identifier : constant String :=
      Input ("ID");'''
@@ -3723,8 +3855,47 @@ def _generated_mutation_qualification_text(
     )
     document_declaration = (
         ""
-        if item.operation == "CreateBucketMetadataConfiguration"
+        if item.operation in METADATA_MUTATION_OPERATIONS
         else f"   Document : constant String :=\n{value_document};"
+    )
+    main_declaration = (
+        f"procedure {main} is"
+        if len("procedure " + main + " is") <= 79
+        else f"procedure\n  {main}\nis"
+    )
+    result_kind_use = selected_name(
+        "   use type ", "Buckets", item.result_kind, "     ", ";"
+    )
+    typed_result = selected_name(
+        "     ", "Buckets", item.result_type, "       ", ";"
+    )
+    typed_result_kind = selected_name(
+        "     ", "Buckets", item.result_kind, "       ", ";"
+    )
+    available_value = selected_name(
+        "     ", "Buckets", item.response_available, "       ", ";"
+    )
+    failed_value = selected_name(
+        "     ", "Buckets", item.exchange_failed, "       ", ";"
+    )
+    rejection_execute = selected_name(
+        "           ", "Low_Level", item.low_execute, "             "
+    )
+    low_prepare = selected_name(
+        "           ", "Low_Level", item.low_prepare, "             "
+    )
+    low_execute = selected_name(
+        "           ", "Low_Level", item.low_execute, "             "
+    )
+    operation_declaration = (
+        f"         Operation : Buckets.{item.operation_type} :="
+        if len("         Operation : Buckets." + item.operation_type + " :=")
+        <= 79
+        else (
+            "         Operation :\n"
+            "           Buckets.\n"
+            f"             {item.operation_type} :="
+        )
     )
     text = f'''with Ada.Environment_Variables;
 with Ada.Strings.Unbounded;
@@ -3739,7 +3910,7 @@ with Flyology.Object_Storage.S3.XML;
 with Flyology.Operations;
 
 --  Generated by tools/s3-operation.py; do not edit.
-procedure {main} is
+{main_declaration}
    package Environment renames Ada.Environment_Variables;
    package HTTP_Client renames Flyology.HTTP.Client;
    package Client renames Flyology.Object_Storage.Client;
@@ -3752,20 +3923,20 @@ procedure {main} is
 
    use type Client.Failure_Reason;
    use type Buckets.{item.disposition_type};
-   use type Buckets.{item.result_kind};
+{result_kind_use}
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Put_Bucket_Control_Outcome_Kind;
 
    subtype Typed_Result is
-     Buckets.{item.result_type};
+{typed_result}
    subtype Typed_Result_Kind is
-     Buckets.{item.result_kind};
+{typed_result_kind}
    subtype Typed_Disposition is
      Buckets.{item.disposition_type};
    Available : constant Typed_Result_Kind :=
-     Buckets.{item.response_available};
+{available_value}
    Failed : constant Typed_Result_Kind :=
-     Buckets.{item.exchange_failed};
+{failed_value}
    Completed : constant Typed_Disposition :=
      Buckets.{item.completed};
    Definitely_Not_Applied : constant Typed_Disposition :=
@@ -3891,7 +4062,7 @@ procedure {main} is
    begin
       declare
          Unexpected : constant Low_Level.Put_Bucket_Control_Outcome :=
-           Low_Level.{item.low_execute}
+{rejection_execute}
              (HTTP, Wrong, Socket_Timeout, null, Limits);
       begin
          raise Program_Error with
@@ -3910,11 +4081,11 @@ procedure {main} is
       Check_Exact_Operation_Rejection;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.{item.low_prepare}
+{low_prepare}
              (Origin, Low_Level.Path_Style, Bucket, Value, Parameters,
               Identity, "us-east-1", "20130524T000000Z", Limits);
          Result : constant Low_Level.Put_Bucket_Control_Outcome :=
-           Low_Level.{item.low_execute}
+{low_execute}
              (HTTP, Prepared, Socket_Timeout, null, Limits);
       begin
          Require
@@ -3931,7 +4102,7 @@ procedure {main} is
       declare
          --  Derived owner stack: provider, HTTP exchange, transport child.
          Set : aliased Operations.Completion_Set (3);
-         Operation : Buckets.{item.operation_type} :=
+{operation_declaration}
            Buckets.{item.public_name}
              (Set'Access, HTTP'Access, Origin, Bucket, Value, Parameters,
               Identity, HTTP_Client.Deadline_After (Socket_Timeout),
@@ -3945,7 +4116,7 @@ procedure {main} is
    elsif Lane = "restart" then
       declare
          Set : aliased Operations.Completion_Set (3);
-         Operation : Buckets.{item.operation_type} :=
+{operation_declaration}
            Buckets.{item.public_name}
              (Set'Access, HTTP'Access, Origin, Bucket, Value, Parameters,
               Identity, HTTP_Client.Deadline_After (Socket_Timeout),
@@ -4017,7 +4188,7 @@ def generated_ada_outputs(
         outputs[s3_operation.ROOT / "src" / f"{unit}.ads"] = spec
         outputs[s3_operation.ROOT / "src" / f"{unit}.adb"] = body
     for item in mutations:
-        if item.operation != "CreateBucketMetadataConfiguration":
+        if item.operation not in METADATA_MUTATION_OPERATIONS:
             unit, spec, body = mutation_serializer_text(
                 model, item.operation
             )
@@ -4070,7 +4241,7 @@ def generated_ada_outputs(
                 "with\n  Flyology.Object_Storage."
                 + item.serializer_package + ";"
                 for item in mutations
-                if item.operation != "CreateBucketMetadataConfiguration"
+                if item.operation not in METADATA_MUTATION_OPERATIONS
             ]
         ),
         "package body Flyology.Object_Storage.Client.Low_Level is\n",
@@ -4121,6 +4292,9 @@ def generated_ada_outputs(
         / "src/flyology-object_storage-client-buckets.ads"
     )
     provider_spec = provider_spec_path.read_text(encoding="utf-8")
+    mutation_value_units = tuple(
+        dict.fromkeys(item.value_unit for item in mutations)
+    )
     provider_spec = materialize_generated_region(
         provider_spec,
         "BUCKETS_CONTEXT",
@@ -4130,8 +4304,8 @@ def generated_ada_outputs(
                 "Paginated_REST_XML_Reads;"
             ] if list_directory_enabled else [])
             + [
-                "with Flyology.Object_Storage.S3." + item.value_unit + ";"
-                for item in mutations
+                "with Flyology.Object_Storage.S3." + value_unit + ";"
+                for value_unit in mutation_value_units
             ]
         ),
         "--  High-level bucket operations over a configured Flyology HTTP client.\n",

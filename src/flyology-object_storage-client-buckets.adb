@@ -26736,6 +26736,273 @@ package body Flyology.Object_Storage.Client.Buckets is
       end;
    end Create_Metadata_Configuration;
 
+   function Failed_Set_Metadata_Inventory_Table_Configuration_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Bucket_Metadata_Configuration_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then Bucket_Metadata_Configuration_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied
+      else Bucket_Metadata_Configuration_Mutation_Outcome_Unknown);
+
+   function Normalize_Set_Metadata_Inventory_Table_Configuration_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Set_Metadata_Inventory_Table_Configuration_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Generated_Mutation_Rejection (Value.Status, Code);
+   begin
+      return
+        (Kind        =>
+           Set_Metadata_Inventory_Table_Configuration_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Bucket_Metadata_Configuration_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then Bucket_Metadata_Configuration_Mutation_Completed
+            elsif Conclusive
+            then Bucket_Metadata_Configuration_Mutation_Definitely_Not_Applied
+            else Bucket_Metadata_Configuration_Mutation_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then No_Failure
+            else Generated_Mutation_Response_Failure
+              (Value.Status, Code)),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Set_Metadata_Inventory_Table_Configuration_Response;
+
+   function Normalize_Set_Metadata_Inventory_Table_Configuration_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String)
+      return Set_Metadata_Inventory_Table_Configuration_Result is
+   begin
+      return
+        (Kind        =>
+           Set_Metadata_Inventory_Table_Configuration_Exchange_Failed,
+         Disposition =>
+           Failed_Set_Metadata_Inventory_Table_Configuration_Disposition
+             (Kind, Admission),
+         Failure     =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Set_Metadata_Inventory_Table_Configuration_Failure;
+
+   function Decode_Set_Metadata_Inventory_Table_Configuration_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Set_Metadata_Inventory_Table_Configuration_Result is
+   begin
+      pragma Unreferenced (Response, Phase);
+      return Normalize_Set_Metadata_Inventory_Table_Configuration_Response
+        (Low_Level.Decode_Put_Bucket_Control_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission);
+   end Decode_Set_Metadata_Inventory_Table_Configuration_Family_Response;
+
+   overriding function Declared_Length
+     (Item : Set_Metadata_Inventory_Table_Configuration_Operation)
+      return HTTP_Client.Body_Length is
+     (Set_Metadata_Inventory_Table_Configuration_Mutations.Declared_Length
+        (Item.State));
+
+   overriding procedure Read_Now
+     (Item   : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Read_Now
+        (Item.State, Data, Last, Result);
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Source_Wait_Source
+        (Item.State, Required, Descriptor, Ready_Now);
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Release_Source
+        (Item.State);
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Write
+        (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Drive
+        (Item.State, Item'Access, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Request_Cancellation
+        (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Set_Metadata_Inventory_Table_Configuration_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Finalize
+        (Item.State);
+   end Finalize;
+
+   procedure Start_Set_Metadata_Inventory_Table_Configuration
+     (Operation  : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Inventory_Table_Configuration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "UpdateBucketMetadataInventoryTableConfiguration restart " &
+           "changed retained owner";
+      end if;
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Start
+        (Operation.State, Operation'Access,
+         Low_Level.Prepare_Set_Metadata_Inventory_Table_Configuration
+           (Origin, Style, Bucket, Value, Parameters, Identity, Region,
+            Timestamp, Limits),
+         Deadline, Limits);
+   end Start_Set_Metadata_Inventory_Table_Configuration;
+
+   procedure Set_Metadata_Inventory_Table_Configuration
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Inventory_Table_Configuration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out
+        Set_Metadata_Inventory_Table_Configuration_Operation) is
+   begin
+      Start_Set_Metadata_Inventory_Table_Configuration
+        (Operation, Client, Origin, Bucket, Value, Parameters, Identity,
+         Deadline, Region, Style, Limits, Token);
+   end Set_Metadata_Inventory_Table_Configuration;
+
+   function Set_Metadata_Inventory_Table_Configuration
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Inventory_Table_Configuration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Set_Metadata_Inventory_Table_Configuration_Operation is
+   begin
+      return Result :
+        Set_Metadata_Inventory_Table_Configuration_Operation
+          (Set, Client, Token)
+      do
+         Start_Set_Metadata_Inventory_Table_Configuration
+           (Result, Client, Origin, Bucket, Value, Parameters, Identity,
+            Deadline, Region, Style, Limits, Token);
+      end return;
+   end Set_Metadata_Inventory_Table_Configuration;
+
+   procedure Finish
+     (Operation : in out Set_Metadata_Inventory_Table_Configuration_Operation;
+      Result    : out Set_Metadata_Inventory_Table_Configuration_Result) is
+   begin
+      Set_Metadata_Inventory_Table_Configuration_Mutations.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Set_Metadata_Inventory_Table_Configuration
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Metadata_Configurations.Inventory_Table_Configuration;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Set_Metadata_Inventory_Table_Configuration_Result
+   is
+      --  Derived owner stack: mutation parent, HTTP exchange, and transport.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Set_Metadata_Inventory_Table_Configuration_Operation :=
+           Set_Metadata_Inventory_Table_Configuration
+             (Set'Access, Client'Access, Origin, Bucket, Value, Parameters,
+              Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : Set_Metadata_Inventory_Table_Configuration_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Set_Metadata_Inventory_Table_Configuration;
+
    function Failed_Put_Bucket_ACL_Disposition
      (Kind      : HTTP_Client.Exchange_Result_Kind;
       Admission : HTTP_Client.Admission_Certainty)

@@ -4967,6 +4967,276 @@
           }
         }
       ]
+    },
+    "UpdateBucketMetadataInventoryTableConfiguration": {
+      "adapter": "./bin/s3_set_metadata_inventory_table_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?metadataInventoryTable"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?metadataInventoryTable"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?metadataInventoryTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?metadataInventoryTable"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?metadataInventoryTable"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?metadataInventoryTable"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?metadataInventoryTable"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?metadataInventoryTable"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?metadataInventoryTable"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryTableConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ConfigurationState>ENABLED</ConfigurationState></InventoryTableConfiguration>",
+              "request_headers": {
+                "content-md5": "4iNPNDIR8Scw4WYQS/kHiQ==",
+                "x-amz-checksum-sha256": "QxG8QnNPySGi8XnMLRt9jMkEuEx4iFRi57b+eFzbFSw=",
+                "x-amz-content-sha256": "4311bc42734fc921a2f179cc2d1b7d8cc904b84c78885462e7b6fe785cdb152c",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?metadataInventoryTable"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 156
+          }
+        }
+      ]
     }
   }
 }

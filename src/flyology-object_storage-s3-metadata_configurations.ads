@@ -219,4 +219,15 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
      (Value  : Metadata_Configuration_Request;
       Limits : XML.Parse_Limits) return String;
 
+   --  Serialize one exact UpdateBucketMetadataInventoryTableConfiguration
+   --  payload. Value.Is_Set must be true because the model requires the
+   --  payload member; the flag remains presence-preserving for create calls.
+   --  @param Value Complete caller-selected inventory-table update
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Metadata_Configuration Value violates the model
+   function Serialize_Update_Inventory
+     (Value  : Inventory_Table_Configuration;
+      Limits : XML.Parse_Limits) return String;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;

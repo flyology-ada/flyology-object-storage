@@ -773,4 +773,29 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
            "metadata serialization violates caller limits";
    end Serialize_Create;
 
+   function Serialize_Update_Inventory
+     (Value  : Inventory_Table_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      if not Value.Is_Set then
+         raise Malformed_Metadata_Configuration with
+           "missing inventory-table configuration update";
+      end if;
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "InventoryTableConfiguration",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      XML_Writers.Text_Element
+        (Item, "ConfigurationState",
+         Inventory_State_Image (Value.Configuration_State));
+      Write_Encryption (Item, Value.Encryption);
+      return XML_Writers.Finish (Item, "InventoryTableConfiguration");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Configuration with
+           "metadata inventory update serialization violates caller limits";
+   end Serialize_Update_Inventory;
+
 end Flyology.Object_Storage.S3.Metadata_Configurations;
