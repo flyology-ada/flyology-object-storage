@@ -7456,6 +7456,10 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Outcome;
 
+   --  Presence-preserving inclusive source-byte range.
+   --  @field Is_Set Whether the range is supplied
+   --  @field First Inclusive first source-byte offset
+   --  @field Last Inclusive last source-byte offset
    type Optional_Copy_Source_Range is record
       Is_Set : Boolean := False;
       First  : Byte_Count := 0;
@@ -7464,6 +7468,23 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Every modeled UploadPartCopy request member. Copy_Source is the exact
    --  x-amz-copy-source value, including any caller-selected version query.
+   --  @field Part_Number Required destination part number
+   --  @field Upload_ID Required multipart upload identifier
+   --  @field Copy_Source Required source-object wire value
+   --  @field Copy_Source_If_Match Optional source tag precondition
+   --  @field Copy_Source_If_Modified_Since Optional source time precondition
+   --  @field Copy_Source_If_None_Match Optional source nonmatch precondition
+   --  @field Copy_Source_If_Unmodified_Since Optional source time condition
+   --  @field Source_Range Optional inclusive source-byte range
+   --  @field SSE_Customer_Algorithm Optional destination key algorithm
+   --  @field SSE_Customer_Key Optional destination customer key
+   --  @field SSE_Customer_Key_MD5 Optional destination key MD5
+   --  @field Copy_Source_SSE_Customer_Algorithm Optional source decryption
+   --  @field Copy_Source_SSE_Customer_Key Optional source customer key
+   --  @field Copy_Source_SSE_Customer_Key_MD5 Optional source key MD5
+   --  @field Request_Payer Optional requester-pays header value
+   --  @field Expected_Bucket_Owner Optional destination-owner precondition
+   --  @field Expected_Source_Bucket_Owner Optional source-owner precondition
    type Upload_Part_Copy_Parameters is record
       Part_Number       : S3.Core.Part_Number := S3.Core.Part_Number'First;
       Upload_ID         : Ada.Strings.Unbounded.Unbounded_String;
@@ -7489,6 +7510,16 @@ package Flyology.Object_Storage.Client.Low_Level is
         Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Prepare one signed bodyless UploadPartCopy request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Destination bucket
+   --  @param Key Destination object key
+   --  @param Parameters Complete modeled part-copy controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Prepared bodyless UploadPartCopy request metadata
    function Prepare_Upload_Part_Copy
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -7499,6 +7530,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Modeled UploadPartCopy success metadata.
+   --  @field Copy_Source_Version_ID Optional returned source version
+   --  @field Copy_Part Parsed copied-part result document
+   --  @field Server_Side_Encryption Optional returned encryption algorithm
+   --  @field SSE_Customer_Algorithm Optional returned customer algorithm
+   --  @field SSE_Customer_Key_MD5 Optional returned customer-key MD5
+   --  @field SSE_KMS_Key_ID Optional returned KMS key identifier
+   --  @field Bucket_Key_Enabled Optional returned bucket-key header text
+   --  @field Request_Charged Optional returned requester-charge value
    type Upload_Part_Copy_Result is record
       Copy_Source_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
       Copy_Part              : S3.Multipart.Copy_Part_Result;
@@ -7510,9 +7550,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged        : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Distinguish copied part from structured S3 rejection.
+   --  @enum Part_Copied Validated HTTP-200 copied-part result was decoded
+   --  @enum Copy_Part_Rejected Structured S3 error was decoded
    type Upload_Part_Copy_Outcome_Kind is
      (Part_Copied, Copy_Part_Rejected);
 
+   --  Result of decoding or executing one UploadPartCopy operation.
+   --  @field Kind Outcome discriminator
+   --  @field Status Exact HTTP response status
+   --  @field Result Validated copied-part metadata on success
+   --  @field Error Structured S3 error on rejection
    type Upload_Part_Copy_Outcome
      (Kind : Upload_Part_Copy_Outcome_Kind := Copy_Part_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
@@ -7524,6 +7572,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode one bounded part-copy response from supplied header values.
+   --  @param Status HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Headers Caller-supplied modeled response headers
+   --  @param Request_ID Supplied request identifier, possibly empty
+   --  @param Host_ID Supplied host identifier, possibly empty
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Copied-part metadata or structured S3 rejection
    function Decode_Upload_Part_Copy_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -7550,6 +7606,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Copy_Outcome;
 
+   --  Execute one bodyless UploadPartCopy attempt without automatic replay.
+   --  @param Client Configured client for the prepared request origin
+   --  @param Prepared Exact matching prepared request
+   --  @param Timeout Whole synchronous exchange timeout
+   --  @param Token Optional cooperative cancellation source
+   --  @param Limits Caller-selected XML and S3 error limits
+   --  @return Copied-part metadata or structured S3 rejection
    function Execute_Upload_Part_Copy
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -9101,6 +9164,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start a prepared UploadPartCopy exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Signed bodyless request retained through terminal drain
+   --  @param Source One-shot empty source retained through terminal drain
+   --  @param Sink Bounded response sink retained through terminal drain
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
    procedure Upload_Part_Copy
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
