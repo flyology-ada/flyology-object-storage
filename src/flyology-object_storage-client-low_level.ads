@@ -8418,6 +8418,8 @@ private
       Token_Kind : Session_Token_Kind := Security_Token;
    end record;
 
+   --  @exclude
+   --  @param Item Credential storage wiped during finalization
    overriding procedure Finalize (Item : in out Credentials);
 
    type Operation_Kind is
