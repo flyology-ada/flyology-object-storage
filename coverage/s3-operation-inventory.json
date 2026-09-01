@@ -1995,13 +1995,20 @@
     },
     "GetBucketNotification": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2017,31 +2024,42 @@
           "tools/verify-bucket-notification-configuration-preparation.py",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "GetBucketNotificationConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2057,18 +2075,22 @@
           "tools/verify-bucket-notification-configuration-preparation.py",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
@@ -4062,13 +4084,20 @@
     },
     "PutBucketNotification": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -4084,31 +4113,42 @@
           "tools/verify-bucket-notification-configuration-preparation.py",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "PutBucketNotificationConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -4124,18 +4164,22 @@
           "tools/verify-bucket-notification-configuration-preparation.py",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_bucket_notification_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"

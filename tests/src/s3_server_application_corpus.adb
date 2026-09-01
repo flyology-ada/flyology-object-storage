@@ -38,6 +38,7 @@ with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
+with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
@@ -85,6 +86,7 @@ procedure S3_Server_Application_Corpus is
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
+   package Notifications renames Flyology.Object_Storage.S3.Notifications;
    package Replication renames Flyology.Object_Storage.S3.Replication;
    package XML renames Flyology.Object_Storage.S3.XML;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -6638,6 +6640,170 @@ begin
                  ("DELETE", "/absent-bucket", Delete_Query)),
             "<Code>NoSuchBucket</Code>"),
          "DeleteBucketCors did not distinguish an absent bucket");
+   end;
+
+   declare
+      Namespace : constant String :=
+        "http://s3.amazonaws.com/doc/2006-03-01/";
+      Current_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("notification", ""),
+         SigV4.Pair ("x-id", "PutBucketNotificationConfiguration"));
+      Legacy_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("notification", ""),
+         SigV4.Pair ("x-id", "PutBucketNotification"));
+      Current_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("notification", ""),
+         SigV4.Pair ("x-id", "GetBucketNotificationConfiguration"));
+      Legacy_Get : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("notification", ""),
+         SigV4.Pair ("x-id", "GetBucketNotification"));
+      Empty_Document : constant String :=
+        "<NotificationConfiguration xmlns=""" & Namespace &
+        """></NotificationConfiguration>";
+      Topic_Document : constant String :=
+        "<NotificationConfiguration xmlns=""" & Namespace & """>" &
+        "<TopicConfiguration><Topic>arn:aws:sns:us-east-1:" &
+        "123456789012:topic</Topic><Event>s3:ObjectCreated:*</Event>" &
+        "</TopicConfiguration></NotificationConfiguration>";
+      Legacy_Only_Document : constant String :=
+        "<NotificationConfiguration xmlns=""" & Namespace & """>" &
+        "<CloudFunctionConfiguration><InvocationRole>legacy-role" &
+        "</InvocationRole><Event>s3:ObjectCreated:Put</Event>" &
+        "</CloudFunctionConfiguration></NotificationConfiguration>";
+      Canonical_Empty : constant String :=
+        Notifications.Serialize
+          (Notifications.Parse (Empty_Document, XML.Default_Limits),
+           XML.Default_Limits);
+      Canonical_Topic : constant String :=
+        Notifications.Serialize
+          (Notifications.Parse (Topic_Document, XML.Default_Limits),
+           XML.Default_Limits);
+
+      function Put_Current
+        (Document : String; Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Current_Put, Document, Extra)));
+
+      function Put_Legacy
+        (Document : String; Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Legacy_Put, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF & Extra)));
+   begin
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Current_Get))) = Canonical_Empty,
+         "GetBucketNotificationConfiguration did not return empty state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Legacy_Get)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketNotification confused bucket absence with empty state");
+      Require
+        (Has (Put_Current (Topic_Document), "<Code>NotImplemented</Code>"),
+         "current notification PUT skipped destination validation");
+      Require
+        (Has
+           (Put_Current
+              (Topic_Document,
+               "x-amz-skip-destination-validation: true" & CRLF),
+            "200 OK"),
+         "current notification PUT rejected explicit validation skip");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Legacy_Get))) = Canonical_Topic,
+         "legacy notification GET lost shared current state");
+      Require
+        (Has (Put_Legacy (Topic_Document), "<Code>NotImplemented</Code>"),
+         "legacy notification PUT claimed destination validation");
+      Require
+        (Has
+           (Put_Legacy (Legacy_Only_Document),
+            "<Code>NotImplemented</Code>"),
+         "legacy notification PUT misclassified a deprecated-only shape");
+      Require
+        (Has (Put_Legacy (Empty_Document), "200 OK"),
+         "legacy notification PUT rejected the empty configuration");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Put, Topic_Document,
+                  "content-md5: " & Content_MD5 (Empty_Document) & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "legacy notification PUT accepted a Content-MD5 mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Put, Empty_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Empty_Document) & CRLF)),
+            "200 OK"),
+         "legacy notification PUT rejected a generated checksum");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Put, Topic_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Empty_Document) & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "legacy notification PUT accepted a generated checksum mismatch");
+      Require
+        (Response_Body
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Current_Get))) = Canonical_Empty,
+         "notification checksum failures changed retained state");
+      Require
+        (Has
+           (Put_Current
+              ("<NotificationConfiguration>"),
+            "<Code>MalformedXML</Code>"),
+         "current notification PUT accepted malformed XML");
+      Require
+        (Has
+           (Put_Current
+              (Empty_Document,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Empty_Document) & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "current notification PUT accepted legacy checksum transport");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Put, Empty_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "legacy notification PUT accepted missing checksum transport");
+      Require
+        (Has
+           (Put_Current
+              (Topic_Document,
+               "x-amz-skip-destination-validation: false" & CRLF),
+            "<Code>NotImplemented</Code>"),
+         "current notification PUT treated false as a validation skip");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("notification", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "notification GET accepted an extra query member");
    end;
 
    declare

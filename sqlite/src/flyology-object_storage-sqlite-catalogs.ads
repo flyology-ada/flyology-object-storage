@@ -276,6 +276,30 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Transactionally retain one notification document.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical notification-configuration bytes
+   --  @param Result Storage outcome
+   procedure Put_Bucket_Notification
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   --  Read one transactional notification snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit notification state is retained
+   --  @param Result Storage outcome
+   procedure Get_Bucket_Notification
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
    --  Transactionally retain one replication document.
    procedure Put_Bucket_Replication
      (Item     : in out Catalog;

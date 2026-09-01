@@ -27,6 +27,47 @@ package body Flyology.Object_Storage.Backends is
      (Document : String) return Boolean is
      (Byte_Count (Document'Length) <= Maximum_Bucket_Configuration_Bytes);
 
+   function Valid_Bucket_Notification_Document
+     (Document : String) return Boolean is
+     (Byte_Count (Document'Length) <= Maximum_Bucket_Configuration_Bytes);
+
+   procedure Put_Bucket_Notification_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      if Item in Bucket_Notification_Backend'Class then
+         Put_Bucket_Notification
+           (Bucket_Notification_Backend'Class (Item), Bucket, Document,
+            Token, Deadline, Result);
+      else
+         Result := Not_Implemented;
+      end if;
+   end Put_Bucket_Notification_If_Supported;
+
+   procedure Get_Bucket_Notification_If_Supported
+     (Item       : in out Backend'Class;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      if Item in Bucket_Notification_Backend'Class then
+         Get_Bucket_Notification
+           (Bucket_Notification_Backend'Class (Item), Bucket, Token,
+            Deadline, Document, Configured, Result);
+      else
+         Result := Not_Implemented;
+      end if;
+   end Get_Bucket_Notification_If_Supported;
+
    function Valid_Bucket_Named_Configuration
      (Identifier : String; Document : String) return Boolean is
      (Byte_Count (Identifier'Length) <=

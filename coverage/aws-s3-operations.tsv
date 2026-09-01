@@ -42,8 +42,8 @@ GetBucketLogging	extended	covered	covered	covered	covered
 GetBucketMetadataConfiguration	extended	missing	covered	missing	covered
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	covered	covered	covered	covered
-GetBucketNotification	extended	missing	partial	missing	covered
-GetBucketNotificationConfiguration	extended	missing	covered	missing	covered
+GetBucketNotification	extended	covered	partial	covered	covered
+GetBucketNotificationConfiguration	extended	covered	covered	covered	covered
 GetBucketOwnershipControls	extended	covered	covered	covered	covered
 GetBucketPolicy	extended	covered	covered	covered	covered
 GetBucketPolicyStatus	extended	missing	covered	missing	covered
@@ -88,8 +88,8 @@ PutBucketLifecycle	extended	covered	partial	covered	covered
 PutBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 PutBucketLogging	extended	covered	covered	covered	covered
 PutBucketMetricsConfiguration	extended	covered	covered	covered	covered
-PutBucketNotification	extended	missing	partial	missing	covered
-PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
+PutBucketNotification	extended	covered	partial	covered	covered
+PutBucketNotificationConfiguration	extended	covered	covered	covered	covered
 PutBucketOwnershipControls	extended	covered	covered	covered	covered
 PutBucketPolicy	extended	covered	covered	covered	covered
 PutBucketReplication	extended	covered	covered	covered	covered

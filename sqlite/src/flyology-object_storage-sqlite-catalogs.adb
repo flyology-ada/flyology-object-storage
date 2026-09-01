@@ -19,7 +19,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    --  documents after schema 18 added query-keyed intelligent-tiering and
    --  inventory documents. Changing this private value or table set requires
    --  a transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 19;
+   Schema_Version : constant Long_Long_Integer := 20;
    --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
    --  contracts allow exactly 1,000 query-keyed configurations per bucket and
    --  family. This private mirror keeps catalog enforcement aligned.
@@ -198,6 +198,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      ") WITHOUT ROWID;";
    Bucket_Logging_Schema : constant String :=
      "CREATE TABLE bucket_logging_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Notification_Schema : constant String :=
+     "CREATE TABLE bucket_notification_documents (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
@@ -1510,6 +1516,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Ownership_Controls_Schema &
          Bucket_Lifecycle_Schema &
          Bucket_Logging_Schema &
+         Bucket_Notification_Schema &
          Bucket_Replication_Schema &
          Bucket_Website_Schema &
          Bucket_Analytics_Schema &
@@ -1518,7 +1525,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Inventory_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=19;");
+         "PRAGMA user_version=20;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2136,6 +2143,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V18;
 
+   procedure Upgrade_From_V19 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='bucket_notification_documents'");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 19";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Notification_Schema & "PRAGMA user_version=20;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V19;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2185,6 +2218,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 17 => null;
             when 18 => null;
             when 19 => null;
+            when 20 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2237,6 +2271,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V18 (Item);
             Version := 19;
          end if;
+         if Version = 19 then
+            Upgrade_From_V19 (Item);
+            Version := 20;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2259,12 +2297,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_ownership_controls_documents'," &
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
+         "'bucket_notification_documents'," &
          "'bucket_replication_documents'," &
          "'bucket_website_documents'," &
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
-         "'bucket_inventory_configurations')") /= 26
+         "'bucket_inventory_configurations')") /= 27
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2309,6 +2348,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite bucket logging schema is incomplete";
+      elsif not Valid_Bucket_Configuration_Document_Schema
+        (Item, "bucket_notification_documents")
+      then
+         raise Catalog_Error with
+           "SQLite bucket notification schema is incomplete";
       elsif not Valid_Bucket_Configuration_Document_Schema
         (Item, "bucket_replication_documents")
       then
@@ -4063,6 +4107,30 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, "bucket_logging_documents", "bucket logging",
          Document, Configured, Result);
    end Get_Bucket_Logging;
+
+   procedure Put_Bucket_Notification
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "bucket_notification_documents",
+         "bucket notification",
+         Backends.Valid_Bucket_Notification_Document'Access, Result);
+   end Put_Bucket_Notification;
+
+   procedure Get_Bucket_Notification
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, "bucket_notification_documents",
+         "bucket notification", Document, Configured, Result);
+   end Get_Bucket_Notification;
 
    procedure Put_Bucket_Replication
      (Item     : in out Catalog;

@@ -7594,10 +7594,10 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             get_bucket_notification_configuration_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert "exact 200 empty notification document" in entry["absence"]
         assert "30-event domains" in entry["exclusions"][1]
         assert candidate.qualification[
@@ -7685,7 +7685,7 @@ def main() -> None:
     assert get_notification_commands[4] == ["./tools/verify-coverage.sh"]
     assert get_notification_commands[5] == [
         "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-bucket-notification-configuration-gnatdoc",
+        "{repository}/build/gnatdoc/get-bucket-notification-configuration",
         "--operation",
         "GetBucketNotificationConfiguration",
     ]
@@ -7744,14 +7744,16 @@ def main() -> None:
         )
         assert entry.get("ada_symbols") == get_bucket_notification_symbols
         assert entry["coverage"] == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "partial",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert entry["provenance"]["client"] == "handwritten"
         assert entry["provenance"]["tests"] == "handwritten"
-        assert "deliberately partial" in entry["exclusions"][1]
+        assert "current-shape compatibility subset" in entry["exclusions"][1]
         assert "InvocationRole" in entry["exclusions"][1]
         assert "legacy-only" in entry["certainty"]
         assert "does not prove" in entry["reconciliation"]
@@ -7759,8 +7761,9 @@ def main() -> None:
         assert commands[0][-1] == (
             "tools/verify-bucket-notification-configuration-preparation.py"
         )
-        assert commands[5][-2:] == [
-            "--operation", "GetBucketNotification"
+        assert commands[5] == [
+            "./tools/build-api-docs.sh",
+            "{repository}/build/gnatdoc/get-bucket-notification",
         ]
 
     def reject_get_bucket_notification_registry(candidate, label):
@@ -7804,7 +7807,9 @@ def main() -> None:
     malformed_get_bucket_notification_lane = copy.deepcopy(registry)
     malformed_get_bucket_notification_lane.qualification[
         "get_bucket_notification"
-    ][5][-1] = "GetBucketNotificationConfiguration"
+    ][5].extend(
+        ["--operation", "GetBucketNotificationConfiguration"]
+    )
     reject_get_bucket_notification_registry(
         malformed_get_bucket_notification_lane, "cross-operation lane"
     )
@@ -7881,10 +7886,10 @@ def main() -> None:
         assert entry.get("ada_symbols") == (
             put_bucket_notification_configuration_symbols
         )
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert entry.get("absence") == "not_applicable"
         assert "30-event domains" in entry["exclusions"][1]
         assert "no SDK checksum or Content-MD5" in entry["exclusions"][2]
@@ -7973,7 +7978,7 @@ def main() -> None:
     assert put_notification_commands[4] == ["./tools/verify-coverage.sh"]
     assert put_notification_commands[5] == [
         "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-notification-configuration-gnatdoc",
+        "{repository}/build/gnatdoc/put-bucket-notification-configuration",
         "--operation",
         "PutBucketNotificationConfiguration",
     ]
@@ -8044,22 +8049,28 @@ def main() -> None:
         )
         assert entry.get("ada_symbols") == put_bucket_notification_symbols
         assert entry["coverage"] == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "partial",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert entry["provenance"]["client"] == "handwritten"
         assert entry["provenance"]["tests"] == "handwritten"
-        assert "client coverage is deliberately partial" in (
+        assert (
+            "client coverage uses the current-shape compatibility subset"
+            in entry["exclusions"][1]
+        )
+        assert "legacy server recognizes bounded well-formed" in (
             entry["exclusions"][1]
         )
+        assert "only to return NotImplemented" in entry["exclusions"][1]
         assert "InvocationRole" in entry["exclusions"][1]
-        assert "modern filters" in entry["exclusions"][1]
-        assert "legacy operation requires checksum transport" in (
+        assert "requires exact Content-MD5 or generated checksum" in (
             entry["exclusions"][2]
         )
-        assert "maintained current operation sends neither" in (
+        assert "nonempty configuration is rejected as NotImplemented" in (
             entry["exclusions"][2]
         )
         commands = candidate.qualification["put_bucket_notification"]
@@ -8151,7 +8162,7 @@ def main() -> None:
     ]
     assert legacy_put_notification_commands[5] == [
         "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-notification-gnatdoc",
+        "{repository}/build/gnatdoc/put-bucket-notification",
         "--operation",
         "PutBucketNotification",
     ]

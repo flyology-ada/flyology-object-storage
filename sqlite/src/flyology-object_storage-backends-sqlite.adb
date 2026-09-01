@@ -907,6 +907,61 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Get_Bucket_Logging;
 
+   overriding procedure Put_Bucket_Notification
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Notification_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Catalogs.Put_Bucket_Notification
+           (Item.Catalog, Bucket, Document, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Notification;
+
+   overriding procedure Get_Bucket_Notification
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Notification
+           (Item.Catalog, Bucket, Document, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Notification;
+
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;
       Bucket   : String;

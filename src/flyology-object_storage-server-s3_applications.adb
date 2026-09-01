@@ -36,6 +36,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Model;
+with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.Replication;
@@ -79,6 +80,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Multipart_Uploads renames S3.Multipart_Uploads;
    package Metrics renames S3.Metrics;
    package Model renames S3.Model;
+   package Notifications renames S3.Notifications;
    package Object_Reads renames S3.Object_Reads;
    package Replication renames S3.Replication;
    package Tagging renames S3.Tagging;
@@ -178,7 +180,113 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         (Logging.Parse
            ("<BucketLoggingStatus xmlns=""http://s3.amazonaws.com/doc/" &
             "2006-03-01/""></BucketLoggingStatus>", XML.Default_Limits),
+           XML.Default_Limits));
+
+   function Empty_Notification_Document return String is
+     (Notifications.Serialize
+        (Notifications.Parse
+           ("<NotificationConfiguration xmlns=""http://s3.amazonaws.com/" &
+            "doc/2006-03-01/""></NotificationConfiguration>",
+            XML.Default_Limits),
          XML.Default_Limits));
+
+   function Empty_Notification
+     (Value : Notifications.Notification_Configuration) return Boolean is
+     (Value.Topics.Is_Empty
+      and then Value.Queues.Is_Empty
+      and then Value.Lambdas.Is_Empty
+      and then not Value.Event_Bridge_Is_Set);
+
+   type Legacy_Notification_Classifier is new XML.Event_Handler with record
+      Depth     : Natural := 0;
+      Root_Seen : Boolean := False;
+      Nonempty  : Boolean := False;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Legacy_Notification_Classifier; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Legacy_Notification_Classifier;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Legacy_Notification_Classifier; Value : String);
+   overriding procedure End_Element
+     (Item : in out Legacy_Notification_Classifier; Local_Name : String);
+
+   overriding procedure Start_Element
+     (Item : in out Legacy_Notification_Classifier; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise XML.XML_Error with "legacy notification depth overflow";
+      elsif Item.Depth = 0 then
+         if Item.Root_Seen
+           or else Local_Name /= "NotificationConfiguration"
+         then
+            raise XML.XML_Error with
+              "invalid legacy NotificationConfiguration root";
+         end if;
+         Item.Root_Seen := True;
+      else
+         Item.Nonempty := True;
+      end if;
+      Item.Depth := Item.Depth + 1;
+   end Start_Element;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Legacy_Notification_Classifier;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      pragma Unreferenced (Item);
+   begin
+      if Attribute_Count /= 0
+        or else Namespace_URI not in
+          "" | "http://s3.amazonaws.com/doc/2006-03-01/"
+      then
+         raise XML.XML_Error with
+           "invalid legacy notification namespace or attributes";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure Text
+     (Item : in out Legacy_Notification_Classifier; Value : String) is
+   begin
+      if Item.Depth = 1 then
+         for Character of Value loop
+            if Character not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+               raise XML.XML_Error with
+                 "text outside legacy notification configuration";
+            end if;
+         end loop;
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Legacy_Notification_Classifier; Local_Name : String)
+   is
+      pragma Unreferenced (Local_Name);
+   begin
+      if Item.Depth = 0 then
+         raise XML.XML_Error with "legacy notification stack underflow";
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
+   function Is_Unsupported_Legacy_Notification
+     (Document : String) return Boolean
+   is
+      Classifier : aliased Legacy_Notification_Classifier;
+   begin
+      XML.Parse (Document, Classifier, XML.Default_Limits);
+      return
+        Classifier.Root_Seen
+        and then Classifier.Nonempty
+        and then Classifier.Depth = 0;
+   exception
+      when XML.XML_Error =>
+         return False;
+   end Is_Unsupported_Legacy_Notification;
 
    function Storage_Algorithm
      (Value : Checksum_Policy.Algorithm) return Checksum_Algorithm is
@@ -538,6 +646,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Get_Bucket_Lifecycle_Configuration,
          Delete_Bucket_Lifecycle,
          Put_Bucket_Logging, Get_Bucket_Logging,
+         Put_Bucket_Notification, Put_Bucket_Notification_Configuration,
+         Get_Bucket_Notification, Get_Bucket_Notification_Configuration,
          Put_Bucket_Analytics, Get_Bucket_Analytics,
          List_Bucket_Analytics,
          Delete_Bucket_Analytics,
@@ -1080,6 +1190,25 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           ("logging",
            (if Method = "PUT" then "PutBucketLogging"
             else "GetBucketLogging"));
+      Is_Bucket_Notification_Query : constant Boolean :=
+        Query_Text = "notification"
+        or else Query_Text = "notification="
+        or else
+          (Method = "PUT"
+           and then
+             (Query_Text in
+                "notification=&x-id=PutBucketNotification" |
+                "x-id=PutBucketNotification&notification=" |
+                "notification=&x-id=PutBucketNotificationConfiguration" |
+                "x-id=PutBucketNotificationConfiguration&notification="))
+        or else
+          (Method = "GET"
+           and then
+             (Query_Text in
+                "notification=&x-id=GetBucketNotification" |
+                "x-id=GetBucketNotification&notification=" |
+                "notification=&x-id=GetBucketNotificationConfiguration" |
+                "x-id=GetBucketNotificationConfiguration&notification="));
       Is_Bucket_Replication_Query : constant Boolean :=
         Is_Exact_Bucket_Control_Query
           ("replication",
@@ -1150,6 +1279,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         and then
           (Query_Text = "lifecycle=&x-id=GetBucketLifecycle"
            or else Query_Text = "x-id=GetBucketLifecycle&lifecycle=");
+      Is_Legacy_Bucket_Notification_Get_Query : constant Boolean :=
+        Method = "GET"
+        and then
+          (Query_Text = "notification=&x-id=GetBucketNotification"
+           or else Query_Text = "x-id=GetBucketNotification&notification=");
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
@@ -1222,7 +1356,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&logging&") /= 0
         or else Ada.Strings.Fixed.Index
-          (Padded_Query, "&logging=") /= 0;
+          (Padded_Query, "&logging=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&notification&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&notification=") /= 0;
       Has_Singleton_Configuration_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&replication&") /= 0
         or else Ada.Strings.Fixed.Index
@@ -1271,7 +1409,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketLogging&") /= 0
         or else Ada.Strings.Fixed.Index
-          (Padded_Query, "&x-id=GetBucketLogging&") /= 0;
+          (Padded_Query, "&x-id=GetBucketLogging&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketNotification&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=PutBucketNotificationConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketNotification&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
+           "&x-id=GetBucketNotificationConfiguration&") /= 0;
       Has_Singleton_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketReplication&") /= 0
@@ -2648,6 +2796,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               or else Is_Bucket_Ownership_Controls_Query
               or else Is_Bucket_Lifecycle_Query
               or else Is_Bucket_Logging_Query
+              or else Is_Bucket_Notification_Query
               or else Is_Bucket_Replication_Query
               or else Is_Bucket_Website_Query);
          if Method in "PUT" | "GET" | "DELETE"
@@ -2715,6 +2864,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Logging
             elsif Method = "GET" and then Is_Bucket_Logging_Query
             then Get_Bucket_Logging
+            elsif Method = "PUT" and then Is_Bucket_Notification_Query
+            then
+              (if Query_Text =
+                    "notification=&x-id=PutBucketNotification"
+                 or else Query_Text =
+                    "x-id=PutBucketNotification&notification="
+               then Put_Bucket_Notification
+               else Put_Bucket_Notification_Configuration)
+            elsif Method = "GET" and then Is_Bucket_Notification_Query
+            then
+              (if Is_Legacy_Bucket_Notification_Get_Query then
+                 Get_Bucket_Notification
+               else Get_Bucket_Notification_Configuration)
             elsif Method = "PUT"
               and then Looks_Like_Singleton_Configuration_Query
               and then
@@ -3037,7 +3199,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_CORS | Put_Bucket_Encryption |
          Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
          Put_Bucket_Lifecycle_Legacy |
-         Put_Bucket_Logging | Put_Bucket_Analytics |
+         Put_Bucket_Logging | Put_Bucket_Notification |
+         Put_Bucket_Notification_Configuration | Put_Bucket_Analytics |
          Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
          Put_Bucket_Inventory | Put_Bucket_Replication |
          Put_Bucket_Website | Put_Bucket_Policy |
@@ -3191,7 +3354,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_CORS | Put_Bucket_Encryption |
         Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
         Put_Bucket_Lifecycle_Legacy |
-        Put_Bucket_Logging | Put_Bucket_Analytics |
+        Put_Bucket_Logging | Put_Bucket_Notification |
+        Put_Bucket_Notification_Configuration | Put_Bucket_Analytics |
         Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
         Put_Bucket_Inventory | Put_Bucket_Replication |
         Put_Bucket_Website | Put_Bucket_Policy |
@@ -4742,7 +4906,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                  Put_Bucket_Ownership_Controls |
                  Put_Bucket_Lifecycle |
                  Put_Bucket_Lifecycle_Legacy |
-                 Put_Bucket_Logging =>
+                 Put_Bucket_Logging |
+                 Put_Bucket_Notification |
+                 Put_Bucket_Notification_Configuration =>
                declare
                   Is_Encryption : constant Boolean :=
                     Operation = Put_Bucket_Encryption;
@@ -4753,14 +4919,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                       Put_Bucket_Lifecycle | Put_Bucket_Lifecycle_Legacy;
                   Is_Legacy_Lifecycle : constant Boolean :=
                     Operation = Put_Bucket_Lifecycle_Legacy;
+                  Is_Notification : constant Boolean :=
+                    Operation in
+                      Put_Bucket_Notification |
+                      Put_Bucket_Notification_Configuration;
+                  Is_Legacy_Notification : constant Boolean :=
+                    Operation = Put_Bucket_Notification;
                   Requires_Content_MD5 : constant Boolean :=
                     Is_Encryption or else Is_Ownership;
                   Allows_Content_MD5 : constant Boolean :=
-                    not Is_Lifecycle or else Is_Legacy_Lifecycle;
+                    (not Is_Lifecycle or else Is_Legacy_Lifecycle)
+                    and then
+                      (not Is_Notification or else Is_Legacy_Notification);
+                  Allows_SDK_Checksum : constant Boolean :=
+                    not Is_Notification or else Is_Legacy_Notification;
                   Needs_Checksum : constant Boolean :=
                     Operation in
                       Put_Bucket_Lifecycle | Put_Bucket_Lifecycle_Legacy |
-                      Put_Bucket_Logging;
+                      Put_Bucket_Logging | Put_Bucket_Notification;
                   Operation_Name : constant String :=
                     (if Is_Encryption then "PutBucketEncryption"
                      elsif Is_Ownership then
@@ -4769,6 +4945,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        "PutBucketLifecycle"
                      elsif Is_Lifecycle then
                        "PutBucketLifecycleConfiguration"
+                     elsif Is_Legacy_Notification then
+                       "PutBucketNotification"
+                     elsif Is_Notification then
+                       "PutBucketNotificationConfiguration"
                      else "PutBucketLogging");
                   MD5_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "content-md5");
@@ -4788,6 +4968,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                          (X,
                           "x-amz-transition-default-minimum-object-size")
                      else "");
+                  Skip_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-skip-destination-validation");
                   Checksum_Count : constant Natural :=
                     Checksum_Value_Header_Count;
                   Selected : constant
@@ -4858,9 +5041,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  if Rule.Filter.Is_Set
                                    or else not Rule.Prefix.Is_Set
                                  then
+                                    --  legacy lifecycle rules require Prefix
+                                    --  and exclude Filter
                                     raise Lifecycle.Malformed_Lifecycle with
-                                      "legacy lifecycle rules require Prefix " &
-                                      "and exclude Filter";
+                                      "legacy lifecycle rules require " &
+                                      "Prefix and exclude " & "Filter";
                                  end if;
                               end loop;
                            end if;
@@ -4871,6 +5056,52 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Store.Put_Bucket_Lifecycle
                           (Bucket, US.To_String (Canonical),
                            Transition_Value,
+                           Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     elsif Is_Notification then
+                        declare
+                           Value :
+                             Notifications.Notification_Configuration;
+                           Skip_Validation : constant Boolean :=
+                             Skip_Count = 1
+                             and then Apps.Request_Header
+                               (X, "x-amz-skip-destination-validation") =
+                                 "true";
+                        begin
+                           begin
+                              Value := Notifications.Parse
+                                (Document, XML.Default_Limits);
+                           exception
+                              when Notifications.Malformed_Notification =>
+                                 if Is_Legacy_Notification
+                                   and then
+                                     Is_Unsupported_Legacy_Notification
+                                       (Document)
+                                 then
+                                    Send_Error
+                                      (X, 501, "NotImplemented",
+                                       "Destination validation is " &
+                                       "unavailable", Target_Text);
+                                    return;
+                                 end if;
+                                 raise;
+                           end;
+                           if not Empty_Notification (Value)
+                             and then
+                               (Is_Legacy_Notification
+                                or else not Skip_Validation)
+                           then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Destination validation is unavailable",
+                                 Target_Text);
+                              return;
+                           end if;
+                           Canonical := US.To_Unbounded_String
+                             (Notifications.Serialize
+                                (Value, XML.Default_Limits));
+                        end;
+                        Store.Put_Bucket_Notification_If_Supported
+                          (Bucket, US.To_String (Canonical),
                            Apps.Cancellation (X), Apps.Deadline (X), Result);
                      else
                         Canonical := US.To_Unbounded_String
@@ -4891,6 +5122,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      when Encryption.Malformed_Encryption |
                           Bucket_Controls.Malformed_Configuration |
                           Lifecycle.Malformed_Lifecycle |
+                          Notifications.Malformed_Notification |
                           Logging.Malformed_Logging =>
                         Send_Error
                           (X, 400, "MalformedXML",
@@ -4904,6 +5136,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     or else SDK_Count > 1
                     or else Trailer_Declaration_Count > 1
                     or else Transition_Count > 1
+                    or else Skip_Count > 1
                     or else Checksum_Count > 1
                     or else Apps.Request_Header_Count (X, "content-type") > 1
                   then
@@ -4934,10 +5167,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidRequest",
                         Operation_Name & " does not define RequestPayer",
                         Target_Text);
+                  elsif Skip_Count = 1
+                    and then
+                      (not Is_Notification
+                       or else Is_Legacy_Notification
+                       or else Apps.Request_Header
+                         (X, "x-amz-skip-destination-validation")
+                           not in "true" | "false")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " destination-validation header is invalid",
+                        Target_Text);
+                  elsif SDK_Count > 0 and then not Allows_SDK_Checksum then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name & " does not define checksum headers",
+                        Target_Text);
                   elsif Needs_Checksum
                     and then SDK_Count /= 1
                     and then
                       (not Is_Legacy_Lifecycle or else MD5_Count /= 1)
+                    and then
+                      (not Is_Legacy_Notification or else MD5_Count /= 1)
                   then
                      Send_Error
                        (X, 400, "InvalidRequest",
@@ -5019,7 +5272,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                  Get_Bucket_Ownership_Controls |
                  Get_Bucket_Lifecycle |
                  Get_Bucket_Lifecycle_Configuration |
-                 Get_Bucket_Logging =>
+                 Get_Bucket_Logging |
+                 Get_Bucket_Notification |
+                 Get_Bucket_Notification_Configuration =>
                declare
                   Is_Encryption : constant Boolean :=
                     Operation = Get_Bucket_Encryption;
@@ -5031,6 +5286,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                       Get_Bucket_Lifecycle_Configuration;
                   Is_Modern_Lifecycle : constant Boolean :=
                     Operation = Get_Bucket_Lifecycle_Configuration;
+                  Is_Notification : constant Boolean :=
+                    Operation in
+                      Get_Bucket_Notification |
+                      Get_Bucket_Notification_Configuration;
                   Operation_Name : constant String :=
                     (if Is_Encryption then "GetBucketEncryption"
                      elsif Is_Ownership then
@@ -5038,6 +5297,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      elsif Is_Modern_Lifecycle then
                        "GetBucketLifecycleConfiguration"
                      elsif Is_Lifecycle then "GetBucketLifecycle"
+                     elsif Operation = Get_Bucket_Notification then
+                       "GetBucketNotification"
+                     elsif Is_Notification then
+                       "GetBucketNotificationConfiguration"
                      else "GetBucketLogging");
                   Payer_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-request-payer");
@@ -5072,6 +5335,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               Apps.Deadline (X), Document,
                               Transition_Default_Minimum_Object_Size,
                               Configured, Result);
+                        elsif Is_Notification then
+                           Store.Get_Bucket_Notification_If_Supported
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Document, Configured,
+                              Result);
                         else
                            Store.Get_Bucket_Logging
                              (Bucket, Apps.Cancellation (X),
@@ -5098,6 +5366,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                 (X, 404, "NoSuchLifecycleConfiguration",
                                  "The lifecycle configuration was not found",
                                  Target_Text);
+                           elsif Is_Notification then
+                              Apps.Respond
+                                (X, 200, "application/xml",
+                                 Empty_Notification_Document);
                            else
                               Apps.Respond
                                 (X, 200, "application/xml",

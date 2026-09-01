@@ -19,6 +19,17 @@ SOURCES = (
     ROOT / "src/flyology-object_storage-s3-notifications.adb",
     ROOT / "tests/src/s3_bucket_notification_configuration_corpus.adb",
 )
+BACKEND_SPEC = ROOT / "src/flyology-object_storage-backends.ads"
+MEMORY = ROOT / "src/flyology-object_storage-backends-memory.adb"
+FILES = ROOT / "src/flyology-object_storage-backends-files.adb"
+SQLITE = ROOT / "sqlite/src/flyology-object_storage-backends-sqlite.adb"
+CATALOG = ROOT / "sqlite/src/flyology-object_storage-sqlite-catalogs.adb"
+SERVER = ROOT / "src/flyology-object_storage-server-s3_applications.adb"
+SERVER_CORPUS = ROOT / "tests/src/s3_server_application_corpus.adb"
+BACKEND_CORPUS = ROOT / "tests/src/object_storage_test_cases.adb"
+SQLITE_CORPUS = (
+    ROOT / "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+)
 REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
 
@@ -110,6 +121,14 @@ def require_members(
         or case_values(model, "Member_Location_Name", shape) != locations
     ):
         fail(f"generated notification shape {shape} changed")
+
+
+def require_fragments(
+    text: str, label: str, fragments: tuple[str, ...]
+) -> None:
+    for fragment in fragments:
+        if fragment not in text:
+            fail(f"{label} lacks {fragment}")
 
 
 def main() -> int:
@@ -338,11 +357,112 @@ def main() -> int:
     ):
         if token not in source:
             fail(f"typed implementation lacks {token}")
+
+    backend_spec = BACKEND_SPEC.read_text(encoding="utf-8")
+    memory = MEMORY.read_text(encoding="utf-8")
+    files = FILES.read_text(encoding="utf-8")
+    sqlite = SQLITE.read_text(encoding="utf-8")
+    catalog = CATALOG.read_text(encoding="utf-8")
+    server = SERVER.read_text(encoding="utf-8")
+    server_corpus = SERVER_CORPUS.read_text(encoding="utf-8")
+    backend_corpus = BACKEND_CORPUS.read_text(encoding="utf-8")
+    sqlite_corpus = SQLITE_CORPUS.read_text(encoding="utf-8")
+    require_fragments(
+        backend_spec,
+        "backend notification contract",
+        (
+            "function Valid_Bucket_Notification_Document",
+            "type Bucket_Notification_Backend is limited interface",
+            "Item     : in out Bucket_Notification_Backend",
+            "procedure Put_Bucket_Notification_If_Supported",
+            "procedure Get_Bucket_Notification_If_Supported",
+            "Item     : in out Backend'Class",
+            "procedure Put_Bucket_Notification",
+            "procedure Get_Bucket_Notification",
+            "backend does not deliver notifications",
+            "Not_Implemented without the capability",
+        ),
+    )
+    require_fragments(
+        memory,
+        "memory notification persistence",
+        (
+            "Notification_Configuration, Document, \"\", Result",
+            "Bucket, Notification_Configuration, Document, Ignored_Metadata",
+        ),
+    )
+    require_fragments(
+        files,
+        "files notification persistence",
+        (
+            'Bucket_Notification_Magic : constant String := "FOSNOT01"',
+            '"notification.fos"',
+            "Write_Bucket_Notification'Access",
+            "Read_Bucket_Notification'Access",
+        ),
+    )
+    require_fragments(
+        sqlite + catalog,
+        "SQLite notification persistence",
+        (
+            "Catalogs.Put_Bucket_Notification",
+            "Catalogs.Get_Bucket_Notification",
+            'Schema_Version : constant Long_Long_Integer := 20',
+            '"CREATE TABLE bucket_notification_documents ("',
+            "procedure Upgrade_From_V19",
+        ),
+    )
+    require_fragments(
+        server,
+        "notification server boundary",
+        (
+            "Put_Bucket_Notification_Configuration",
+            "Get_Bucket_Notification_Configuration",
+            '"x-amz-skip-destination-validation"',
+            '"Destination validation is unavailable"',
+            "Store.Put_Bucket_Notification_If_Supported",
+            "Store.Get_Bucket_Notification_If_Supported",
+            "Empty_Notification_Document",
+        ),
+    )
+    for operation in (
+        "PutBucketNotification",
+        "PutBucketNotificationConfiguration",
+        "GetBucketNotification",
+        "GetBucketNotificationConfiguration",
+    ):
+        if server.count(operation) < 2:
+            fail(f"server lacks exact {operation} query and dispatch evidence")
+        if operation not in server_corpus:
+            fail(f"server corpus lacks {operation}")
+    require_fragments(
+        server_corpus,
+        "notification server corpus",
+        (
+            '"current notification PUT skipped destination validation"',
+            '"legacy notification PUT claimed destination validation"',
+            '"legacy notification PUT misclassified a deprecated-only shape"',
+            '"legacy notification PUT accepted missing checksum transport"',
+            '"legacy notification PUT accepted a Content-MD5 mismatch"',
+            '"legacy notification PUT rejected a generated checksum"',
+            '"legacy notification PUT accepted a generated checksum mismatch"',
+            '"notification GET accepted an extra query member"',
+        ),
+    )
+    require_fragments(
+        backend_corpus + sqlite_corpus,
+        "notification backend corpora",
+        (
+            '"bucket notification configuration did not round trip"',
+            '"schema-v19 migration did not publish schema 20 atomically"',
+        ),
+    )
     print(
         "Bucket notification configuration preparation: deprecated GET and "
         "PUT partial boundaries; legacy PUT five-member checksum request, "
         "current PUT four-member unchecksummed request, complete current "
-        "destination/filter graph, and 30-event exact domain"
+        "destination/filter graph, 30-event exact domain, shared backend "
+        "persistence, and exact current/legacy server routes"
     )
     return 0
 

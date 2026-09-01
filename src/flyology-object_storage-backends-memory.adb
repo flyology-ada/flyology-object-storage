@@ -812,6 +812,7 @@ package body Flyology.Object_Storage.Backends.Memory is
                when Lifecycle_Configuration =>
                  Valid_Bucket_Lifecycle_Document (Document, Metadata),
                when Logging_Configuration |
+                    Notification_Configuration |
                     Replication_Configuration |
                     Website_Configuration =>
                  Metadata'Length = 0
@@ -3257,6 +3258,49 @@ package body Flyology.Object_Storage.Backends.Memory is
             Configured, Result);
       end if;
    end Get_Bucket_Logging;
+
+   overriding procedure Put_Bucket_Notification
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_Notification_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_Configuration
+           (Bucket, Notification_Configuration, Document, "", Result);
+      end if;
+   end Put_Bucket_Notification;
+
+   overriding procedure Get_Bucket_Notification
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : Ada.Strings.Unbounded.Unbounded_String;
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Configuration
+           (Bucket, Notification_Configuration, Document, Ignored_Metadata,
+            Configured, Result);
+      end if;
+   end Get_Bucket_Notification;
 
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;

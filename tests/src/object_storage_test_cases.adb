@@ -782,6 +782,13 @@ package body Object_Storage_Test_Cases is
         "<TargetBucket>logs</TargetBucket>" &
         "<TargetPrefix>access/</TargetPrefix>" &
         "</LoggingEnabled></BucketLoggingStatus>";
+      Notification_First : constant String :=
+        "<NotificationConfiguration><TopicConfiguration>" &
+        "<Topic>arn:aws:sns:us-east-1:123456789012:first</Topic>" &
+        "<Event>s3:ObjectCreated:*</Event></TopicConfiguration>" &
+        "</NotificationConfiguration>";
+      Notification_Second : constant String :=
+        "<NotificationConfiguration></NotificationConfiguration>";
       Replication_First : constant String :=
         "<ReplicationConfiguration><Role>replication-role</Role>" &
         "<Rule><Status>Enabled</Status></Rule>" &
@@ -974,6 +981,39 @@ package body Object_Storage_Test_Cases is
         (Result = Success and then Configured
          and then US.To_String (Document) = Logging,
          "bucket logging configuration did not round trip");
+
+      Store.Get_Bucket_Notification_If_Supported
+        ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Document) = 0,
+         "bucket notification get did not distinguish an absent bucket");
+      Store.Get_Bucket_Notification_If_Supported
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "new bucket exposed notification state");
+      Store.Put_Bucket_Notification_If_Supported
+        (Bucket, Notification_First, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Notification_If_Supported
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Notification_First,
+         "bucket notification configuration did not round trip");
+      Store.Put_Bucket_Notification_If_Supported
+        (Bucket, Notification_Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Notification_If_Supported
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = Notification_Second,
+         "bucket notification replacement did not preserve exact bytes");
 
       Store.Get_Bucket_Replication
         ("missing-configuration-bucket", null, Ada.Real_Time.Time_Last,
@@ -1357,6 +1397,20 @@ package body Object_Storage_Test_Cases is
       begin
          Cancel.Request;
          begin
+            Store.Get_Bucket_Notification_If_Supported
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket notification get ignored cancellation");
+      end;
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
             Store.Get_Bucket_Analytics_Configuration
               (Bucket, "query-analytics", Cancel'Access,
                Ada.Real_Time.Time_Last, Document, Configured, Result);
@@ -1388,6 +1442,18 @@ package body Object_Storage_Test_Cases is
             when Flyology.IO.Timeout_Error => Raised := True;
          end;
          Assert (Raised, "bucket lifecycle put ignored deadline");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Notification_If_Supported
+              (Bucket, Notification_First, null, Ada.Real_Time.Time_First,
+               Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket notification put ignored deadline");
       end;
       declare
          Cancel : aliased Flyology.Cancellation.Token;
@@ -1473,6 +1539,11 @@ package body Object_Storage_Test_Cases is
       Assert
         (Result = Entity_Too_Large,
          "website accepted an over-limit configuration document");
+      Store.Put_Bucket_Notification_If_Supported
+        (Bucket, Over_Limit.all, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Entity_Too_Large,
+         "notification accepted an over-limit configuration document");
       Free (At_Limit);
       Free (Over_Limit);
    exception
@@ -5710,6 +5781,14 @@ package body Object_Storage_Test_Cases is
                        "file-bucket"),
                     "configuration"),
                  "cors.fos");
+            Notification_Path : constant String :=
+              Ada.Directories.Compose
+                (Ada.Directories.Compose
+                   (Ada.Directories.Compose
+                      (Ada.Directories.Compose (Root, "buckets"),
+                       "file-bucket"),
+                    "configuration"),
+                 "notification.fos");
             Corrupt    : constant String := "FOSCOR01";
             Data       : Ada.Streams.Stream_Element_Array
               (1 .. Ada.Streams.Stream_Element_Offset (Corrupt'Length));
@@ -5737,6 +5816,22 @@ package body Object_Storage_Test_Cases is
             Assert
               (Result = Success,
                "files bucket CORS could not replace a corrupt record");
+            SIO.Create (File, SIO.Out_File, Notification_Path);
+            SIO.Write (File, Data);
+            SIO.Close (File);
+            Store.Get_Bucket_Notification
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Backend_Unavailable and then not Configured,
+               "files bucket notification accepted a truncated record");
+            Store.Put_Bucket_Notification
+              ("file-bucket",
+               "<NotificationConfiguration></NotificationConfiguration>",
+               null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "files notification could not replace a corrupt record");
          end;
          Exercise_Bucket_Policy (Store, "file-bucket");
          Store.Put_Object
@@ -5972,6 +6067,14 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Configured
                and then US.To_String (Document)'Length > 0,
                "files logging state did not persist across reopen");
+            Store.Get_Bucket_Notification
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Document) =
+                 "<NotificationConfiguration></NotificationConfiguration>",
+               "files notification state did not persist across reopen");
             Store.Get_Bucket_Replication
               ("file-bucket", null, Ada.Real_Time.Time_Last,
                Document, Configured, Result);

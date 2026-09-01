@@ -73,6 +73,8 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one canonical lifecycle document.
    Bucket_Logging_Magic : constant String := "FOSLOG01";
    --  Persisted-format discriminator for one canonical logging document.
+   Bucket_Notification_Magic : constant String := "FOSNOT01";
+   --  Persisted discriminator for one canonical notification document.
    Bucket_Replication_Magic : constant String := "FOSREP01";
    --  Persisted-format discriminator for one canonical replication document.
    Bucket_Website_Magic : constant String := "FOSWEB01";
@@ -414,6 +416,11 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "logging.fos"));
    --  Persisted files-layout name paired with FOSLOG01.
+
+   function Bucket_Notification_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "notification.fos"));
+   --  Persisted files-layout name paired with FOSNOT01.
 
    function Bucket_Replication_Path
      (Item : Store; Bucket : String) return String is
@@ -1777,6 +1784,39 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Document := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Logging;
+
+   procedure Write_Bucket_Notification
+     (File : in out SIO.File_Type; Document : String; Metadata : String) is
+      pragma Unreferenced (Metadata);
+   begin
+      if not Valid_Bucket_Notification_Document (Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Notification_Magic);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Document);
+   end Write_Bucket_Notification;
+
+   procedure Read_Bucket_Notification
+     (File     : in out SIO.File_Type;
+      Document : out US.Unbounded_String;
+      Metadata : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Notification_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      Metadata := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_Notification_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_Configuration_Bytes
+        or else SIO.Size (File) /=
+          SIO.Count (Bucket_Notification_Magic'Length + 4 + Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Document := US.To_Unbounded_String (Read_String (File, Length));
+   end Read_Bucket_Notification;
 
    procedure Write_Bucket_Replication
      (File : in out SIO.File_Type; Document : String; Metadata : String) is
@@ -4453,6 +4493,39 @@ package body Flyology.Object_Storage.Backends.Files is
          Read_Bucket_Logging'Access, Document, Ignored_Metadata,
          Configured, Result);
    end Get_Bucket_Logging;
+
+   overriding procedure Put_Bucket_Notification
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Put_Bucket_Configuration_Document
+        (Item, Bucket, Document, "", Token, Deadline, "bucket-notification-",
+         Bucket_Notification_Path (Item, Bucket),
+         Write_Bucket_Notification'Access, null,
+         Valid_Bucket_Notification_Document'Access, True, "", Result);
+   end Put_Bucket_Notification;
+
+   overriding procedure Get_Bucket_Notification
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Ignored_Metadata : US.Unbounded_String;
+   begin
+      Get_Bucket_Configuration_Document
+        (Item, Bucket, Token, Deadline,
+         Bucket_Notification_Path (Item, Bucket),
+         Read_Bucket_Notification'Access, Document, Ignored_Metadata,
+         Configured, Result);
+   end Get_Bucket_Notification;
 
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;

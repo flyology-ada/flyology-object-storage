@@ -459,6 +459,12 @@ package Flyology.Object_Storage.Backends is
    --  Pluggable object storage contract.
    type Backend is limited interface;
 
+   --  Optional capability for retaining the shared bucket-notification
+   --  document. A backend that does not implement this interface remains a
+   --  valid Backend and reports Not_Implemented through the class-wide
+   --  adapters below.
+   type Bucket_Notification_Backend is limited interface;
+
    subtype Multipart_Part_Number is Positive range 1 .. 10_000;
 
    --  Maximum source size accepted by one atomic S3 CopyObject request.
@@ -825,6 +831,13 @@ package Flyology.Object_Storage.Backends is
    --  @param Document Exact canonical logging-status bytes
    --  @return True when every backend can retain the document
    function Valid_Bucket_Logging_Document
+     (Document : String) return Boolean;
+
+   --  Check the shared persistence bound for one canonical notification
+   --  document. XML parsing and semantic validation remain at the S3 boundary.
+   --  @param Document Exact canonical notification-configuration bytes
+   --  @return True when a notification-capable backend can retain the document
+   function Valid_Bucket_Notification_Document
      (Document : String) return Boolean;
 
    --  Atomically replace one analytics configuration selected by the exact
@@ -1347,6 +1360,79 @@ package Flyology.Object_Storage.Backends is
       Document   : out Ada.Strings.Unbounded.Unbounded_String;
       Configured : out Boolean;
       Result     : out Status) is abstract;
+
+   --  Atomically replace the complete canonical notification document in a
+   --  backend that implements notification persistence.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical notification-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_Notification
+     (Item     : in out Bucket_Notification_Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical notification-document snapshot from a
+   --  backend that implements notification persistence.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether explicit notification state is retained
+   --  @param Result Read result
+   procedure Get_Bucket_Notification
+     (Item       : in out Bucket_Notification_Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Dispatch notification replacement when Item implements the optional
+   --  capability. PutBucketNotification and
+   --  PutBucketNotificationConfiguration share the retained document; the
+   --  backend does not deliver notifications.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical notification-configuration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result, or Not_Implemented without the capability
+   procedure Put_Bucket_Notification_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Dispatch the shared GetBucketNotification and
+   --  GetBucketNotificationConfiguration retrieval when Item implements the
+   --  optional capability. Configured is False only when no document is
+   --  retained; an explicitly stored canonical empty document remains
+   --  configured.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether explicit notification state is retained
+   --  @param Result Read result, or Not_Implemented without the capability
+   procedure Get_Bucket_Notification_If_Supported
+     (Item       : in out Backend'Class;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
 
    --  Atomically replace the complete canonical replication document. The
    --  backend retains configuration state but does not execute replication.

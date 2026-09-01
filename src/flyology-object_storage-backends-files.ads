@@ -11,7 +11,8 @@ package Flyology.Object_Storage.Backends.Files is
 
    type Commit_Policy is (Power_Loss_Durable, Process_Crash_Atomic);
 
-   type Store is limited new Backend with private;
+   type Store is limited new Backend and Bucket_Notification_Backend
+     with private;
 
    --  Open or create a backend rooted at Root. Power_Loss_Durable is the
    --  production default and synchronizes every file and directory mutation;
@@ -271,6 +272,38 @@ package Flyology.Object_Storage.Backends.Files is
    --  @param Configured Whether explicit logging state is retained
    --  @param Result Storage outcome
    overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Retain one bounded notification document in the files backend.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical notification-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Notification
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic files-backend notification snapshot.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit notification state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Notification
      (Item       : in out Store;
       Bucket     : String;
       Token      : access Flyology.Cancellation.Token;
@@ -1100,7 +1133,8 @@ private
       Held : Boolean := False;
    end Publication_Gate;
 
-   type Store is limited new Backend with record
+   type Store is limited new Backend and Bucket_Notification_Backend
+     with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;
       Commit              : Commit_Policy := Power_Loss_Durable;

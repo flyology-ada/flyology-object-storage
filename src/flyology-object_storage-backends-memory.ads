@@ -23,7 +23,7 @@ package Flyology.Object_Storage.Backends.Memory is
      (Bucket_Capacity : Positive;
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
-   is limited new Backend with private;
+   is limited new Backend and Bucket_Notification_Backend with private;
 
    overriding procedure Create_Bucket
      (Item     : in out Store;
@@ -267,6 +267,38 @@ package Flyology.Object_Storage.Backends.Memory is
    --  @param Configured Whether explicit logging state is retained
    --  @param Result Storage outcome
    overriding procedure Get_Bucket_Logging
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Retain one bounded notification document in memory.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Document Canonical notification-configuration bytes
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Put_Bucket_Notification
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic in-memory notification snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Retained canonical bytes
+   --  @param Configured Whether explicit notification state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Notification
      (Item       : in out Store;
       Bucket     : String;
       Token      : access Flyology.Cancellation.Token;
@@ -1083,6 +1115,7 @@ private
    type Singleton_Configuration_Kind is
      (Lifecycle_Configuration,
       Logging_Configuration,
+      Notification_Configuration,
       Replication_Configuration,
       Website_Configuration);
    type Configuration_Document_Array is array
@@ -1491,7 +1524,7 @@ private
      (Bucket_Capacity : Positive;
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
-   is limited new Backend with record
+   is limited new Backend and Bucket_Notification_Backend with record
       State : Memory_State
         (Bucket_Capacity, Object_Capacity, Byte_Capacity);
    end record;
