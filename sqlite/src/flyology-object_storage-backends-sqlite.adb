@@ -962,6 +962,119 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Get_Bucket_Notification;
 
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Value)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Create_Bucket_Metadata_State
+           (Item.Catalog, Bucket, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Create_Bucket_Metadata_State;
+
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Value :=
+        (Kind => Legacy_Metadata_Table_Configuration,
+         others => Ada.Strings.Unbounded.Null_Unbounded_String);
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Metadata_State
+           (Item.Catalog, Bucket, Value, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value :=
+           (Kind => Legacy_Metadata_Table_Configuration,
+            others => Ada.Strings.Unbounded.Null_Unbounded_String);
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Metadata_State;
+
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Expected)
+        or else not Valid_Bucket_Metadata_State (Value)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Replace_Bucket_Metadata_State
+           (Item.Catalog, Bucket, Expected, Value, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Replace_Bucket_Metadata_State;
+
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Expected)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Bucket_Metadata_State
+           (Item.Catalog, Bucket, Expected, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Metadata_State;
+
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;
       Bucket   : String;

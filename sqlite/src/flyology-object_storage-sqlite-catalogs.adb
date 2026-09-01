@@ -11,15 +11,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    package DB renames Flyology.Object_Storage.SQLite.Databases;
    package US renames Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
+   use type Backends.Bucket_Metadata_State;
    use type Backends.Version_Selector_Kind;
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 21 adds immutable bucket Object Lock enablement and
-   --  per-version legal-hold and retention state after schema 20 added exact
-   --  notification documents. Changing this private value or table set
-   --  requires a transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 21;
+   --  Persisted schema 22 adds one complete provider-resolved bucket metadata
+   --  state after schema 21 added immutable bucket Object Lock state. Changing
+   --  this private value or table set requires a transactional migration;
+   --  never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 22;
    --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
    --  contracts allow exactly 1,000 query-keyed configurations per bucket and
    --  family. This private mirror keeps catalog enforcement aligned.
@@ -228,6 +229,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "CREATE TABLE bucket_notification_documents (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Bucket_Metadata_State_Schema : constant String :=
+     "CREATE TABLE bucket_metadata_states (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 1)," &
+     "current_configuration BLOB NOT NULL " &
+     "CHECK(length(current_configuration) BETWEEN 1 AND 16777216)," &
+     "current_result BLOB NOT NULL " &
+     "CHECK(length(current_result) BETWEEN 1 AND 16777216)," &
+     "legacy_result BLOB NOT NULL " &
+     "CHECK(length(legacy_result) <= 16777216)," &
+     "CHECK(kind=0 OR length(legacy_result)=0)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    Bucket_Replication_Schema : constant String :=
@@ -1473,6 +1487,58 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
            "ondeletecascade");
    end Valid_Object_Lock_Schema;
 
+   function Valid_Bucket_Metadata_State_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='bucket_metadata_states' AND instr(" &
+            Normalized_SQL & ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info(" &
+         "'bucket_metadata_states')") = 5
+        and then Valid_Column
+          (Item, "bucket_metadata_states", 0, "bucket_name", "TEXT", 1,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "bucket_metadata_states", 1, "kind", "INTEGER", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "bucket_metadata_states", 2,
+           "current_configuration", "BLOB", 0, "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "bucket_metadata_states", 3,
+           "current_result", "BLOB", 0, "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "bucket_metadata_states", 4,
+           "legacy_result", "BLOB", 0, "dflt_value IS NULL")
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'bucket_metadata_states')") = 1
+        and then Has_SQL ("check(kindbetween0and1)")
+        and then Has_SQL
+          ("check(length(current_configuration)between1and16777216)")
+        and then Has_SQL
+          ("check(length(current_result)between1and16777216)")
+        and then Has_SQL ("check(length(legacy_result)<=16777216)")
+        and then Has_SQL ("check(kind=0orlength(legacy_result)=0)")
+        and then Has_SQL
+          ("bucket_nametextprimarykeycollatebinarynotnull")
+        and then Has_SQL
+          ("foreignkey(bucket_name)referencesbuckets(name)" &
+           "ondeletecascade")
+        and then Has_SQL ("primarykey")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Bucket_Metadata_State_Schema;
+
    function Text_Scalar (Item : in out Catalog; SQL : String) return String is
       Query : DB.Statement;
    begin
@@ -1596,6 +1662,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Lifecycle_Schema &
          Bucket_Logging_Schema &
          Bucket_Notification_Schema &
+         Bucket_Metadata_State_Schema &
          Bucket_Replication_Schema &
          Bucket_Website_Schema &
          Bucket_Analytics_Schema &
@@ -1605,7 +1672,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Generation_Schema &
          Object_Lock_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=21;");
+         "PRAGMA user_version=22;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2275,6 +2342,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V20;
 
+   procedure Upgrade_From_V21 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='bucket_metadata_states'");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 21";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Metadata_State_Schema & "PRAGMA user_version=22;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V21;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2326,6 +2419,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 19 => null;
             when 20 => null;
             when 21 => null;
+            when 22 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2386,6 +2480,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V20 (Item);
             Version := 21;
          end if;
+         if Version = 21 then
+            Upgrade_From_V21 (Item);
+            Version := 22;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2409,13 +2507,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
          "'bucket_notification_documents'," &
+         "'bucket_metadata_states'," &
          "'bucket_replication_documents'," &
          "'bucket_website_documents'," &
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
          "'bucket_inventory_configurations','bucket_object_locks'," &
-         "'object_version_locks')") /= 29
+         "'object_version_locks')") /= 30
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2434,6 +2533,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Object_Lock_Schema (Item)
       then
          raise Catalog_Error with "SQLite Object Lock schema is incomplete";
+      elsif not Valid_Bucket_Metadata_State_Schema (Item)
+      then
+         raise Catalog_Error with
+           "SQLite bucket metadata-state schema is incomplete";
       elsif not Valid_Public_Access_Block_Schema (Item)
       then
          raise Catalog_Error with
@@ -4336,6 +4439,354 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, "bucket_notification_documents",
          "bucket notification", Document, Configured, Result);
    end Get_Bucket_Notification;
+
+   procedure Bind_Bucket_Metadata_State
+     (Query       : in out DB.Statement;
+      First_Index : Positive;
+      Value       : Backends.Bucket_Metadata_State)
+   is
+   begin
+      DB.Bind
+        (Query, First_Index,
+         Long_Long_Integer
+           (Backends.Bucket_Metadata_Configuration_Kind'Pos (Value.Kind)));
+      DB.Bind_Bytes
+        (Query, First_Index + 1,
+         US.To_String (Value.Current_Configuration_Document));
+      DB.Bind_Bytes
+        (Query, First_Index + 2,
+         US.To_String (Value.Current_Result_Document));
+      DB.Bind_Bytes
+        (Query, First_Index + 3,
+         US.To_String (Value.Legacy_Result_Document));
+   end Bind_Bucket_Metadata_State;
+
+   procedure Read_Bucket_Metadata_State
+     (Query        : DB.Statement;
+      First_Column : Natural;
+      Value        : out Backends.Bucket_Metadata_State)
+   is
+      Raw_Kind : Long_Long_Integer;
+   begin
+      if DB.Column (Query, First_Column + 4) /= "integer"
+        or else DB.Column (Query, First_Column + 5) /= "blob"
+        or else DB.Column (Query, First_Column + 6) /= "blob"
+        or else DB.Column (Query, First_Column + 7) /= "blob"
+      then
+         raise Catalog_Error with
+           "bucket metadata storage classes are invalid";
+      end if;
+      Raw_Kind := DB.Column (Query, First_Column);
+      if Raw_Kind not in 0 .. 1 then
+         raise Catalog_Error with "bucket metadata kind is invalid";
+      end if;
+      Value :=
+        (Kind =>
+           Backends.Bucket_Metadata_Configuration_Kind'Val
+             (Natural (Raw_Kind)),
+         Current_Configuration_Document =>
+           US.To_Unbounded_String
+             (DB.Column_Bytes (Query, First_Column + 1)),
+         Current_Result_Document =>
+           US.To_Unbounded_String
+             (DB.Column_Bytes (Query, First_Column + 2)),
+         Legacy_Result_Document =>
+           US.To_Unbounded_String
+             (DB.Column_Bytes (Query, First_Column + 3)));
+      if not Backends.Valid_Bucket_Metadata_State (Value) then
+         raise Catalog_Error with "bucket metadata state is invalid";
+      end if;
+   end Read_Bucket_Metadata_State;
+
+   procedure Read_Current_Bucket_Metadata_State
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Value      : out Backends.Bucket_Metadata_State;
+      Configured : out Boolean)
+   is
+      Query : DB.Statement;
+   begin
+      Value :=
+        (Kind => Backends.Legacy_Metadata_Table_Configuration,
+         others => US.Null_Unbounded_String);
+      Configured := False;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT kind,current_configuration,current_result,legacy_result," &
+         "typeof(kind),typeof(current_configuration)," &
+         "typeof(current_result),typeof(legacy_result) " &
+         "FROM bucket_metadata_states WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      case DB.Step (Query) is
+         when DB.Done =>
+            null;
+         when DB.Row =>
+            Read_Bucket_Metadata_State (Query, 0, Value);
+            Configured := True;
+            if DB.Step (Query) /= DB.Done then
+               raise Catalog_Error with
+                 "bucket metadata query returned multiple rows";
+            end if;
+      end case;
+   end Read_Current_Bucket_Metadata_State;
+
+   procedure Create_Bucket_Metadata_State
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Backends.Bucket_Metadata_State;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Insert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+      Current        : Backends.Bucket_Metadata_State;
+      Configured     : Boolean;
+   begin
+      if not Backends.Valid_Bucket_Metadata_State (Value) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket metadata query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      Read_Current_Bucket_Metadata_State
+        (Item, Bucket, Current, Configured);
+      if Configured then
+         if not Backends.Valid_Bucket_Metadata_State (Current) then
+            raise Catalog_Error with "bucket metadata state is invalid";
+         end if;
+         DB.Commit (Item.Database);
+         In_Transaction := False;
+         Result := Already_Exists;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Insert, Item.Database,
+         "INSERT OR IGNORE INTO bucket_metadata_states" &
+         "(bucket_name,kind,current_configuration,current_result," &
+         "legacy_result) VALUES(?1,?2,?3,?4,?5)");
+      DB.Bind (Insert, 1, Bucket);
+      Bind_Bucket_Metadata_State (Insert, 2, Value);
+      if DB.Step (Insert) /= DB.Done then
+         raise Catalog_Error with "bucket metadata insert returned a row";
+      end if;
+      Result :=
+        (if DB.Changes (Item.Database) = 1 then Success else Already_Exists);
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Create_Bucket_Metadata_State;
+
+   procedure Get_Bucket_Metadata_State
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Value      : out Backends.Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Value :=
+        (Kind => Backends.Legacy_Metadata_Table_Configuration,
+         others => US.Null_Unbounded_String);
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket metadata query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+      else
+         Read_Current_Bucket_Metadata_State
+           (Item, Bucket, Value, Configured);
+         Result := Success;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         Value :=
+           (Kind => Backends.Legacy_Metadata_Table_Configuration,
+            others => US.Null_Unbounded_String);
+         Configured := False;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Bucket_Metadata_State;
+
+   procedure Replace_Bucket_Metadata_State
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Expected : Backends.Bucket_Metadata_State;
+      Value    : Backends.Bucket_Metadata_State;
+      Result   : out Status)
+   is
+      Exists         : DB.Statement;
+      Update         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+      Current        : Backends.Bucket_Metadata_State;
+      Configured     : Boolean;
+   begin
+      if not Backends.Valid_Bucket_Metadata_State (Expected)
+        or else not Backends.Valid_Bucket_Metadata_State (Value)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket metadata query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+      else
+         Read_Current_Bucket_Metadata_State
+           (Item, Bucket, Current, Configured);
+         if not Configured then
+            Result := Not_Found;
+         elsif Current /= Expected then
+            Result := Conflict;
+         else
+            DB.Prepare
+              (Update, Item.Database,
+               "UPDATE bucket_metadata_states SET kind=?2," &
+               "current_configuration=?3,current_result=?4," &
+               "legacy_result=?5 WHERE bucket_name=?1");
+            DB.Bind (Update, 1, Bucket);
+            Bind_Bucket_Metadata_State (Update, 2, Value);
+            if DB.Step (Update) /= DB.Done then
+               raise Catalog_Error with
+                 "bucket metadata replacement returned a row";
+            end if;
+            if DB.Changes (Item.Database) /= 1 then
+               raise Catalog_Error with
+                 "bucket metadata replacement changed no row";
+            end if;
+            Result := Success;
+         end if;
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Replace_Bucket_Metadata_State;
+
+   procedure Delete_Bucket_Metadata_State
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Expected : Backends.Bucket_Metadata_State;
+      Result   : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+      Current        : Backends.Bucket_Metadata_State;
+      Configured     : Boolean;
+   begin
+      if not Backends.Valid_Bucket_Metadata_State (Expected) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket metadata query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+      else
+         Read_Current_Bucket_Metadata_State
+           (Item, Bucket, Current, Configured);
+         if not Configured then
+            Result := Success;
+         elsif Current /= Expected then
+            Result := Conflict;
+         else
+            DB.Prepare
+              (Delete, Item.Database,
+               "DELETE FROM bucket_metadata_states WHERE bucket_name=?1");
+            DB.Bind (Delete, 1, Bucket);
+            if DB.Step (Delete) /= DB.Done then
+               raise Catalog_Error with
+                 "bucket metadata deletion returned a row";
+            end if;
+            if DB.Changes (Item.Database) /= 1 then
+               raise Catalog_Error with
+                 "bucket metadata deletion changed no row";
+            end if;
+            Result := Success;
+         end if;
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_Metadata_State;
 
    procedure Put_Bucket_Replication
      (Item     : in out Catalog;

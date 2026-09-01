@@ -40,6 +40,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Flyology.Object_Storage.Optional_Metadata_Time;
    use type Flyology.Object_Storage.Tags.Tag_Vectors.Vector;
+   use type Flyology.Object_Storage.Backends.Bucket_Metadata_State;
 
    package Storage_Tags renames Flyology.Object_Storage.Tags;
 
@@ -69,6 +70,26 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    SQLite_Full_Checksum : Flyology.Object_Storage.Checksum_Information;
    SQLite_Multipart_Version : US.Unbounded_String;
    SQLite_Bucket_Created : Flyology.Object_Storage.Unix_Time := 0;
+   SQLite_Metadata_Original : constant
+     Flyology.Object_Storage.Backends.Bucket_Metadata_State :=
+       (Kind =>
+          Flyology.Object_Storage.Backends.
+            Legacy_Metadata_Table_Configuration,
+        Current_Configuration_Document =>
+          US.To_Unbounded_String ("sqlite-configuration"),
+        Current_Result_Document =>
+          US.To_Unbounded_String ("sqlite-current-result"),
+        Legacy_Result_Document =>
+          US.To_Unbounded_String ("sqlite-legacy-result"));
+   SQLite_Metadata_Replacement : constant
+     Flyology.Object_Storage.Backends.Bucket_Metadata_State :=
+       (Kind =>
+          Flyology.Object_Storage.Backends.Current_Metadata_Configuration,
+        Current_Configuration_Document =>
+          US.To_Unbounded_String ("sqlite-replacement-configuration"),
+        Current_Result_Document =>
+          US.To_Unbounded_String ("sqlite-replacement-result"),
+        Legacy_Result_Document => US.Null_Unbounded_String);
 
    procedure Assert (Condition : Boolean; Message : String) is
    begin
@@ -76,6 +97,56 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise Program_Error with Message;
       end if;
    end Assert;
+
+   protected type Metadata_Race_Control is
+      procedure Ready;
+      entry Start;
+      procedure Record_Result (Delete_Worker : Boolean; Value :
+        Flyology.Object_Storage.Status);
+      entry Wait_Complete;
+      function Outcome (Delete_Worker : Boolean) return
+        Flyology.Object_Storage.Status;
+   private
+      Ready_Count    : Natural range 0 .. 2 := 0;
+      Complete_Count : Natural range 0 .. 2 := 0;
+      Delete_Result  : Flyology.Object_Storage.Status :=
+        Flyology.Object_Storage.Backend_Unavailable;
+      Replace_Result : Flyology.Object_Storage.Status :=
+        Flyology.Object_Storage.Backend_Unavailable;
+   end Metadata_Race_Control;
+
+   protected body Metadata_Race_Control is
+      procedure Ready is
+      begin
+         Ready_Count := Ready_Count + 1;
+      end Ready;
+
+      entry Start when Ready_Count = 2 is
+      begin
+         null;
+      end Start;
+
+      procedure Record_Result (Delete_Worker : Boolean; Value :
+        Flyology.Object_Storage.Status)
+      is
+      begin
+         if Delete_Worker then
+            Delete_Result := Value;
+         else
+            Replace_Result := Value;
+         end if;
+         Complete_Count := Complete_Count + 1;
+      end Record_Result;
+
+      entry Wait_Complete when Complete_Count = 2 is
+      begin
+         null;
+      end Wait_Complete;
+
+      function Outcome (Delete_Worker : Boolean) return
+        Flyology.Object_Storage.Status is
+          (if Delete_Worker then Delete_Result else Replace_Result);
+   end Metadata_Race_Control;
 
    function Digest
      (Data      : String;
@@ -477,6 +548,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE current_object_versions;" &
@@ -532,6 +604,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_policies;" &
@@ -571,6 +644,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_cors_documents;" &
@@ -609,6 +683,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_encryption_documents;" &
@@ -646,6 +721,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_encryption_documents;" &
@@ -680,6 +756,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_lifecycle_documents;" &
@@ -712,6 +789,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
@@ -742,6 +820,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
@@ -770,6 +849,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
@@ -796,6 +876,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
@@ -820,6 +901,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
          "DROP TABLE object_version_locks;" &
          "DROP TABLE bucket_object_locks;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-lock-v20',61);" &
@@ -832,6 +914,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V20_Database;
+
+   procedure Create_V21_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_metadata_states;" &
+         "INSERT INTO buckets(name,created) " &
+         "VALUES('legacy-metadata-v21',67);" &
+         "PRAGMA user_version=21;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V21_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1734,7 +1839,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1780,7 +1885,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1824,10 +1929,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 21 atomically");
+         "schema-v12 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1881,10 +1986,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 21 atomically");
+         "schema-v13 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1964,10 +2069,10 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 21 atomically");
+         "schema-v14 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2060,10 +2165,10 @@ begin
          "'bucket_logging_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v15 migration did not publish schema 21 atomically");
+         "schema-v15 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2142,10 +2247,10 @@ begin
          "'bucket_metrics_configurations')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v16 migration did not publish schema 21 atomically");
+         "schema-v16 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2225,10 +2330,10 @@ begin
          "'bucket_replication_documents','bucket_website_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 4,
-         "schema-v17 migration did not publish schema 21 atomically");
+         "schema-v17 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2331,10 +2436,10 @@ begin
          "'bucket_website_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v18 migration did not publish schema 21 atomically");
+         "schema-v18 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2434,6 +2539,72 @@ begin
       Assert
         (Rejected,
          "schema-v9 migration accepted a partial generation publication");
+   end;
+   Delete_Database;
+
+   Create_V21_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Value      : Bucket_Metadata_State;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_Metadata_State
+        (Catalog, "legacy-metadata-v21", Value, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "schema-v21 migration invented metadata state");
+      Catalogs.Create_Bucket_Metadata_State
+        (Catalog, "legacy-metadata-v21", SQLite_Metadata_Original, Result);
+      Catalogs.Get_Bucket_Metadata_State
+        (Catalog, "legacy-metadata-v21", Value, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then Value = SQLite_Metadata_Original,
+         "schema-v21 migration did not retain metadata state");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name='bucket_metadata_states'");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 22
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 1,
+         "schema-v21 migration did not publish schema 22 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V21_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_metadata_states (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v21 migration accepted partial metadata publication");
    end;
    Delete_Database;
 
@@ -3841,10 +4012,10 @@ begin
          "AND name='bucket_notification_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 1,
-         "schema-v19 migration did not publish schema 21 atomically");
+         "schema-v19 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4023,10 +4194,10 @@ begin
          "AND name IN ('bucket_object_locks','object_version_locks')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v20 migration did not publish schema 21 atomically");
+         "schema-v20 migration did not publish schema 22 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4082,8 +4253,103 @@ begin
       end;
       Assert
         (Rejected,
-         "schema 21 accepted malformed Object Lock constraints");
+         "schema 22 accepted malformed Object Lock constraints");
    end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE bucket_metadata_states;" &
+      "CREATE TABLE bucket_metadata_states (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 1)," &
+      "current_configuration TEXT NOT NULL," &
+      "current_result BLOB NOT NULL," &
+      "legacy_result BLOB NOT NULL," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema 22 accepted malformed bucket metadata constraints");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Create_Bucket (Catalog, "corrupt-metadata", 71, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success,
+         "metadata corruption fixture bucket create failed");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "INSERT INTO bucket_metadata_states(" &
+      "bucket_name,kind,current_configuration,current_result,legacy_result" &
+      ") VALUES('corrupt-metadata',0,'wrong-storage-class'," &
+      "X'63757272656E74',X'6C6567616379');");
+   Databases.Close (Database);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Value      : Bucket_Metadata_State := SQLite_Metadata_Replacement;
+      Configured : Boolean := True;
+      Result     : Status := Success;
+      Rejected   : Boolean := False;
+   begin
+      begin
+         Catalogs.Get_Bucket_Metadata_State
+           (Catalog, "corrupt-metadata", Value, Configured, Result);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "SQLite metadata TEXT row was accepted as " &
+         Boolean'Image (Configured) & " / " &
+         Bucket_Metadata_Configuration_Kind'Image (Value.Kind));
+      for Operation in 1 .. 3 loop
+         Rejected := False;
+         begin
+            case Operation is
+               when 1 =>
+                  Catalogs.Create_Bucket_Metadata_State
+                    (Catalog, "corrupt-metadata", SQLite_Metadata_Original,
+                     Result);
+               when 2 =>
+                  Catalogs.Replace_Bucket_Metadata_State
+                    (Catalog, "corrupt-metadata", SQLite_Metadata_Original,
+                     SQLite_Metadata_Replacement, Result);
+               when 3 =>
+                  Catalogs.Delete_Bucket_Metadata_State
+                    (Catalog, "corrupt-metadata", SQLite_Metadata_Original,
+                     Result);
+            end case;
+         exception
+            when Catalogs.Catalog_Error => Rejected := True;
+         end;
+         Assert
+           (Rejected,
+            "SQLite metadata mutation accepted corrupt retained state");
+      end loop;
+   end;
+   Catalogs.Close (Catalog);
    Delete_Database;
 
    Create_V1_Database;
@@ -4127,8 +4393,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21,
-         "schema-v1 migration did not publish version 21");
+         and then Databases.Column (Version, 0) = 22,
+         "schema-v1 migration did not publish version 22");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -4143,6 +4409,7 @@ begin
          "'bucket_lifecycle_documents'," &
          "'bucket_logging_documents'," &
          "'bucket_notification_documents'," &
+         "'bucket_metadata_states'," &
          "'bucket_replication_documents'," &
          "'bucket_website_documents'," &
          "'bucket_analytics_configurations'," &
@@ -4152,7 +4419,7 @@ begin
          "'object_version_locks')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 29,
+         and then Databases.Column (Tables, 0) = 30,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -4218,8 +4485,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21,
-         "schema-v2 migration did not publish version 21");
+         and then Databases.Column (Version, 0) = 22,
+         "schema-v2 migration did not publish version 22");
    end;
    declare
       Tables : Databases.Statement;
@@ -4255,10 +4522,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 21 tables");
+         "schema-v3 migration did not publish schema 22 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4329,8 +4596,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 21,
-            "schema-v4 migration did not publish version 21");
+            and then Databases.Column (Version, 0) = 22,
+            "schema-v4 migration did not publish version 22");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -4397,7 +4664,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 21
+            and then Databases.Column (Version, 0) = 22
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -4475,8 +4742,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21,
-         "schema-v6 migration did not publish version 21");
+         and then Databases.Column (Version, 0) = 22,
+         "schema-v6 migration did not publish version 22");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4607,7 +4874,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -4678,7 +4945,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 21
+         and then Databases.Column (Version, 0) = 22
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");
@@ -7326,6 +7593,40 @@ begin
       Assert
         (Result = Success,
          "SQLite notification reopen fixture was not stored");
+      declare
+         Value      : Bucket_Metadata_State;
+         Configured : Boolean;
+      begin
+         Store.Create_Bucket_Metadata_State
+           ("sqlite-bucket", SQLite_Metadata_Original, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "SQLite metadata state create failed");
+         Store.Create_Bucket_Metadata_State
+           ("sqlite-bucket", SQLite_Metadata_Replacement, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Already_Exists,
+            "SQLite metadata duplicate create was not rejected");
+         Store.Get_Bucket_Metadata_State
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then Value = SQLite_Metadata_Original,
+            "SQLite metadata create did not retain one exact snapshot");
+         Store.Replace_Bucket_Metadata_State
+           ("sqlite-bucket", SQLite_Metadata_Original,
+            SQLite_Metadata_Replacement, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert (Result = Success, "SQLite metadata exact replace failed");
+         Store.Replace_Bucket_Metadata_State
+           ("sqlite-bucket", SQLite_Metadata_Original,
+            SQLite_Metadata_Replacement, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Conflict,
+            "SQLite metadata stale replace did not conflict");
+      end;
    end;
 
    declare
@@ -7440,6 +7741,110 @@ begin
             and then US.To_String (Document) =
               "<NotificationConfiguration></NotificationConfiguration>",
             "SQLite notification state did not survive reopen");
+         declare
+            Value : Bucket_Metadata_State;
+         begin
+            Store.Get_Bucket_Metadata_State
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               Value, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then Value = SQLite_Metadata_Replacement,
+               "SQLite metadata state did not survive reopen");
+            Store.Delete_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Original, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Conflict,
+               "SQLite metadata stale delete did not conflict");
+            Store.Delete_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Replacement, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success, "SQLite metadata exact delete failed");
+            Store.Delete_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Replacement, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite metadata absent delete was not idempotent");
+            Store.Replace_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Replacement,
+               SQLite_Metadata_Original, null, Ada.Real_Time.Time_Last,
+               Result);
+            Assert
+              (Result = Not_Found,
+               "SQLite metadata absent replace was not NotFound");
+            Store.Create_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Original, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite metadata cascade fixture create failed");
+            declare
+               Control : Metadata_Race_Control;
+               task type Mutator (Delete_Worker : Boolean);
+
+               task body Mutator is
+                  Worker_Result : Status := Backend_Unavailable;
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if Delete_Worker then
+                     Store.Delete_Bucket_Metadata_State
+                       ("sqlite-bucket", SQLite_Metadata_Original, null,
+                        Ada.Real_Time.Time_Last, Worker_Result);
+                  else
+                     Store.Replace_Bucket_Metadata_State
+                       ("sqlite-bucket", SQLite_Metadata_Original,
+                        SQLite_Metadata_Replacement, null,
+                        Ada.Real_Time.Time_Last, Worker_Result);
+                  end if;
+                  Control.Record_Result (Delete_Worker, Worker_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (Delete_Worker, Backend_Unavailable);
+               end Mutator;
+
+               Delete_Task  : Mutator (True);
+               Replace_Task : Mutator (False);
+            begin
+               Control.Wait_Complete;
+               Assert
+                 ((Control.Outcome (True) = Success
+                   and then Control.Outcome (False) = Not_Found)
+                  or else
+                  (Control.Outcome (True) = Conflict
+                   and then Control.Outcome (False) = Success),
+                  "SQLite metadata replace/delete race was not linearizable");
+            end;
+            Store.Get_Bucket_Metadata_State
+              ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+               Value, Configured, Result);
+            Assert
+              (Result = Success
+               and then
+                 ((not Configured)
+                  or else
+                    (Configured
+                     and then Value = SQLite_Metadata_Replacement)),
+               "SQLite metadata race retained a non-linearizable state");
+            if Configured then
+               Store.Delete_Bucket_Metadata_State
+                 ("sqlite-bucket", SQLite_Metadata_Replacement, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Assert
+                 (Result = Success,
+                  "SQLite metadata race cleanup delete failed");
+            end if;
+            Store.Create_Bucket_Metadata_State
+              ("sqlite-bucket", SQLite_Metadata_Original, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite metadata cascade fixture restore failed");
+         end;
          Store.Get_Bucket_Replication
            ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
             Document, Configured, Result);
@@ -8136,6 +8541,20 @@ begin
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket delete failed");
    end;
+   Databases.Open
+     (Database, Ada.Directories.Compose (Backend_Root, "catalog.sqlite3"));
+   declare
+      Metadata_Rows : Databases.Statement;
+   begin
+      Databases.Prepare
+        (Metadata_Rows, Database,
+         "SELECT count(*) FROM bucket_metadata_states");
+      Assert
+        (Databases.Step (Metadata_Rows) = Databases.Row
+         and then Databases.Column (Metadata_Rows, 0) = 0,
+         "SQLite bucket deletion did not cascade metadata state");
+   end;
+   Databases.Close (Database);
    Ada.Directories.Delete_Tree (Backend_Root);
    Ada.Text_IO.Put_Line ("SQLite wrapper, catalog, and backend: OK");
 exception

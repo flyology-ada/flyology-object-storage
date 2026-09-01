@@ -13,7 +13,8 @@ package Flyology.Object_Storage.Backends.SQLite is
 
    Configuration_Error : exception;
 
-   type Store is limited new Backend and Bucket_Notification_Backend
+   type Store is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend
      with private;
 
    function Open
@@ -299,6 +300,70 @@ package Flyology.Object_Storage.Backends.SQLite is
       Document   : out Ada.Strings.Unbounded.Unbounded_String;
       Configured : out Boolean;
       Result     : out Status);
+
+   --  Transactionally create one provider-resolved metadata state.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete provider-resolved state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one transactional metadata-state snapshot.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete retained state when configured
+   --  @param Configured Whether metadata state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Transactionally replace one exact metadata-state snapshot.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Value Complete replacement state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Transactionally delete one exact metadata-state snapshot.
+   --  @param Item SQLite backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
 
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;
@@ -1121,7 +1186,8 @@ private
       Value : Long_Long_Integer := 0;
    end Sequence;
 
-   type Store is limited new Backend and Bucket_Notification_Backend
+   type Store is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend
      with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;

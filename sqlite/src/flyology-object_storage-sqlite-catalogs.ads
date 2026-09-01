@@ -309,6 +309,36 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Create one complete metadata state when none is retained.
+   procedure Create_Bucket_Metadata_State
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Backends.Bucket_Metadata_State;
+      Result : out Status);
+
+   --  Read one complete metadata-state snapshot.
+   procedure Get_Bucket_Metadata_State
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Value      : out Backends.Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Replace one exact metadata-state snapshot.
+   procedure Replace_Bucket_Metadata_State
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Expected : Backends.Bucket_Metadata_State;
+      Value    : Backends.Bucket_Metadata_State;
+      Result   : out Status);
+
+   --  Delete one exact metadata-state snapshot; absence is idempotent.
+   procedure Delete_Bucket_Metadata_State
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Expected : Backends.Bucket_Metadata_State;
+      Result   : out Status);
+
    --  Transactionally retain one replication document.
    procedure Put_Bucket_Replication
      (Item     : in out Catalog;

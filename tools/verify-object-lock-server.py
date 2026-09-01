@@ -250,7 +250,7 @@ def verify_backend_sources() -> None:
     )
 
     catalog = source(CATALOG)
-    require(catalog, "Schema_Version : constant Long_Long_Integer := 21;",
+    require(catalog, "Schema_Version : constant Long_Long_Integer := 22;",
             "SQLite schema")
     require(catalog, "CREATE TABLE bucket_object_locks", "SQLite schema")
     require(catalog, "CREATE TABLE object_version_locks", "SQLite schema")
@@ -291,7 +291,7 @@ def verify_backend_evidence() -> None:
             "legal hold allowed exact protected deletion",
             "active retention allowed exact protected deletion",
             "expired retention did not release exact deletion",
-            "schema 21 accepted malformed Object Lock constraints",
+            "schema 22 accepted malformed Object Lock constraints",
         ),
         "SQLite Object Lock evidence",
     )
