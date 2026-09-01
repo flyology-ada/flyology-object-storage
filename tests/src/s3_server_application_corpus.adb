@@ -12071,15 +12071,19 @@ begin
             Method & " object tagging accepted " & Label & ": " & Value);
       end Reject_Tagging_Control;
    begin
-      Require
-        (Has
-           (Run
-              (Signed_Query_Body_Request
-                 ("PUT", "/test-bucket/object", Query, Document,
-                  "Content-MD5: " & Valid_MD5 & CRLF &
-                  "Content-Type: application/xml; charset=utf-8" & CRLF)),
-            "200 OK"),
-         "PutObjectTagging rejected a valid tagging document");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket/object", Query, Document,
+                 "Content-MD5: " & Valid_MD5 & CRLF &
+                 "Content-Type: application/xml; charset=utf-8" & CRLF));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "x-amz-version-id: null" & CRLF),
+            "PutObjectTagging rejected an unversioned tagging document");
+      end;
       Require
         (Has
            (Run
@@ -12105,6 +12109,7 @@ begin
          Require
            (Has (Response, "200 OK")
             and then Has (Response, "Content-Type: application/xml")
+            and then Has (Response, "x-amz-version-id: null" & CRLF)
             and then Has (Response, "<Key>team</Key>")
             and then Has (Response, "<Value>storage</Value>"),
             "GetObjectTagging did not return the committed tags");
@@ -12277,13 +12282,17 @@ begin
               ("GET", "/missing-bucket/object", Query)),
             "<Code>NoSuchBucket</Code>"),
          "GetObjectTagging misreported a missing bucket");
-      Require
-        (Has
-           (Run
-              (Signed_Query_Request
-                 ("DELETE", "/test-bucket/object", Query)),
-            "204 No Content"),
-         "DeleteObjectTagging failed");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("DELETE", "/test-bucket/object", Query));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Has (Response, "x-amz-version-id: null" & CRLF),
+            "DeleteObjectTagging omitted the unversioned identity");
+      end;
       declare
          Response : constant String :=
            Run (Signed_Query_Request ("GET", "/test-bucket/object", Query));

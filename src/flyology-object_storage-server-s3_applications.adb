@@ -12716,13 +12716,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
                   procedure Set_Version_Header is
                   begin
-                     if Identity.Has_Version_ID then
-                        Apps.Set_Header
-                          (X, "x-amz-version-id",
-                           (if Identity.Is_Null_Version
-                            then "null"
-                            else US.To_String (Identity.Version_ID)));
-                     end if;
+                     Apps.Set_Header
+                       (X, "x-amz-version-id",
+                        (if not Identity.Has_Version_ID
+                           or else Identity.Is_Null_Version
+                         then "null"
+                         else US.To_String (Identity.Version_ID)));
                   end Set_Version_Header;
                begin
                   if Payer_Count > 1 or else Algorithm_Count > 1
