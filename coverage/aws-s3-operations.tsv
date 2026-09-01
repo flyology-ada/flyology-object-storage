@@ -60,7 +60,7 @@ GetObjectLegalHold	extended	covered	covered	covered	covered
 GetObjectLockConfiguration	extended	covered	covered	covered	covered
 GetObjectRetention	extended	covered	covered	covered	covered
 GetObjectTagging	core	covered	covered	covered	covered
-GetObjectTorrent	extended	missing	covered	missing	covered
+GetObjectTorrent	extended	covered	covered	covered	covered
 GetPublicAccessBlock	extended	covered	covered	covered	covered
 HeadBucket	core	covered	covered	covered	covered
 HeadObject	core	covered	covered	covered	covered

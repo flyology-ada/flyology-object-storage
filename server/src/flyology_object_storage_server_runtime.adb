@@ -94,13 +94,18 @@ procedure Flyology_Object_Storage_Server_Runtime is
    Rules : constant Authentication.Policy :=
      (Expected_Region    => US.To_Unbounded_String (Region),
       Maximum_Clock_Skew => 900.0);
+   --  This executable selects 256 KiB pieces for its bencoded information
+   --  representation.  The generic has no default, so another integrator's
+   --  choice remains explicit and changes that deployment's information hash.
+   Server_Torrent_Piece_Length : constant Positive := 256 * 1_024;
 
    package S3_App is new Flyology.Object_Storage.Server.S3_Applications
      (Backend_Type             => Backend_Type,
       Store                    => Store,
       Credential_Provider_Type => Static_Credentials.Provider,
       Credentials              => Credentials,
-      Rules                    => Rules);
+      Rules                    => Rules,
+      Torrent_Piece_Length     => Server_Torrent_Piece_Length);
 
    protected type Runtime_Status is
       procedure Set_S3_Endpoint (Value : Sockets.Endpoint);

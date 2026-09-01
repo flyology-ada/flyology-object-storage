@@ -64,7 +64,8 @@ procedure S3_Server_Harness is
       Store                    => Store,
       Credential_Provider_Type => Static_Credentials.Provider,
       Credentials              => Credentials,
-      Rules                    => Rules);
+      Rules                    => Rules,
+      Torrent_Piece_Length     => 256 * 1_024);
 
    type Server_Context is limited null record;
 

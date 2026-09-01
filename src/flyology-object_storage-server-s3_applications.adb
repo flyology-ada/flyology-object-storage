@@ -1769,7 +1769,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration,
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
-         Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
+         Put_Object, Copy_Object, Get_Object, Get_Object_Torrent,
+         Head_Object, Delete_Object,
          Restore_Object,
          Put_Object_ACL, Get_Object_ACL,
          Put_Object_Annotation, Get_Object_Annotation,
@@ -2266,6 +2267,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "delete="
         or else Query_Text = "delete=&x-id=DeleteObjects"
         or else Query_Text = "x-id=DeleteObjects&delete=";
+      Is_Get_Object_Torrent_Query : constant Boolean :=
+        Query_Text = "torrent"
+        or else Query_Text = "torrent="
+        or else Query_Text = "torrent=&x-id=GetObjectTorrent"
+        or else Query_Text = "x-id=GetObjectTorrent&torrent=";
       Is_Get_Bucket_Location_Query : constant Boolean :=
         Query_Text = "location"
         or else Query_Text = "location="
@@ -3877,6 +3883,199 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end Write;
       end Response_IO;
 
+      --  The pinned GetObjectTorrent contract permits objects strictly
+      --  smaller than the binary 5 GiB boundary.
+      Maximum_Torrent_Object_Size : constant Byte_Count :=
+        5 * 1_024 * 1_024 * 1_024 - 1;
+
+      package Torrent_Response_IO is
+         Object_Too_Large : exception;
+
+         type Response_Sink is limited new Backends.Byte_Sink with record
+            Name             : US.Unbounded_String;
+            Started          : Boolean := False;
+            Expected         : Byte_Count := 0;
+            Observed         : Byte_Count := 0;
+            Piece_Bytes      : Natural range 0 .. Torrent_Piece_Length := 0;
+            Piece_Hash       : Checksums.Context (S3.Core.SHA1);
+            Expected_Digests : Byte_Count := 0;
+            Digests_Written  : Byte_Count := 0;
+            Output_Expected  : Byte_Count := 0;
+            Output_Written   : Byte_Count := 0;
+         end record;
+
+         overriding procedure Begin_Object
+           (Item           : in out Response_Sink;
+            Info           : Object_Information;
+            First          : Byte_Count;
+            Content_Length : Byte_Count;
+            Partial        : Boolean;
+            Token          : access Flyology.Cancellation.Token;
+            Deadline       : Ada.Real_Time.Time);
+
+         overriding procedure Write
+           (Item     : in out Response_Sink;
+            Data     : Ada.Streams.Stream_Element_Array;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time);
+
+         procedure Finish (Item : in out Response_Sink);
+      end Torrent_Response_IO;
+
+      package body Torrent_Response_IO is
+         procedure Check_Context
+           (Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time)
+         is
+            use type Ada.Real_Time.Time;
+         begin
+            if Token /= null and then Token.Requested then
+               raise Flyology.Cancellation.Operation_Cancelled;
+            elsif Deadline /= Ada.Real_Time.Time_Last
+              and then Ada.Real_Time.Clock >= Deadline
+            then
+               raise Flyology.IO.Timeout_Error;
+            end if;
+         end Check_Context;
+
+         procedure Emit
+           (Item : in out Response_Sink;
+            Data : String) is
+         begin
+            Apps.Write_Chunk (X, Data);
+            Item.Output_Written :=
+              Item.Output_Written + Byte_Count (Data'Length);
+         end Emit;
+
+         procedure Emit_Digest (Item : in out Response_Sink) is
+            Value : constant Checksums.Digest_Value :=
+              Checksums.Finish (Item.Piece_Hash);
+            Data : constant Ada.Streams.Stream_Element_Array :=
+              Checksums.Raw_Bytes (Value);
+         begin
+            Apps.Write_Chunk (X, Data);
+            Item.Output_Written :=
+              Item.Output_Written + Byte_Count (Data'Length);
+            Item.Digests_Written := Item.Digests_Written + 1;
+            Item.Piece_Bytes := 0;
+            Checksums.Reset (Item.Piece_Hash);
+         end Emit_Digest;
+
+         overriding procedure Begin_Object
+           (Item           : in out Response_Sink;
+            Info           : Object_Information;
+            First          : Byte_Count;
+            Content_Length : Byte_Count;
+            Partial        : Boolean;
+            Token          : access Flyology.Cancellation.Token;
+            Deadline       : Ada.Real_Time.Time)
+         is
+            Piece_Length : constant Byte_Count :=
+              Byte_Count (Torrent_Piece_Length);
+            Piece_Count : constant Byte_Count :=
+              (if Content_Length = 0
+               then 0
+               else (Content_Length - 1) / Piece_Length + 1);
+            Digest_Length : Byte_Count;
+         begin
+            if Item.Started then
+               raise Program_Error with "backend began an object twice";
+            elsif Partial or else First /= 0
+              or else Content_Length /= Info.Size
+            then
+               raise Program_Error with
+                 "backend announced an invalid torrent source";
+            elsif Content_Length > Maximum_Torrent_Object_Size then
+               raise Object_Too_Large;
+            elsif Piece_Count > Byte_Count'Last / 20 then
+               raise Constraint_Error with "torrent digest length overflow";
+            end if;
+            Digest_Length := Piece_Count * 20;
+            declare
+               Name : constant String := US.To_String (Item.Name);
+               Header : constant String :=
+                 "d4:infod6:lengthi" & Decimal (Content_Length) &
+                 "e4:name" & Decimal (Byte_Count (Name'Length)) & ":" & Name &
+                 "12:piece lengthi" & Decimal (Piece_Length) &
+                 "e6:pieces" & Decimal (Digest_Length) & ":";
+               Framing_Length : constant Byte_Count :=
+                 Byte_Count (Header'Length) + 2;
+            begin
+               if Digest_Length > Byte_Count'Last - Framing_Length then
+                  raise Constraint_Error with "torrent length overflow";
+               end if;
+               Item.Expected_Digests := Piece_Count;
+               Item.Output_Expected := Digest_Length + Framing_Length;
+               Apps.Begin_Stream
+                 (X, 200, "application/x-bittorrent",
+                  Flyology.HTTP.Body_Size (Item.Output_Expected));
+               Item.Started := True;
+               Item.Expected := Content_Length;
+               Check_Context (Token, Deadline);
+               Emit (Item, Header);
+            end;
+         end Begin_Object;
+
+         overriding procedure Write
+           (Item     : in out Response_Sink;
+            Data     : Ada.Streams.Stream_Element_Array;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time)
+         is
+            Count : constant Byte_Count := Byte_Count (Data'Length);
+            Cursor : Ada.Streams.Stream_Element_Offset := Data'First;
+         begin
+            if not Item.Started or else Data'Length = 0 then
+               raise Program_Error with "invalid backend torrent fragment";
+            elsif Count > Item.Expected
+              or else Item.Observed > Item.Expected - Count
+            then
+               raise Program_Error with
+                 "backend exceeded its announced torrent source length";
+            end if;
+            while Cursor <= Data'Last loop
+               Check_Context (Token, Deadline);
+               declare
+                  Available : constant Natural :=
+                    Natural (Data'Last - Cursor + 1);
+                  Needed : constant Natural :=
+                    Torrent_Piece_Length - Item.Piece_Bytes;
+                  Taken : constant Natural := Natural'Min (Available, Needed);
+                  Last : constant Ada.Streams.Stream_Element_Offset :=
+                    Cursor + Ada.Streams.Stream_Element_Offset (Taken) - 1;
+               begin
+                  Checksums.Update (Item.Piece_Hash, Data (Cursor .. Last));
+                  Item.Piece_Bytes := Item.Piece_Bytes + Taken;
+                  Item.Observed := Item.Observed + Byte_Count (Taken);
+                  Cursor := Last + 1;
+                  if Item.Piece_Bytes = Torrent_Piece_Length then
+                     Emit_Digest (Item);
+                  end if;
+               end;
+            end loop;
+         end Write;
+
+         procedure Finish (Item : in out Response_Sink) is
+         begin
+            if not Item.Started or else Item.Observed /= Item.Expected then
+               raise Program_Error with
+                 "backend succeeded with incomplete torrent source";
+            end if;
+            if Item.Piece_Bytes > 0 then
+               Emit_Digest (Item);
+            end if;
+            if Item.Digests_Written /= Item.Expected_Digests then
+               raise Program_Error with
+                 "backend produced an invalid torrent digest count";
+            end if;
+            Emit (Item, "ee");
+            if Item.Output_Written /= Item.Output_Expected then
+               raise Program_Error with
+                 "torrent response length does not match its framing";
+            end if;
+         end Finish;
+      end Torrent_Response_IO;
+
       package Annotation_Response_IO is
          type Response_Sink is limited new Backends.Annotation_Byte_Sink with
          record
@@ -5446,6 +5645,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Operation := Get_Object_Retention;
          elsif Method = "POST" and then Has_Restore_Query then
             Operation := Restore_Object;
+         elsif Method = "GET" and then Is_Get_Object_Torrent_Query then
+            Operation := Get_Object_Torrent;
          elsif Parsed.Has_Query and then Has_Annotation_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
@@ -15057,6 +15258,54 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   else
                      Send_Backend_Error (X, Result, False, Target_Text);
                   end if;
+               end;
+
+            when Get_Object_Torrent =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_OK : Boolean := False;
+                  Sink : Torrent_Response_IO.Response_Sink;
+               begin
+                  if Payer_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The request payer header is duplicated", Target_Text);
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The request payer header is invalid", Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+                  Sink.Name := US.To_Unbounded_String (Key);
+                  Store.Get_Object
+                    (Bucket, Key, Whole_Object, Sink, Apps.Cancellation (X),
+                     Apps.Deadline (X), Info, Result,
+                     Selector => Backends.Current_Version_Selector);
+                  if Result = Success then
+                     Torrent_Response_IO.Finish (Sink);
+                     Apps.End_Stream (X);
+                  elsif not Apps.Wire_Response_Started (X) then
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                  else
+                     Apps.Mark_Failed (X);
+                  end if;
+               exception
+                  when Torrent_Response_IO.Object_Too_Large =>
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetObjectTorrent requires an object smaller than " &
+                          "5 GiB",
+                        Target_Text);
                end;
 
             when Get_Object =>

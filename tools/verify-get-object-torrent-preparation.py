@@ -18,17 +18,31 @@ OBJECTS_SPEC = ROOT / "src" / "flyology-object_storage-client-objects.ads"
 OBJECTS_BODY = ROOT / "src" / "flyology-object_storage-client-objects.adb"
 SOCKET_CORPUS = ROOT / "tests" / "src" / \
     "s3_get_object_torrent_socket_corpus.adb"
+SERVER_SPEC = ROOT / "src" / \
+    "flyology-object_storage-server-s3_applications.ads"
+SERVER_BODY = ROOT / "src" / \
+    "flyology-object_storage-server-s3_applications.adb"
+SERVER_RUNTIME = ROOT / "server" / "src" / \
+    "flyology_object_storage_server_runtime.adb"
+SERVER_CORPUS = ROOT / "tests" / "src" / \
+    "s3_server_application_corpus.adb"
+QUALIFICATION = ROOT / "docs" / "qualification" / \
+    "get-object-torrent.md"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 
 # These values identify the reviewed upstream model. A change is a model
 # upgrade and requires regenerating and reviewing the complete inventory.
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
-EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
+EXPECTED_SHA256 = (
+    "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
+)
 EXPECTED_MEMBERS = [
     ("request", 289, 1, "Bucket", 60, "uri-label", "true", "projected"),
     ("request", 289, 2, "Key", 471, "uri-label", "true", "projected"),
-    ("request", 289, 3, "RequestPayer", 599, "header", "false", "projected"),
-    ("request", 289, 4, "ExpectedBucketOwner", 15, "header", "false", "projected"),
+    ("request", 289, 3, "RequestPayer", 599, "header", "false",
+     "projected"),
+    ("request", 289, 4, "ExpectedBucketOwner", 15, "header", "false",
+     "projected"),
     ("output", 288, 1, "Body", 46, "body", "false", "streamed"),
     ("output", 288, 2, "RequestCharged", 598, "header", "false", "projected"),
 ]
@@ -158,6 +172,30 @@ def comma_values(value: str) -> list[str]:
     return values
 
 
+def unique_region(source: str, start: str, end: str, label: str) -> str:
+    if source.count(start) != 1:
+        fail(f"{label}: start delimiter is not unique")
+    first = source.index(start)
+    last = source.find(end, first + len(start))
+    if last < 0:
+        fail(f"{label}: end delimiter is missing")
+    return source[first:last]
+
+
+def require_in_order(region: str, fragments: list[str], label: str) -> None:
+    cursor = 0
+    for fragment in fragments:
+        found = region.find(fragment, cursor)
+        if found < 0:
+            fail(f"{label}: missing or reordered {fragment!r}")
+        cursor = found + len(fragment)
+
+
+def require_once(region: str, fragment: str, label: str) -> None:
+    if region.count(fragment) != 1:
+        fail(f"{label}: expected one {fragment!r}")
+
+
 def main() -> int:
     lock = LOCK.read_text(encoding="utf-8")
     if f'revision = "{EXPECTED_REVISION}"' not in lock:
@@ -186,7 +224,9 @@ def main() -> int:
         required = member_values(model, "Member_Required", shape)
         streaming = member_values(model, "Member_Streaming", shape)
         for index, name in enumerate(names):
-            boundary = "streamed" if streaming[index] == "True" else "projected"
+            boundary = (
+                "streamed" if streaming[index] == "True" else "projected"
+            )
             generated.append(
                 (direction, shape, index + 1, name, int(shapes[index]),
                  LOCATION[locations[index]], required[index].lower(), boundary)
@@ -364,6 +404,189 @@ def main() -> int:
     ):
         if token not in socket_corpus:
             fail(f"socket lifecycle corpus lacks {token}")
+
+    server_spec = SERVER_SPEC.read_text(encoding="utf-8")
+    server_body = SERVER_BODY.read_text(encoding="utf-8")
+    server_runtime = SERVER_RUNTIME.read_text(encoding="utf-8")
+    server_corpus = SERVER_CORPUS.read_text(encoding="utf-8")
+    qualification = QUALIFICATION.read_text(encoding="utf-8")
+    generic_region = unique_region(
+        server_spec,
+        "--  @formal Backend_Type Concrete pluggable backend type",
+        "package Flyology.Object_Storage.Server.S3_Applications is",
+        "server generic contract",
+    )
+    require_in_order(
+        generic_region,
+        [
+            "--  @formal Clock Trusted wall-clock source\n"
+            "--  @formal Torrent_Piece_Length Caller-selected "
+            "GetObjectTorrent piece size\n"
+            "--  @formal Metadata_Provider",
+            "generic",
+            "Torrent_Piece_Length : Positive;",
+        ],
+        "server generic contract",
+    )
+    require_once(
+        generic_region,
+        "Torrent_Piece_Length : Positive;",
+        "server generic contract",
+    )
+    if re.search(
+        r"Torrent_Piece_Length\s*:\s*Positive\s*:=", generic_region
+    ):
+        fail("server torrent piece length acquired a default")
+    require_in_order(
+        server_runtime,
+        [
+            "Server_Torrent_Piece_Length : constant Positive :=",
+            "256 * 1_024;",
+            "Torrent_Piece_Length     => Server_Torrent_Piece_Length",
+        ],
+        "server torrent deployment policy",
+    )
+    query_region = unique_region(
+        server_body,
+        "Is_Get_Object_Torrent_Query : constant Boolean :=",
+        "Is_Get_Bucket_Location_Query : constant Boolean :=",
+        "server torrent query",
+    )
+    require_in_order(
+        query_region,
+        [
+            'Query_Text = "torrent"',
+            'Query_Text = "torrent="',
+            'Query_Text = "torrent=&x-id=GetObjectTorrent"',
+            'Query_Text = "x-id=GetObjectTorrent&torrent="',
+        ],
+        "server torrent query",
+    )
+    io_region = unique_region(
+        server_body,
+        "--  The pinned GetObjectTorrent contract permits objects strictly",
+        "package Annotation_Response_IO is",
+        "server torrent sink",
+    )
+    require_in_order(
+        io_region,
+        [
+            "Maximum_Torrent_Object_Size : constant Byte_Count :=",
+            "5 * 1_024 * 1_024 * 1_024 - 1;",
+            "type Response_Sink is limited new Backends.Byte_Sink",
+            "Checksums.Context (S3.Core.SHA1)",
+            "procedure Check_Context",
+            "Piece_Count : constant Byte_Count :=",
+            "Content_Length > Maximum_Torrent_Object_Size",
+            "raise Object_Too_Large;",
+            "torrent digest length overflow",
+            '"d4:infod6:lengthi"',
+            '"e4:name"',
+            '"12:piece lengthi"',
+            '"e6:pieces"',
+            '"application/x-bittorrent"',
+            "Check_Context (Token, Deadline);",
+            "Checksums.Update",
+            "Emit_Digest (Item);",
+            "backend produced an invalid torrent digest count",
+            'Emit (Item, "ee");',
+            "torrent response length does not match its framing",
+        ],
+        "server torrent sink",
+    )
+    for fragment in (
+        "Checksums.Finish (Item.Piece_Hash)",
+        "elsif Piece_Count > Byte_Count'Last / 20 then",
+        "if Digest_Length > Byte_Count'Last - Framing_Length then",
+    ):
+        require_once(io_region, fragment, "server torrent sink")
+    handler_region = unique_region(
+        server_body,
+        "when Get_Object_Torrent =>",
+        "when Get_Object =>",
+        "server torrent handler",
+    )
+    require_in_order(
+        handler_region,
+        [
+            'Apps.Request_Header_Count (X, "x-amz-request-payer")',
+            "and then Apps.Request_Header",
+            '(X, "x-amz-request-payer") /= "requester"',
+            "Check_Expected_Bucket_Owner",
+            "Sink.Name := US.To_Unbounded_String (Key);",
+            "Store.Get_Object",
+            "Backends.Current_Version_Selector",
+            "Torrent_Response_IO.Finish (Sink);",
+            "Apps.End_Stream (X);",
+            "elsif not Apps.Wire_Response_Started (X) then",
+            "Apps.Mark_Failed (X);",
+            "when Torrent_Response_IO.Object_Too_Large =>",
+            '"GetObjectTorrent requires an object smaller than "',
+        ],
+        "server torrent handler",
+    )
+    cancellation_region = unique_region(
+        server_corpus,
+        "procedure Check_Get_Object_Torrent_Cancellation is",
+        "end Check_Get_Object_Torrent_Cancellation;",
+        "server torrent cancellation",
+    )
+    require_in_order(
+        cancellation_region,
+        [
+            "Stop.Request;",
+            "GetObjectTorrent cancellation did not propagate",
+            "Admitted_Wire.Cancel_On_Send := True;",
+            "Admitted_Wire.Cancellation_Requested",
+            "GetObjectTorrent admitted cancellation did not drain",
+        ],
+        "server torrent cancellation",
+    )
+    evidence_region = unique_region(
+        server_corpus,
+        '"d4:infod6:lengthi11e4:name6:object',
+        "Check_Get_Object_Torrent_Cancellation;",
+        "server torrent evidence",
+    )
+    require_in_order(
+        evidence_region,
+        [
+            "GetObjectTorrent metainfo mismatch",
+            "GetObjectTorrent requester-payer route mismatch",
+            "GetObjectTorrent full decoded key name mismatch",
+            "Boundary_Body : constant String (1 .. 16 * 1_024 + 1)",
+            "GetObjectTorrent callback-boundary metainfo mismatch",
+            "GetObjectTorrent empty-object metainfo mismatch",
+        ],
+        "server torrent evidence",
+    )
+    for token in (
+        "GetObjectTorrent metainfo mismatch",
+        "GetObjectTorrent requester-payer route mismatch",
+        "GetObjectTorrent callback-boundary metainfo mismatch",
+        "GetObjectTorrent empty-object metainfo mismatch",
+        "GetObjectTorrent missing object mismatch",
+        "GetObjectTorrent accepted malformed query state",
+        "GetObjectTorrent ignored the expected owner",
+        "GetObjectTorrent cancellation did not propagate",
+        "GetObjectTorrent admitted cancellation did not drain",
+        "GetObjectTorrent full decoded key name mismatch",
+    ):
+        require_once(server_corpus, token, "server torrent corpus")
+    qualification_collapsed = re.sub(r"\s+", " ", qualification)
+    require_in_order(
+        qualification_collapsed,
+        [
+            "backend cell is shared-family evidence",
+            "complete decoded object-key string accepted by authenticated",
+            "without an additional naming normalization",
+            "broader request-target claim",
+            "production executable explicitly selects 256 KiB",
+            "backend-fragment-boundary",
+            "response-start cancellation",
+        ],
+        "GetObjectTorrent qualification policy",
+    )
 
     print(
         "GetObjectTorrent preparation: 4 request members, 2 output members, "

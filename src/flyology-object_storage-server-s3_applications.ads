@@ -20,6 +20,7 @@ with Flyology.Object_Storage.Server.Metadata_Results;
 --  @formal MFA_Verifier Optional MFA proof verifier
 --  @formal Rules Authentication policy
 --  @formal Clock Trusted wall-clock source
+--  @formal Torrent_Piece_Length Caller-selected GetObjectTorrent piece size
 --  @formal Metadata_Provider Optional caller-owned metadata result provider;
 --  null makes metadata creates and updates return NotImplemented without
 --  backend mutation; reads and deletes do not consult it and remain subject
@@ -33,6 +34,7 @@ generic
    MFA_Verifier : MFA.Verifier_Access := null;
    Rules       : Authentication.Policy := Authentication.Default_Policy;
    with function Clock return Ada.Calendar.Time is Ada.Calendar.Clock;
+   Torrent_Piece_Length : Positive;
    Metadata_Provider : Metadata_Results.Provider_Access := null;
 package Flyology.Object_Storage.Server.S3_Applications is
 
@@ -42,7 +44,8 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,
-   --  Put/Get/Head/DeleteObject, GetObjectAcl, DeleteObjects,
+   --  Put/Get/Head/DeleteObject, GetObjectAcl, GetObjectTorrent,
+   --  DeleteObjects,
    --  Put/Get/List/DeleteObjectAnnotation,
    --  ListObjects v1/v2, and core
    --  multipart operations,

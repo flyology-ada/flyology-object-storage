@@ -217,6 +217,22 @@ procedure S3_Server_Application_Corpus is
             Flyology.Bytes.To_Array
               (Flyology.Bytes.From_Byte_String (Value)))));
 
+   function SHA1_Bytes (Value : String) return String is
+      Data : constant Ada.Streams.Stream_Element_Array :=
+        Checksums.Raw_Bytes
+          (Checksums.Compute
+             (Core.SHA1,
+              Flyology.Bytes.To_Array
+                (Flyology.Bytes.From_Byte_String (Value))));
+      Result : String (1 .. Data'Length);
+   begin
+      for Index in Data'Range loop
+         Result (Integer (Index - Data'First) + 1) :=
+           Character'Val (Data (Index));
+      end loop;
+      return Result;
+   end SHA1_Bytes;
+
    SSE_Test_Key : constant String :=
      Checksum_Value (Core.SHA256, "object-read-sse-c-key");
    SSE_Test_Key_Bytes : constant Checksums.Decode_Result :=
@@ -314,6 +330,8 @@ procedure S3_Server_Application_Corpus is
       Input       : US.Unbounded_String;
       Output      : US.Unbounded_String;
       Receive_Max : Natural := Natural'Last;
+      Cancel_On_Send : Boolean := False;
+      Cancellation_Requested : Boolean := False;
    end record;
 
    overriding procedure Receive
@@ -336,7 +354,7 @@ procedure S3_Server_Application_Corpus is
       Timeout : Duration;
       Token   : access Flyology.Cancellation.Token)
    is
-      pragma Unreferenced (Timeout, Token);
+      pragma Unreferenced (Timeout);
       Available : constant String := US.To_String (Item.Input);
       Count     : Natural;
    begin
@@ -365,11 +383,20 @@ procedure S3_Server_Application_Corpus is
       Timeout : Duration;
       Token   : access Flyology.Cancellation.Token)
    is
-      pragma Unreferenced (Timeout, Token);
+      pragma Unreferenced (Timeout);
    begin
       for Value of Data loop
          US.Append (Item.Output, Character'Val (Value));
       end loop;
+      if Item.Cancel_On_Send
+        and then not Item.Cancellation_Requested
+      then
+         Item.Cancellation_Requested := True;
+         if Token = null then
+            raise Program_Error with "cancelling transport lacked token";
+         end if;
+         Token.Request;
+      end if;
    end Send_All;
 
    function Fixed_Clock return Ada.Calendar.Time is
@@ -707,6 +734,7 @@ procedure S3_Server_Application_Corpus is
       MFA_Verifier            => MFA_Policy'Unchecked_Access,
       Rules                   => Rules,
       Clock                   => Fixed_Clock,
+      Torrent_Piece_Length    => 10_000,
       Metadata_Provider       => Metadata_Provider'Unchecked_Access);
 
    package No_Metadata_App is new
@@ -718,7 +746,8 @@ procedure S3_Server_Application_Corpus is
         Credentials             => Credentials,
         MFA_Verifier            => MFA_Policy'Unchecked_Access,
         Rules                   => Rules,
-        Clock                   => Fixed_Clock);
+        Clock                   => Fixed_Clock,
+        Torrent_Piece_Length    => 10_000);
 
    package No_MFA_App is new Flyology.Object_Storage.Server.S3_Applications
      (Backend_Type            =>
@@ -727,7 +756,8 @@ procedure S3_Server_Application_Corpus is
       Credential_Provider_Type => Static_Credentials.Provider,
       Credentials             => Credentials,
       Rules                   => Rules,
-      Clock                   => Fixed_Clock);
+      Clock                   => Fixed_Clock,
+      Torrent_Piece_Length    => 10_000);
 
    No_Query : constant SigV4.Name_Value_Array (1 .. 0) := (others => <>);
 
@@ -2008,6 +2038,87 @@ procedure S3_Server_Application_Corpus is
         (not Has (US.To_String (Wire.Output), "InternalError"),
          "request cancellation was mislabeled as an internal error");
    end Check_Cancellation_Propagation;
+
+   procedure Check_Get_Object_Torrent_Cancellation is
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", ""));
+      Wire : aliased Memory_Transport;
+      Stop : aliased Flyology.Cancellation.Token;
+      Propagated : Boolean := False;
+   begin
+      Wire.Input := US.To_Unbounded_String
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Query));
+      declare
+         Client  : aliased HTTP_Server.Connection (Wire'Access);
+         Request : aliased HTTP_Server.Request;
+         Closed  : Boolean;
+      begin
+         HTTP_Server.Read_Request_Head (Client, Request, Closed);
+         Require (not Closed, "torrent cancel test request head closed");
+         Stop.Request;
+         declare
+            X : Apps.Exchange := Apps.Create
+              (Request, Client,
+               Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
+               Stop'Access, HTTP_Server.Request_Deadline (Client));
+         begin
+            begin
+               S3_App.Handle (X);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Propagated := True;
+            end;
+         end;
+      end;
+      Require
+        (Propagated, "GetObjectTorrent cancellation did not propagate");
+      Require
+        (not Has (US.To_String (Wire.Output), "InternalError"),
+         "GetObjectTorrent cancellation became an internal error");
+
+      declare
+         Admitted_Wire : aliased Memory_Transport;
+         Admitted_Stop : aliased Flyology.Cancellation.Token;
+         Admitted_Propagated : Boolean := False;
+      begin
+         Admitted_Wire.Input := US.To_Unbounded_String
+           (Signed_Query_Request
+              ("GET", "/test-bucket/object", Query));
+         Admitted_Wire.Cancel_On_Send := True;
+         declare
+            Client  : aliased HTTP_Server.Connection
+              (Admitted_Wire'Access);
+            Request : aliased HTTP_Server.Request;
+            Closed  : Boolean;
+         begin
+            HTTP_Server.Read_Request_Head (Client, Request, Closed);
+            Require
+              (not Closed, "admitted torrent cancel request head closed");
+            declare
+               X : Apps.Exchange := Apps.Create
+                 (Request, Client,
+                  Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
+                  Admitted_Stop'Access,
+                  HTTP_Server.Request_Deadline (Client));
+            begin
+               begin
+                  S3_App.Handle (X);
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Admitted_Propagated := True;
+               end;
+            end;
+         end;
+         Require
+           (Admitted_Wire.Cancellation_Requested
+            and then Admitted_Propagated
+            and then Has (US.To_String (Admitted_Wire.Output), "200 OK")
+            and then not Has
+              (US.To_String (Admitted_Wire.Output), "InternalError"),
+            "GetObjectTorrent admitted cancellation did not drain");
+      end;
+   end Check_Get_Object_Torrent_Cancellation;
 
    procedure Check_Deadline_Propagation is
       use type Ada.Real_Time.Time;
@@ -13260,6 +13371,158 @@ begin
       Require (Has (Response, "hello world"),
                "GetObject did not stream the stored payload");
    end;
+
+   declare
+      Torrent_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", ""));
+      Torrent_With_ID_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("torrent", ""),
+         SigV4.Pair ("x-id", "GetObjectTorrent"));
+      Malformed_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", "unexpected"));
+      Expected : constant String :=
+        "d4:infod6:lengthi11e4:name6:object12:piece lengthi10000e" &
+        "6:pieces20:" & SHA1_Bytes ("hello world") & "ee";
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Torrent_Query));
+      With_ID : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Torrent_With_ID_Query));
+      Payer : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Torrent_Query,
+            "x-amz-request-payer", "requester"));
+      Missing : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/absent-torrent", Torrent_Query));
+      Malformed : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Malformed_Query));
+      Wrong_Owner : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Torrent_Query,
+            "x-amz-expected-bucket-owner", "someone-else"));
+      Wrong_Payer : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Torrent_Query,
+            "x-amz-request-payer", "invalid"));
+      Body_Response : constant String := Run
+        (Signed_Query_Body_Request
+           ("GET", "/test-bucket/object", Torrent_Query, "unexpected"));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Has
+           (Response, "Content-Type: application/x-bittorrent" & CRLF)
+         and then Has
+           (Response,
+            "Content-Length: " &
+              Ada.Strings.Fixed.Trim
+                (Natural'Image (Expected'Length), Ada.Strings.Both) & CRLF)
+         and then Response_Body (Response) = Expected,
+         "GetObjectTorrent metainfo mismatch");
+      Require
+        (Has (With_ID, "200 OK")
+         and then Response_Body (With_ID) = Expected,
+         "GetObjectTorrent operation-id route mismatch");
+      Require
+        (Has (Payer, "200 OK")
+         and then Response_Body (Payer) = Expected,
+         "GetObjectTorrent requester-payer route mismatch");
+      Require
+        (Has (Missing, "404 Not Found")
+         and then Has (Missing, "<Code>NoSuchKey</Code>"),
+         "GetObjectTorrent missing object mismatch");
+      Require
+        (Has (Malformed, "400 Bad Request"),
+         "GetObjectTorrent accepted malformed query state");
+      Require
+        (Has (Wrong_Owner, "403 Forbidden"),
+         "GetObjectTorrent ignored the expected owner");
+      Require
+        (Has (Wrong_Payer, "400 Bad Request"),
+         "GetObjectTorrent accepted an invalid request payer");
+      Require
+        (Has (Body_Response, "400 Bad Request"),
+         "GetObjectTorrent accepted a request body");
+   end;
+
+   declare
+      Torrent_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", ""));
+      Expected : constant String :=
+        "d4:infod6:lengthi6e4:name19:folder/torrent-name" &
+        "12:piece lengthi10000e6:pieces20:" & SHA1_Bytes ("nested") &
+        "ee";
+      Created : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/folder/torrent-name", "nested"));
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/folder/torrent-name", Torrent_Query));
+      Deleted : constant String := Run
+        (Signed_Request
+           ("DELETE", "/test-bucket/folder/torrent-name", ""));
+   begin
+      Require
+        (Has (Created, "200 OK")
+         and then Has (Response, "200 OK")
+         and then Response_Body (Response) = Expected
+         and then Has (Deleted, "204 No Content"),
+         "GetObjectTorrent full decoded key name mismatch");
+   end;
+
+   declare
+      Torrent_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", ""));
+      Boundary_Body : constant String (1 .. 16 * 1_024 + 1) :=
+        (others => 'x');
+      Expected : constant String :=
+        "d4:infod6:lengthi16385e4:name16:torrent-boundary" &
+        "12:piece lengthi10000e6:pieces40:" &
+        SHA1_Bytes (Boundary_Body (1 .. 10_000)) &
+        SHA1_Bytes (Boundary_Body (10_001 .. Boundary_Body'Last)) & "ee";
+      Created : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/torrent-boundary", Boundary_Body));
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/torrent-boundary", Torrent_Query));
+      Deleted : constant String := Run
+        (Signed_Request ("DELETE", "/test-bucket/torrent-boundary", ""));
+   begin
+      Require
+        (Has (Created, "200 OK")
+         and then Has (Response, "200 OK")
+         and then Response_Body (Response) = Expected
+         and then Has (Deleted, "204 No Content"),
+         "GetObjectTorrent callback-boundary metainfo mismatch");
+   end;
+
+   declare
+      Torrent_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("torrent", ""));
+      Expected : constant String :=
+        "d4:infod6:lengthi0e4:name13:torrent-empty" &
+        "12:piece lengthi10000e6:pieces0:ee";
+      Created : constant String := Run
+        (Signed_Request ("PUT", "/test-bucket/torrent-empty", ""));
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/torrent-empty", Torrent_Query));
+      Deleted : constant String := Run
+        (Signed_Request ("DELETE", "/test-bucket/torrent-empty", ""));
+   begin
+      Require
+        (Has (Created, "200 OK")
+         and then Has (Response, "200 OK")
+         and then Response_Body (Response) = Expected
+         and then Has (Deleted, "204 No Content"),
+         "GetObjectTorrent empty-object metainfo mismatch");
+   end;
+
+   Check_Get_Object_Torrent_Cancellation;
 
    declare
       Response : constant String := Run

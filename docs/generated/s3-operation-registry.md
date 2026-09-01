@@ -70,7 +70,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetObjectLockConfiguration | Get_Object_Lock_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectRetention | Get_Retention | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectTagging | Get_Tags | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectTorrent | Get_Torrent | objects | bounded_binary_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetObjectTorrent | Get_Torrent | objects | bounded_binary_read | handwritten | false | true | covered / shared_family | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetPublicAccessBlock | Get_Public_Access_Block | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | HeadBucket | Head | buckets | response_head_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | HeadObject | Head_Object | objects | response_head_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

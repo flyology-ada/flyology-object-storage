@@ -1,11 +1,12 @@
-# GetObjectTorrent client qualification
+# GetObjectTorrent qualification
 
 This record preserves the completed strict low-level streaming qualification
 and defines provider-composable bounded evidence for `GetObjectTorrent`. The
 new lifecycle lanes are not qualification evidence until the maintained
-focused gate passes. This record does not claim torrent generation in any
-Flyology backend, an authenticated Flyology server route, or external-server
-interoperability.
+focused gate passes. The local server now derives one single-file bencoded
+information dictionary from an immutable backend object snapshot without
+persisting torrent state or adding discovery metadata. This record does not
+claim peer seeding, tracker availability, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -95,31 +96,55 @@ and restart, synchronous/composable equivalence, retained HTTP/buffer/token
 identity rejection, and exact-operation pre-admission rejection. The root gate
 repeats both corpora three times.
 
-The machine ledger records `GetObjectTorrent` as `missing / covered / missing /
-covered`. Client and corpus evidence do not manufacture backend torrent
-generation or a server route. Promoting either remaining cell requires an
-independent generation contract, authenticated routing, and black-box tests.
+The machine ledger records `GetObjectTorrent` as `covered / covered / covered /
+covered`. The backend cell is shared-family evidence: memory, files, and SQLite
+all pass the provider-neutral immutable `Get_Object` stream contract. Exact
+bencoded-information routing and rendering are exercised through the
+memory-backed server;
+this record does not claim that the same HTTP exchange was independently run
+against the files and SQLite providers.
+
+The server accepts only the exact torrent subresource, validates the expected
+owner and request-payer header, and reads the current immutable object through
+that backend boundary. It preserves the complete decoded object-key string
+accepted by authenticated request-target parsing as `info.name`, without an
+additional naming normalization or a broader request-target claim. A required
+no-default generic formal makes the piece
+length an explicit application choice and is deliberately source-incompatible
+for existing generic instantiations. The production executable explicitly
+selects 256 KiB; the focused corpus selects 10,000 bytes to exercise piece and
+backend-fragment boundaries. Changing either choice changes the info hash.
+
+The pinned operation boundary is strictly smaller than 5 GiB; the sink rejects
+the 5 GiB boundary before starting a response. Configured SSE-C object state is
+not available in the local server profile, so this route cannot expose one.
+
+The response is a canonical single-file bencoded information dictionary. It
+streams the header, one raw SHA-1 digest per configured piece, and the closing
+dictionary bytes without retaining the object or complete digest list. It does
+not include a tracker or peer-discovery field and therefore makes no
+peer-discoverable torrent claim. Empty, multi-piece, final-partial-piece,
+backend-fragment-boundary, decoded-path name, missing-object, malformed-query,
+owner, payer, request-body, pre-admission cancellation, and response-start
+cancellation cases are black-box server evidence.
 
 ## Gate evidence
 
-The maintained warning-strict root gate passed 41/41 AUnit tests with zero
-failed assertions or unexpected errors, the 132-case files crash matrix, the
+The maintained warning-strict root gate passed 46/46 AUnit tests with zero
+failed assertions or unexpected errors, the 140-case files crash matrix, the
 strict server application corpus, and three native/lightweight repetitions of
 the deterministic GetObjectTorrent preparation and signed socket corpora. The
 dedicated inventory verifier reported four request members, two output
 members, and 21 reciprocal vectors against the pinned model.
 
-A fresh GNATdoc 26 site and index were produced after the composable slice.
-The changed GetObjectTorrent declaration regions in Low_Level and Objects have
-zero retained warnings; the final association repair reduced the repository
-warning count by exactly twelve with no added warning. The repository-wide
-classifier still stops on the pre-existing undocumented Client parameter in
-the generated Buckets specification. This is region-scoped documentation
-measurement only, not selected-operation or repository qualification.
+A fresh focused GNATdoc 26 site and index were produced after the server slice.
+The maintained classifier reported 333 dependency warnings, zero repository
+warnings, zero errors, and one selected API documented.
 
 The latest serialized proof campaign remains the 2026-08-24 936/936 result:
 180 flow checks and 756 prover checks across all nine manifest units, with zero
 warnings, unproved or justified checks, or `pragma Assume` statements. This
-slice changes only non-SPARK client, corpus, and documentation units; none of
+slice changes the non-SPARK server adapter, its instantiations, corpus,
+registry, and documentation; none of
 the nine `tools/prove.sh` manifest units changed after that campaign, so a
 redundant formal rerun was not performed.

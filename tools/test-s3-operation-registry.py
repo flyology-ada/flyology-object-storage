@@ -5534,6 +5534,27 @@ def main() -> None:
         "Get_Torrent",
         "Finish",
     ]
+    get_object_torrent_lane = [
+        [
+            "uv",
+            "run",
+            "--python",
+            "3.13",
+            "--",
+            "tools/verify-get-object-torrent-preparation.py",
+        ],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "./bin/s3_get_object_torrent_corpus"],
+        ["@tests", "./bin/s3_get_object_torrent_socket_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["./tools/verify-coverage.sh"],
+        [
+            "./tools/build-api-docs.sh",
+            "{repository}/build/gnatdoc/get-object-torrent",
+        ],
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
 
     def assert_get_object_torrent_registry(candidate):
         entry = candidate.operations["GetObjectTorrent"]
@@ -5545,18 +5566,40 @@ def main() -> None:
         assert "structured typed rejection" in entry["absence"]
         assert "no automatic retry" in entry["certainty"]
         assert "does not prove prior object state" in entry["reconciliation"]
-        assert "no public operation-specific body ceiling" in (
-            entry["exclusions"][1]
+        assert "without a public operation-specific body ceiling" in (
+            entry["exclusions"][2]
         )
+        assert "object-key string accepted by authenticated" in (
+            entry["exclusions"][0]
+        )
+        assert "production executable selects 256 KiB" in (
+            entry["exclusions"][2]
+        )
+        assert "strictly below 5 GiB" in entry["exclusions"][1]
         assert entry["coverage"] == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
+        assert entry["provenance"]["backend"] == "shared_family"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert entry.get("evidence_tokens") == ["Get_Object"]
+        assert "src/flyology-object_storage-backends.ads" in (
+            entry["evidence"]["backend"]
+        )
+        assert "src/flyology-object_storage-server-s3_applications.adb" in (
+            entry["evidence"]["server"]
+        )
+        assert "tests/src/s3_server_application_corpus.adb" in (
+            entry["evidence"]["server"]
+        )
         assert "tools/verify-get-object-torrent-preparation.py" in (
             entry["evidence"]["corpus"]
         )
+        assert candidate.qualification[
+            "get_object_torrent"
+        ] == get_object_torrent_lane
 
     def reject_get_object_torrent_registry(candidate, label):
         try:
@@ -5595,34 +5638,53 @@ def main() -> None:
         cross_torrent_symbol,
         "cross-operation symbol",
     )
+    wrong_torrent_evidence_token = copy.deepcopy(registry)
+    wrong_torrent_evidence_token.operations["GetObjectTorrent"][
+        "evidence_tokens"
+    ] = ["Get_Object_Attributes"]
+    assert wrong_torrent_evidence_token != registry
+    reject_get_object_torrent_registry(
+        wrong_torrent_evidence_token,
+        "cross-operation evidence token",
+    )
+    missing_torrent_server = copy.deepcopy(registry)
+    missing_torrent_server.operations["GetObjectTorrent"]["coverage"][
+        "server"
+    ] = "missing"
+    assert missing_torrent_server != registry
+    reject_get_object_torrent_registry(
+        missing_torrent_server,
+        "missing server coverage",
+    )
+    missing_torrent_evidence = copy.deepcopy(registry)
+    missing_torrent_evidence.operations["GetObjectTorrent"]["evidence"][
+        "server"
+    ].remove("tests/src/s3_server_application_corpus.adb")
+    assert missing_torrent_evidence != registry
+    reject_get_object_torrent_registry(
+        missing_torrent_evidence,
+        "missing server evidence",
+    )
     torrent_qualification, torrent_commands = (
         s3_operation.qualification_plan(registry, ["GetObjectTorrent"])
     )
     assert torrent_qualification == "get_object_torrent"
-    assert torrent_commands[:5] == [
-        [
-            "uv",
-            "run",
-            "--python",
-            "3.13",
-            "--",
-            "tools/verify-get-object-torrent-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_object_torrent_corpus"],
-        ["@tests", "./bin/s3_get_object_torrent_socket_corpus"],
-        ["./tools/verify-coverage.sh"],
-    ]
-    assert torrent_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-object-torrent-gnatdoc",
-        "--operation",
-        "GetObjectTorrent",
-    ]
-    assert torrent_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
+    planned_get_object_torrent_lane = copy.deepcopy(
+        get_object_torrent_lane
+    )
+    planned_get_object_torrent_lane[-3].extend(
+        ["--operation", "GetObjectTorrent"]
+    )
+    assert torrent_commands == planned_get_object_torrent_lane
+    missing_torrent_server_command = copy.deepcopy(registry)
+    missing_torrent_server_command.qualification[
+        "get_object_torrent"
+    ].remove(["@tests", "./bin/s3_server_application_corpus"])
+    assert missing_torrent_server_command != registry
+    reject_get_object_torrent_registry(
+        missing_torrent_server_command,
+        "missing server corpus command",
+    )
     for operations, expected in (
         (["GetObjectTorrent", "GetObjectTorrent"], "appears more than once"),
         (
