@@ -234,6 +234,12 @@ package Flyology.Object_Storage.Backends is
    type Copy_Metadata_Directive is (Copy_Metadata, Replace_Metadata);
    type Copy_Tagging_Directive is (Copy_Tags, Replace_Tags);
 
+   --  CopyObject handling for source-generation annotations.
+   --  @enum Copy_Annotations Preserve every source annotation
+   --  @enum Exclude_Annotations Publish the destination without annotations
+   type Copy_Annotation_Directive is
+     (Copy_Annotations, Exclude_Annotations);
+
    --  HTTP-independent atomic copy policy.
    --  @field Source_Selector Current, null, or exact source generation
    --  @field Metadata_Directive Copy or replace source metadata
@@ -241,6 +247,7 @@ package Flyology.Object_Storage.Backends is
    --  @field Metadata Replacement system and user metadata
    --  @field Tagging_Directive Copy or replace source tags
    --  @field Tags Replacement tag set
+   --  @field Annotation_Directive Copy or exclude source annotations
    --  @field Selected_Checksum Destination full-object checksum algorithm
    --  @field Conditions Predicates on the selected source snapshot
    --  @field Destination_Conditions Atomic destination ETag predicates
@@ -251,6 +258,7 @@ package Flyology.Object_Storage.Backends is
       Metadata           : Object_Metadata;
       Tagging_Directive  : Copy_Tagging_Directive := Copy_Tags;
       Tags               : Object_Tag_Set;
+      Annotation_Directive : Copy_Annotation_Directive := Copy_Annotations;
       Selected_Checksum  : Checksum_Algorithm := No_Checksum;
       Conditions         : Copy_Conditions;
       Destination_Conditions : Write_Conditions;
@@ -458,6 +466,90 @@ package Flyology.Object_Storage.Backends is
 
    --  Pluggable object storage contract.
    type Backend is limited interface;
+
+   --  Optional capability for streamed, generation-scoped object
+   --  annotations. Backends without this interface remain valid Backend
+   --  implementations and report Not_Implemented through the adapters below.
+   type Object_Annotation_Backend is limited interface;
+
+   --  Sink for one immutable annotation payload snapshot.
+   type Annotation_Byte_Sink is limited interface;
+
+   --  Announce annotation metadata before the first payload fragment.
+   --  @param Item Annotation sink
+   --  @param Info Immutable annotation metadata
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   procedure Begin_Annotation
+     (Item     : in out Annotation_Byte_Sink;
+      Info     : Object_Annotation_Information;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time) is abstract;
+
+   --  Consume one nonempty annotation payload fragment.
+   --  @param Item Annotation sink
+   --  @param Data Nonempty payload fragment
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   procedure Write
+     (Item     : in out Annotation_Byte_Sink;
+      Data     : Ada.Streams.Stream_Element_Array;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time) is abstract;
+
+   --  Optional canonical parent-object ETag condition for annotation changes.
+   --  Object_ETag accepts the wildcard or exact quoted or unquoted condition.
+   --  @field Has_Object_ETag Whether the condition is present
+   --  @field Object_ETag Canonical exact parent-object ETag condition
+   type Object_Annotation_Conditions is record
+      Has_Object_ETag : Boolean;
+      Object_ETag     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Annotation replacement checksum and parent-object condition.
+   --  Expected_Checksum optionally supplies a full-object digest over the
+   --  exact streamed payload for atomic validation before publication.
+   --  @field Expected_Checksum Optional expected full-payload checksum
+   --  @field Conditions Atomic parent-object ETag condition
+   type Put_Object_Annotation_Options is record
+      Expected_Checksum : Checksum_Information;
+      Conditions        : Object_Annotation_Conditions;
+   end record;
+
+   --  HTTP-independent annotation listing selection. After is an exclusive
+   --  bytewise lexical cursor; the S3 boundary encodes it into an opaque,
+   --  request-scope-bound continuation token.
+   --  @field Prefix Required bytewise name prefix
+   --  @field Has_After Whether After is supplied
+   --  @field After Exclusive exact-name cursor when Has_After is true
+   --  @field Maximum Maximum annotations returned in this live-state page
+   type List_Object_Annotations_Options is record
+      Prefix    : Ada.Strings.Unbounded.Unbounded_String;
+      Has_After : Boolean;
+      After     : Ada.Strings.Unbounded.Unbounded_String;
+      Maximum   : List_Limit;
+   end record;
+
+   --  One annotation in bytewise name order.
+   --  @field Name Exact annotation name
+   --  @field Info Immutable annotation metadata
+   type Listed_Object_Annotation is record
+      Name : Ada.Strings.Unbounded.Unbounded_String;
+      Info : Object_Annotation_Information;
+   end record;
+
+   package Listed_Object_Annotation_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Object_Annotation);
+
+   --  One live-state annotation page.
+   --  @field Annotations Ordered annotation entries
+   --  @field Is_Truncated Whether additional current entries remain
+   --  @field Next_After Exclusive exact-name cursor for the next page
+   type Object_Annotation_Page is record
+      Annotations  : Listed_Object_Annotation_Vectors.Vector;
+      Is_Truncated : Boolean;
+      Next_After   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
 
    --  Optional capability for retaining the shared bucket-notification
    --  document. A backend that does not implement this interface remains a
@@ -1885,6 +1977,8 @@ package Flyology.Object_Storage.Backends is
    --  inherited only when explicitly supplied. Replace_Metadata uses the
    --  complete Content_Type and Metadata in Options. Copy_Tags preserves the
    --  source tag set; Replace_Tags uses the complete Options.Tags set.
+   --  Copy_Annotations preserves the selected source generation's complete
+   --  annotation set; Exclude_Annotations publishes an empty set.
    --  Selected_Checksum chooses the destination full-object checksum. When it
    --  is No_Checksum, the source algorithm is inherited, or CRC64NVME is used
    --  for an unchecksummed source. A multipart composite value or method is
@@ -1893,7 +1987,8 @@ package Flyology.Object_Storage.Backends is
    --
    --  Destination_Conditions are evaluated in the atomic publication boundary
    --  that publishes the complete body/information/metadata/tags/checksum
-   --  tuple. Validation, source-condition failure, source read failure, and
+   --  and annotation tuple. Validation, source-condition failure, source read
+   --  failure, and
    --  rejection before that boundary leave the prior destination unchanged.
    --  Source_Identity and Destination_Identity are returned only on Success
    --  and describe the selected source snapshot and published destination
@@ -2189,6 +2284,217 @@ package Flyology.Object_Storage.Backends is
       Identity : out Version_Identity;
       Result   : out Status;
       Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Atomically replace one named annotation on a selected generation. The
+   --  payload is consumed before publication; checksum and parent-object
+   --  predicates are evaluated over the same selected generation. The
+   --  returned ETag is an unquoted lowercase MD5 digest.
+   --  @param Item Backend annotation capability
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Source Streamed annotation payload
+   --  @param Options Checksum and parent-object conditions
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Published annotation metadata on success
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Put_Object_Annotation
+     (Item     : in out Object_Annotation_Backend;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Stream one named annotation from an immutable selected-generation
+   --  snapshot. Missing annotation state is a successful Annotation_Absent
+   --  result and does not call the sink.
+   --  @param Item Backend annotation capability
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Sink Destination for a present payload
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether the annotation exists
+   --  @param Info Selected annotation metadata when present
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Get_Object_Annotation
+     (Item     : in out Object_Annotation_Backend;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Atomically remove one named annotation from a selected generation.
+   --  Missing annotation state is a successful Annotation_Absent result.
+   --  @param Item Backend annotation capability
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Conditions Atomic parent-object ETag condition
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether an annotation was removed
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Delete_Object_Annotation
+     (Item     : in out Object_Annotation_Backend;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Return one bytewise-name-ordered live-state annotation page for a
+   --  selected generation.
+   --  @param Item Backend annotation capability
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Options Prefix, lexical cursor, and page bound
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Current annotation page
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure List_Object_Annotations
+     (Item     : in out Object_Annotation_Backend;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Dispatch annotation replacement to an optional backend capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Source Streamed annotation payload
+   --  @param Options Checksum and parent-object conditions
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Published annotation metadata
+   --  @param Identity Selected object generation
+   --  @param Result Storage result or Not_Implemented
+   --  @param Selector Current, null, or exact generation selection
+   procedure Put_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Dispatch annotation retrieval to an optional backend capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Sink Destination for a present payload
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether the annotation exists
+   --  @param Info Selected annotation metadata
+   --  @param Identity Selected object generation
+   --  @param Result Storage result or Not_Implemented
+   --  @param Selector Current, null, or exact generation selection
+   procedure Get_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Dispatch annotation deletion to an optional backend capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Conditions Atomic parent-object ETag condition
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether an annotation was removed
+   --  @param Identity Selected object generation
+   --  @param Result Storage result or Not_Implemented
+   --  @param Selector Current, null, or exact generation selection
+   procedure Delete_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Dispatch annotation listing to an optional backend capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Options Prefix, lexical cursor, and page bound
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Current annotation page
+   --  @param Identity Selected object generation
+   --  @param Result Storage result or Not_Implemented
+   --  @param Selector Current, null, or exact generation selection
+   procedure List_Object_Annotations_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    --  Atomically replace the complete tag set associated with one selected
    --  object generation. Missing buckets and objects remain distinguishable.
@@ -2553,6 +2859,7 @@ private
       Metadata           => (others => <>),
       Tagging_Directive  => Copy_Tags,
       Tags               => (others => <>),
+      Annotation_Directive => Copy_Annotations,
       Selected_Checksum  => No_Checksum,
       Conditions         => (others => <>),
       Destination_Conditions => (others => <>));

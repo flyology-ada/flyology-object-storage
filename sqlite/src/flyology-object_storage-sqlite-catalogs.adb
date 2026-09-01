@@ -1,5 +1,4 @@
 with Ada.Containers;
-with Ada.Containers.Vectors;
 with Ada.Strings.Fixed;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
@@ -16,11 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 22 adds one complete provider-resolved bucket metadata
-   --  state after schema 21 added immutable bucket Object Lock state. Changing
+   --  Persisted schema 23 adds generation-scoped external object annotations
+   --  after schema 22 added provider-resolved bucket metadata state. Changing
    --  this private value or table set requires a transactional migration;
    --  never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 22;
+   Schema_Version : constant Long_Long_Integer := 23;
    --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
    --  contracts allow exactly 1,000 query-keyed configurations per bucket and
    --  family. This private mirror keeps catalog enforcement aligned.
@@ -35,10 +34,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    --  sibling catalog repeats its value so persisted rows and adapter input
    --  enforce the same aggregate identifier-plus-document invariant.
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
-   --  "null". It identifies the sole unversioned/suspended generation; changing
-   --  these bytes would make migrated and reopened objects unreachable.
+   --  "null". It identifies the sole unversioned/suspended generation;
+   --  changing these bytes would make migrated and reopened objects
+   --  unreachable.
    Null_Version_SQL : constant String := "X'6E756C6C'";
    Empty_Info : constant Object_Information := (others => <>);
+   Empty_Annotation_Info : constant Object_Annotation_Information :=
+     (Size       => 0,
+      Modified   => 0,
+      Entity_Tag => US.Null_Unbounded_String,
+      Checksum   => No_Checksum_Information,
+      Version    => US.Null_Unbounded_String);
    Object_Tags_Schema : constant String :=
      "CREATE TABLE object_tags (" &
      "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -302,7 +308,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "DEFAULT 0 CHECK(abac_status BETWEEN 0 AND 2);" &
      "ALTER TABLE buckets ADD COLUMN acceleration_status INTEGER NOT NULL " &
      "DEFAULT 0 CHECK(acceleration_status BETWEEN 0 AND 2);" &
-     "ALTER TABLE buckets ADD COLUMN request_payment_status INTEGER NOT NULL " &
+     "ALTER TABLE buckets ADD COLUMN request_payment_status " &
+     "INTEGER NOT NULL " &
      "DEFAULT 0 CHECK(request_payment_status BETWEEN 0 AND 1);";
    Checksum_Columns_Schema : constant String :=
      "ALTER TABLE objects ADD COLUMN checksum_algorithm INTEGER NOT NULL " &
@@ -429,6 +436,29 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
      "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
+   Object_Annotations_Schema : constant String :=
+     "CREATE TABLE object_annotations (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "annotation_name BLOB NOT NULL " &
+     "CHECK(length(annotation_name) BETWEEN 1 AND 512)," &
+     "payload TEXT NOT NULL," &
+     "size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 1048576)," &
+     "modified INTEGER NOT NULL CHECK(modified >= 0)," &
+     "entity_tag BLOB NOT NULL CHECK(length(entity_tag)=32)," &
+     "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+     "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_method BETWEEN 0 AND 2)," &
+     "checksum_value BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(checksum_value) <= 96)," &
+     "PRIMARY KEY(bucket_name,object_key,version_id,annotation_name)," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;" &
+     "CREATE INDEX object_annotations_payload " &
+     "ON object_annotations(payload);";
 
    function Checksum_From_Columns
      (Query        : DB.Statement;
@@ -771,6 +801,119 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise Catalog_Error with "invalid version object tag catalog value";
       end if;
    end Read_Version_Object_Tags_Internal;
+
+   procedure Read_Version_Annotations_Internal
+     (Item        : in out Catalog;
+      Bucket      : String;
+      Key         : String;
+      Version_ID  : String;
+      Annotations : out Annotation_Copy_Snapshot)
+   is
+      Query : DB.Statement;
+   begin
+      Annotations.Clear;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT annotation_name,payload,size,modified,entity_tag," &
+         "checksum_algorithm,checksum_method,checksum_value " &
+         "FROM object_annotations WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=?3 ORDER BY annotation_name");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, Version_ID);
+      while DB.Step (Query) = DB.Row loop
+         declare
+            Payload : constant String := DB.Column (Query, 1);
+            Record_Value : constant Annotation_Copy_Record :=
+              (Name => US.To_Unbounded_String (DB.Column_Bytes (Query, 0)),
+               Payload => US.To_Unbounded_String (Payload),
+               Info =>
+                 (Size       => Byte_Count
+                    (Long_Long_Integer'(DB.Column (Query, 2))),
+                  Modified   => Unix_Time
+                    (Long_Long_Integer'(DB.Column (Query, 3))),
+                  Entity_Tag =>
+                    US.To_Unbounded_String (DB.Column_Bytes (Query, 4)),
+                  Checksum => Checksum_From_Columns (Query, 5),
+                  Version =>
+                    (if Version_ID = "null"
+                     then US.Null_Unbounded_String
+                     else US.To_Unbounded_String (Version_ID))));
+         begin
+            Annotations.Append (Record_Value);
+            declare
+               Lease : DB.Statement;
+            begin
+               DB.Prepare
+                 (Lease, Item.Database,
+                  "INSERT INTO annotation_copy_leases(payload,refs) " &
+                  "VALUES(?1,1) ON CONFLICT(payload) DO UPDATE " &
+                  "SET refs=refs+1");
+               DB.Bind (Lease, 1, Payload);
+               if DB.Step (Lease) /= DB.Done then
+                  raise Catalog_Error with
+                    "annotation lease returned a row";
+               end if;
+            exception
+               when others =>
+                  Annotations.Delete_Last;
+                  raise;
+            end;
+         end;
+      end loop;
+   end Read_Version_Annotations_Internal;
+
+   procedure Release_Annotation_Copy_Leases_Internal
+     (Item : in out Catalog; Annotations : Annotation_Copy_Snapshot)
+   is
+   begin
+      for Annotation of Annotations loop
+         declare
+            Update : DB.Statement;
+            Delete : DB.Statement;
+         begin
+            DB.Prepare
+              (Update, Item.Database,
+               "UPDATE annotation_copy_leases SET refs=refs-1 " &
+               "WHERE payload=?1 AND refs>0");
+            DB.Bind (Update, 1, US.To_String (Annotation.Payload));
+            if DB.Step (Update) /= DB.Done
+              or else DB.Changes (Item.Database) /= 1
+            then
+               raise Catalog_Error with "annotation lease was not held";
+            end if;
+            DB.Prepare
+              (Delete, Item.Database,
+               "DELETE FROM annotation_copy_leases " &
+               "WHERE payload=?1 AND refs=0");
+            DB.Bind (Delete, 1, US.To_String (Annotation.Payload));
+            if DB.Step (Delete) /= DB.Done then
+               raise Catalog_Error with "annotation lease delete returned row";
+            end if;
+         end;
+      end loop;
+   end Release_Annotation_Copy_Leases_Internal;
+
+   procedure Append_Version_Annotation_Payloads_Internal
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Key        : String;
+      Version_ID : String;
+      Payloads   : in out Catalogs.Payloads)
+   is
+      Query : DB.Statement;
+   begin
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT payload FROM object_annotations WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=?3 ORDER BY annotation_name");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, Version_ID);
+      while DB.Step (Query) = DB.Row loop
+         Payloads.Append (US.To_Unbounded_String (DB.Column (Query, 0)));
+      end loop;
+   end Append_Version_Annotation_Payloads_Internal;
 
    protected body Operation_Gate is
       entry Acquire when not Held is
@@ -1430,6 +1573,53 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
           (Item, "SELECT count(*) FROM pragma_foreign_key_check") = 0;
    end Valid_Generation_Schema;
 
+   function Valid_Object_Annotations_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='object_annotations' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info('object_annotations')") = 11
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('object_annotations') " &
+           "WHERE name IN ('bucket_name','object_key','version_id'," &
+           "'annotation_name','payload','size','modified','entity_tag'," &
+           "'checksum_algorithm','checksum_method','checksum_value')") = 11
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_annotations')") = 3
+        and then Has_SQL
+          ("check(length(annotation_name)between1and512)")
+        and then Has_SQL ("check(sizebetween1and1048576)")
+        and then Has_SQL ("check(modified>=0)")
+        and then Has_SQL ("check(length(entity_tag)=32)")
+        and then Has_SQL ("check(checksum_algorithmbetween0and10)")
+        and then Has_SQL ("check(checksum_methodbetween0and2)")
+        and then Has_SQL ("check(length(checksum_value)<=96)")
+        and then Has_SQL
+          ("primarykey(bucket_name,object_key,version_id,annotation_name)")
+        and then Has_SQL
+          ("foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeletecascade")
+        and then Has_SQL ("withoutrowid")
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_annotations') " &
+           "WHERE name='object_annotations_payload'") = 1;
+   end Valid_Object_Annotations_Schema;
+
    function Valid_Object_Lock_Schema
      (Item : in out Catalog) return Boolean
    is
@@ -1670,9 +1860,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Intelligent_Tiering_Schema &
          Bucket_Inventory_Schema &
          Generation_Schema &
+         Object_Annotations_Schema &
          Object_Lock_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=22;");
+         "PRAGMA user_version=23;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2368,6 +2559,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V21;
 
+   procedure Upgrade_From_V22 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='object_annotations'");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 22";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Object_Annotations_Schema & "PRAGMA user_version=23;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V22;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2420,6 +2637,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 20 => null;
             when 21 => null;
             when 22 => null;
+            when 23 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2484,6 +2702,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V21 (Item);
             Version := 22;
          end if;
+         if Version = 22 then
+            Upgrade_From_V22 (Item);
+            Version := 23;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2501,6 +2723,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
          "'object_version_parts','bucket_public_access_blocks'," &
+         "'object_annotations'," &
          "'bucket_policies','bucket_cors_documents'," &
          "'bucket_encryption_documents'," &
          "'bucket_ownership_controls_documents'," &
@@ -2514,7 +2737,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
          "'bucket_inventory_configurations','bucket_object_locks'," &
-         "'object_version_locks')") /= 30
+         "'object_version_locks')") /= 31
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2530,6 +2753,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Generation_Schema (Item)
       then
          raise Catalog_Error with "SQLite generation schema is incomplete";
+      elsif not Valid_Object_Annotations_Schema (Item)
+      then
+         raise Catalog_Error with
+           "SQLite object annotation schema is incomplete";
       elsif not Valid_Object_Lock_Schema (Item)
       then
          raise Catalog_Error with "SQLite Object Lock schema is incomplete";
@@ -2612,6 +2839,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif Text_Scalar (Item, "PRAGMA quick_check(1)") /= "ok" then
          raise Catalog_Error with "SQLite catalog integrity check failed";
       end if;
+      DB.Execute
+        (Item.Database,
+         "CREATE TEMP TABLE annotation_copy_leases(" &
+         "payload TEXT PRIMARY KEY,refs INTEGER NOT NULL CHECK(refs>0)) " &
+         "WITHOUT ROWID");
       Item.Gate.Release;
       Locked := False;
    exception
@@ -3818,7 +4050,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          when DB.Row =>
             Document := US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
             if DB.Step (Query) /= DB.Done then
-               raise Catalog_Error with Label & " query returned multiple rows";
+               raise Catalog_Error with
+                 Label & " query returned multiple rows";
             end if;
             Configured := True;
          when DB.Done =>
@@ -4015,7 +4248,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          when DB.Row =>
             Document := US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
             if DB.Step (Query) /= DB.Done then
-               raise Catalog_Error with Label & " query returned multiple rows";
+               raise Catalog_Error with
+                 Label & " query returned multiple rows";
             end if;
             Configured := True;
          when DB.Done =>
@@ -5624,7 +5858,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          DB.Bind (Delete_Versions, 1, Bucket);
          DB.Bind_Bytes (Delete_Versions, 2, Key);
          if DB.Step (Delete_Versions) /= DB.Done then
-            raise Catalog_Error with "replaced generation delete returned a row";
+            raise Catalog_Error with
+              "replaced generation delete returned a row";
          end if;
       end if;
 
@@ -5740,35 +5975,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Character'Val (0) & Long_Long_Integer'Image (Publication));
    end Generated_Version_ID;
 
-   procedure Replace_Null_Generation_Tags_Internal
-     (Item : in out Catalog; Bucket, Key : String)
-   is
-      Delete : DB.Statement;
-      Insert : DB.Statement;
-   begin
-      DB.Prepare
-        (Delete, Item.Database,
-         "DELETE FROM object_version_tags WHERE bucket_name=?1 " &
-         "AND object_key=?2 AND version_id=" & Null_Version_SQL);
-      DB.Bind (Delete, 1, Bucket);
-      DB.Bind_Bytes (Delete, 2, Key);
-      if DB.Step (Delete) /= DB.Done then
-         raise Catalog_Error with "generation tag delete returned a row";
-      end if;
-      DB.Prepare
-        (Insert, Item.Database,
-         "INSERT INTO object_version_tags(bucket_name,object_key," &
-         "version_id,tag_index,tag_key,tag_value) SELECT bucket_name," &
-         "object_key," & Null_Version_SQL &
-         ",tag_index,tag_key,tag_value " &
-         "FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Insert, 1, Bucket);
-      DB.Bind_Bytes (Insert, 2, Key);
-      if DB.Step (Insert) /= DB.Done then
-         raise Catalog_Error with "generation tag insert returned a row";
-      end if;
-   end Replace_Null_Generation_Tags_Internal;
-
    procedure Put_Object
      (Item             : in out Catalog;
       Bucket           : String;
@@ -5777,9 +5983,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out US.Unbounded_String;
+      Retired_Annotations : out Payloads;
       Identity         : out Backends.Version_Identity;
       Result           : out Status;
-      Conditions       : Write_Conditions := Default_Write_Conditions)
+      Conditions       : Write_Conditions := Default_Write_Conditions;
+      Annotations      : Annotation_Copy_Snapshot)
    is
       In_Transaction : Boolean := False;
       Bucket_Query : DB.Statement;
@@ -5791,6 +5999,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Published_Identity : Backends.Version_Identity;
    begin
       Previous_Payload := US.Null_Unbounded_String;
+      Retired_Annotations.Clear;
       Identity := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
@@ -5844,6 +6053,21 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       case Versioning is
          when Versioning_Unconfigured =>
             Previous_Payload := Current_Payload;
+            declare
+               Query : DB.Statement;
+            begin
+               DB.Prepare
+                 (Query, Item.Database,
+                  "SELECT version_id FROM object_versions " &
+                  "WHERE bucket_name=?1 AND object_key=?2");
+               DB.Bind (Query, 1, Bucket);
+               DB.Bind_Bytes (Query, 2, Key);
+               while DB.Step (Query) = DB.Row loop
+                  Append_Version_Annotation_Payloads_Internal
+                    (Item, Bucket, Key, DB.Column_Bytes (Query, 0),
+                     Retired_Annotations);
+               end loop;
+            end;
          when Versioning_Enabled =>
             Previous_Payload := US.Null_Unbounded_String;
          when Versioning_Suspended =>
@@ -5860,6 +6084,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                if DB.Step (Null_Query) = DB.Row then
                   Previous_Payload :=
                     US.To_Unbounded_String (DB.Column (Null_Query, 0));
+                  Append_Version_Annotation_Payloads_Internal
+                    (Item, Bucket, Key, "null", Retired_Annotations);
                end if;
             end;
       end case;
@@ -5960,6 +6186,35 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
               (Item, Bucket, Key, "null", Replace_All => False,
                Replace_Null => True);
       end case;
+      for Annotation of Annotations loop
+         declare
+            Insert : DB.Statement;
+            Destination_Version : constant String :=
+              (if US.Length (Info.Version) = 0
+               then "null" else US.To_String (Info.Version));
+         begin
+            DB.Prepare
+              (Insert, Item.Database,
+               "INSERT INTO object_annotations(bucket_name,object_key," &
+               "version_id,annotation_name,payload,size,modified,entity_tag," &
+               "checksum_algorithm,checksum_method,checksum_value) " &
+               "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)");
+            DB.Bind (Insert, 1, Bucket);
+            DB.Bind_Bytes (Insert, 2, Key);
+            DB.Bind_Bytes (Insert, 3, Destination_Version);
+            DB.Bind_Bytes (Insert, 4, US.To_String (Annotation.Name));
+            DB.Bind (Insert, 5, US.To_String (Annotation.Payload));
+            DB.Bind (Insert, 6, Long_Long_Integer (Annotation.Info.Size));
+            DB.Bind (Insert, 7, Long_Long_Integer (Annotation.Info.Modified));
+            DB.Bind_Bytes
+              (Insert, 8, US.To_String (Annotation.Info.Entity_Tag));
+            Bind_Checksum (Insert, 9, Annotation.Info.Checksum);
+            if DB.Step (Insert) /= DB.Done then
+               raise Catalog_Error with
+                 "copied annotation insert returned a row";
+            end if;
+         end;
+      end loop;
       DB.Commit (Item.Database);
       In_Transaction := False;
       Identity := Published_Identity;
@@ -5974,6 +6229,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Locked then
             Item.Gate.Release;
          end if;
+         Retired_Annotations.Clear;
          Identity := (others => <>);
          raise;
    end Put_Object;
@@ -5986,14 +6242,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out US.Unbounded_String;
+      Retired_Annotations : out Payloads;
       Result           : out Status;
-      Conditions       : Write_Conditions := Default_Write_Conditions)
+      Conditions       : Write_Conditions := Default_Write_Conditions;
+      Annotations      : Annotation_Copy_Snapshot)
    is
       Identity : Backends.Version_Identity;
    begin
       Put_Object
         (Item, Bucket, Key, Payload, Info, Tags, Previous_Payload,
-         Identity, Result, Conditions);
+         Retired_Annotations, Identity, Result, Conditions, Annotations);
    end Put_Object;
 
    procedure Refresh_Current_Mirror_Internal
@@ -6016,7 +6274,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind (Delete_Object, 1, Bucket);
       DB.Bind_Bytes (Delete_Object, 2, Key);
       if DB.Step (Delete_Object) /= DB.Done then
-         raise Catalog_Error with "current object mirror delete returned a row";
+         raise Catalog_Error with
+           "current object mirror delete returned a row";
       end if;
 
       DB.Prepare
@@ -6082,7 +6341,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Insert_Object) /= DB.Done
         or else DB.Changes (Item.Database) /= 1
       then
-         raise Catalog_Error with "current object mirror insert changed no row";
+         raise Catalog_Error with
+           "current object mirror insert changed no row";
       end if;
 
       DB.Prepare
@@ -6137,7 +6397,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Modified        : Unix_Time;
       Versioning      : Bucket_Versioning_Status;
       MFA_Delete      : MFA_Delete_Status;
-      Retired_Payload : out US.Unbounded_String;
+      Retired         : in out Payloads;
       Outcome         : out Backends.Version_Delete_Outcome;
       Result          : out Status)
    is
@@ -6148,6 +6408,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Found          : Boolean := False;
       Is_Marker      : Boolean := False;
       Selected_ID    : US.Unbounded_String;
+      Selected_Payload : US.Unbounded_String;
       Selected_Info  : Object_Information := Empty_Info;
 
       procedure Read_Selected is
@@ -6180,7 +6441,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             end if;
             Is_Marker := DB.Column (Selected, 1) = 1;
             if not Is_Marker then
-               Retired_Payload :=
+               Selected_Payload :=
                  US.To_Unbounded_String (DB.Column (Selected, 2));
             end if;
             Selected_Info.Size := Byte_Count'(DB.Column (Selected, 3));
@@ -6231,10 +6492,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                 (Retention_Mode /= 0
                  and then Retention_Until > Long_Long_Integer (Modified))
             then
-               Retired_Payload := US.Null_Unbounded_String;
                Result := Access_Denied;
                return;
             end if;
+            Retired.Append
+              (Selected_Payload);
+            Append_Version_Annotation_Payloads_Internal
+              (Item, Bucket, Key, US.To_String (Selected_ID), Retired);
          end if;
          DB.Prepare
            (Delete_Current, Item.Database,
@@ -6256,7 +6520,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if DB.Step (Delete_Version) /= DB.Done
            or else DB.Changes (Item.Database) /= 1
          then
-            raise Catalog_Error with "selected generation delete changed no row";
+            raise Catalog_Error with
+              "selected generation delete changed no row";
          end if;
          Outcome.Kind :=
            (if Is_Marker then Backends.Delete_Marker_Removed
@@ -6273,6 +6538,23 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             else Generated_Version_ID (Bucket, Key, Publication));
       begin
          if Null_Marker then
+            declare
+               Null_Payload : DB.Statement;
+            begin
+               DB.Prepare
+                 (Null_Payload, Item.Database,
+                  "SELECT payload FROM object_versions WHERE " &
+                  "bucket_name=?1 AND object_key=?2 AND version_id=" &
+                  Null_Version_SQL & " AND is_delete_marker=0");
+               DB.Bind (Null_Payload, 1, Bucket);
+               DB.Bind_Bytes (Null_Payload, 2, Key);
+               if DB.Step (Null_Payload) = DB.Row then
+                  Retired.Append
+                    (US.To_Unbounded_String (DB.Column (Null_Payload, 0)));
+                  Append_Version_Annotation_Payloads_Internal
+                    (Item, Bucket, Key, "null", Retired);
+               end if;
+            end;
             DB.Prepare
               (Delete_Current, Item.Database,
                "DELETE FROM current_object_versions WHERE " &
@@ -6280,7 +6562,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             DB.Bind (Delete_Current, 1, Bucket);
             DB.Bind_Bytes (Delete_Current, 2, Key);
             if DB.Step (Delete_Current) /= DB.Done then
-               raise Catalog_Error with "marker pointer delete returned a row";
+               raise Catalog_Error with
+                 "marker pointer delete returned a row";
             end if;
             DB.Prepare
               (Delete_Version, Item.Database,
@@ -6289,13 +6572,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             DB.Bind (Delete_Version, 1, Bucket);
             DB.Bind_Bytes (Delete_Version, 2, Key);
             if DB.Step (Delete_Version) /= DB.Done then
-               raise Catalog_Error with "null generation delete returned a row";
+               raise Catalog_Error with
+                 "null generation delete returned a row";
             end if;
          end if;
          DB.Prepare
            (Insert_Marker, Item.Database,
             "INSERT INTO object_versions(bucket_name,object_key,version_id," &
-            "is_delete_marker,payload,size,modified,entity_tag,content_type) " &
+            "is_delete_marker,payload,size,modified,entity_tag," &
+            "content_type) " &
             "VALUES(?1,?2,?3,1,NULL,0,?4,X'',X'')");
          DB.Bind (Insert_Marker, 1, Bucket);
          DB.Bind_Bytes (Insert_Marker, 2, Key);
@@ -6317,7 +6602,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Result := Success;
       end Publish_Marker;
    begin
-      Retired_Payload := US.Null_Unbounded_String;
       Outcome := (others => <>);
       if Selector.Kind /= Backends.Current_Version
         and then MFA_Delete = MFA_Delete_Enabled
@@ -6331,7 +6615,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Result := Backends.Evaluate_Delete_Object_Conditions
         (Conditions, Found, Selected_Info);
       if Result /= Success then
-         Retired_Payload := US.Null_Unbounded_String;
          return;
       end if;
 
@@ -6347,29 +6630,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when Versioning_Unconfigured =>
                Remove_Selected;
             when Versioning_Enabled =>
-               Retired_Payload := US.Null_Unbounded_String;
                Publish_Marker (False);
             when Versioning_Suspended =>
                --  A suspended delete replaces the distinguished null
                --  generation, not necessarily the currently visible exact
-               --  generation, so retire only the null data payload.
-               declare
-                  Null_Query : DB.Statement;
-               begin
-                  DB.Prepare
-                    (Null_Query, Item.Database,
-                     "SELECT payload FROM object_versions WHERE " &
-                     "bucket_name=?1 AND object_key=?2 AND version_id=" &
-                     Null_Version_SQL & " AND is_delete_marker=0");
-                  DB.Bind (Null_Query, 1, Bucket);
-                  DB.Bind_Bytes (Null_Query, 2, Key);
-                  if DB.Step (Null_Query) = DB.Row then
-                     Retired_Payload :=
-                       US.To_Unbounded_String (DB.Column (Null_Query, 0));
-                  else
-                     Retired_Payload := US.Null_Unbounded_String;
-                  end if;
-               end;
+               --  generation, so retire only null-generation payloads.
                Publish_Marker (True);
          end case;
       end if;
@@ -6383,7 +6648,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Conditions      : Backends.Delete_Object_Conditions;
       MFA_Validated   : Boolean;
       Modified        : Unix_Time;
-      Retired_Payload : out US.Unbounded_String;
+      Retired         : out Payloads;
       Outcome         : out Backends.Version_Delete_Outcome;
       Result          : out Status)
    is
@@ -6393,7 +6658,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Versioning     : Bucket_Versioning_Status := Versioning_Unconfigured;
       MFA_Delete     : MFA_Delete_Status := MFA_Delete_Unconfigured;
    begin
-      Retired_Payload := US.Null_Unbounded_String;
+      Retired.Clear;
       Outcome := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
@@ -6443,12 +6708,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end;
       Delete_Selected_Object_Internal
         (Item, Bucket, Key, Selector, Conditions, MFA_Validated, Modified,
-         Versioning, MFA_Delete, Retired_Payload, Outcome, Result);
+         Versioning, MFA_Delete, Retired, Outcome, Result);
       if Result = Success then
          DB.Commit (Item.Database);
       else
          DB.Rollback (Item.Database);
-         Retired_Payload := US.Null_Unbounded_String;
+         Retired.Clear;
       end if;
       In_Transaction := False;
       Item.Gate.Release;
@@ -6461,7 +6726,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Locked then
             Item.Gate.Release;
          end if;
-         Retired_Payload := US.Null_Unbounded_String;
+         Retired.Clear;
          Outcome := (others => <>);
          raise;
    end Delete_Selected_Object;
@@ -6587,22 +6852,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          declare
             Entry_Result : Status;
             Publication  : Backends.Version_Delete_Outcome;
-            Retired_Payload : US.Unbounded_String;
             Key          : constant String := US.To_String (Request_Entry.Key);
          begin
             Delete_Selected_Object_Internal
-              (Item, Bucket, Key, Request_Entry.Selector,
-               Request_Entry.Conditions, Requirements.MFA_Validated,
-               Modified, Versioning, MFA_Delete, Retired_Payload,
-               Publication, Entry_Result);
+               (Item, Bucket, Key, Request_Entry.Selector,
+                Request_Entry.Conditions, Requirements.MFA_Validated,
+               Modified, Versioning, MFA_Delete, Retired,
+                Publication, Entry_Result);
             Outcomes.Append
               (Backends.Delete_Object_Outcome'
                  (Result => Entry_Result, Publication => Publication));
-            if Entry_Result = Success
-              and then US.Length (Retired_Payload) > 0
-            then
-               Retired.Append (Retired_Payload);
-            end if;
          end;
       end loop;
       DB.Commit (Item.Database);
@@ -6638,7 +6897,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Versioning_Value : Long_Long_Integer := 0;
       Versioning : Bucket_Versioning_Status := Versioning_Unconfigured;
    begin
-      Version_ID := US.Null_Unbounded_String;
       Is_Current := False;
       Identity := (others => <>);
       Version_ID :=
@@ -7051,6 +7309,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Payload  : out US.Unbounded_String;
       Info     : out Object_Information;
       Tags     : out Object_Tag_Set;
+      Annotations : out Annotation_Copy_Snapshot;
       Identity : out Backends.Version_Identity;
       Result   : out Status;
       Check    : access procedure
@@ -7065,6 +7324,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Payload := US.Null_Unbounded_String;
       Info := Empty_Info;
       Tags := Empty_Object_Tags;
+      Annotations.Clear;
       Identity := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
@@ -7078,6 +7338,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if Result = Success then
          Read_Version_Object_Tags_Internal
            (Item, Bucket, Key, US.To_String (Version_ID), Tags);
+         Read_Version_Annotations_Internal
+           (Item, Bucket, Key, US.To_String (Version_ID), Annotations);
          if Check /= null then
             Check.all (US.To_String (Payload), Info, Tags);
          end if;
@@ -7087,14 +7349,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    exception
       when others =>
          if Locked then
+            Release_Annotation_Copy_Leases_Internal (Item, Annotations);
             Item.Gate.Release;
          end if;
          Payload := US.Null_Unbounded_String;
          Info := Empty_Info;
          Tags := Empty_Object_Tags;
+         Annotations.Clear;
          Identity := (others => <>);
          raise;
    end Find_Selected_Object;
+
+   procedure Release_Annotation_Copy_Snapshot
+     (Item : in out Catalog; Annotations : Annotation_Copy_Snapshot)
+   is
+      Locked : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      Release_Annotation_Copy_Leases_Internal (Item, Annotations);
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Release_Annotation_Copy_Snapshot;
 
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
@@ -7258,6 +7540,412 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Delete_Object_Tags
         (Item, Bucket, Key, Identity, Result, Selector);
    end Delete_Object_Tags;
+
+   procedure Put_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name, Payload : String;
+      Info : Object_Annotation_Information;
+      Conditions : Backends.Object_Annotation_Conditions;
+      Previous_Payload : out US.Unbounded_String;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Version_ID     : US.Unbounded_String;
+      Is_Current     : Boolean;
+      Existing       : DB.Statement;
+      Count_Query    : DB.Statement;
+      Parent         : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Previous_Payload := US.Null_Unbounded_String;
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Selected_Data_Version_Internal
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Parent, Item.Database,
+         "SELECT entity_tag,modified,size FROM object_versions " &
+         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3 " &
+         "AND is_delete_marker=0");
+      DB.Bind (Parent, 1, Bucket);
+      DB.Bind_Bytes (Parent, 2, Key);
+      DB.Bind_Bytes (Parent, 3, US.To_String (Version_ID));
+      if DB.Step (Parent) /= DB.Row then
+         raise Catalog_Error with "selected annotation parent disappeared";
+      end if;
+      Result := Evaluate_Object_Delete_Conditions
+        (Has_ETag               => Conditions.Has_Object_ETag,
+         ETag                   => US.To_String (Conditions.Object_ETag),
+         Has_Last_Modified_Time => False,
+         Last_Modified_Time     => 0,
+         Has_Size               => False,
+         Expected_Size          => 0,
+         Exists                 => True,
+         Entity_Tag             => DB.Column_Bytes (Parent, 0),
+         Modified               => Unix_Time
+           (Long_Long_Integer'(DB.Column (Parent, 1))),
+         Size                   => Byte_Count
+           (Long_Long_Integer'(DB.Column (Parent, 2))));
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Identity := (others => <>);
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Existing, Item.Database,
+         "SELECT payload FROM object_annotations WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=?3 AND annotation_name=?4");
+      DB.Bind (Existing, 1, Bucket);
+      DB.Bind_Bytes (Existing, 2, Key);
+      DB.Bind_Bytes (Existing, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Existing, 4, Name);
+      if DB.Step (Existing) = DB.Row then
+         Previous_Payload := US.To_Unbounded_String (DB.Column (Existing, 0));
+      else
+         DB.Prepare
+           (Count_Query, Item.Database,
+            "SELECT count(*) FROM object_annotations WHERE bucket_name=?1 " &
+            "AND object_key=?2 AND version_id=?3");
+         DB.Bind (Count_Query, 1, Bucket);
+         DB.Bind_Bytes (Count_Query, 2, Key);
+         DB.Bind_Bytes (Count_Query, 3, US.To_String (Version_ID));
+         if DB.Step (Count_Query) /= DB.Row then
+            raise Catalog_Error with "annotation count returned no row";
+         elsif DB.Column (Count_Query, 0) = 1_000 then
+            DB.Rollback (Item.Database);
+            In_Transaction := False;
+            Identity := (others => <>);
+            Result := Capacity_Exceeded;
+            Item.Gate.Release;
+            Locked := False;
+            return;
+         end if;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO object_annotations(bucket_name,object_key,version_id," &
+         "annotation_name,payload,size,modified,entity_tag," &
+         "checksum_algorithm,checksum_method,checksum_value) " &
+         "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) " &
+         "ON CONFLICT(bucket_name,object_key,version_id,annotation_name) " &
+         "DO UPDATE SET payload=excluded.payload,size=excluded.size," &
+         "modified=excluded.modified,entity_tag=excluded.entity_tag," &
+         "checksum_algorithm=excluded.checksum_algorithm," &
+         "checksum_method=excluded.checksum_method," &
+         "checksum_value=excluded.checksum_value");
+      DB.Bind (Upsert, 1, Bucket);
+      DB.Bind_Bytes (Upsert, 2, Key);
+      DB.Bind_Bytes (Upsert, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Upsert, 4, Name);
+      DB.Bind (Upsert, 5, Payload);
+      DB.Bind (Upsert, 6, Long_Long_Integer (Info.Size));
+      DB.Bind (Upsert, 7, Long_Long_Integer (Info.Modified));
+      DB.Bind_Bytes (Upsert, 8, US.To_String (Info.Entity_Tag));
+      Bind_Checksum (Upsert, 9, Info.Checksum);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with "annotation upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Previous_Payload := US.Null_Unbounded_String;
+         Identity := (others => <>);
+         raise;
+   end Put_Object_Annotation;
+
+   procedure Get_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name : String;
+      Payload : out US.Unbounded_String;
+      Presence : out Object_Annotation_Presence;
+      Info : out Object_Annotation_Information;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector;
+      Check : access procedure
+        (Payload : String; Info : Object_Annotation_Information) := null)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Query      : DB.Statement;
+      Locked     : Boolean := False;
+   begin
+      Payload := US.Null_Unbounded_String;
+      Presence := Annotation_Absent;
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Selected_Data_Version_Internal
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
+      if Result /= Success then
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT payload,size,modified,entity_tag,checksum_algorithm," &
+         "checksum_method,checksum_value FROM object_annotations " &
+         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3 " &
+         "AND annotation_name=?4");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Query, 4, Name);
+      if DB.Step (Query) = DB.Row then
+         Payload := US.To_Unbounded_String (DB.Column (Query, 0));
+         Info :=
+           (Size       => Byte_Count
+              (Long_Long_Integer'(DB.Column (Query, 1))),
+            Modified   => Unix_Time
+              (Long_Long_Integer'(DB.Column (Query, 2))),
+            Entity_Tag =>
+              US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
+            Checksum   => Checksum_From_Columns (Query, 4),
+            Version    => Identity.Version_ID);
+         Presence := Annotation_Present;
+         if Check /= null then
+            Check.all (US.To_String (Payload), Info);
+         end if;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Payload := US.Null_Unbounded_String;
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         raise;
+   end Get_Object_Annotation;
+
+   procedure Delete_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name : String;
+      Conditions : Backends.Object_Annotation_Conditions;
+      Previous_Payload : out US.Unbounded_String;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Version_ID     : US.Unbounded_String;
+      Is_Current     : Boolean;
+      Query          : DB.Statement;
+      Parent         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Previous_Payload := US.Null_Unbounded_String;
+      Presence := Annotation_Absent;
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Selected_Data_Version_Internal
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Parent, Item.Database,
+         "SELECT entity_tag,modified,size FROM object_versions " &
+         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3 " &
+         "AND is_delete_marker=0");
+      DB.Bind (Parent, 1, Bucket);
+      DB.Bind_Bytes (Parent, 2, Key);
+      DB.Bind_Bytes (Parent, 3, US.To_String (Version_ID));
+      if DB.Step (Parent) /= DB.Row then
+         raise Catalog_Error with "selected annotation parent disappeared";
+      end if;
+      Result := Evaluate_Object_Delete_Conditions
+        (Has_ETag               => Conditions.Has_Object_ETag,
+         ETag                   => US.To_String (Conditions.Object_ETag),
+         Has_Last_Modified_Time => False,
+         Last_Modified_Time     => 0,
+         Has_Size               => False,
+         Expected_Size          => 0,
+         Exists                 => True,
+         Entity_Tag             => DB.Column_Bytes (Parent, 0),
+         Modified               => Unix_Time
+           (Long_Long_Integer'(DB.Column (Parent, 1))),
+         Size                   => Byte_Count
+           (Long_Long_Integer'(DB.Column (Parent, 2))));
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Identity := (others => <>);
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT payload FROM object_annotations WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=?3 AND annotation_name=?4");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Query, 4, Name);
+      if DB.Step (Query) = DB.Row then
+         Previous_Payload := US.To_Unbounded_String (DB.Column (Query, 0));
+         Presence := Annotation_Present;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_annotations WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=?3 AND annotation_name=?4");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      DB.Bind_Bytes (Delete, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Delete, 4, Name);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "annotation delete returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Previous_Payload := US.Null_Unbounded_String;
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         raise;
+   end Delete_Object_Annotation;
+
+   procedure List_Object_Annotations
+     (Item : in out Catalog; Bucket, Key : String;
+      Options : Backends.List_Object_Annotations_Options;
+      Check : not null access procedure;
+      Page : out Backends.Object_Annotation_Page;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Query      : DB.Statement;
+      Locked     : Boolean := False;
+   begin
+      Page :=
+        (Annotations =>
+           Backends.Listed_Object_Annotation_Vectors.Empty_Vector,
+         Is_Truncated => False,
+         Next_After   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check.all;
+      Selected_Data_Version_Internal
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
+      if Result /= Success then
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT annotation_name,size,modified,entity_tag," &
+         "checksum_algorithm,checksum_method,checksum_value " &
+         "FROM object_annotations WHERE bucket_name=?1 AND object_key=?2 " &
+         "AND version_id=?3 AND substr(annotation_name,1,length(?4))=?4 " &
+         "AND (?5=0 OR annotation_name>?6) ORDER BY annotation_name " &
+         "LIMIT ?7");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+      DB.Bind_Bytes (Query, 4, US.To_String (Options.Prefix));
+      DB.Bind
+        (Query, 5,
+         Long_Long_Integer'(if Options.Has_After then 1 else 0));
+      DB.Bind_Bytes (Query, 6, US.To_String (Options.After));
+      DB.Bind (Query, 7, Long_Long_Integer (Options.Maximum) + 1);
+      while DB.Step (Query) = DB.Row loop
+         Check.all;
+         if Page.Annotations.Length <
+           Ada.Containers.Count_Type (Options.Maximum)
+         then
+            Page.Annotations.Append
+              ((Name => US.To_Unbounded_String (DB.Column_Bytes (Query, 0)),
+                Info =>
+                  (Size       => Byte_Count
+                     (Long_Long_Integer'(DB.Column (Query, 1))),
+                   Modified   => Unix_Time
+                     (Long_Long_Integer'(DB.Column (Query, 2))),
+                   Entity_Tag =>
+                     US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
+                   Checksum => Checksum_From_Columns (Query, 4),
+                   Version => Identity.Version_ID)));
+         else
+            Page.Is_Truncated := True;
+            exit;
+         end if;
+      end loop;
+      if Page.Is_Truncated and then not Page.Annotations.Is_Empty then
+         Page.Next_After := Page.Annotations.Last_Element.Name;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Page :=
+           (Annotations =>
+              Backends.Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         raise;
+   end List_Object_Annotations;
 
    procedure List_Objects
      (Item    : in out Catalog;
@@ -7568,13 +8256,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          begin
             for Index in Start_At .. Natural (Candidates.Length) loop
                declare
-                  Key : constant String := US.To_String (Candidates (Index).Key);
+                  Key : constant String :=
+                    US.To_String (Candidates (Index).Key);
                   Matches : constant Boolean :=
                     Key'Length >= Prefix'Length
                     and then
                       (Prefix'Length = 0
-                       or else Key
-                         (Key'First .. Key'First + Prefix'Length - 1) = Prefix);
+                       or else
+                         Key
+                           (Key'First .. Key'First + Prefix'Length - 1) =
+                         Prefix);
                   Delimiter_At : constant Natural :=
                     (if not Matches
                        or else Delimiter'Length = 0
@@ -8422,14 +9113,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          (Query, Item.Database,
          "SELECT EXISTS(SELECT 1 FROM objects WHERE payload=?1), " &
          "EXISTS(SELECT 1 FROM multipart_parts WHERE payload=?1), " &
-         "EXISTS(SELECT 1 FROM object_versions WHERE payload=?1)");
+         "EXISTS(SELECT 1 FROM object_versions WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM object_annotations WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM annotation_copy_leases WHERE payload=?1)");
       DB.Bind (Query, 1, Payload);
       if DB.Step (Query) /= DB.Row then
          raise Catalog_Error with "payload reference query returned no row";
       end if;
       Result := DB.Column (Query, 0) /= 0
         or else DB.Column (Query, 1) /= 0
-        or else DB.Column (Query, 2) /= 0;
+        or else DB.Column (Query, 2) /= 0
+        or else DB.Column (Query, 3) /= 0
+        or else DB.Column (Query, 4) /= 0;
       Item.Gate.Release;
       Locked := False;
       return Result;
@@ -8440,5 +9135,45 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Payload_Referenced;
+
+   procedure Delete_Payload_If_Unreferenced
+     (Item : in out Catalog;
+      Payload : String;
+      Delete : not null access procedure (Payload : String))
+   is
+      Query      : DB.Statement;
+      Referenced : Boolean;
+      Locked     : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM objects WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM multipart_parts WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM object_versions WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM object_annotations WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM annotation_copy_leases WHERE payload=?1)");
+      DB.Bind (Query, 1, Payload);
+      if DB.Step (Query) /= DB.Row then
+         raise Catalog_Error with "payload retirement query returned no row";
+      end if;
+      Referenced := DB.Column (Query, 0) /= 0
+        or else DB.Column (Query, 1) /= 0
+        or else DB.Column (Query, 2) /= 0
+        or else DB.Column (Query, 3) /= 0
+        or else DB.Column (Query, 4) /= 0;
+      if not Referenced then
+         Delete.all (Payload);
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Payload_If_Unreferenced;
 
 end Flyology.Object_Storage.SQLite.Catalogs;

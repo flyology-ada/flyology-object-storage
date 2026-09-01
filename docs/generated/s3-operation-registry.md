@@ -33,7 +33,7 @@ remain inventory-only until their audits gain executable evidence.
 | DeleteBucketTagging | Delete_Tags | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteBucketWebsite | Delete_Website | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteObject | Delete | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteObjectAnnotation | Delete_Annotation | objects | bodyless_mutation | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteObjectAnnotation | Delete_Annotation | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteObjectTagging | Delete_Tags | objects | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeleteObjects | Delete_Objects | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | DeletePublicAccessBlock | Delete_Public_Access_Block | buckets | bodyless_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -64,7 +64,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketWebsite | Get_Website | buckets | bounded_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / shared_family |
 | GetObject | Get_Whole | objects | streaming_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAcl | Get_ACL | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectAnnotation | Not_Exposed | objects | streaming_read | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
+| GetObjectAnnotation | Not_Exposed | objects | streaming_read | generated | false | true | covered / handwritten | partial / generated | covered / handwritten | covered / handwritten |
 | GetObjectAttributes | Get_Attributes | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectLegalHold | Get_Legal_Hold | objects | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectLockConfiguration | Get_Object_Lock_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -81,7 +81,7 @@ remain inventory-only until their audits gain executable evidence.
 | ListBuckets | List_Page | buckets | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListDirectoryBuckets | List_Directory_Buckets | buckets | paginated_rest_xml_read | generated | true | true | missing / absent | covered / generated | missing / absent | covered / shared_family |
 | ListMultipartUploads | List_Multipart_Uploads_Page | transfers | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / shared_family |
 | ListObjectVersions | List_Versions_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjects | List_V1_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjectsV2 | List_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -109,7 +109,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketWebsite | Set_Website | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / generated |
 | PutObject | Put_Object | objects | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutObjectAcl | Not_Exposed | objects | rest_xml_mutation | generated | false | true | covered / handwritten | partial / generated | covered / handwritten | covered / handwritten |
-| PutObjectAnnotation | Not_Exposed | objects | streaming_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
+| PutObjectAnnotation | Not_Exposed | objects | streaming_mutation | generated | false | true | covered / handwritten | partial / generated | covered / handwritten | covered / handwritten |
 | PutObjectLegalHold | Put_Legal_Hold | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutObjectLockConfiguration | Put_Object_Lock_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutObjectRetention | Put_Retention | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

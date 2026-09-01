@@ -15,6 +15,39 @@ with GNAT.SHA256;
 
 package body Flyology.Object_Storage.Backends.Memory is
 
+   Maximum_Annotation_Bytes : constant Byte_Count := 1_024 * 1_024;
+   Maximum_Annotations_Per_Object : constant Ada.Containers.Count_Type :=
+     1_000;
+
+   Empty_Annotation_Info : constant Object_Annotation_Information :=
+     (Size       => 0,
+      Modified   => 0,
+      Entity_Tag => Ada.Strings.Unbounded.Null_Unbounded_String,
+      Checksum   => (others => <>),
+      Version    => Ada.Strings.Unbounded.Null_Unbounded_String);
+
+   function Annotation_Bytes
+     (Annotations : Annotation_Maps.Map) return Byte_Count
+   is
+      Total : Byte_Count := 0;
+   begin
+      for Annotation of Annotations loop
+         Total := Total + Byte_Count (Annotation.Data.Capacity);
+      end loop;
+      return Total;
+   end Annotation_Bytes;
+
+   function Annotation_Length
+     (Annotations : Annotation_Maps.Map) return Byte_Count
+   is
+      Total : Byte_Count := 0;
+   begin
+      for Annotation of Annotations loop
+         Total := Total + Byte_Count (Annotation.Data.Length);
+      end loop;
+      return Total;
+   end Annotation_Length;
+
    function Canonical
      (Value : Optional_Configuration_Boolean)
       return Optional_Configuration_Boolean is
@@ -1357,6 +1390,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
          Tags   : Object_Tag_Set;
+         Annotations : in out Annotation_Maps.Map;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
          Identity : out Version_Identity;
@@ -1367,9 +1401,9 @@ package body Flyology.Object_Storage.Backends.Memory is
          Index        : Natural := 0;
          Existing     : Byte_Count := 0;
          Incoming     : constant Byte_Count :=
-           Byte_Count (Data.Capacity);
+           Byte_Count (Data.Capacity) + Annotation_Bytes (Annotations);
          Reservation  : constant Byte_Count :=
-           Byte_Count (Data.Capacity);
+           Byte_Count (Data.Capacity) + Annotation_Bytes (Annotations);
          Available    : Byte_Count;
          New_Order    : Version_Publication_Order;
          New_Info     : Object_Information := Info;
@@ -1428,7 +1462,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          end case;
 
          if Index /= 0 then
-            Existing := Byte_Count (Objects (Index).Data.Capacity);
+            Existing := Byte_Count (Objects (Index).Data.Capacity) +
+              Annotation_Bytes (Objects (Index).Annotations);
          else
             for Candidate in 1 .. Highest_Object loop
                if not Objects (Candidate).Used then
@@ -1455,6 +1490,22 @@ package body Flyology.Object_Storage.Backends.Memory is
             raise Program_Error with "unreserved memory object commit";
          end if;
 
+         for Position in Annotations.Iterate loop
+            declare
+               Annotation : Annotation_Maps.Reference_Type :=
+                 Annotations.Reference (Position);
+            begin
+               Annotation.Info.Modified := New_Info.Modified;
+               Annotation.Info.Version :=
+                 (if Buckets (Bucket_At).Versioning.Status =
+                       Versioning_Unconfigured
+                  then Ada.Strings.Unbounded.Null_Unbounded_String
+                  elsif Is_Null
+                  then Ada.Strings.Unbounded.To_Unbounded_String ("null")
+                  else New_Info.Version);
+            end;
+         end loop;
+
          declare
             Stored_Bucket : constant Ada.Strings.Unbounded.Unbounded_String :=
               Ada.Strings.Unbounded.To_Unbounded_String (Bucket);
@@ -1468,6 +1519,8 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Index).Key := Stored_Key;
             Objects (Index).Info := New_Info;
             Objects (Index).Tags := Tags;
+            Annotation_Maps.Move
+              (Objects (Index).Annotations, Annotations);
             Objects (Index).Completed_Parts.Clear;
             Objects (Index).Is_Null_Version := Is_Null;
             Objects (Index).Is_Delete_Marker := False;
@@ -1539,6 +1592,69 @@ package body Flyology.Object_Storage.Backends.Memory is
             end if;
             raise;
       end Fetch;
+
+      procedure Fetch_For_Copy
+        (Bucket : String;
+         Key    : String;
+         Selector : Version_Selector;
+         Data   : out Owned_Bytes;
+         Info   : out Object_Information;
+         Tags   : out Object_Tag_Set;
+         Annotations : out Annotation_Maps.Map;
+         Annotation_Reservation : out Byte_Count;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+         Snapshot : Byte_Count := 0;
+         Copied : Boolean := False;
+      begin
+         Data := (Ada.Finalization.Controlled with others => <>);
+         Info := Empty_Info;
+         Tags := Empty_Object_Tags;
+         Annotations.Clear;
+         Annotation_Reservation := 0;
+         Identity := (others => <>);
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Annotation_Reservation :=
+              Annotation_Length (Objects (Index).Annotations);
+            Snapshot := Byte_Count (Objects (Index).Data.Length) +
+              Annotation_Reservation;
+            if Snapshot > Byte_Limit - Bytes
+              or else Reserved_Bytes > Byte_Limit - Bytes - Snapshot
+            then
+               Result := Capacity_Exceeded;
+               Annotation_Reservation := 0;
+               return;
+            end if;
+            Reserved_Bytes := Reserved_Bytes + Snapshot;
+            Data := Objects (Index).Data;
+            Annotations := Objects (Index).Annotations;
+            Copied := True;
+            Info := Objects (Index).Info;
+            Tags := Objects (Index).Tags;
+            Identity.Has_Version_ID :=
+              Selector.Kind /= Current_Version
+              or else Buckets (Bucket_Index (Bucket)).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+            Identity.Version_ID := Objects (Index).Info.Version;
+            Result := Success;
+         end if;
+      exception
+         when others =>
+            if not Copied and then Snapshot > 0 then
+               Reserved_Bytes := Reserved_Bytes - Snapshot;
+            end if;
+            Annotation_Reservation := 0;
+            raise;
+      end Fetch_For_Copy;
 
       procedure Fetch_Range
         (Bucket    : String;
@@ -1781,7 +1897,8 @@ package body Flyology.Object_Storage.Backends.Memory is
               Outcome.Has_Version_ID
               and then Objects (Target_At).Is_Null_Version;
             Outcome.Version_ID := Objects (Target_At).Info.Version;
-            Bytes := Bytes - Byte_Count (Objects (Target_At).Data.Capacity);
+            Bytes := Bytes - Byte_Count (Objects (Target_At).Data.Capacity) -
+              Annotation_Bytes (Objects (Target_At).Annotations);
             Objects (Target_At) := (others => <>);
             Shrink_Highest;
             Result := Success;
@@ -1819,7 +1936,8 @@ package body Flyology.Object_Storage.Backends.Memory is
                   return;
                end if;
             else
-               Existing := Byte_Count (Objects (Target_At).Data.Capacity);
+               Existing := Byte_Count (Objects (Target_At).Data.Capacity) +
+                 Annotation_Bytes (Objects (Target_At).Annotations);
             end if;
             New_Order := Next_Version + 1;
             New_Info.Modified := Modified;
@@ -2118,6 +2236,289 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Tags;
+
+      procedure Put_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Data : in out Owned_Bytes;
+         Info : Object_Annotation_Information;
+         Conditions : Object_Annotation_Conditions;
+         Stored : out Object_Annotation_Information;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Position : Annotation_Maps.Cursor;
+         Existing : Byte_Count := 0;
+         Incoming : constant Byte_Count := Byte_Count (Data.Capacity);
+         Published_Info : Object_Annotation_Information := Info;
+      begin
+         Stored := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Index = 0 then
+            Result := Not_Found;
+            return;
+         else
+            Result := Evaluate_Object_Delete_Conditions
+              (Has_ETag               => Conditions.Has_Object_ETag,
+               ETag                   => Ada.Strings.Unbounded.To_String
+                 (Conditions.Object_ETag),
+               Has_Last_Modified_Time => False,
+               Last_Modified_Time     => 0,
+               Has_Size               => False,
+               Expected_Size          => 0,
+               Exists                 => True,
+               Entity_Tag             => Ada.Strings.Unbounded.To_String
+                 (Objects (Index).Info.Entity_Tag),
+               Modified               => Objects (Index).Info.Modified,
+               Size                   => Objects (Index).Info.Size);
+            if Result /= Success then
+               return;
+            end if;
+         end if;
+
+         Position := Objects (Index).Annotations.Find (Name);
+         if Annotation_Maps.Has_Element (Position) then
+            Existing := Byte_Count
+              (Annotation_Maps.Element (Position).Data.Capacity);
+         elsif Objects (Index).Annotations.Length >=
+           Maximum_Annotations_Per_Object
+         then
+            Result := Capacity_Exceeded;
+            return;
+         end if;
+         if Incoming > Byte_Limit - (Bytes - Existing) then
+            Result := Capacity_Exceeded;
+            return;
+         elsif Incoming > Reserved_Bytes then
+            raise Program_Error with "unreserved memory annotation commit";
+         end if;
+
+         if not Annotation_Maps.Has_Element (Position) then
+            Objects (Index).Annotations.Insert
+              (Name,
+               (Info => Info,
+                Data => (Ada.Finalization.Controlled with others => <>)));
+            Position := Objects (Index).Annotations.Find (Name);
+         end if;
+         Published_Info.Version :=
+           (if Buckets (Bucket_Position).Versioning.Status =
+                 Versioning_Unconfigured
+            then Ada.Strings.Unbounded.Null_Unbounded_String
+            elsif Objects (Index).Is_Null_Version
+            then Ada.Strings.Unbounded.To_Unbounded_String ("null")
+            else Objects (Index).Info.Version);
+         declare
+            Annotation : constant Annotation_Maps.Reference_Type :=
+              Objects (Index).Annotations.Reference (Position);
+         begin
+            Annotation.Info := Published_Info;
+            Move (Annotation.Data, Data);
+         end;
+         Reserved_Bytes := Reserved_Bytes - Incoming;
+         Bytes := Bytes - Existing + Incoming;
+         Stored := Published_Info;
+         Identity.Has_Version_ID :=
+           Selector.Kind /= Current_Version
+           or else Ada.Strings.Unbounded.Length
+             (Objects (Index).Info.Version) > 0
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Unconfigured;
+         Identity.Is_Null_Version :=
+           Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+         Identity.Version_ID := Objects (Index).Info.Version;
+         Result := Success;
+      end Put_Annotation;
+
+      procedure Get_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Data : out Owned_Bytes;
+         Presence : out Object_Annotation_Presence;
+         Info : out Object_Annotation_Information;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Position : Annotation_Maps.Cursor;
+         Snapshot : Byte_Count := 0;
+         Copied : Boolean := False;
+      begin
+         Data := (Ada.Finalization.Controlled with others => <>);
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Index = 0 then
+            Result := Not_Found;
+            return;
+         end if;
+         Identity.Has_Version_ID :=
+           Selector.Kind /= Current_Version
+           or else Ada.Strings.Unbounded.Length
+             (Objects (Index).Info.Version) > 0
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Unconfigured;
+         Identity.Is_Null_Version :=
+           Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+         Identity.Version_ID := Objects (Index).Info.Version;
+         Position := Objects (Index).Annotations.Find (Name);
+         if not Annotation_Maps.Has_Element (Position) then
+            Result := Success;
+            return;
+         end if;
+         Snapshot := Byte_Count
+           (Annotation_Maps.Element (Position).Data.Length);
+         if Snapshot > Byte_Limit - Bytes
+           or else Reserved_Bytes > Byte_Limit - Bytes - Snapshot
+         then
+            Result := Capacity_Exceeded;
+            return;
+         end if;
+         Reserved_Bytes := Reserved_Bytes + Snapshot;
+         Data := Annotation_Maps.Element (Position).Data;
+         Copied := True;
+         Presence := Annotation_Present;
+         Info := Annotation_Maps.Element (Position).Info;
+         Result := Success;
+      exception
+         when others =>
+            if not Copied and then Snapshot > 0 then
+               Reserved_Bytes := Reserved_Bytes - Snapshot;
+            end if;
+            raise;
+      end Get_Annotation;
+
+      procedure Delete_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Conditions : Object_Annotation_Conditions;
+         Presence : out Object_Annotation_Presence;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Position : Annotation_Maps.Cursor;
+      begin
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Index = 0 then
+            Result := Not_Found;
+            return;
+         else
+            Result := Evaluate_Object_Delete_Conditions
+              (Has_ETag               => Conditions.Has_Object_ETag,
+               ETag                   => Ada.Strings.Unbounded.To_String
+                 (Conditions.Object_ETag),
+               Has_Last_Modified_Time => False,
+               Last_Modified_Time     => 0,
+               Has_Size               => False,
+               Expected_Size          => 0,
+               Exists                 => True,
+               Entity_Tag             => Ada.Strings.Unbounded.To_String
+                 (Objects (Index).Info.Entity_Tag),
+               Modified               => Objects (Index).Info.Modified,
+               Size                   => Objects (Index).Info.Size);
+            if Result /= Success then
+               return;
+            end if;
+         end if;
+         Identity.Has_Version_ID :=
+           Selector.Kind /= Current_Version
+           or else Ada.Strings.Unbounded.Length
+             (Objects (Index).Info.Version) > 0
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Unconfigured;
+         Identity.Is_Null_Version :=
+           Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+         Identity.Version_ID := Objects (Index).Info.Version;
+         Position := Objects (Index).Annotations.Find (Name);
+         if Annotation_Maps.Has_Element (Position) then
+            Bytes := Bytes - Byte_Count
+              (Annotation_Maps.Element (Position).Data.Capacity);
+            Objects (Index).Annotations.Delete (Position);
+            Presence := Annotation_Present;
+         end if;
+         Result := Success;
+      end Delete_Annotation;
+
+      procedure List_Annotations
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Options : List_Object_Annotations_Options;
+         Page : out Object_Annotation_Page;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Prefix : constant String :=
+           Ada.Strings.Unbounded.To_String (Options.Prefix);
+         After : constant String :=
+           Ada.Strings.Unbounded.To_String (Options.After);
+      begin
+         Page :=
+           (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => Ada.Strings.Unbounded.Null_Unbounded_String);
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Index = 0 then
+            Result := Not_Found;
+            return;
+         end if;
+         Identity.Has_Version_ID :=
+           Selector.Kind /= Current_Version
+           or else Ada.Strings.Unbounded.Length
+             (Objects (Index).Info.Version) > 0
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Unconfigured;
+         Identity.Is_Null_Version :=
+           Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+         Identity.Version_ID := Objects (Index).Info.Version;
+         if Options.Maximum = 0 then
+            Result := Success;
+            return;
+         end if;
+         for Position in Objects (Index).Annotations.Iterate loop
+            declare
+               Name : constant String := Annotation_Maps.Key (Position);
+            begin
+               if Listing_Matches_Prefix (Name, Prefix)
+                 and then (not Options.Has_After or else Name > After)
+               then
+                  if Page.Annotations.Length <
+                    Ada.Containers.Count_Type (Options.Maximum)
+                  then
+                     Page.Annotations.Append
+                       (Listed_Object_Annotation'
+                          (Name =>
+                           Ada.Strings.Unbounded.To_Unbounded_String (Name),
+                           Info => Annotation_Maps.Element (Position).Info));
+                  else
+                     Page.Is_Truncated := True;
+                     Page.Next_After :=
+                       Page.Annotations.Last_Element.Name;
+                     exit;
+                  end if;
+               end if;
+            end;
+         end loop;
+         Result := Success;
+      end List_Annotations;
 
       procedure List
         (Bucket  : String;
@@ -2881,7 +3282,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          end case;
 
          if Object_At /= 0 then
-            Existing_Size := Byte_Count (Objects (Object_At).Data.Capacity);
+            Existing_Size := Byte_Count (Objects (Object_At).Data.Capacity) +
+              Annotation_Bytes (Objects (Object_At).Annotations);
          else
             for Candidate in 1 .. Highest_Object loop
                if not Objects (Candidate).Used then
@@ -2941,6 +3343,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             --  Finish every allocating metadata operation before consuming
             --  the staged upload or publishing its assembled payload.
             Next_Version := New_Order;
+            Objects (Object_At).Annotations.Clear;
             Objects (Object_At).Bucket := Stored_Bucket;
             Objects (Object_At).Key := Stored_Key;
             Objects (Object_At).Info := Completed_Info;
@@ -4305,7 +4708,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
    end Get_Bucket_Object_Lock;
 
-   overriding procedure Put_Object
+   procedure Put_Object_Internal
      (Item     : in out Store;
       Bucket   : String;
       Key      : String;
@@ -4316,6 +4719,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Info     : out Object_Information;
       Identity : out Version_Identity;
       Result   : out Status;
+      Annotations : in out Annotation_Maps.Map;
       Conditions : Write_Conditions := Default_Write_Conditions)
    is
       Buffer   : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
@@ -4459,6 +4863,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Data   => Data,
          Info   => Stored,
          Tags   => Options.Tags,
+         Annotations => Annotations,
          Conditions => Conditions,
          Stored => Info,
          Identity => Identity,
@@ -4469,6 +4874,26 @@ package body Flyology.Object_Storage.Backends.Memory is
          Release_Buffer (Item.State, Data);
          Identity := (others => <>);
          raise;
+   end Put_Object_Internal;
+
+   overriding procedure Put_Object
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
+   is
+      Annotations : Annotation_Maps.Map;
+   begin
+      Put_Object_Internal
+        (Item, Bucket, Key, Source, Options, Token, Deadline, Info, Identity,
+         Result, Annotations, Conditions);
    end Put_Object;
 
    overriding procedure Copy_Object
@@ -4525,6 +4950,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Snapshot      : aliased Owned_Bytes;
       Source_Info   : Object_Information;
       Source_Tags   : Object_Tag_Set;
+      Source_Annotations : Annotation_Maps.Map;
+      Annotation_Reservation : Byte_Count := 0;
       Selected_Source : Version_Identity;
       Published_Destination : Version_Identity;
       Put_Options_Value : Put_Options;
@@ -4551,6 +4978,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
         and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Annotation_Directive = Copy_Annotations
         and then Options.Selected_Checksum = No_Checksum
         and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
@@ -4558,9 +4986,10 @@ package body Flyology.Object_Storage.Backends.Memory is
          return;
       end if;
 
-      Item.State.Fetch
+      Item.State.Fetch_For_Copy
         (Source_Bucket, Source_Key, Options.Source_Selector, Snapshot,
-         Source_Info, Source_Tags, Selected_Source, Result);
+         Source_Info, Source_Tags, Source_Annotations,
+         Annotation_Reservation, Selected_Source, Result);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -4572,6 +5001,9 @@ package body Flyology.Object_Storage.Backends.Memory is
       elsif not Valid_Copy_Object_Size (Source_Info.Size) then
          Result := Entity_Too_Large;
          Release_Buffer (Item.State, Snapshot);
+         if Annotation_Reservation > 0 then
+            Item.State.Release_Transient (Annotation_Reservation);
+         end if;
          return;
       end if;
       Result := Evaluate_Copy_Conditions
@@ -4580,7 +5012,18 @@ package body Flyology.Object_Storage.Backends.Memory is
          Source_Info.Modified);
       if Result /= Success then
          Release_Buffer (Item.State, Snapshot);
+         if Annotation_Reservation > 0 then
+            Item.State.Release_Transient (Annotation_Reservation);
+         end if;
          return;
+      end if;
+
+      if Options.Annotation_Directive = Exclude_Annotations then
+         Source_Annotations.Clear;
+         if Annotation_Reservation > 0 then
+            Item.State.Release_Transient (Annotation_Reservation);
+            Annotation_Reservation := 0;
+         end if;
       end if;
 
       Put_Options_Value :=
@@ -4612,20 +5055,27 @@ package body Flyology.Object_Storage.Backends.Memory is
          Source : Snapshot_Source :=
            (Data => Snapshot'Access, Position => 0);
       begin
-         Item.Put_Object
-           (Destination_Bucket, Destination_Key, Source,
+         Put_Object_Internal
+           (Item, Destination_Bucket, Destination_Key, Source,
             Put_Options_Value, Token, Deadline, Info, Published_Destination,
-            Result,
+            Result, Source_Annotations,
             Options.Destination_Conditions);
       end;
       if Result = Success then
          Source_Identity := Selected_Source;
          Destination_Identity := Published_Destination;
+         Annotation_Reservation := 0;
+      elsif Annotation_Reservation > 0 then
+         Item.State.Release_Transient (Annotation_Reservation);
+         Annotation_Reservation := 0;
       end if;
       Release_Buffer (Item.State, Snapshot);
    exception
       when others =>
          Release_Buffer (Item.State, Snapshot);
+         if Annotation_Reservation > 0 then
+            Item.State.Release_Transient (Annotation_Reservation);
+         end if;
          Source_Identity := (others => <>);
          Destination_Identity := (others => <>);
          raise;
@@ -5072,6 +5522,323 @@ package body Flyology.Object_Storage.Backends.Memory is
            (Bucket, Key, Selector, Identity, Result);
       end if;
    end Delete_Object_Tags;
+
+   overriding procedure Put_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Buffer   : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
+      Last     : Ada.Streams.Stream_Element_Offset;
+      Finished : Boolean := False;
+      Data     : Owned_Bytes;
+      Declared : Source_Length := (Kind => Unknown);
+      MD5_Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Direct_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value
+           (if Options.Expected_Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME
+            else Options.Expected_Checksum.Algorithm));
+   begin
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Options.Conditions.Has_Object_ETag
+            and then Ada.Strings.Unbounded.Length
+              (Options.Conditions.Object_ETag) > 0)
+           or else
+             (Options.Conditions.Has_Object_ETag
+              and then Ada.Strings.Unbounded.Length
+                (Options.Conditions.Object_ETag) = 0))
+        or else
+          (Options.Conditions.Has_Object_ETag
+           and then not Valid_Object_Delete_ETag_Condition
+             (Ada.Strings.Unbounded.To_String
+                (Options.Conditions.Object_ETag)))
+        or else
+          (Options.Expected_Checksum.Algorithm = No_Checksum and then
+             Options.Expected_Checksum /= No_Checksum_Information)
+        or else
+          (Options.Expected_Checksum.Algorithm /= No_Checksum and then
+             (Options.Expected_Checksum.Method /= Full_Object_Checksum
+              or else Ada.Strings.Unbounded.Length
+                (Options.Expected_Checksum.Value) = 0
+              or else not Checksum_Engine.Valid_Digest
+                (Ada.Strings.Unbounded.To_String
+                   (Options.Expected_Checksum.Value),
+                 Options.Expected_Checksum.Algorithm)))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Declared := Source.Declared_Length;
+      if Declared.Kind = Known
+        and then
+          (Declared.Bytes = 0
+           or else Declared.Bytes > Maximum_Annotation_Bytes
+           or else Declared.Bytes > Byte_Count (Natural'Last))
+      then
+         Result := Invalid_Request;
+         return;
+      elsif Declared.Kind = Known then
+         Reserve_Buffer_Capacity
+           (Item.State, Data, Natural (Declared.Bytes), Result);
+         if Result /= Success then
+            return;
+         end if;
+      end if;
+
+      while not Finished loop
+         Check_Context (Token, Deadline);
+         Source.Read (Buffer, Last, Finished, Token, Deadline);
+         Check_Context (Token, Deadline);
+         if Last < Buffer'First - 1 or else Last > Buffer'Last then
+            Result := Invalid_Request;
+            Release_Buffer (Item.State, Data);
+            return;
+         elsif Last >= Buffer'First then
+            declare
+               Chunk_Length : constant Byte_Count :=
+                 Byte_Count (Last - Buffer'First + 1);
+               Required : Natural;
+               Target   : Natural;
+            begin
+               if Chunk_Length > Maximum_Annotation_Bytes
+                 or else Byte_Count (Data.Length) >
+                   Maximum_Annotation_Bytes - Chunk_Length
+               then
+                  Result := Entity_Too_Large;
+                  Release_Buffer (Item.State, Data);
+                  return;
+               end if;
+               Required := Data.Length + Natural (Chunk_Length);
+               Target := Growth_Capacity (Data, Required);
+               Reserve_Buffer_Capacity (Item.State, Data, Target, Result);
+               if Result = Capacity_Exceeded and then Target > Required then
+                  Reserve_Buffer_Capacity
+                    (Item.State, Data, Required, Result);
+               end if;
+               if Result /= Success then
+                  Release_Buffer (Item.State, Data);
+                  return;
+               end if;
+               GNAT.MD5.Update (MD5_Hash, Buffer (Buffer'First .. Last));
+               if Options.Expected_Checksum.Algorithm /= No_Checksum then
+                  Checksum_Engine.Update
+                    (Direct_Hash, Buffer (Buffer'First .. Last));
+               end if;
+               Append (Data, Buffer (Buffer'First .. Last));
+            end;
+         elsif not Finished then
+            Result := Invalid_Request;
+            Release_Buffer (Item.State, Data);
+            return;
+         end if;
+      end loop;
+      if Data.Length = 0
+        or else
+          (Declared.Kind = Known
+           and then Declared.Bytes /= Byte_Count (Data.Length))
+      then
+         Result := Invalid_Request;
+         Release_Buffer (Item.State, Data);
+         return;
+      end if;
+      declare
+         Candidate : constant Object_Annotation_Information :=
+           (Size       => Byte_Count (Data.Length),
+            Modified   => Current_Unix_Time,
+            Entity_Tag => Ada.Strings.Unbounded.To_Unbounded_String
+              (GNAT.MD5.Digest (MD5_Hash)),
+            Checksum   =>
+              (if Options.Expected_Checksum.Algorithm = No_Checksum
+               then No_Checksum_Information
+               else
+                 (Algorithm => Options.Expected_Checksum.Algorithm,
+                  Method    => Full_Object_Checksum,
+                  Value     => Ada.Strings.Unbounded.To_Unbounded_String
+                    (Checksum_Engine.Finish (Direct_Hash)))),
+            Version    => Ada.Strings.Unbounded.Null_Unbounded_String);
+      begin
+         if Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then Candidate.Checksum.Value /=
+             Options.Expected_Checksum.Value
+         then
+            Result := Bad_Digest;
+            Release_Buffer (Item.State, Data);
+            return;
+         end if;
+         Item.State.Put_Annotation
+           (Bucket, Key, Selector, Name, Data, Candidate,
+            Options.Conditions, Info, Identity, Result);
+      end;
+      Release_Buffer (Item.State, Data);
+   exception
+      when others =>
+         Release_Buffer (Item.State, Data);
+         Identity := (others => <>);
+         raise;
+   end Put_Object_Annotation;
+
+   overriding procedure Get_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Data : Owned_Bytes;
+      Sent : Natural := 0;
+      Buffer : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
+   begin
+      Presence := Annotation_Absent;
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.State.Get_Annotation
+        (Bucket, Key, Selector, Name, Data, Presence, Info, Identity, Result);
+      if Result /= Success or else Presence = Annotation_Absent then
+         return;
+      end if;
+      Check_Context (Token, Deadline);
+      Sink.Begin_Annotation (Info, Token, Deadline);
+      while Sent < Data.Length loop
+         declare
+            Count : constant Natural :=
+              Natural'Min (Data.Length - Sent, Natural (Buffer'Length));
+         begin
+            for Offset in 0 .. Count - 1 loop
+               Buffer
+                 (Buffer'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+                   Element (Data, Sent + Offset + 1);
+            end loop;
+            Check_Context (Token, Deadline);
+            Sink.Write
+              (Buffer
+                 (Buffer'First .. Buffer'First +
+                    Ada.Streams.Stream_Element_Offset (Count) - 1),
+               Token, Deadline);
+            Sent := Sent + Count;
+         end;
+      end loop;
+      Release_Buffer (Item.State, Data);
+   exception
+      when others =>
+         Release_Buffer (Item.State, Data);
+         raise;
+   end Get_Object_Annotation;
+
+   overriding procedure Delete_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
+   begin
+      Presence := Annotation_Absent;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Conditions.Has_Object_ETag
+            and then Ada.Strings.Unbounded.Length
+              (Conditions.Object_ETag) > 0)
+           or else
+             (Conditions.Has_Object_ETag
+              and then Ada.Strings.Unbounded.Length
+                (Conditions.Object_ETag) = 0))
+        or else
+          (Conditions.Has_Object_ETag
+           and then not Valid_Object_Delete_ETag_Condition
+             (Ada.Strings.Unbounded.To_String (Conditions.Object_ETag)))
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Annotation
+           (Bucket, Key, Selector, Name, Conditions, Presence, Identity,
+            Result);
+      end if;
+   end Delete_Object_Annotation;
+
+   overriding procedure List_Object_Annotations
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Prefix : constant String :=
+        Ada.Strings.Unbounded.To_String (Options.Prefix);
+      After : constant String :=
+        Ada.Strings.Unbounded.To_String (Options.After);
+      Prefix_Valid : Boolean := Prefix'Length <= 512;
+   begin
+      Page :=
+        (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+         Is_Truncated => False,
+         Next_After   => Ada.Strings.Unbounded.Null_Unbounded_String);
+      Identity := (others => <>);
+      for Value of Prefix loop
+         Prefix_Valid := Prefix_Valid and then Value /= Character'Val (0);
+      end loop;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else not Prefix_Valid
+        or else (Options.Has_After and then
+                   not Valid_Object_Annotation_Name (After))
+        or else (not Options.Has_After and then After'Length > 0)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.List_Annotations
+           (Bucket, Key, Selector, Options, Page, Identity, Result);
+      end if;
+   end List_Object_Annotations;
 
    overriding procedure List_Objects
      (Item     : in out Store;

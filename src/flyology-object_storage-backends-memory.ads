@@ -10,7 +10,8 @@ with Flyology.Object_Storage.Tags;
 --  independently bounds retained object generations (including markers),
 --  uploads, and parts; retaining history therefore consumes object slots.
 --  Byte_Capacity covers retained committed, staged, and in-progress object
---  payload buffers plus retained opaque bucket-configuration bytes, including
+--  and annotation payload buffers plus retained opaque bucket-configuration
+--  bytes, including
 --  policy, CORS, encryption, ownership controls, lifecycle, logging,
 --  analytics, metrics, and provider-resolved metadata state; atomic
 --  replacement and multipart assembly therefore require coexistence headroom.
@@ -24,7 +25,7 @@ package Flyology.Object_Storage.Backends.Memory is
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
    is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend with private;
+     Bucket_Metadata_Backend and Object_Annotation_Backend with private;
 
    overriding procedure Create_Bucket
      (Item     : in out Store;
@@ -1116,6 +1117,108 @@ package Flyology.Object_Storage.Backends.Memory is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
+   --  Atomically replace one streamed annotation on a selected generation.
+   --  @param Item In-memory backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Source Streamed annotation payload
+   --  @param Options Checksum and parent-object conditions
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Published annotation metadata
+   --  @param Identity Selected object generation
+   --  @param Result Storage outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Put_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Stream one present annotation from a selected-generation snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Sink Destination for a present payload
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether the annotation exists
+   --  @param Info Selected annotation metadata
+   --  @param Identity Selected object generation
+   --  @param Result Storage outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Get_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Atomically remove one named annotation from a selected generation.
+   --  @param Item In-memory backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Name Annotation name
+   --  @param Conditions Atomic parent-object ETag condition
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether an annotation was removed
+   --  @param Identity Selected object generation
+   --  @param Result Storage outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Delete_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Return one bytewise-name-ordered live-state annotation page.
+   --  @param Item In-memory backend
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Options Prefix, lexical cursor, and page bound
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Current annotation page
+   --  @param Identity Selected object generation
+   --  @param Result Storage outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure List_Object_Annotations
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
    overriding procedure List_Objects
      (Item     : in out Store;
       Bucket   : String;
@@ -1273,6 +1376,14 @@ private
      (Data : Owned_Bytes; Index : Positive)
       return Ada.Streams.Stream_Element;
 
+   type Annotation_Entry is record
+      Info : Object_Annotation_Information;
+      Data : Owned_Bytes;
+   end record;
+
+   package Annotation_Maps is new Ada.Containers.Indefinite_Ordered_Maps
+     (Key_Type => String, Element_Type => Annotation_Entry);
+
    type Bucket_Slot is record
       Used    : Boolean := False;
       Name    : Ada.Strings.Unbounded.Unbounded_String;
@@ -1325,6 +1436,7 @@ private
       Publication : Version_Publication_Order := 0;
       Info   : Object_Information;
       Tags   : Object_Tag_Set;
+      Annotations : Annotation_Maps.Map;
       Legal_Hold : Object_Legal_Hold_Status := Object_Legal_Hold_Off;
       Retention  : Object_Retention :=
         (Mode         => No_Object_Retention,
@@ -1522,8 +1634,20 @@ private
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
          Tags   : Object_Tag_Set;
+         Annotations : in out Annotation_Maps.Map;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Fetch_For_Copy
+        (Bucket : String;
+         Key    : String;
+         Selector : Version_Selector;
+         Data   : out Owned_Bytes;
+         Info   : out Object_Information;
+         Tags   : out Object_Tag_Set;
+         Annotations : out Annotation_Maps.Map;
+         Annotation_Reservation : out Byte_Count;
          Identity : out Version_Identity;
          Result : out Status);
       procedure Fetch
@@ -1604,6 +1728,33 @@ private
          Result : out Status);
       procedure Delete_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Put_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Data : in out Owned_Bytes;
+         Info : Object_Annotation_Information;
+         Conditions : Object_Annotation_Conditions;
+         Stored : out Object_Annotation_Information;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Get_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Data : out Owned_Bytes;
+         Presence : out Object_Annotation_Presence;
+         Info : out Object_Annotation_Information;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Delete_Annotation
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Name : String; Conditions : Object_Annotation_Conditions;
+         Presence : out Object_Annotation_Presence;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure List_Annotations
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Options : List_Object_Annotations_Options;
+         Page : out Object_Annotation_Page;
          Identity : out Version_Identity;
          Result : out Status);
       procedure List
@@ -1700,7 +1851,7 @@ private
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
    is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend with record
+     Bucket_Metadata_Backend and Object_Annotation_Backend with record
       State : Memory_State
         (Bucket_Capacity, Object_Capacity, Byte_Capacity);
    end record;

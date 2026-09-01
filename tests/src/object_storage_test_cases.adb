@@ -28,6 +28,7 @@ with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Durability_Testing;
+with Flyology.Object_Storage.S3.Annotations;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Checksum_Policy;
@@ -50,6 +51,7 @@ with Flyology.Object_Storage.S3.SigV4_Verification;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
+with GNAT.MD5;
 with GNAT.SHA256;
 with GNAT.OS_Lib;
 with Interfaces.C;
@@ -102,6 +104,14 @@ package body Object_Storage_Test_Cases is
    type Raising_Sink is new Flyology.Object_Storage.Backends.Byte_Sink
      with null record;
 
+   type Annotation_Buffer_Sink is new
+     Flyology.Object_Storage.Backends.Annotation_Byte_Sink with
+   record
+      Data  : Flyology.Bytes.Unbounded_Bytes;
+      Begun : Boolean := False;
+      Info  : Flyology.Object_Storage.Object_Annotation_Information;
+   end record;
+
    overriding procedure Begin_Object
      (Item           : in out Buffer_Sink;
       Info           : Flyology.Object_Storage.Object_Information;
@@ -128,6 +138,18 @@ package body Object_Storage_Test_Cases is
 
    overriding procedure Write
      (Item     : in out Buffer_Sink;
+      Data     : Ada.Streams.Stream_Element_Array;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time);
+
+   overriding procedure Begin_Annotation
+     (Item     : in out Annotation_Buffer_Sink;
+      Info     : Flyology.Object_Storage.Object_Annotation_Information;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time);
+
+   overriding procedure Write
+     (Item     : in out Annotation_Buffer_Sink;
       Data     : Ada.Streams.Stream_Element_Array;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time);
@@ -3539,6 +3561,35 @@ package body Object_Storage_Test_Cases is
    begin
       if not Item.Begun then
          Item.Write_Before_Begin := True;
+      end if;
+      Flyology.Bytes.Append (Item.Data, Data);
+   end Write;
+
+   overriding procedure Begin_Annotation
+     (Item     : in out Annotation_Buffer_Sink;
+      Info     : Flyology.Object_Storage.Object_Annotation_Information;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced (Token, Deadline);
+   begin
+      if Item.Begun then
+         raise Program_Error with "annotation sink began twice";
+      end if;
+      Item.Begun := True;
+      Item.Info := Info;
+   end Begin_Annotation;
+
+   overriding procedure Write
+     (Item     : in out Annotation_Buffer_Sink;
+      Data     : Ada.Streams.Stream_Element_Array;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced (Token, Deadline);
+   begin
+      if not Item.Begun then
+         raise Program_Error with "annotation payload preceded metadata";
       end if;
       Flyology.Bytes.Append (Item.Data, Data);
    end Write;
@@ -8266,6 +8317,91 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Backend_Copy_Object;
+
+   procedure Check_S3_Annotation_Codec (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Annotations renames Flyology.Object_Storage.S3.Annotations;
+      package US renames Ada.Strings.Unbounded;
+      Request : constant Annotations.Annotation_Request :=
+        Annotations.Parse_Query
+          ("annotation&annotationName=alpha%2Eone&versionId=null&" &
+           "x-id=GetObjectAnnotation", Annotations.Get_Annotation);
+      Token : constant String := Annotations.Encode_Continuation
+        ("bucket", "key", "version", "a", "alpha.one");
+      Decoded : constant Annotations.Continuation_Result :=
+        Annotations.Decode_Continuation
+          (Token, "bucket", "key", "version", "a");
+      Rejected : Boolean := False;
+   begin
+      Assert
+        (Request.Has_Annotation_Name
+         and then US.To_String (Request.Annotation_Name) = "alpha.one"
+         and then Request.Has_Version_ID
+         and then US.To_String (Request.Version_ID) = "null",
+         "annotation query lost exact name or version selection");
+      Assert
+        (Decoded.Valid and then US.To_String (Decoded.After) = "alpha.one"
+         and then not Annotations.Decode_Continuation
+           (Token, "other", "key", "version", "a").Valid,
+         "annotation continuation token was not scope bound");
+      begin
+         declare
+            Bad : constant Annotations.Annotation_Request :=
+              Annotations.Parse_Query
+                ("annotation&annotationName=alpha&annotationPrefix=a",
+                 Annotations.Get_Annotation);
+            pragma Unreferenced (Bad);
+         begin
+            null;
+         end;
+      exception
+         when Annotations.Malformed_Annotation_Request => Rejected := True;
+      end;
+      Assert (Rejected, "annotation cross-operation query was accepted");
+      declare
+         Page : Annotations.Annotation_Page :=
+           (Has_Annotations => True,
+            Annotations => Annotations.Annotation_Entry_Vectors.Empty_Vector,
+            Bucket =>
+              (Is_Set => True, Value => US.To_Unbounded_String ("bucket")),
+            Key =>
+              (Is_Set => True, Value => US.To_Unbounded_String ("key")),
+            Annotation_Prefix =>
+              (Is_Set => False, Value => US.Null_Unbounded_String),
+            Max_Annotation_Results =>
+              (Is_Set => False,
+               Value => Annotations.Annotation_Result_Limit'First),
+            Annotation_Count =>
+              (Is_Set => False, Text => US.Null_Unbounded_String),
+            Continuation_Token =>
+              (Is_Set => False, Value => US.Null_Unbounded_String),
+            Next_Continuation_Token =>
+              (Is_Set => False, Value => US.Null_Unbounded_String));
+         Parsed : Annotations.Annotation_Page;
+      begin
+         Page.Annotations.Append
+           (Annotations.Annotation_Entry'
+              (Name => US.To_Unbounded_String ("alpha.one"),
+             Last_Modified =>
+               US.To_Unbounded_String ("2026-09-01T00:00:00.000Z"),
+             Entity_Tag =>
+               (Is_Set => True,
+                Value => US.To_Unbounded_String ("""etag""")),
+             Checksums => <>, Size => 7,
+             Replication =>
+               (Is_Set => False,
+                Value => Annotations.Replication_Complete)));
+         Parsed := Annotations.Parse_List
+           (Annotations.Serialize_List (Page),
+            Flyology.Object_Storage.S3.XML.Default_Limits);
+         Assert
+           (Parsed.Has_Annotations and then Parsed.Annotations.Length = 1
+            and then US.To_String
+              (Parsed.Annotations.First_Element.Name) = "alpha.one",
+            "annotation list serialization did not round trip");
+      end;
+   end Check_S3_Annotation_Codec;
 
    procedure Check_S3_Core_Rules (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -19416,6 +19552,149 @@ package body Object_Storage_Test_Cases is
       Assert (Result = Success, "tagging cleanup");
    end Exercise_Object_Tagging;
 
+   procedure Exercise_Object_Annotations
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Object_Body : Buffer_Source :=
+        (Data => Flyology.Bytes.From_Byte_String ("body"),
+         Position => 0, Length => (Kind => Known, Bytes => 4),
+         Bad_Last => False);
+      Object_Info : Object_Information;
+      Source_Identity : Version_Identity;
+      Destination_Identity : Version_Identity;
+      Annotation_Info : Object_Annotation_Information;
+      Presence : Object_Annotation_Presence;
+      Result : Status;
+
+      procedure Put_Annotation (Name, Payload : String) is
+         Source : Buffer_Source :=
+           (Data => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0,
+            Length => (Kind => Known, Bytes => Byte_Count (Payload'Length)),
+            Bad_Last => False);
+      begin
+         Put_Object_Annotation_If_Supported
+           (Store, Bucket, "annotated", Name, Source,
+            (Expected_Checksum => (others => <>),
+             Conditions =>
+               (Has_Object_ETag => False,
+                Object_ETag => US.Null_Unbounded_String)), null,
+            Ada.Real_Time.Time_Last, Annotation_Info, Source_Identity,
+            Result);
+         Assert
+           (Result = Success
+            and then Annotation_Info.Size = Byte_Count (Payload'Length)
+            and then US.To_String (Annotation_Info.Entity_Tag) =
+              GNAT.MD5.Digest (Payload),
+            "annotation replacement did not publish exact metadata");
+      end Put_Annotation;
+
+      procedure Read_Annotation
+        (Key, Name, Payload : String; Expected : Object_Annotation_Presence)
+      is
+         Sink : Annotation_Buffer_Sink;
+      begin
+         Get_Object_Annotation_If_Supported
+           (Store, Bucket, Key, Name, Sink, null, Ada.Real_Time.Time_Last,
+            Presence, Annotation_Info, Source_Identity, Result);
+         Assert
+           (Result = Success and then Presence = Expected
+            and then Sink.Begun = (Expected = Annotation_Present)
+            and then
+              (if Expected = Annotation_Present then
+                 Flyology.Bytes.To_Byte_String (Sink.Data) = Payload
+               else Flyology.Bytes.Length (Sink.Data) = 0),
+            "annotation read did not preserve presence and payload");
+      end Read_Annotation;
+   begin
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "annotation setup bucket");
+      Store.Put_Object
+        (Bucket, "annotated", Object_Body, Default_Put_Options, null,
+         Ada.Real_Time.Time_Last, Object_Info, Result);
+      Assert (Result = Success, "annotation setup object");
+
+      Put_Annotation ("beta", "second");
+      Put_Annotation ("alpha", "first");
+      Read_Annotation
+        ("annotated", "alpha", "first", Annotation_Present);
+      Read_Annotation
+        ("annotated", "missing", "", Annotation_Absent);
+
+      declare
+         Page : Object_Annotation_Page;
+      begin
+         List_Object_Annotations_If_Supported
+           (Store, Bucket, "annotated",
+            (Prefix => US.Null_Unbounded_String, Has_After => False,
+             After => US.Null_Unbounded_String, Maximum => 1),
+            null, Ada.Real_Time.Time_Last, Page, Source_Identity, Result);
+         Assert
+           (Result = Success and then Page.Annotations.Length = 1
+            and then US.To_String (Page.Annotations.First_Element.Name) =
+              "alpha"
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Next_After) = "alpha",
+            "annotation first page was not bytewise ordered");
+         List_Object_Annotations_If_Supported
+           (Store, Bucket, "annotated",
+            (Prefix => US.Null_Unbounded_String, Has_After => True,
+             After => Page.Next_After, Maximum => 1),
+            null, Ada.Real_Time.Time_Last, Page, Source_Identity, Result);
+         Assert
+           (Result = Success and then Page.Annotations.Length = 1
+            and then US.To_String (Page.Annotations.First_Element.Name) =
+              "beta" and then not Page.Is_Truncated,
+            "annotation continuation did not resume after exact name");
+      end;
+
+      declare
+         Options : Copy_Options := Default_Copy_Options;
+      begin
+         Store.Copy_Object
+           (Bucket, "annotated", Bucket, "annotation-copy", Options, null,
+            Ada.Real_Time.Time_Last, Object_Info, Source_Identity,
+            Destination_Identity, Result);
+         Assert (Result = Success, "annotation COPY directive failed");
+         Read_Annotation
+           ("annotation-copy", "alpha", "first", Annotation_Present);
+         Options.Annotation_Directive := Exclude_Annotations;
+         Store.Copy_Object
+           (Bucket, "annotated", Bucket, "annotation-excluded", Options,
+            null, Ada.Real_Time.Time_Last, Object_Info, Source_Identity,
+            Destination_Identity, Result);
+         Assert (Result = Success, "annotation EXCLUDE directive failed");
+         Read_Annotation
+           ("annotation-excluded", "alpha", "", Annotation_Absent);
+      end;
+
+      declare
+         Conditions : constant Object_Annotation_Conditions :=
+           (Has_Object_ETag => True,
+            Object_ETag => US.To_Unbounded_String
+              ('"' & US.To_String (Object_Info.Entity_Tag) & '"'));
+      begin
+         Delete_Object_Annotation_If_Supported
+           (Store, Bucket, "annotated", "alpha", Conditions, null,
+            Ada.Real_Time.Time_Last, Presence, Source_Identity, Result);
+         Assert
+           (Result = Success and then Presence = Annotation_Present,
+            "matching annotation delete condition failed");
+         Delete_Object_Annotation_If_Supported
+           (Store, Bucket, "annotated", "alpha", Conditions, null,
+            Ada.Real_Time.Time_Last, Presence, Source_Identity, Result);
+         Assert
+           (Result = Success and then Presence = Annotation_Absent,
+            "missing annotation delete was not presence preserving");
+      end;
+   end Exercise_Object_Annotations;
+
    procedure Check_Backend_Object_Tagging (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       package Memory renames Flyology.Object_Storage.Backends.Memory;
@@ -19440,6 +19719,31 @@ package body Object_Storage_Test_Cases is
       end;
       Ada.Directories.Delete_Tree (Root);
    end Check_Backend_Object_Tagging;
+
+   procedure Check_Backend_Object_Annotations (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      Root : constant String := Ada.Directories.Compose
+        (Ada.Directories.Compose (Ada.Directories.Current_Directory, "obj"),
+         "files-object-annotations");
+   begin
+      declare
+         Store : Memory.Store (4, 8, 512);
+      begin
+         Exercise_Object_Annotations (Store, "memory-annotation-bucket");
+      end;
+      if Ada.Directories.Exists (Root) then
+         Ada.Directories.Delete_Tree (Root);
+      end if;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+      begin
+         Exercise_Object_Annotations (Store, "files-annotation-bucket");
+      end;
+      Ada.Directories.Delete_Tree (Root);
+   end Check_Backend_Object_Annotations;
 
    procedure Exercise_Object_Lock
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
@@ -19771,18 +20075,20 @@ package body Object_Storage_Test_Cases is
             Last : Ada.Streams.Stream_Element_Offset;
             Lock_Bytes : constant Ada.Streams.Stream_Element_Offset :=
               1 + 1 + 8 + 4 + 20;
+            Annotation_Bytes : constant Ada.Streams.Stream_Element_Offset :=
+              4 + 64;
             Body_Bytes : constant Ada.Streams.Stream_Element_Offset := 11;
             Hold_At : constant Ada.Streams.Stream_Element_Offset :=
-              Data'Last - Body_Bytes - Lock_Bytes + 1;
+              Data'Last - Body_Bytes - Annotation_Bytes - Lock_Bytes + 1;
          begin
             SIO.Read (File, Data, Last);
             SIO.Close (File);
             Assert
               (Last = Data'Last
-               and then Matches (Data, Data'First, "FOSOBJ06")
+               and then Matches (Data, Data'First, "FOSOBJ07")
                and then Matches
                  (Data, Data'Last - Body_Bytes + 1, "locked body"),
-               "filesystem Object Lock generation was not FOSOBJ06");
+               "filesystem Object Lock generation was not FOSOBJ07");
             Assert
               (Data (Hold_At) =
                  Ada.Streams.Stream_Element (Character'Pos ('F')),
@@ -22043,8 +22349,16 @@ package body Object_Storage_Test_Cases is
             Check_Backend_Object_Tagging'Access));
       Result.Add_Test
         (Caller.Create
+           ("backends.object-annotation-conformance",
+            Check_Backend_Object_Annotations'Access));
+      Result.Add_Test
+        (Caller.Create
            ("backends.object-lock-conformance",
             Check_Backend_Object_Lock'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.object-annotation-codec",
+            Check_S3_Annotation_Codec'Access));
       Result.Add_Test
         (Caller.Create ("s3.core-rules", Check_S3_Core_Rules'Access));
       Result.Add_Test

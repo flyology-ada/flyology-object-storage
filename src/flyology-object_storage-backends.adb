@@ -1,5 +1,12 @@
 package body Flyology.Object_Storage.Backends is
 
+   function Empty_Annotation_Info return Object_Annotation_Information is
+     ((Size       => 0,
+       Modified   => 0,
+       Entity_Tag => Ada.Strings.Unbounded.Null_Unbounded_String,
+       Checksum   => (others => <>),
+       Version    => Ada.Strings.Unbounded.Null_Unbounded_String));
+
    function Empty_Bucket_Metadata_State return Bucket_Metadata_State is
      ((Kind                    => Current_Metadata_Configuration,
        Current_Configuration_Document =>
@@ -293,6 +300,109 @@ package body Flyology.Object_Storage.Backends is
       Item.Delete_Object_Tags
         (Bucket, Key, Token, Deadline, Identity, Result, Selector);
    end Delete_Object_Tags;
+
+   procedure Put_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
+   begin
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      if Item in Object_Annotation_Backend'Class then
+         Put_Object_Annotation
+           (Object_Annotation_Backend'Class (Item), Bucket, Key, Name,
+            Source, Options, Token, Deadline, Info, Identity, Result,
+            Selector);
+      else
+         Result := Not_Implemented;
+      end if;
+   end Put_Object_Annotation_If_Supported;
+
+   procedure Get_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
+   begin
+      Presence := Annotation_Absent;
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      if Item in Object_Annotation_Backend'Class then
+         Get_Object_Annotation
+           (Object_Annotation_Backend'Class (Item), Bucket, Key, Name, Sink,
+            Token, Deadline, Presence, Info, Identity, Result, Selector);
+      else
+         Result := Not_Implemented;
+      end if;
+   end Get_Object_Annotation_If_Supported;
+
+   procedure Delete_Object_Annotation_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
+   begin
+      Presence := Annotation_Absent;
+      Identity := (others => <>);
+      if Item in Object_Annotation_Backend'Class then
+         Delete_Object_Annotation
+           (Object_Annotation_Backend'Class (Item), Bucket, Key, Name,
+            Conditions, Token, Deadline, Presence, Identity, Result,
+            Selector);
+      else
+         Result := Not_Implemented;
+      end if;
+   end Delete_Object_Annotation_If_Supported;
+
+   procedure List_Object_Annotations_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
+   begin
+      Page :=
+        (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+         Is_Truncated => False,
+         Next_After   => Ada.Strings.Unbounded.Null_Unbounded_String);
+      Identity := (others => <>);
+      if Item in Object_Annotation_Backend'Class then
+         List_Object_Annotations
+           (Object_Annotation_Backend'Class (Item), Bucket, Key, Options,
+            Token, Deadline, Page, Identity, Result, Selector);
+      else
+         Result := Not_Implemented;
+      end if;
+   end List_Object_Annotations_If_Supported;
 
    procedure Put_Multipart_Part
      (Item        : in out Backend'Class;

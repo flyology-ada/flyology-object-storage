@@ -9,10 +9,88 @@ package Flyology.Object_Storage.S3.Annotations is
    --  Raised when a response violates the pinned annotation-list model.
    Malformed_Annotations : exception;
 
+   --  Raised when an object-annotation query violates its exact operation
+   --  shape or contains malformed percent encoding.
+   Malformed_Annotation_Request : exception;
+
    --  The pinned Botocore MaxAnnotationResults shape fixes the public wire
    --  domain at 1 through 1,000. This is provider protocol, not a local page
    --  size default or resource budget.
    subtype Annotation_Result_Limit is Positive range 1 .. 1_000;
+
+   --  Exact object-annotation operation selected by the request method.
+   --  @enum Put_Annotation Replace one named annotation
+   --  @enum Get_Annotation Read one named annotation
+   --  @enum List_Annotations List annotations on one object generation
+   --  @enum Delete_Annotation Delete one named annotation
+   type Annotation_Operation is
+     (Put_Annotation, Get_Annotation, List_Annotations, Delete_Annotation);
+
+   --  Strict decoded object-annotation request query. Presence flags retain
+   --  the distinction between omitted and explicitly empty list members.
+   --  @field Annotation_Name Required exact name for non-list operations
+   --  @field Has_Annotation_Name Whether Annotation_Name was supplied
+   --  @field Version_ID Optional exact selected object version
+   --  @field Has_Version_ID Whether Version_ID was supplied
+   --  @field Annotation_Prefix Optional exact list prefix
+   --  @field Has_Annotation_Prefix Whether Annotation_Prefix was supplied
+   --  @field Maximum Caller-selected list result limit
+   --  @field Has_Maximum Whether Maximum was supplied
+   --  @field Continuation_Token Optional opaque next-page cursor
+   --  @field Has_Continuation_Token Whether Continuation_Token was supplied
+   type Annotation_Request is record
+      Annotation_Name        : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Annotation_Name    : Boolean;
+      Version_ID             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Version_ID         : Boolean;
+      Annotation_Prefix      : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Annotation_Prefix  : Boolean;
+      Maximum                : Annotation_Result_Limit;
+      Has_Maximum            : Boolean;
+      Continuation_Token     : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean;
+   end record;
+
+   --  Parse one exact operation-specific annotation query. The annotation
+   --  subresource is required, percent escapes are strict, plus remains data,
+   --  duplicate and cross-operation members are rejected, and an optional
+   --  x-id must identify Operation.
+   --  @param Query Raw query bytes after the question mark
+   --  @param Operation Operation selected from the HTTP method and name mode
+   --  @return Complete strict decoded annotation request
+   --  @exception Malformed_Annotation_Request Query violates the operation
+   function Parse_Query
+     (Query : String; Operation : Annotation_Operation)
+      return Annotation_Request;
+
+   --  Result of validating one opaque annotation continuation token.
+   --  @field Valid Whether the token matches its complete request scope
+   --  @field After Exclusive decoded annotation-name cursor when valid
+   type Continuation_Result is record
+      Valid : Boolean;
+      After : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Encode a continuation token bound to one exact listing scope.
+   --  @param Bucket Exact bucket name
+   --  @param Key Exact object key
+   --  @param Version_ID Empty for current selection or exact selected version
+   --  @param Prefix Exact annotation-name prefix
+   --  @param After Exclusive final emitted annotation name
+   --  @return Opaque scope-bound continuation token
+   function Encode_Continuation
+     (Bucket, Key, Version_ID, Prefix, After : String) return String;
+
+   --  Validate and decode one continuation token against its listing scope.
+   --  @param Token Candidate opaque continuation token
+   --  @param Bucket Expected bucket name
+   --  @param Key Expected object key
+   --  @param Version_ID Expected empty or exact version selection
+   --  @param Prefix Expected annotation-name prefix
+   --  @return Validation result and decoded exclusive cursor
+   function Decode_Continuation
+     (Token, Bucket, Key, Version_ID, Prefix : String)
+      return Continuation_Result;
 
    --  Presence-preserving optional string. Empty text remains distinct from
    --  absence because the pinned string shapes have no minimum length.
@@ -119,5 +197,11 @@ package Flyology.Object_Storage.S3.Annotations is
    --  @exception Malformed_Annotations Document violates the pinned model
    function Parse_List
      (Document : String; Limits : XML.Parse_Limits) return Annotation_Page;
+
+   --  Serialize one complete strict ListObjectAnnotations response document.
+   --  @param Value Complete server-produced annotation page
+   --  @return Exact REST/XML response document
+   --  @exception Malformed_Annotations Value is internally inconsistent
+   function Serialize_List (Value : Annotation_Page) return String;
 
 end Flyology.Object_Storage.S3.Annotations;

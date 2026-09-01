@@ -561,6 +561,34 @@ is
       Metadata      : Object_Metadata;
    end record;
 
+   --  Immutable metadata retained with one object annotation. Entity_Tag is
+   --  the unquoted lowercase MD5 digest of the exact annotation payload.
+   --  @field Size Annotation payload size in bytes
+   --  @field Modified Nonnegative Unix modification time
+   --  @field Entity_Tag Unquoted lowercase payload MD5 digest
+   --  @field Checksum Optional stored full-payload checksum
+   --  @field Version Exact selected wire version, null, or empty unversioned
+   type Object_Annotation_Information is record
+      Size       : Byte_Count;
+      Modified   : Unix_Time;
+      Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum   : Checksum_Information;
+      Version    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Presence of one named annotation on an existing selected generation.
+   --  @enum Annotation_Absent No annotation has the requested name
+   --  @enum Annotation_Present The requested annotation exists
+   type Object_Annotation_Presence is
+     (Annotation_Absent, Annotation_Present);
+
+   --  Validate one annotation name as canonical UTF-8. Names contain one to
+   --  512 bytes of Unicode letters or numbers plus underscore, period, and
+   --  hyphen, and do not begin with the case-insensitive prefixes aws or s3.
+   --  @param Name Candidate annotation name
+   --  @return True when Name satisfies the storage annotation contract
+   function Valid_Object_Annotation_Name (Name : String) return Boolean;
+
    --  Maximum tags retained in one bounded object-tag set.
    Maximum_Object_Tags : constant := 10;
 

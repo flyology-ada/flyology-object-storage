@@ -489,6 +489,103 @@ is
       return True;
    end Valid_Object_Key;
 
+   function Valid_Object_Annotation_Name (Name : String) return Boolean is
+      Cursor : Integer := Name'First;
+
+      function Byte_At (Offset : Natural) return Natural is
+        (Character'Pos (Name (Cursor + Integer (Offset))))
+      with Pre =>
+        Cursor in Name'Range
+        and then Offset <= Natural (Name'Last - Cursor);
+
+      function Continuation (Offset : Natural) return Boolean is
+        (Offset <= Natural (Name'Last - Cursor)
+         and then Byte_At (Offset) in 16#80# .. 16#BF#)
+      with Pre => Cursor in Name'Range;
+
+      function Lower_ASCII (Value : Character) return Character is
+        (if Value in 'A' .. 'Z'
+         then Character'Val
+           (Character'Pos (Value) + Character'Pos ('a') -
+              Character'Pos ('A'))
+         else Value);
+
+      function Has_Reserved_Prefix return Boolean is
+        ((Name'Length >= 3
+          and then Lower_ASCII (Name (Name'First)) = 'a'
+          and then Lower_ASCII (Name (Name'First + 1)) = 'w'
+          and then Lower_ASCII (Name (Name'First + 2)) = 's')
+         or else
+           (Name'Length >= 2
+            and then Lower_ASCII (Name (Name'First)) = 's'
+            and then Lower_ASCII (Name (Name'First + 1)) = '3'));
+
+      function Allowed (Code : Natural) return Boolean is
+         Character_Value : constant Wide_Wide_Character :=
+           Wide_Wide_Character'Val (Code);
+         Category : constant Unicode.Category :=
+           Unicode.Get_Category (Character_Value);
+      begin
+         return Category in
+             Unicode.Lu | Unicode.Ll | Unicode.Lt | Unicode.Lm | Unicode.Lo |
+             Unicode.Nd | Unicode.Nl | Unicode.No
+           or else Code in
+             Character'Pos ('_') | Character'Pos ('.') |
+             Character'Pos ('-');
+      end Allowed;
+   begin
+      if Name'Length not in 1 .. 512 or else Has_Reserved_Prefix then
+         return False;
+      end if;
+      while Cursor <= Name'Last loop
+         pragma Loop_Invariant (Cursor in Name'Range);
+         pragma Loop_Variant (Decreases => Name'Last - Cursor);
+         declare
+            First : constant Natural := Byte_At (0);
+            Width : Positive;
+            Code  : Natural;
+         begin
+            if First <= 16#7F# then
+               Width := 1;
+               Code := First;
+            elsif First in 16#C2# .. 16#DF# and then Continuation (1) then
+               Width := 2;
+               Code := (First - 16#C0#) * 64 + (Byte_At (1) - 16#80#);
+            elsif First in 16#E0# .. 16#EF#
+              and then Continuation (1) and then Continuation (2)
+              and then (First /= 16#E0# or else Byte_At (1) >= 16#A0#)
+              and then (First /= 16#ED# or else Byte_At (1) <= 16#9F#)
+            then
+               Width := 3;
+               Code := (First - 16#E0#) * 4_096
+                 + (Byte_At (1) - 16#80#) * 64
+                 + (Byte_At (2) - 16#80#);
+            elsif First in 16#F0# .. 16#F4#
+              and then Continuation (1) and then Continuation (2)
+              and then Continuation (3)
+              and then (First /= 16#F0# or else Byte_At (1) >= 16#90#)
+              and then (First /= 16#F4# or else Byte_At (1) <= 16#8F#)
+            then
+               Width := 4;
+               Code := (First - 16#F0#) * 262_144
+                 + (Byte_At (1) - 16#80#) * 4_096
+                 + (Byte_At (2) - 16#80#) * 64
+                 + (Byte_At (3) - 16#80#);
+            else
+               return False;
+            end if;
+
+            if not Allowed (Code) then
+               return False;
+            elsif Width - 1 = Natural (Name'Last - Cursor) then
+               return True;
+            end if;
+            Cursor := Cursor + Width;
+         end;
+      end loop;
+      return True;
+   end Valid_Object_Annotation_Name;
+
    function Valid_Object_Metadata
      (Metadata : Object_Metadata; Content_Type : String) return Boolean
    is

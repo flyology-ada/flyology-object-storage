@@ -12,7 +12,7 @@ package Flyology.Object_Storage.Backends.Files is
    type Commit_Policy is (Power_Loss_Durable, Process_Crash_Atomic);
 
    type Store is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend
+     Bucket_Metadata_Backend and Object_Annotation_Backend
      with private;
 
    --  Open or create a backend rooted at Root. Power_Loss_Durable is the
@@ -1094,6 +1094,109 @@ package Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
+   --  Atomically replace one external annotation sidecar for an exact
+   --  filesystem generation.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Existing bucket name
+   --  @param Key Selected object key
+   --  @param Name Valid annotation name
+   --  @param Source One-shot annotation payload source
+   --  @param Options Checksum and parent-object conditions
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Published annotation metadata on success
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Put_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Stream one immutable external annotation sidecar snapshot.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Existing bucket name
+   --  @param Key Selected object key
+   --  @param Name Valid annotation name
+   --  @param Sink Destination for a present annotation
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether the annotation exists
+   --  @param Info Selected annotation metadata when present
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Get_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Atomically remove one external annotation sidecar.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Existing bucket name
+   --  @param Key Selected object key
+   --  @param Name Valid annotation name
+   --  @param Conditions Optional canonical parent-object ETag condition
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Presence Whether an annotation was removed
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure Delete_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  List external annotation sidecars in bytewise name order.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Existing bucket name
+   --  @param Key Selected object key
+   --  @param Options Prefix, lexical cursor, and page bound
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Current live-state page
+   --  @param Identity Selected object generation on success
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   overriding procedure List_Object_Annotations
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
    --  Replace tags on the current, null, or opaque exact filesystem
    --  generation without changing its version identity.
    --  @param Identity Selected generation on success
@@ -1254,7 +1357,7 @@ private
    end Publication_Gate;
 
    type Store is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend
+     Bucket_Metadata_Backend and Object_Annotation_Backend
      with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;

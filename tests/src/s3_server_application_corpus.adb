@@ -18,6 +18,7 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Analytics;
+with Flyology.Object_Storage.S3.Annotations;
 with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
@@ -70,6 +71,7 @@ procedure S3_Server_Application_Corpus is
    package Core renames Flyology.Object_Storage.S3.Core;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package Analytics renames Flyology.Object_Storage.S3.Analytics;
+   package Annotations renames Flyology.Object_Storage.S3.Annotations;
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
@@ -11110,6 +11112,238 @@ begin
                   "x-amz-object-attributes: ObjectSize" & CRLF)),
             "400 Bad Request"),
          "GetObjectAttributes accepted a request body");
+   end;
+
+   declare
+      Alpha_Name    : constant String := "alpha";
+      Beta_Name     : constant String := "beta";
+      Rejected_Name : constant String := "rejected";
+      Alpha_Payload : constant String := "alpha annotation payload";
+      Beta_Payload  : constant String := "beta annotation payload";
+      Alpha_ETag    : constant String := GNAT.MD5.Digest (Alpha_Payload);
+      Alpha_Checksum : constant String :=
+        Checksum_Value (Core.SHA256, Alpha_Payload);
+      Source_ETag : constant String :=
+        """5eb63bbbe01eeed093cb22bb8f5acdc3""";
+
+      function Query
+        (Name, Operation : String) return SigV4.Name_Value_Array is
+        (SigV4.Pair ("annotation", ""),
+         SigV4.Pair ("annotationName", Name),
+         SigV4.Pair ("x-id", Operation));
+
+      function Put_Request
+        (Name, Payload, Checksum : String) return String is
+        (Signed_Query_Body_Request
+           ("PUT", "/test-bucket/object",
+            Query (Name, "PutObjectAnnotation"), Payload,
+            "Content-MD5: " & Content_MD5 (Payload) & CRLF &
+            "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+            "x-amz-checksum-sha256: " & Checksum & CRLF));
+
+      function Get_Request (Target, Name : String) return String is
+        (Signed_Query_Request
+           ("GET", Target, Query (Name, "GetObjectAnnotation"),
+            "x-amz-checksum-mode", "ENABLED"));
+
+      function Delete_Request
+        (Name, Condition : String) return String is
+        (Signed_Query_Request
+           ("DELETE", "/test-bucket/object",
+            Query (Name, "DeleteObjectAnnotation"),
+            "x-amz-object-if-match", Condition));
+   begin
+      declare
+         Response : constant String :=
+           Run (Put_Request (Alpha_Name, Alpha_Payload, Alpha_Checksum));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "ETag: """ & Alpha_ETag & """")
+            and then Has
+              (Response,
+               "x-amz-checksum-sha256: " & Alpha_Checksum & CRLF)
+            and then Has
+              (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
+            and then not Has (Response, "x-amz-object-version-id:"),
+            "PutObjectAnnotation response binding mismatch: invalid-request=" &
+              Boolean'Image (Has (Response, "<Code>InvalidRequest</Code>")) &
+              ", invalid-argument=" &
+              Boolean'Image (Has (Response, "<Code>InvalidArgument</Code>")) &
+              ", bad-digest=" &
+              Boolean'Image (Has (Response, "<Code>BadDigest</Code>")) &
+              ", signature=" &
+              Boolean'Image
+                (Has (Response, "<Code>SignatureDoesNotMatch</Code>")) &
+              ", payload-hash=" &
+              Boolean'Image
+                (Has
+                   (Response,
+                    "<Code>XAmzContentSHA256Mismatch</Code>")));
+      end;
+
+      declare
+         Response : constant String :=
+           Run
+             (Put_Request
+                (Rejected_Name, "rejected annotation payload",
+                 Checksum_Value (Core.SHA256, "different")));
+      begin
+         Require
+           (Has (Response, "<Code>BadDigest</Code>"),
+            "PutObjectAnnotation accepted a mismatched checksum");
+         Require
+           (Has
+              (Run
+                 (Get_Request
+                    ("/test-bucket/object", Rejected_Name)),
+               "<Code>NoSuchAnnotation</Code>"),
+            "rejected annotation checksum published state");
+      end;
+
+      Require
+        (Has
+           (Run
+              (Put_Request
+                 (Beta_Name, Beta_Payload,
+                  Checksum_Value (Core.SHA256, Beta_Payload))),
+            "200 OK"),
+         "second PutObjectAnnotation failed");
+
+      declare
+         Response : constant String :=
+           Run (Get_Request ("/test-bucket/object", Alpha_Name));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, Alpha_Payload)
+            and then Has (Response, "ETag: """ & Alpha_ETag & """")
+            and then Has
+              (Response,
+               "x-amz-checksum-sha256: " & Alpha_Checksum & CRLF)
+            and then not Has (Response, "x-amz-object-version-id:"),
+            "GetObjectAnnotation lost body, checksum, ETag, or version");
+      end;
+
+      declare
+         First_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("annotation", ""),
+            SigV4.Pair ("maxAnnotationResults", "1"),
+            SigV4.Pair ("x-id", "ListObjectAnnotations"));
+         First_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket/object", First_Query));
+         First : constant Annotations.Annotation_Page :=
+           Annotations.Parse_List
+             (Response_Body (First_Response), XML.Default_Limits);
+         Token : constant String := US.To_String
+           (First.Next_Continuation_Token.Value);
+      begin
+         Require
+           (Has (First_Response, "200 OK")
+            and then First.Annotations.Length = 1
+            and then US.To_String
+              (First.Annotations.First_Element.Name) = Alpha_Name
+            and then First.Annotations.First_Element.Size =
+              Alpha_Payload'Length
+            and then First.Annotations.First_Element.Entity_Tag.Is_Set
+            and then US.To_String
+              (First.Annotations.First_Element.Entity_Tag.Value) =
+                '"' & Alpha_ETag & '"'
+            and then First.Annotations.First_Element.Checksums.Length = 1
+            and then First.Annotations.First_Element.Checksums.First_Element =
+              Core.SHA256
+            and then First.Next_Continuation_Token.Is_Set
+            and then Token'Length > 0
+            and then Token /= Alpha_Name
+            and then not Has
+              (First_Response, "x-amz-object-version-id:"),
+            "ListObjectAnnotations first page mismatch");
+         declare
+            Next_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("annotation", ""),
+               SigV4.Pair ("continuationToken", Token),
+               SigV4.Pair ("maxAnnotationResults", "1"),
+               SigV4.Pair ("x-id", "ListObjectAnnotations"));
+            Next_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/test-bucket/object", Next_Query));
+            Next : constant Annotations.Annotation_Page :=
+              Annotations.Parse_List
+                (Response_Body (Next_Response), XML.Default_Limits);
+         begin
+            Require
+              (Next.Annotations.Length = 1
+               and then US.To_String
+                 (Next.Annotations.First_Element.Name) = Beta_Name
+               and then not Next.Next_Continuation_Token.Is_Set,
+               "ListObjectAnnotations continuation order mismatch");
+         end;
+      end;
+
+      Require
+        (Has
+           (Run (Delete_Request (Beta_Name, """wrong""")),
+            "HTTP/1.1 412 "),
+         "DeleteObjectAnnotation ignored a mismatched object condition");
+      Require
+        (Has
+           (Run (Get_Request ("/test-bucket/object", Beta_Name)),
+            Beta_Payload),
+         "failed DeleteObjectAnnotation changed retained state");
+      declare
+         Response : constant String :=
+           Run (Delete_Request (Beta_Name, Source_ETag));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then not Has (Response, "x-amz-object-version-id:"),
+            "DeleteObjectAnnotation matching condition failed");
+      end;
+      Require
+        (Has
+           (Run (Get_Request ("/test-bucket/object", Beta_Name)),
+            "<Code>NoSuchAnnotation</Code>"),
+         "DeleteObjectAnnotation left the removed annotation visible");
+
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Copy_Member_Request
+                ("/test-bucket/copied", "test-bucket/object",
+                 "x-amz-object-annotation-directive", "COPY"));
+         Copied : constant String :=
+           Run (Get_Request ("/test-bucket/copied", Alpha_Name));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Copied, "200 OK")
+            and then Has (Copied, Alpha_Payload)
+            and then Has
+              (Copied,
+               "x-amz-checksum-sha256: " & Alpha_Checksum & CRLF),
+            "CopyObject COPY did not copy annotation state");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copied", "test-bucket/object",
+                  "x-amz-object-annotation-directive", "EXCLUDE")),
+            "200 OK"),
+         "CopyObject rejected the EXCLUDE annotation directive");
+      Require
+        (Has
+           (Run (Get_Request ("/test-bucket/copied", Alpha_Name)),
+            "<Code>NoSuchAnnotation</Code>"),
+         "CopyObject EXCLUDE retained destination annotation state");
+      Require
+        (Has
+           (Run (Get_Request ("/test-bucket/object", Alpha_Name)),
+            Alpha_Payload),
+         "CopyObject EXCLUDE changed source annotation state");
    end;
 
    declare

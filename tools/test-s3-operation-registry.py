@@ -3487,10 +3487,11 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetObject lane was accepted")
     get_object_annotation_certainty = (
-        "read-only model coverage only; no public client operation, "
-        "response-body sink, header decoder, or runtime evidence exists, "
-        "so this review exposes no annotation bytes and makes no "
-        "response-validation or retry claim"
+        "read-only client model coverage only; no public client operation, "
+        "response-body sink, header decoder, or runtime evidence exists; "
+        "independently, the backend and authenticated server stream a "
+        "selected annotation and bind its exact parent generation without "
+        "automatic replay"
     )
 
     def assert_get_object_annotation_registry(candidate):
@@ -3505,16 +3506,18 @@ def main() -> None:
         assert entry.get("certainty") == get_object_annotation_certainty
         assert entry.get("ada_symbols") is None
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "backend": "covered", "client": "partial",
+            "server": "covered", "corpus": "covered",
         }
+        assert entry["provenance"]["backend"] == "handwritten"
         assert entry["provenance"]["client"] == "generated"
+        assert entry["provenance"]["server"] == "handwritten"
         assert "no public client decoder" in entry["absence"]
-        assert "neither same-version observation" in entry["reconciliation"]
+        assert "explicit-version observation" in entry["reconciliation"]
         assert "registry sentinel and not an Ada declaration" in (
             entry["exclusions"][0]
         )
-        assert "are inventory only" in entry["exclusions"][1]
+        assert "remain inventory only" in entry["exclusions"][1]
         assert "does not invent a public bound" in entry["exclusions"][2]
         assert entry["evidence"]["client"] == [
             "src/flyology-object_storage-s3-model.adb",
@@ -3523,6 +3526,8 @@ def main() -> None:
         assert candidate.qualification["get_object_annotation"] == [
             ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-get-object-annotation-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-object-annotations-backend-server.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -5018,10 +5023,12 @@ def main() -> None:
         raise AssertionError("duplicate WriteGetObjectResponse lane accepted")
 
     put_object_annotation_certainty = (
-        "mutation model coverage only; no public request-body source, "
-        "checksum binding, response decoder, or runtime evidence exists, "
-        "so this review reports no successful mutation, no admission "
-        "certainty, and no automatic replay"
+        "mutation client model coverage only; no public client request-body "
+        "source, checksum binding, decoder, admission result, or runtime "
+        "evidence exists; independently, the backend and authenticated "
+        "server validate the selected parent generation, condition, and "
+        "expected checksum before atomically publishing annotation bytes, "
+        "with no automatic replay"
     )
 
     def assert_put_object_annotation_registry(candidate):
@@ -5036,14 +5043,19 @@ def main() -> None:
         assert entry.get("certainty") == put_object_annotation_certainty
         assert entry.get("ada_symbols") is None
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "backend": "covered", "client": "partial",
+            "server": "covered", "corpus": "covered",
         }
-        assert "no observation, causal proof" in entry["reconciliation"]
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["client"] == "generated"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert "neither proves mutation causation" in (
+            entry["reconciliation"]
+        )
         assert "registry sentinel and not an Ada declaration" in (
             entry["exclusions"][0]
         )
-        assert "are inventory only" in entry["exclusions"][1]
+        assert "remain inventory only" in entry["exclusions"][1]
         assert "does not invent public limits" in entry["exclusions"][2]
         assert entry["evidence"]["client"] == [
             "src/flyology-object_storage-s3-model.adb",
@@ -5052,6 +5064,8 @@ def main() -> None:
         assert candidate.qualification["put_object_annotation"] == [
             ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-put-object-annotation-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-object-annotations-backend-server.py"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -11142,15 +11156,11 @@ def main() -> None:
             "mixed CreateBucketMetadataTableConfiguration lane was accepted"
         )
     delete_object_annotation_certainty = (
-        "only a complete validated exact 204 with an exactly empty body "
-        "reports Annotation_Deletion_Completed; an exact recognized "
-        "non-applying rejection or definite non-admission reports "
-        "Annotation_Deletion_Definitely_Not_Applied, pre-admission "
-        "cancellation reports "
-        "Annotation_Deletion_Cancelled_Before_Admission, and every other "
-        "possibly admitted, incomplete, retryable, malformed, or oversized "
-        "outcome reports Annotation_Deletion_Outcome_Unknown; no automatic "
-        "replay"
+        "the public client retains its existing exact 204 and admission-aware "
+        "deletion certainty; independently, the backend and authenticated "
+        "server delete only the selected current, null, or explicit parent "
+        "generation after atomic ObjectIfMatch evaluation and return "
+        "annotation presence without automatic replay"
     )
     delete_object_annotation_reconciliation = (
         "caller-selected read-only observation using the exact bucket, key, "
@@ -11178,12 +11188,14 @@ def main() -> None:
             delete_object_annotation_reconciliation
         )
         assert entry.get("ada_symbols") == delete_object_annotation_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert entry.get("absence") == "not_applicable"
-        assert "external-provider interoperability" in entry["exclusions"][0]
+        assert "external-provider annotation interoperability" in (
+            entry["exclusions"][0]
+        )
         assert "exact HTTP 204" in entry["exclusions"][2]
         assert candidate.qualification["delete_object_annotation"][0][-1] == (
             "tools/verify-delete-object-annotation-preparation.py"
@@ -11251,23 +11263,27 @@ def main() -> None:
         s3_operation.qualification_plan(registry, ["DeleteObjectAnnotation"])
     )
     assert annotation_qualification == "delete_object_annotation"
-    assert annotation_commands[:5] == [
+    assert annotation_commands[:6] == [
         [
             "uv", "run", "--python", "3.13", "--",
             "tools/verify-delete-object-annotation-preparation.py",
+        ],
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-object-annotations-backend-server.py",
         ],
         ["@tests", "alr", "-n", "build"],
         ["@tests", "./bin/s3_delete_object_annotation_corpus"],
         ["@tests", "./bin/s3_http_socket_corpus"],
         ["./tools/verify-coverage.sh"],
     ]
-    assert annotation_commands[5] == [
+    assert annotation_commands[6] == [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-delete-object-annotation-gnatdoc",
         "--operation",
         "DeleteObjectAnnotation",
     ]
-    assert annotation_commands[6:] == [
+    assert annotation_commands[7:] == [
         ["./tools/ci/check-repository.sh", "{model}"],
         ["git", "diff", "--check"],
     ]
@@ -12496,6 +12512,157 @@ def main() -> None:
         raise AssertionError(
             "mixed GetBucketMetadataTableConfiguration lane accepted"
         )
+
+    annotation_names = {
+        "DeleteObjectAnnotation": "Delete_Annotation",
+        "GetObjectAnnotation": "Not_Exposed",
+        "ListObjectAnnotations": "List_Annotations",
+        "PutObjectAnnotation": "Not_Exposed",
+    }
+    annotation_qualifications = {
+        "DeleteObjectAnnotation": "delete_object_annotation",
+        "GetObjectAnnotation": "get_object_annotation",
+        "ListObjectAnnotations": "list_object_annotations",
+        "PutObjectAnnotation": "put_object_annotation",
+    }
+    annotation_client_coverage = {
+        "DeleteObjectAnnotation": ("covered", "handwritten"),
+        "GetObjectAnnotation": ("partial", "generated"),
+        "ListObjectAnnotations": ("covered", "shared_family"),
+        "PutObjectAnnotation": ("partial", "generated"),
+    }
+    annotation_backend_evidence = [
+        "src/flyology-object_storage-backends.ads",
+        "src/flyology-object_storage-backends-memory.adb",
+        "src/flyology-object_storage-backends-files.adb",
+        "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+        "sqlite/src/flyology-object_storage-sqlite-catalogs.adb",
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+    ]
+    annotation_server_evidence = [
+        "src/flyology-object_storage-s3-annotations.adb",
+        "src/flyology-object_storage-server-s3_applications.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ]
+    annotation_shared_command = [
+        "uv", "run", "--python", "3.13", "--",
+        "tools/verify-object-annotations-backend-server.py",
+    ]
+
+    def assert_annotation_backend_server_registry(candidate):
+        for name, public_name in annotation_names.items():
+            entry = candidate.operations[name]
+            client, client_provenance = annotation_client_coverage[name]
+            assert entry.get("public_name") == public_name
+            assert entry.get("qualification") == (
+                annotation_qualifications[name]
+            )
+            assert entry["coverage"] == {
+                "backend": "covered",
+                "client": client,
+                "server": "covered",
+                "corpus": "covered",
+            }
+            assert entry["provenance"]["backend"] == "handwritten"
+            assert entry["provenance"]["client"] == client_provenance
+            assert entry["provenance"]["server"] == "handwritten"
+            assert entry["evidence"]["backend"] == (
+                annotation_backend_evidence
+            )
+            assert entry["evidence"]["server"] == (
+                annotation_server_evidence
+            )
+            assert (
+                "tools/verify-object-annotations-backend-server.py"
+                in entry["evidence"]["corpus"]
+            )
+            commands = candidate.qualification[
+                annotation_qualifications[name]
+            ]
+            assert commands.count(annotation_shared_command) == 1
+        assert "no public client operation" in candidate.operations[
+            "GetObjectAnnotation"
+        ]["certainty"]
+        assert "no public client request-body source" in (
+            candidate.operations["PutObjectAnnotation"]["certainty"]
+        )
+        assert "bytewise UTF-8" in candidate.operations[
+            "ListObjectAnnotations"
+        ]["certainty"]
+        assert "without automatic replay" in candidate.operations[
+            "DeleteObjectAnnotation"
+        ]["certainty"]
+
+    def reject_annotation_backend_server_registry(candidate, label):
+        try:
+            assert_annotation_backend_server_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} object-annotation backend/server registry accepted"
+        )
+
+    assert_annotation_backend_server_registry(registry)
+    missing_annotation_verifier = copy.deepcopy(registry)
+    missing_annotation_verifier.qualification[
+        "get_object_annotation"
+    ].remove(annotation_shared_command)
+    assert missing_annotation_verifier != registry
+    reject_annotation_backend_server_registry(
+        missing_annotation_verifier, "missing shared verifier"
+    )
+    duplicate_annotation_verifier = copy.deepcopy(registry)
+    duplicate_annotation_verifier.qualification[
+        "put_object_annotation"
+    ].insert(1, annotation_shared_command)
+    assert duplicate_annotation_verifier != registry
+    reject_annotation_backend_server_registry(
+        duplicate_annotation_verifier, "duplicate shared verifier"
+    )
+    mixed_annotation_lane = copy.deepcopy(registry)
+    mixed_annotation_lane.operations[
+        "ListObjectAnnotations"
+    ]["qualification"] = "delete_object_annotation"
+    assert mixed_annotation_lane != registry
+    reject_annotation_backend_server_registry(
+        mixed_annotation_lane, "mixed operation lane"
+    )
+    swapped_annotation_names = copy.deepcopy(registry)
+    swapped_annotation_names.operations[
+        "DeleteObjectAnnotation"
+    ]["public_name"] = "List_Annotations"
+    swapped_annotation_names.operations[
+        "ListObjectAnnotations"
+    ]["public_name"] = "Delete_Annotation"
+    assert swapped_annotation_names != registry
+    reject_annotation_backend_server_registry(
+        swapped_annotation_names, "swapped public names"
+    )
+    overclaimed_annotation_client = copy.deepcopy(registry)
+    overclaimed_annotation_client.operations[
+        "GetObjectAnnotation"
+    ]["coverage"]["client"] = "covered"
+    assert overclaimed_annotation_client != registry
+    reject_annotation_backend_server_registry(
+        overclaimed_annotation_client, "overclaimed client"
+    )
+    missing_annotation_backend = copy.deepcopy(registry)
+    missing_annotation_backend.operations[
+        "DeleteObjectAnnotation"
+    ]["evidence"]["backend"] = []
+    assert missing_annotation_backend != registry
+    reject_annotation_backend_server_registry(
+        missing_annotation_backend, "missing backend evidence"
+    )
+    malformed_annotation_mapping = copy.deepcopy(registry)
+    malformed_annotation_mapping.operations[
+        "PutObjectAnnotation"
+    ]["public_name"] = ["Put_Annotation"]
+    assert malformed_annotation_mapping != registry
+    reject_annotation_backend_server_registry(
+        malformed_annotation_mapping, "malformed public mapping"
+    )
 
     print("S3 operation registry evidence negative oracles: OK")
 

@@ -2,9 +2,10 @@
 
 This record qualifies the strict low-level request boundary, provider-owned
 composable operation, typed synchronous wait, and corpus for
-`DeleteObjectAnnotation`. It does not claim annotation persistence in a
-Flyology backend, an authenticated Flyology server route, or external
-provider interoperability.
+`DeleteObjectAnnotation`. The separately maintained
+[backend and server evidence](object-annotations-backend-server.md) records
+the shared Flyology persistence and authenticated route. External-provider
+annotation interoperability remains outside both records.
 
 ## Pinned authority and inventory
 
@@ -95,10 +96,10 @@ non-observed admission state, and every expected HTTP failure across all
 admission certainties. The root gate drives the same socket sequence under
 native and Flyology lightweight task owners.
 
-The machine ledger records the operation as `missing / covered / missing /
-covered`. Client and corpus qualification do not manufacture backend state or
-a server route; those require separate persistence, routing, and independent
-black-box evidence.
+The machine ledger records the operation as `covered / covered / covered /
+covered`. The client evidence in this record remains independently scoped;
+the shared backend/server record pins persistence, routing, and cross-backend
+evidence without treating one operation's lane as proof for another.
 
 ## Formal boundary
 
@@ -128,3 +129,8 @@ and synchronous wait declarations. Those declarations emitted no targeted
 warning; the sole exact operation-name warning is the preexisting generated
 model enumeration. The log contains no internal error,
 `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel diagnostic.
+
+Backend/server promotion remains conditional on the shared verifier and every
+command in the `delete_object_annotation` lane succeeding. The historical
+client result above does not by itself qualify the newly added backend/server
+surface or external-provider behavior.

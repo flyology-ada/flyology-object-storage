@@ -633,6 +633,22 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   type Annotation_Copy_Record is record
+      Name    : Ada.Strings.Unbounded.Unbounded_String;
+      Payload : Ada.Strings.Unbounded.Unbounded_String;
+      Info    : Object_Annotation_Information;
+   end record;
+
+   package Annotation_Copy_Record_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Annotation_Copy_Record);
+   subtype Annotation_Copy_Snapshot is Annotation_Copy_Record_Vectors.Vector;
+
+   package Payload_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Natural,
+      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+      "=" => Ada.Strings.Unbounded."=");
+   subtype Payloads is Payload_Vectors.Vector;
+
    --  Commit object state, retained-generation state, and Identity in one
    --  transaction. Identity has its default value on every non-success path.
    --  @param Item Catalog transaction owner
@@ -653,9 +669,11 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Retired_Annotations : out Payloads;
       Identity         : out Backends.Version_Identity;
       Result           : out Status;
-      Conditions       : Write_Conditions := Default_Write_Conditions);
+      Conditions       : Write_Conditions := Default_Write_Conditions;
+      Annotations      : Annotation_Copy_Snapshot);
 
    --  Compatibility form when the publication identity is not needed.
    --  @param Item Catalog transaction owner
@@ -675,8 +693,10 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Retired_Annotations : out Payloads;
       Result           : out Status;
-      Conditions       : Write_Conditions := Default_Write_Conditions);
+      Conditions       : Write_Conditions := Default_Write_Conditions;
+      Annotations      : Annotation_Copy_Snapshot);
 
    procedure Find_Object
      (Item    : in out Catalog;
@@ -748,12 +768,17 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Payload  : out Ada.Strings.Unbounded.Unbounded_String;
       Info     : out Object_Information;
       Tags     : out Object_Tag_Set;
+      Annotations : out Annotation_Copy_Snapshot;
       Identity : out Backends.Version_Identity;
       Result   : out Status;
       Check    : access procedure
         (Payload : String;
          Info    : Object_Information;
          Tags    : Object_Tag_Set) := null);
+
+   --  Release payload leases held by one source annotation copy snapshot.
+   procedure Release_Annotation_Copy_Snapshot
+     (Item : in out Catalog; Annotations : Annotation_Copy_Snapshot);
 
    procedure Get_Object_Attributes
      (Item     : in out Catalog;
@@ -765,12 +790,6 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Check    : not null access procedure;
       Snapshot : out Backends.Object_Attribute_Snapshot;
       Result   : out Status);
-
-   package Payload_Vectors is new Ada.Containers.Vectors
-     (Index_Type => Natural,
-      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
-      "=" => Ada.Strings.Unbounded."=");
-   subtype Payloads is Payload_Vectors.Vector;
 
    --  Delete one ordered batch in a single SQLite transaction. Retired
    --  payload names become unreferenced only after the transaction commits.
@@ -793,7 +812,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    --  @param Conditions Atomic object deletion predicates
    --  @param MFA_Validated Caller authorization attestation for MFA Delete
    --  @param Modified Commit timestamp for a newly published marker
-   --  @param Retired_Payload Payload made unreachable by this transaction
+   --  @param Retired Payloads made unreachable by this transaction
    --  @param Outcome Exact generation-aware deletion effect
    --  @param Result Operation status
    procedure Delete_Selected_Object
@@ -804,7 +823,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Conditions      : Backends.Delete_Object_Conditions;
       MFA_Validated   : Boolean;
       Modified        : Unix_Time;
-      Retired_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Retired         : out Payloads;
       Outcome         : out Backends.Version_Delete_Outcome;
       Result          : out Status);
 
@@ -888,6 +907,49 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector);
 
+   --  Atomically replace one external annotation payload reference.
+   procedure Put_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name, Payload : String;
+      Info : Object_Annotation_Information;
+      Conditions : Backends.Object_Annotation_Conditions;
+      Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
+   --  Read one annotation payload reference and metadata snapshot. Check runs
+   --  while the selected generation and payload reference remain protected.
+   procedure Get_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name : String;
+      Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Presence : out Object_Annotation_Presence;
+      Info : out Object_Annotation_Information;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector;
+      Check : access procedure
+        (Payload : String; Info : Object_Annotation_Information) := null);
+
+   --  Atomically remove one named annotation payload reference.
+   procedure Delete_Object_Annotation
+     (Item : in out Catalog; Bucket, Key, Name : String;
+      Conditions : Backends.Object_Annotation_Conditions;
+      Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
+   --  Return one live bytewise-name-ordered annotation page.
+   procedure List_Object_Annotations
+     (Item : in out Catalog; Bucket, Key : String;
+      Options : Backends.List_Object_Annotations_Options;
+      Check : not null access procedure;
+      Page : out Backends.Object_Annotation_Page;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
    procedure List_Objects
      (Item    : in out Catalog;
       Bucket  : String;
@@ -913,6 +975,12 @@ package Flyology.Object_Storage.SQLite.Catalogs is
 
    function Payload_Referenced
      (Item : in out Catalog; Payload : String) return Boolean;
+
+   --  Run Delete while the catalog gate proves Payload has no live reference.
+   procedure Delete_Payload_If_Unreferenced
+     (Item : in out Catalog;
+      Payload : String;
+      Delete : not null access procedure (Payload : String));
 
    type Multipart_Part_Record is record
       Number  : Backends.Multipart_Part_Number :=

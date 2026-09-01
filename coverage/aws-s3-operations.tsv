@@ -23,7 +23,7 @@ DeleteBucketReplication	extended	covered	covered	covered	covered
 DeleteBucketTagging	extended	covered	covered	covered	covered
 DeleteBucketWebsite	extended	covered	covered	covered	covered
 DeleteObject	core	covered	covered	covered	covered
-DeleteObjectAnnotation	extended	missing	covered	missing	covered
+DeleteObjectAnnotation	extended	covered	covered	covered	covered
 DeleteObjectTagging	core	covered	covered	covered	covered
 DeleteObjects	core	covered	covered	covered	covered
 DeletePublicAccessBlock	extended	covered	covered	covered	covered
@@ -54,7 +54,7 @@ GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	covered	covered	covered	covered
 GetObject	core	covered	covered	covered	covered
 GetObjectAcl	extended	covered	covered	covered	covered
-GetObjectAnnotation	extended	missing	partial	missing	covered
+GetObjectAnnotation	extended	covered	partial	covered	covered
 GetObjectAttributes	core	covered	covered	covered	covered
 GetObjectLegalHold	extended	covered	covered	covered	covered
 GetObjectLockConfiguration	extended	covered	covered	covered	covered
@@ -71,7 +71,7 @@ ListBucketMetricsConfigurations	extended	covered	covered	covered	covered
 ListBuckets	core	covered	covered	covered	covered
 ListDirectoryBuckets	extended	missing	covered	missing	covered
 ListMultipartUploads	core	covered	covered	covered	covered
-ListObjectAnnotations	extended	missing	covered	missing	covered
+ListObjectAnnotations	extended	covered	covered	covered	covered
 ListObjectVersions	core	covered	covered	covered	covered
 ListObjects	core	covered	covered	covered	covered
 ListObjectsV2	core	covered	covered	covered	covered
@@ -99,7 +99,7 @@ PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	covered	covered	covered	covered
 PutObject	core	covered	covered	covered	covered
 PutObjectAcl	extended	covered	partial	covered	covered
-PutObjectAnnotation	extended	missing	partial	missing	covered
+PutObjectAnnotation	extended	covered	partial	covered	covered
 PutObjectLegalHold	extended	covered	covered	covered	covered
 PutObjectLockConfiguration	extended	covered	covered	covered	covered
 PutObjectRetention	extended	covered	covered	covered	covered

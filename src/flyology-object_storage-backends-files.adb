@@ -40,7 +40,8 @@ package body Flyology.Object_Storage.Backends.Files is
    Part_Magic : constant String := "FOSOBJ03";
    Checksum_Magic : constant String := "FOSOBJ04";
    Metadata_Magic : constant String := "FOSOBJ05";
-   Magic : constant String := "FOSOBJ06";
+   Object_Lock_Magic : constant String := "FOSOBJ06";
+   Magic : constant String := "FOSOBJ07";
    Generation_File_Suffix : constant String := ".fos";
    Generation_Order_Width : constant Positive := 19;
    --  Generation filenames use the full decimal width of a nonnegative
@@ -110,9 +111,36 @@ package body Flyology.Object_Storage.Backends.Files is
    Maximum_Tag_Value_Bytes : constant Natural :=
      4 * Tags.Maximum_Value_Characters;
    Maximum_Object_Path_Depth : constant Natural := 32;
+   Maximum_Annotation_Payload_Bytes : constant Byte_Count := 1_024 * 1_024;
+   --  S3 object annotations contain between one byte and one MiB.  This is
+   --  the provider contract, not a Files-backend resource-policy choice.
+   Maximum_Annotations_Per_Object : constant Natural := 1_000;
+   Maximum_Annotation_Aggregate_Bytes : constant Byte_Count :=
+     1_024 * 1_024 * 1_024;
+   --  S3 fixes both limits for one exact object generation: at most 1,000
+   --  names and at most one GiB of aggregate annotation payload.
    Body_Size_Position : constant SIO.Positive_Count := 29;
    Metadata_Position  : constant SIO.Positive_Count := 37;
    Empty_Info : constant Object_Information := (others => <>);
+   Empty_Annotation_Info : constant Object_Annotation_Information :=
+     (Size       => 0,
+      Modified   => 0,
+      Entity_Tag => US.Null_Unbounded_String,
+      Checksum   => (others => <>),
+      Version    => US.Null_Unbounded_String);
+
+   function Valid_Annotation_Generation_ID (Value : String) return Boolean is
+   begin
+      if Value'Length /= Generated_Version_ID_Length then
+         return False;
+      end if;
+      for Character_Value of Value loop
+         if Character_Value not in '0' .. '9' | 'a' .. 'f' then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Annotation_Generation_ID;
    type Persisted_Object_Lock_State is record
       Legal_Hold : Object_Legal_Hold_Status := Object_Legal_Hold_Off;
       Retention  : Object_Retention :=
@@ -840,6 +868,48 @@ package body Flyology.Object_Storage.Backends.Files is
      (Encoded_Object_Path
         (Versions_Path (Item, Bucket), Key, ".versions"));
 
+   function Annotations_Path (Item : Store; Bucket : String) return String is
+     (Join (Bucket_Path (Item, Bucket), "annotations"));
+
+   function Annotation_Key_Directory
+     (Item : Store; Bucket : String; Key : String) return String is
+     (Encoded_Object_Path
+        (Annotations_Path (Item, Bucket), Key, ".annotations"));
+
+   function Stored_Annotation_Generation_ID
+     (Selected : Selected_Generation) return String;
+
+   function Annotation_Generation_Directory_For_ID
+     (Item          : Store;
+      Bucket        : String;
+      Key           : String;
+      Generation_ID : String) return String
+   is
+     (Join
+        (Annotation_Key_Directory (Item, Bucket, Key),
+         "generation-" & Generation_ID));
+
+   function Annotation_Generation_Directory
+     (Item     : Store;
+      Bucket   : String;
+      Key      : String;
+      Selected : Selected_Generation) return String
+   is
+     (Annotation_Generation_Directory_For_ID
+        (Item, Bucket, Key, Stored_Annotation_Generation_ID (Selected)));
+
+   function Annotation_Path
+     (Item     : Store;
+      Bucket   : String;
+      Key      : String;
+      Selected : Selected_Generation;
+      Name     : String) return String
+   is
+     (Join
+        (Annotation_Generation_Directory
+           (Item, Bucket, Key, Selected),
+         GNAT.SHA256.Digest (Name) & ".fos"));
+
    function Decimal_Publication
      (Value : Long_Long_Integer) return String
    is
@@ -928,6 +998,73 @@ package body Flyology.Object_Storage.Backends.Files is
         (Item, Bucket, Objects_Path (Item, Bucket),
          Ada.Directories.Containing_Directory
            (Object_Path (Item, Bucket, Key))));
+
+   function Annotation_Directory_Exists
+     (Item     : Store;
+      Bucket   : String;
+      Key      : String;
+      Selected : Selected_Generation) return Boolean
+   is
+      Root      : constant String := Annotations_Path (Item, Bucket);
+      Directory : constant String :=
+        Annotation_Generation_Directory (Item, Bucket, Key, Selected);
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Root) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Root) then
+         return False;
+      elsif Ada.Directories.Kind (Root) /= Ada.Directories.Directory then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Encoded_Ancestors_Exist
+          (Item, Bucket, Root,
+           Ada.Directories.Containing_Directory (Directory))
+      then
+         return False;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Directory) then
+         return False;
+      elsif Ada.Directories.Kind (Directory) /= Ada.Directories.Directory then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Validate_Immediate_Directory (Directory);
+      return True;
+   end Annotation_Directory_Exists;
+
+   procedure Remove_Annotation_Generation
+     (Item     : Store;
+      Bucket   : String;
+      Key      : String;
+      Selected : Selected_Generation)
+   is
+      Directory : constant String :=
+        Annotation_Generation_Directory (Item, Bucket, Key, Selected);
+   begin
+      if Annotation_Directory_Exists (Item, Bucket, Key, Selected) then
+         Remove_Tree (Item, Directory);
+      end if;
+   end Remove_Annotation_Generation;
+
+   procedure Remove_Annotation_Generation_For_ID
+     (Item          : Store;
+      Bucket        : String;
+      Key           : String;
+      Generation_ID : String)
+   is
+      Directory : constant String :=
+        Annotation_Generation_Directory_For_ID
+          (Item, Bucket, Key, Generation_ID);
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif Ada.Directories.Exists (Directory) then
+         if Ada.Directories.Kind (Directory) /= Ada.Directories.Directory then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Validate_Tree_Symlink_Free (Directory);
+         Remove_Tree (Item, Directory);
+      end if;
+   end Remove_Annotation_Generation_For_ID;
 
    function Generation_Ancestors_Exist
      (Item : Store; Bucket : String; Key : String) return Boolean
@@ -1283,11 +1420,29 @@ package body Flyology.Object_Storage.Backends.Files is
          begin
             Scan_Generations (Item, Bucket, Key, Find_One'Access);
             exit when US.Length (Found) = 0;
+            Remove_Annotation_Generation
+              (Item, Bucket, Key,
+               (Present          => True,
+                Legacy           => False,
+                Is_Delete_Marker => False,
+                Is_Null_Version  => True,
+                Publication      => 0,
+                Version_ID       => US.Null_Unbounded_String,
+                Path             => Found));
             Remove_Ordinary_File (US.To_String (Found));
          end;
       end loop;
       Inspect_Object_Path (Item, Bucket, Key, Legacy_Exists);
       if Legacy_Exists then
+         Remove_Annotation_Generation
+           (Item, Bucket, Key,
+            (Present          => True,
+             Legacy           => True,
+             Is_Delete_Marker => False,
+             Is_Null_Version  => True,
+             Publication      => 0,
+             Version_ID       => US.Null_Unbounded_String,
+             Path             => US.To_Unbounded_String (Legacy)));
          Remove_Ordinary_File (Legacy);
          Sync_Directory
            (Item, Ada.Directories.Containing_Directory (Legacy));
@@ -2190,6 +2345,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Parts : Completed_Object_Part_List :=
         Completed_Object_Part_Vectors.Empty_Vector;
       Object_Lock : Persisted_Object_Lock_State := (others => <>);
+      Annotation_Generation_ID : String := "";
       Checksum_Value_At : access SIO.Positive_Count := null)
    is
       ETag : constant String := US.To_String (Info.Entity_Tag);
@@ -2263,6 +2419,10 @@ package body Flyology.Object_Storage.Backends.Files is
           ((Object_Lock.Retention.Mode = No_Object_Retention)
            /= (Object_Lock.Retention.Retain_Until = 0
                and then US.Length (Object_Lock.Retention.Exact_Text) = 0))
+        or else
+          (Annotation_Generation_ID'Length /= 0
+           and then not Valid_Annotation_Generation_ID
+             (Annotation_Generation_ID))
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
@@ -2330,6 +2490,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Write_U64 (File, Long_Long_Integer (Object_Lock.Retention.Retain_Until));
       Write_U32 (File, US.Length (Object_Lock.Retention.Exact_Text));
       Write_String (File, US.To_String (Object_Lock.Retention.Exact_Text));
+      Write_U32 (File, Annotation_Generation_ID'Length);
+      Write_String (File, Annotation_Generation_ID);
    end Write_Header;
 
    procedure Read_Header_Any_With_Metadata
@@ -2428,8 +2590,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Parts.Clear;
       Object_Lock := (others => <>);
       if File_Magic not in
-          Magic | Metadata_Magic | Checksum_Magic | Part_Magic | Tag_Magic |
-            Legacy_Magic
+          Magic | Object_Lock_Magic | Metadata_Magic | Checksum_Magic |
+            Part_Magic | Tag_Magic | Legacy_Magic
         or else Key_Length not in 1 .. 1_024
         or else ETag_Length > Maximum_Metadata_Length
         or else Kind_Length > Maximum_Metadata_Length
@@ -2481,7 +2643,8 @@ package body Flyology.Object_Storage.Backends.Files is
             end;
          end if;
          if File_Magic in
-             Magic | Metadata_Magic | Checksum_Magic | Part_Magic
+             Magic | Object_Lock_Magic | Metadata_Magic | Checksum_Magic |
+               Part_Magic
          then
             declare
                Count : constant Natural := Read_U32 (File);
@@ -2507,8 +2670,9 @@ package body Flyology.Object_Storage.Backends.Files is
                      end if;
                      declare
                         Checksum : constant Checksum_Information :=
-                          (if File_Magic in
-                                Magic | Metadata_Magic | Checksum_Magic
+                           (if File_Magic in
+                                Magic | Object_Lock_Magic | Metadata_Magic |
+                                  Checksum_Magic
                            then Read_Checksum
                            else No_Checksum_Information);
                      begin
@@ -2536,7 +2700,9 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
-         if File_Magic in Magic | Metadata_Magic | Checksum_Magic then
+         if File_Magic in
+             Magic | Object_Lock_Magic | Metadata_Magic | Checksum_Magic
+         then
             Info.Checksum := Read_Checksum;
             if Info.Checksum.Algorithm /= No_Checksum then
                if Parts.Length > 0 then
@@ -2577,7 +2743,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end loop;
          end if;
-         if File_Magic in Magic | Metadata_Magic then
+         if File_Magic in Magic | Object_Lock_Magic | Metadata_Magic then
             Info.Metadata.Cache_Control := Read_Optional;
             Info.Metadata.Content_Disposition := Read_Optional;
             Info.Metadata.Content_Encoding := Read_Optional;
@@ -2610,7 +2776,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end loop;
             end;
          end if;
-         if File_Magic = Magic then
+         if File_Magic in Magic | Object_Lock_Magic then
             declare
                Hold_Code : constant Character := Read_String (File, 1) (1);
                Mode_Code : constant Character := Read_String (File, 1) (1);
@@ -2640,6 +2806,25 @@ package body Flyology.Object_Storage.Backends.Files is
                   Retain_Until => Unix_Time (Retain_Until),
                   Exact_Text => US.To_Unbounded_String
                     (Read_String (File, Text_Length)));
+            end;
+         end if;
+         if File_Magic = Magic then
+            declare
+               Length : constant Natural := Read_U32 (File);
+            begin
+               if Length not in 0 | Generated_Version_ID_Length then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               declare
+                  Value : constant String := Read_String (File, Length);
+               begin
+                  if Length /= 0
+                    and then not Valid_Annotation_Generation_ID (Value)
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  Info.Version := US.To_Unbounded_String (Value);
+               end;
             end;
          end if;
          if not Valid_Object_Metadata
@@ -2684,6 +2869,203 @@ package body Flyology.Object_Storage.Backends.Files is
       Read_Header_Any_With_Metadata
         (File, Key, Info, Tags, Parts, Body_At);
    end Read_Header_Any;
+
+   function Stored_Annotation_Generation_ID
+     (Selected : Selected_Generation) return String
+   is
+      File    : SIO.File_Type;
+      Key     : US.Unbounded_String;
+      Info    : Object_Information;
+      Body_At : SIO.Positive_Count;
+   begin
+      if not Selected.Present or else Selected.Is_Delete_Marker
+        or else GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Selected.Path))
+        or else not Ada.Directories.Exists (US.To_String (Selected.Path))
+        or else Ada.Directories.Kind (US.To_String (Selected.Path)) /=
+          Ada.Directories.Ordinary_File
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+      Read_Header_Any (File, Key, Info, Body_At);
+      SIO.Close (File);
+      if US.Length (Info.Version) = Generated_Version_ID_Length then
+         return US.To_String (Info.Version);
+      elsif US.Length (Info.Version) = 0 then
+         --  FOSOBJ01 through FOSOBJ06 predate annotation generations.  Their
+         --  path-derived identity preserves the established sidecar layout.
+         return GNAT.SHA256.Digest (US.To_String (Selected.Path));
+      else
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   exception
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+   end Stored_Annotation_Generation_ID;
+
+   procedure Validate_Annotation_Directory
+     (Directory : String)
+   is
+      Search    : Ada.Directories.Search_Type;
+      Directory_Entry : Ada.Directories.Directory_Entry_Type;
+      Searching : Boolean := False;
+      Count     : Natural := 0;
+      Used      : Byte_Count := 0;
+      Filter    : constant Ada.Directories.Filter_Type := (others => True);
+   begin
+      Validate_Tree_Symlink_Free (Directory);
+      Ada.Directories.Start_Search (Search, Directory, "*", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+         declare
+            Simple : constant String :=
+              Ada.Directories.Simple_Name (Directory_Entry);
+            Path   : constant String :=
+              Ada.Directories.Full_Name (Directory_Entry);
+         begin
+            if Simple /= "." and then Simple /= ".." then
+               if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+                 or else Ada.Directories.Kind (Path) /=
+                   Ada.Directories.Ordinary_File
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               declare
+                  File       : SIO.File_Type;
+                  Name       : US.Unbounded_String;
+                  Info       : Object_Information;
+                  Body_At    : SIO.Positive_Count;
+                  Remaining  : Byte_Count;
+                  Buffer     : Ada.Streams.Stream_Element_Array
+                    (1 .. 64 * 1_024);
+                  Last       : Ada.Streams.Stream_Element_Offset;
+                  ETag_Hash  : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+               begin
+                  SIO.Open (File, SIO.In_File, Path);
+                  Read_Header_Any (File, Name, Info, Body_At);
+                  if not Valid_Object_Annotation_Name (US.To_String (Name))
+                    or else Path /= Join
+                      (Directory, GNAT.SHA256.Digest
+                         (US.To_String (Name)) & ".fos")
+                    or else Info.Size not in
+                      1 .. Maximum_Annotation_Payload_Bytes
+                    or else Info.Size >
+                      Maximum_Annotation_Aggregate_Bytes - Used
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  SIO.Set_Index (File, Body_At);
+                  Remaining := Info.Size;
+                  declare
+                     Body_Hash : Checksum_Engine.Context
+                       (Checksum_Engine.Algorithm_Value
+                          (if Info.Checksum.Algorithm = No_Checksum
+                           then Checksum_CRC64NVME
+                           else Info.Checksum.Algorithm));
+                  begin
+                     while Remaining > 0 loop
+                        declare
+                           Size : constant
+                             Ada.Streams.Stream_Element_Offset :=
+                               Ada.Streams.Stream_Element_Offset
+                                 (Byte_Count'Min
+                                    (Remaining,
+                                     Byte_Count (Buffer'Length)));
+                        begin
+                           SIO.Read (File, Buffer (1 .. Size), Last);
+                           if Last /= Size then
+                              raise Ada.IO_Exceptions.End_Error;
+                           end if;
+                           GNAT.MD5.Update (ETag_Hash, Buffer (1 .. Size));
+                           if Info.Checksum.Algorithm /= No_Checksum then
+                              Checksum_Engine.Update
+                                (Body_Hash, Buffer (1 .. Size));
+                           end if;
+                           Remaining := Remaining - Byte_Count (Size);
+                        end;
+                     end loop;
+                     SIO.Close (File);
+                     if GNAT.MD5.Digest (ETag_Hash) /=
+                         US.To_String (Info.Entity_Tag)
+                       or else
+                         (Info.Checksum.Algorithm /= No_Checksum
+                          and then Checksum_Engine.Finish (Body_Hash) /=
+                            US.To_String (Info.Checksum.Value))
+                     then
+                        raise Ada.IO_Exceptions.Data_Error;
+                     end if;
+                  end;
+                  Count := Count + 1;
+                  Used := Used + Info.Size;
+                  if Count > Maximum_Annotations_Per_Object then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+               exception
+                  when others =>
+                     if SIO.Is_Open (File) then
+                        SIO.Close (File);
+                     end if;
+                     raise;
+               end;
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+   exception
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Validate_Annotation_Directory;
+
+   procedure Copy_Annotation_Directory
+     (Source, Target : String)
+   is
+      Search          : Ada.Directories.Search_Type;
+      Directory_Entry : Ada.Directories.Directory_Entry_Type;
+      Searching       : Boolean := False;
+      Filter          : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => True,
+         Ada.Directories.Directory     => False,
+         Ada.Directories.Special_File  => True);
+   begin
+      Validate_Annotation_Directory (Source);
+      if Ada.Directories.Exists (Target)
+        or else GNAT.OS_Lib.Is_Symbolic_Link (Target)
+      then
+         raise Ada.IO_Exceptions.Name_Error;
+      end if;
+      Ada.Directories.Create_Directory (Target);
+      Ada.Directories.Start_Search (Search, Source, "*", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+         declare
+            Name : constant String :=
+              Ada.Directories.Simple_Name (Directory_Entry);
+         begin
+            if Name /= "." and then Name /= ".." then
+               Ada.Directories.Copy_File
+                 (Ada.Directories.Full_Name (Directory_Entry),
+                  Join (Target, Name));
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+   exception
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Copy_Annotation_Directory;
 
    procedure Read_Header
      (File      : in out SIO.File_Type;
@@ -2770,6 +3152,38 @@ package body Flyology.Object_Storage.Backends.Files is
          Is_Null_Version => Selected.Is_Null_Version,
          Version_ID      => Selected.Version_ID);
    end Identity_Of;
+
+   function Annotation_Version
+     (Selected      : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration)
+      return US.Unbounded_String
+   is
+   begin
+      if Configuration.Status = Versioning_Unconfigured
+        and then Selected.Legacy
+      then
+         return US.Null_Unbounded_String;
+      elsif Selected.Is_Null_Version then
+         return US.To_Unbounded_String ("null");
+      else
+         return Selected.Version_ID;
+      end if;
+   end Annotation_Version;
+
+   function Evaluate_Annotation_Conditions
+     (Conditions : Object_Annotation_Conditions;
+      Info       : Object_Information) return Status is
+     (Evaluate_Object_Delete_Conditions
+        (Has_ETag               => Conditions.Has_Object_ETag,
+         ETag                   => US.To_String (Conditions.Object_ETag),
+         Has_Last_Modified_Time => False,
+         Last_Modified_Time     => 0,
+         Has_Size               => False,
+         Expected_Size          => 0,
+         Exists                 => True,
+         Entity_Tag             => US.To_String (Info.Entity_Tag),
+         Modified               => Info.Modified,
+         Size                   => Info.Size));
 
    procedure Read_Staged_Part_Header
      (File      : in out SIO.File_Type;
@@ -6588,7 +7002,7 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Backend_Unavailable;
    end Get_Bucket_Object_Lock;
 
-   overriding procedure Put_Object
+   procedure Put_Object_Internal
      (Item     : in out Store;
       Bucket   : String;
       Key      : String;
@@ -6599,7 +7013,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Info     : out Object_Information;
       Identity : out Version_Identity;
       Result   : out Status;
-      Conditions : Write_Conditions := Default_Write_Conditions)
+      Conditions : Write_Conditions;
+      Annotation_Source : String;
+      Annotation_Directive : Copy_Annotation_Directive)
    is
       Buffer   : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last     : Ada.Streams.Stream_Element_Offset;
@@ -6626,6 +7042,10 @@ package body Flyology.Object_Storage.Backends.Files is
         (if Options.Checksum.Algorithm = No_Checksum then ""
          else Checksum_Engine.Finish (Direct_Hash));
       Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Annotation_Generation_ID : US.Unbounded_String;
+      Staged_Annotation : US.Unbounded_String;
+      Previous : Selected_Generation;
+      Previous_Annotation_ID : US.Unbounded_String;
    begin
       Info := Empty_Info;
       Identity := (others => <>);
@@ -6671,6 +7091,12 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
 
       Item.Temp_Sequence.Next (Number);
+      Annotation_Generation_ID := US.To_Unbounded_String
+        (GNAT.SHA256.Digest
+           ("flyology-files-annotation-generation" & Character'Val (0) &
+            Bucket & Character'Val (0) & Key & Character'Val (0) &
+            Long_Long_Integer'Image (Number) & Character'Val (0) &
+            Ada.Calendar.Time'Image (Ada.Calendar.Clock)));
       Temp := US.To_Unbounded_String
         (Join
            (Temp_Path (Item),
@@ -6701,6 +7127,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Metadata     => Options.Metadata);
       Write_Header
         (File, Key, Info, Tags => Options.Tags,
+         Annotation_Generation_ID =>
+           US.To_String (Annotation_Generation_ID),
          Checksum_Value_At => Checksum_Position'Access);
 
       while not Finished loop
@@ -6809,6 +7237,17 @@ package body Flyology.Object_Storage.Backends.Files is
          Exists        : constant Boolean :=
            Selected.Present and then not Selected.Is_Delete_Marker;
       begin
+         Previous := Selected;
+         if Previous.Present and then not Previous.Is_Delete_Marker
+           and then
+             (Configuration.Status = Versioning_Unconfigured
+              or else
+                (Configuration.Status = Versioning_Suspended
+                 and then Previous.Is_Null_Version))
+         then
+            Previous_Annotation_ID := US.To_Unbounded_String
+              (Stored_Annotation_Generation_ID (Previous));
+         end if;
          if Selected.Present then
             SIO.Open
               (Existing_File, SIO.In_File, US.To_String (Selected.Path));
@@ -6874,6 +7313,63 @@ package body Flyology.Object_Storage.Backends.Files is
       Ensure_Directory
         (Item,
          Ada.Directories.Containing_Directory (US.To_String (Target)));
+      if Annotation_Directive = Copy_Annotations
+        and then Annotation_Source'Length > 0
+      then
+         declare
+            Destination : constant String :=
+              Annotation_Generation_Directory_For_ID
+                (Item, Bucket, Key,
+                 US.To_String (Annotation_Generation_ID));
+         begin
+            Staged_Annotation := US.To_Unbounded_String (Destination);
+            Ensure_Directory (Item, Annotations_Path (Item, Bucket));
+            Ensure_Directory
+              (Item, Annotation_Key_Directory (Item, Bucket, Key));
+            if Ada.Directories.Exists (Destination)
+              or else GNAT.OS_Lib.Is_Symbolic_Link (Destination)
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Copy_Annotation_Directory (Annotation_Source, Destination);
+            Validate_Tree_Symlink_Free (Destination);
+            declare
+               Search : Ada.Directories.Search_Type;
+               Directory_Entry : Ada.Directories.Directory_Entry_Type;
+               Searching : Boolean := False;
+               Filter : constant Ada.Directories.Filter_Type :=
+                 (Ada.Directories.Ordinary_File => True,
+                  Ada.Directories.Directory     => False,
+                  Ada.Directories.Special_File  => True);
+            begin
+               Ada.Directories.Start_Search
+                 (Search, Destination, "*", Filter);
+               Searching := True;
+               while Ada.Directories.More_Entries (Search) loop
+                  Ada.Directories.Get_Next_Entry
+                    (Search, Directory_Entry);
+                  if Ada.Directories.Simple_Name (Directory_Entry) /= "."
+                    and then
+                      Ada.Directories.Simple_Name (Directory_Entry) /= ".."
+                  then
+                     Sync_File
+                       (Item, Ada.Directories.Full_Name (Directory_Entry));
+                  end if;
+               end loop;
+               Ada.Directories.End_Search (Search);
+               Searching := False;
+            exception
+               when others =>
+                  if Searching then
+                     Ada.Directories.End_Search (Search);
+                  end if;
+                  raise;
+            end;
+            Sync_Directory (Item, Destination);
+            Sync_Directory
+              (Item, Ada.Directories.Containing_Directory (Destination));
+         end;
+      end if;
       GNAT.OS_Lib.Rename_File
         (US.To_String (Temp), US.To_String (Target), Rename_Succeeded);
       if not Rename_Succeeded then
@@ -6881,9 +7377,19 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          Result := Backend_Unavailable;
          Ada.Directories.Delete_File (US.To_String (Temp));
+         if US.Length (Staged_Annotation) > 0
+           and then Ada.Directories.Exists
+             (US.To_String (Staged_Annotation))
+         then
+            Remove_Tree (Item, US.To_String (Staged_Annotation));
+         end if;
          return;
       end if;
       Published := True;
+      if US.Length (Previous_Annotation_ID) > 0 then
+         Remove_Annotation_Generation_For_ID
+           (Item, Bucket, Key, US.To_String (Previous_Annotation_ID));
+      end if;
       Sync_Directory
         (Item, Ada.Directories.Containing_Directory (US.To_String (Target)));
       if Configuration.Status = Versioning_Suspended then
@@ -6914,6 +7420,12 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
+         if not Published and then US.Length (Staged_Annotation) > 0
+           and then Ada.Directories.Exists
+             (US.To_String (Staged_Annotation))
+         then
+            Remove_Tree (Item, US.To_String (Staged_Annotation));
+         end if;
          Identity := (others => <>);
          raise;
       when others =>
@@ -6928,6 +7440,12 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
+         if not Published and then US.Length (Staged_Annotation) > 0
+           and then Ada.Directories.Exists
+             (US.To_String (Staged_Annotation))
+         then
+            Remove_Tree (Item, US.To_String (Staged_Annotation));
+         end if;
          Info := Empty_Info;
          Identity := (others => <>);
          if In_Callback then
@@ -6935,6 +7453,24 @@ package body Flyology.Object_Storage.Backends.Files is
          else
             Result := Backend_Unavailable;
          end if;
+   end Put_Object_Internal;
+
+   overriding procedure Put_Object
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions) is
+   begin
+      Put_Object_Internal
+        (Item, Bucket, Key, Source, Options, Token, Deadline, Info, Identity,
+         Result, Conditions, "", Exclude_Annotations);
    end Put_Object;
 
    overriding procedure Copy_Object
@@ -6997,6 +7533,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Original    : SIO.File_Type;
       Snapshot    : SIO.File_Type;
       Snapshot_Path : US.Unbounded_String;
+      Annotation_Snapshot : US.Unbounded_String;
       Source_Info : Object_Information;
       Source_Tags : Object_Tag_Set;
       Source_Configuration : Bucket_Versioning_Configuration := (others => <>);
@@ -7030,6 +7567,20 @@ package body Flyology.Object_Storage.Backends.Files is
             --  retires a file that the platform could not remove immediately.
             Snapshot_Path := US.Null_Unbounded_String;
       end Retire_Snapshot;
+
+      procedure Retire_Annotation_Snapshot is
+      begin
+         if US.Length (Annotation_Snapshot) > 0
+           and then Ada.Directories.Exists
+             (US.To_String (Annotation_Snapshot))
+         then
+            Remove_Tree (Item, US.To_String (Annotation_Snapshot));
+         end if;
+         Annotation_Snapshot := US.Null_Unbounded_String;
+      exception
+         when others =>
+            Annotation_Snapshot := US.Null_Unbounded_String;
+      end Retire_Annotation_Snapshot;
    begin
       Info := Empty_Info;
       Source_Identity := (others => <>);
@@ -7052,6 +7603,7 @@ package body Flyology.Object_Storage.Backends.Files is
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
         and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Annotation_Directive = Copy_Annotations
         and then Options.Selected_Checksum = No_Checksum
         and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
@@ -7109,6 +7661,33 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          return;
       end if;
+      SIO.Close (Original);
+      if Options.Annotation_Directive = Copy_Annotations
+        and then Annotation_Directory_Exists
+          (Item, Source_Bucket, Source_Key, Source_Selection)
+      then
+         Item.Temp_Sequence.Next (Number);
+         declare
+            Candidate : constant String :=
+              Join
+                (Temp_Path (Item),
+                 "annotation-copy-" & GNAT.SHA256.Digest
+                   (Source_Bucket & Character'Val (0) & Source_Key &
+                    Long_Long_Integer'Image (Number) &
+                    Ada.Calendar.Time'Image (Ada.Calendar.Clock)));
+         begin
+            Validate_New_Temp_Target (Item, Candidate);
+            Validate_Annotation_Directory
+              (Annotation_Generation_Directory
+                 (Item, Source_Bucket, Source_Key, Source_Selection));
+            Copy_Annotation_Directory
+              (Annotation_Generation_Directory
+                 (Item, Source_Bucket, Source_Key, Source_Selection),
+               Candidate);
+            Validate_Tree_Symlink_Free (Candidate);
+            Annotation_Snapshot := US.To_Unbounded_String (Candidate);
+         end;
+      end if;
       Item.Temp_Sequence.Next (Number);
       declare
          Candidate : constant String :=
@@ -7126,6 +7705,7 @@ package body Flyology.Object_Storage.Backends.Files is
          --  Cleanup owns only a target this operation created successfully.
          Snapshot_Path := US.To_Unbounded_String (Candidate);
       end;
+      SIO.Open (Original, SIO.In_File, US.To_String (Source_Path));
       SIO.Set_Index (Original, Body_At);
       Remaining := Source_Info.Size;
       while Remaining > 0 loop
@@ -7192,11 +7772,12 @@ package body Flyology.Object_Storage.Backends.Files is
             Total     => Source_Info.Size,
             Remaining => Source_Info.Size);
       begin
-         Item.Put_Object
-           (Destination_Bucket, Destination_Key, Source,
+         Put_Object_Internal
+           (Item, Destination_Bucket, Destination_Key, Source,
             Put_Options_Value, Token, Deadline, Info, Published_Destination,
-            Result,
-            Options.Destination_Conditions);
+            Result, Options.Destination_Conditions,
+            US.To_String (Annotation_Snapshot),
+            Options.Annotation_Directive);
       end;
       if Result = Success then
          Source_Identity := Selected_Source;
@@ -7204,6 +7785,7 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       SIO.Close (File);
       Retire_Snapshot;
+      Retire_Annotation_Snapshot;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
@@ -7220,6 +7802,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Item.Publication.Release;
          end if;
          Retire_Snapshot;
+         Retire_Annotation_Snapshot;
          Source_Identity := (others => <>);
          Destination_Identity := (others => <>);
          raise;
@@ -7237,6 +7820,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Item.Publication.Release;
          end if;
          Retire_Snapshot;
+         Retire_Annotation_Snapshot;
          Info := Empty_Info;
          Source_Identity := (others => <>);
          Destination_Identity := (others => <>);
@@ -7833,6 +8417,10 @@ package body Flyology.Object_Storage.Backends.Files is
                      Remove_Path (US.To_String (Tombstone));
                   end;
                else
+                  if not Selected.Is_Delete_Marker then
+                     Remove_Annotation_Generation
+                       (Item, Bucket, Key, Selected);
+                  end if;
                   Remove_Path (US.To_String (Selected.Path));
                end if;
             end if;
@@ -7841,6 +8429,8 @@ package body Flyology.Object_Storage.Backends.Files is
                when Versioning_Unconfigured =>
                   if Condition_Exists then
                      Outcome.Publication.Kind := Object_Version_Removed;
+                     Remove_Annotation_Generation
+                       (Item, Bucket, Key, Selected);
                      Remove_Path (US.To_String (Selected.Path));
                   else
                      Outcome.Publication.Kind := No_Version_Removed;
@@ -7985,6 +8575,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Renamed : Boolean;
       Selected : Selected_Generation;
       Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Annotation_Generation_ID : US.Unbounded_String;
       Current : constant Unix_Time :=
         Unix_Time (Unix_Seconds (Ada.Calendar.Clock));
    begin
@@ -8021,6 +8612,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          return;
       end if;
+      Annotation_Generation_ID := US.To_Unbounded_String
+        (Stored_Annotation_Generation_ID (Selected));
       Path := Selected.Path;
       SIO.Open (Source, SIO.In_File, US.To_String (Path));
       Source_Open := True;
@@ -8060,7 +8653,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Staged_Open := True;
       Write_Header
         (Staged, Key, Info, Tags => Tags, Parts => Parts,
-         Object_Lock => Object_Lock);
+         Object_Lock => Object_Lock,
+         Annotation_Generation_ID =>
+           US.To_String (Annotation_Generation_ID));
       SIO.Set_Index (Source, Body_At);
       Remaining := Info.Size;
       while Remaining > 0 loop
@@ -8332,6 +8927,889 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Get_Object_Retention;
 
+   overriding procedure Put_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Object_Annotation_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Buffer   : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+      Last     : Ada.Streams.Stream_Element_Offset;
+      Finished : Boolean := False;
+      Total    : Byte_Count := 0;
+      File     : SIO.File_Type;
+      Opened   : Boolean := False;
+      Published : Boolean := False;
+      Locked   : Boolean := False;
+      In_Callback : Boolean := False;
+      Number   : Long_Long_Integer;
+      Temp     : US.Unbounded_String;
+      Target   : US.Unbounded_String;
+      Renamed  : Boolean := False;
+      Declared : Source_Length := (Kind => Unknown);
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Object_Info : Object_Information := Empty_Info;
+      Object_File : SIO.File_Type;
+      Object_Body : SIO.Positive_Count;
+      Object_Tags : Object_Tag_Set;
+      Object_Parts : Completed_Object_Part_List;
+      Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Direct_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value
+           (if Options.Expected_Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME
+            else Options.Expected_Checksum.Algorithm));
+      Checksum_Position : aliased SIO.Positive_Count := 1;
+      Initial_Checksum : constant String :=
+        (if Options.Expected_Checksum.Algorithm = No_Checksum then ""
+         else Checksum_Engine.Finish (Direct_Hash));
+      Stored : Object_Information;
+   begin
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Options.Conditions.Has_Object_ETag
+            and then US.Length (Options.Conditions.Object_ETag) /= 0)
+           or else
+             (Options.Conditions.Has_Object_ETag
+              and then
+                not Valid_Object_Delete_ETag_Condition
+                  (US.To_String (Options.Conditions.Object_ETag))))
+        or else
+          (Options.Expected_Checksum.Algorithm = No_Checksum and then
+             Options.Expected_Checksum /= No_Checksum_Information)
+        or else
+          (Options.Expected_Checksum.Algorithm /= No_Checksum and then
+             (Options.Expected_Checksum.Method /= Full_Object_Checksum
+              or else US.Length (Options.Expected_Checksum.Value) = 0
+              or else not Checksum_Engine.Valid_Digest
+                (US.To_String (Options.Expected_Checksum.Value),
+                 Options.Expected_Checksum.Algorithm)))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      In_Callback := True;
+      Declared := Source.Declared_Length;
+      In_Callback := False;
+      if Declared.Kind = Known
+        and then Declared.Bytes > Maximum_Annotation_Payload_Bytes
+      then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            "annotation-" & GNAT.SHA256.Digest
+              (Bucket & Character'Val (0) & Key & Character'Val (0) & Name &
+               Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock)) & ".tmp"));
+      Validate_New_Temp_Target (Item, US.To_String (Temp));
+      SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+      Opened := True;
+      Stored :=
+        (Size         => 0,
+         Modified     => Unix_Time (Unix_Seconds (Ada.Calendar.Clock)),
+         Entity_Tag   => US.To_Unbounded_String (String'(1 .. 32 => '0')),
+         Content_Type => US.To_Unbounded_String ("application/octet-stream"),
+         Version      => US.Null_Unbounded_String,
+         Checksum     =>
+           (if Options.Expected_Checksum.Algorithm = No_Checksum
+            then No_Checksum_Information
+            else
+              (Algorithm => Options.Expected_Checksum.Algorithm,
+               Method    => Full_Object_Checksum,
+               Value     => US.To_Unbounded_String (Initial_Checksum))),
+         Metadata     => (others => <>));
+      Write_Header
+        (File, Name, Stored, Checksum_Value_At => Checksum_Position'Access);
+      while not Finished loop
+         Check_Context (Token, Deadline);
+         In_Callback := True;
+         Source.Read (Buffer, Last, Finished, Token, Deadline);
+         In_Callback := False;
+         if Last < Buffer'First - 1 or else Last > Buffer'Last then
+            Result := Invalid_Request;
+            SIO.Close (File);
+            Opened := False;
+            Ada.Directories.Delete_File (US.To_String (Temp));
+            return;
+         elsif Last >= Buffer'First then
+            declare
+               Count : constant Byte_Count :=
+                 Byte_Count (Last - Buffer'First + 1);
+            begin
+               if Count > Maximum_Annotation_Payload_Bytes
+                 or else Total > Maximum_Annotation_Payload_Bytes - Count
+               then
+                  Result := Entity_Too_Large;
+                  SIO.Close (File);
+                  Opened := False;
+                  Ada.Directories.Delete_File (US.To_String (Temp));
+                  return;
+               end if;
+               SIO.Write (File, Buffer (Buffer'First .. Last));
+               GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+               if Options.Expected_Checksum.Algorithm /= No_Checksum then
+                  Checksum_Engine.Update
+                    (Direct_Hash, Buffer (Buffer'First .. Last));
+               end if;
+               Total := Total + Count;
+            end;
+         elsif not Finished then
+            Result := Invalid_Request;
+            SIO.Close (File);
+            Opened := False;
+            Ada.Directories.Delete_File (US.To_String (Temp));
+            return;
+         end if;
+      end loop;
+      if Total = 0
+        or else (Declared.Kind = Known and then Declared.Bytes /= Total)
+      then
+         Result := Invalid_Request;
+         SIO.Close (File);
+         Opened := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         return;
+      end if;
+      Stored.Size := Total;
+      Stored.Entity_Tag := US.To_Unbounded_String (GNAT.MD5.Digest (Hash));
+      SIO.Set_Index (File, Metadata_Position + SIO.Count (Name'Length));
+      Write_String (File, US.To_String (Stored.Entity_Tag));
+      if Options.Expected_Checksum.Algorithm /= No_Checksum then
+         declare
+            Digest : constant String := Checksum_Engine.Finish (Direct_Hash);
+         begin
+            if Digest /= US.To_String (Options.Expected_Checksum.Value) then
+               Result := Bad_Digest;
+               SIO.Close (File);
+               Opened := False;
+               Ada.Directories.Delete_File (US.To_String (Temp));
+               return;
+            end if;
+            Stored.Checksum.Value := US.To_Unbounded_String (Digest);
+            SIO.Set_Index (File, Checksum_Position);
+            Write_String (File, Digest);
+         end;
+      end if;
+      SIO.Set_Index (File, Body_Size_Position);
+      Write_U64 (File, Long_Long_Integer (Total));
+      SIO.Close (File);
+      Opened := False;
+      Sync_File (Item, US.To_String (Temp));
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         return;
+      end if;
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
+         Result := Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         return;
+      end if;
+      SIO.Open (Object_File, SIO.In_File, US.To_String (Selected.Path));
+      Read_Selected_Header
+        (Object_File, Key, Selected, Object_Info, Object_Tags, Object_Parts,
+         Object_Body);
+      SIO.Close (Object_File);
+      Result := Evaluate_Annotation_Conditions
+        (Options.Conditions, Object_Info);
+      if Result /= Success then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         return;
+      end if;
+      Ensure_Directory (Item, Annotations_Path (Item, Bucket));
+      Ensure_Directory (Item, Annotation_Key_Directory (Item, Bucket, Key));
+      Ensure_Directory
+        (Item, Annotation_Generation_Directory
+           (Item, Bucket, Key, Selected));
+      Target := US.To_Unbounded_String
+        (Annotation_Path (Item, Bucket, Key, Selected, Name));
+      if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Target)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      declare
+         Search : Ada.Directories.Search_Type;
+         Directory_Entry : Ada.Directories.Directory_Entry_Type;
+         Count  : Natural := 0;
+         Used   : Byte_Count := 0;
+         Replaced : Byte_Count := 0;
+         Searching : Boolean := False;
+         Filter : constant Ada.Directories.Filter_Type := (others => True);
+      begin
+         Ada.Directories.Start_Search
+           (Search,
+            Annotation_Generation_Directory
+              (Item, Bucket, Key, Selected),
+            "*", Filter);
+         Searching := True;
+         while Ada.Directories.More_Entries (Search) loop
+            Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+            declare
+               Simple : constant String :=
+                 Ada.Directories.Simple_Name (Directory_Entry);
+               Existing_Path : constant String :=
+                 Ada.Directories.Full_Name (Directory_Entry);
+            begin
+               if Simple /= "." and then Simple /= ".." then
+                  if GNAT.OS_Lib.Is_Symbolic_Link (Existing_Path)
+                    or else Ada.Directories.Kind (Existing_Path) /=
+                      Ada.Directories.Ordinary_File
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  declare
+                     Existing_File : SIO.File_Type;
+                     Existing_Name : US.Unbounded_String;
+                     Existing_Info : Object_Information;
+                     Existing_Body : SIO.Positive_Count;
+                  begin
+                     SIO.Open
+                       (Existing_File, SIO.In_File, Existing_Path);
+                     Read_Header_Any
+                       (Existing_File, Existing_Name, Existing_Info,
+                        Existing_Body);
+                     SIO.Close (Existing_File);
+                     if Existing_Path /= Annotation_Path
+                         (Item, Bucket, Key, Selected,
+                          US.To_String (Existing_Name))
+                       or else Existing_Info.Size not in
+                         1 .. Maximum_Annotation_Payload_Bytes
+                       or else Existing_Info.Size >
+                         Maximum_Annotation_Aggregate_Bytes - Used
+                     then
+                        raise Ada.IO_Exceptions.Data_Error;
+                     end if;
+                     Count := Count + 1;
+                     Used := Used + Existing_Info.Size;
+                     if Existing_Path = US.To_String (Target) then
+                        Replaced := Existing_Info.Size;
+                     end if;
+                  exception
+                     when others =>
+                        if SIO.Is_Open (Existing_File) then
+                           SIO.Close (Existing_File);
+                        end if;
+                        raise;
+                  end;
+               end if;
+            end;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Searching := False;
+         if Replaced = 0 and then Count >= Maximum_Annotations_Per_Object then
+            Result := Capacity_Exceeded;
+            Item.Publication.Release;
+            Locked := False;
+            Ada.Directories.Delete_File (US.To_String (Temp));
+            return;
+         elsif Stored.Size >
+           Maximum_Annotation_Aggregate_Bytes - (Used - Replaced)
+         then
+            Result := Capacity_Exceeded;
+            Item.Publication.Release;
+            Locked := False;
+            Ada.Directories.Delete_File (US.To_String (Temp));
+            return;
+         end if;
+      exception
+         when others =>
+            if Searching then
+               Ada.Directories.End_Search (Search);
+            end if;
+            raise;
+      end;
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Temp), US.To_String (Target), Renamed);
+      if not Renamed then
+         raise Ada.IO_Exceptions.Use_Error;
+      end if;
+      Published := True;
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Target)));
+      Sync_Directory (Item, Temp_Path (Item));
+      Identity := Identity_Of
+        (Selected, Configuration,
+         Explicit => Selector.Kind /= Current_Version);
+      Info :=
+        (Size       => Stored.Size,
+         Modified   => Stored.Modified,
+         Entity_Tag => Stored.Entity_Tag,
+         Checksum   => Stored.Checksum,
+         Version    => Annotation_Version (Selected, Configuration));
+      Result := Success;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if SIO.Is_Open (Object_File) then
+            SIO.Close (Object_File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if SIO.Is_Open (Object_File) then
+            SIO.Close (Object_File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if In_Callback then
+            raise;
+         else
+            Result := Backend_Unavailable;
+         end if;
+   end Put_Object_Annotation;
+
+   overriding procedure Get_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Sink     : in out Annotation_Byte_Sink'Class;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info     : out Object_Annotation_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Locked : Boolean := False;
+      File   : SIO.File_Type;
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Path   : US.Unbounded_String;
+      Stored : Object_Information;
+      Body_At : SIO.Positive_Count;
+      Remaining : Byte_Count;
+      Buffer : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+      Last   : Ada.Streams.Stream_Element_Offset;
+      In_Callback : Boolean := False;
+   begin
+      Presence := Annotation_Absent;
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+      else
+         Configuration := Read_Versioning (Item, Bucket);
+         Selected := Select_Generation (Item, Bucket, Key, Selector);
+         if not Selected.Present or else Selected.Is_Delete_Marker then
+            Result := Not_Found;
+         else
+            Identity := Identity_Of
+              (Selected, Configuration,
+               Explicit => Selector.Kind /= Current_Version);
+            if not Annotation_Directory_Exists
+                (Item, Bucket, Key, Selected)
+            then
+               Result := Success;
+            else
+               Path := US.To_Unbounded_String
+                 (Annotation_Path (Item, Bucket, Key, Selected, Name));
+               if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Path)) then
+                  raise Ada.IO_Exceptions.Data_Error;
+               elsif not Ada.Directories.Exists (US.To_String (Path)) then
+                  Result := Success;
+               elsif Ada.Directories.Kind (US.To_String (Path)) /=
+                 Ada.Directories.Ordinary_File
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               else
+                  SIO.Open (File, SIO.In_File, US.To_String (Path));
+                  Read_Header (File, Name, Stored, Body_At);
+                  if Annotation_Path (Item, Bucket, Key, Selected, Name) /=
+                    US.To_String (Path)
+                    or else Stored.Size not in
+                      1 .. Maximum_Annotation_Payload_Bytes
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  Info :=
+                    (Size       => Stored.Size,
+                     Modified   => Stored.Modified,
+                     Entity_Tag => Stored.Entity_Tag,
+                     Checksum   => Stored.Checksum,
+                     Version    =>
+                       Annotation_Version (Selected, Configuration));
+                  Presence := Annotation_Present;
+                  Item.Publication.Release;
+                  Locked := False;
+                  In_Callback := True;
+                  Sink.Begin_Annotation (Info, Token, Deadline);
+                  In_Callback := False;
+                  SIO.Set_Index (File, Body_At);
+                  Remaining := Info.Size;
+                  while Remaining > 0 loop
+                     Check_Context (Token, Deadline);
+                     declare
+                        Count : constant Ada.Streams.Stream_Element_Offset :=
+                          Ada.Streams.Stream_Element_Offset
+                            (Byte_Count'Min
+                               (Remaining, Byte_Count (Buffer'Length)));
+                     begin
+                        SIO.Read (File, Buffer (1 .. Count), Last);
+                        if Last /= Count then
+                           raise Ada.IO_Exceptions.End_Error;
+                        end if;
+                        In_Callback := True;
+                        Sink.Write (Buffer (1 .. Count), Token, Deadline);
+                        In_Callback := False;
+                        Remaining := Remaining - Byte_Count (Count);
+                     end;
+                  end loop;
+                  SIO.Close (File);
+                  Result := Success;
+               end if;
+            end if;
+         end if;
+      end if;
+      if Locked then
+         Item.Publication.Release;
+         Locked := False;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if In_Callback then
+            raise;
+         else
+            Result := Backend_Unavailable;
+         end if;
+   end Get_Object_Annotation;
+
+   overriding procedure Delete_Object_Annotation
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Name     : String;
+      Conditions : Object_Annotation_Conditions;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Locked : Boolean := False;
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Path : US.Unbounded_String;
+      Object_File : SIO.File_Type;
+      Object_Info : Object_Information;
+      Object_Tags : Object_Tag_Set;
+      Object_Parts : Completed_Object_Part_List;
+      Object_Body : SIO.Positive_Count;
+   begin
+      Presence := Annotation_Absent;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Conditions.Has_Object_ETag
+            and then US.Length (Conditions.Object_ETag) /= 0)
+           or else
+             (Conditions.Has_Object_ETag
+              and then
+                not Valid_Object_Delete_ETag_Condition
+                  (US.To_String (Conditions.Object_ETag))))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+      else
+         Configuration := Read_Versioning (Item, Bucket);
+         Selected := Select_Generation (Item, Bucket, Key, Selector);
+         if not Selected.Present or else Selected.Is_Delete_Marker then
+            Result := Not_Found;
+         else
+            Identity := Identity_Of
+              (Selected, Configuration,
+               Explicit => Selector.Kind /= Current_Version);
+            SIO.Open
+              (Object_File, SIO.In_File, US.To_String (Selected.Path));
+            Read_Selected_Header
+              (Object_File, Key, Selected, Object_Info, Object_Tags,
+               Object_Parts, Object_Body);
+            SIO.Close (Object_File);
+            Result := Evaluate_Annotation_Conditions
+              (Conditions, Object_Info);
+            if Result /= Success then
+               Item.Publication.Release;
+               Locked := False;
+               return;
+            end if;
+            if not Annotation_Directory_Exists
+                (Item, Bucket, Key, Selected)
+            then
+               Result := Success;
+            else
+               Path := US.To_Unbounded_String
+                 (Annotation_Path (Item, Bucket, Key, Selected, Name));
+               if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Path)) then
+                  raise Ada.IO_Exceptions.Data_Error;
+               elsif not Ada.Directories.Exists (US.To_String (Path)) then
+                  Result := Success;
+               elsif Ada.Directories.Kind (US.To_String (Path)) /=
+                 Ada.Directories.Ordinary_File
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               else
+                  declare
+                     File : SIO.File_Type;
+                     Stored : Object_Information;
+                     Body_At : SIO.Positive_Count;
+                  begin
+                     SIO.Open (File, SIO.In_File, US.To_String (Path));
+                     Read_Header (File, Name, Stored, Body_At);
+                     SIO.Close (File);
+                  exception
+                     when others =>
+                        if SIO.Is_Open (File) then
+                           SIO.Close (File);
+                        end if;
+                        raise;
+                  end;
+                  Ada.Directories.Delete_File (US.To_String (Path));
+                  Sync_Directory
+                    (Item, Ada.Directories.Containing_Directory
+                       (US.To_String (Path)));
+                  Presence := Annotation_Present;
+                  Result := Success;
+               end if;
+            end if;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (Object_File) then
+            SIO.Close (Object_File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if SIO.Is_Open (Object_File) then
+            SIO.Close (Object_File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Delete_Object_Annotation;
+
+   overriding procedure List_Object_Annotations
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : List_Object_Annotations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Object_Annotation_Page;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Locked : Boolean := False;
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Directory : US.Unbounded_String;
+      Search : Ada.Directories.Search_Type;
+      Directory_Entry : Ada.Directories.Directory_Entry_Type;
+      Searching : Boolean := False;
+      Prefix : constant String := US.To_String (Options.Prefix);
+      Prefix_Valid : Boolean := Prefix'Length <= 512;
+      Filter : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => True,
+         Ada.Directories.Directory     => True,
+         Ada.Directories.Special_File  => True);
+
+      procedure Keep (Value : Listed_Object_Annotation) is
+         Position : Natural := 0;
+      begin
+         if not Page.Annotations.Is_Empty then
+            for Index in Page.Annotations.First_Index ..
+              Page.Annotations.Last_Index
+            loop
+               if US.To_String (Value.Name) <
+                 US.To_String (Page.Annotations (Index).Name)
+               then
+                  Position := Index;
+                  exit;
+               elsif Value.Name = Page.Annotations (Index).Name then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+            end loop;
+         end if;
+         if Position = 0 then
+            Page.Annotations.Append (Value);
+         else
+            Page.Annotations.Insert (Position, Value);
+         end if;
+         if Natural (Page.Annotations.Length) > Natural (Options.Maximum) + 1
+         then
+            Page.Annotations.Delete_Last;
+         end if;
+      end Keep;
+   begin
+      Page :=
+        (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+         Is_Truncated => False,
+         Next_After   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      for Value of Prefix loop
+         Prefix_Valid := Prefix_Valid and then Value /= Character'Val (0);
+      end loop;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else not Prefix_Valid
+        or else
+          (Options.Has_After and then
+             not Valid_Object_Annotation_Name (US.To_String (Options.After)))
+        or else
+          (not Options.Has_After and then US.Length (Options.After) /= 0)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+      else
+         Configuration := Read_Versioning (Item, Bucket);
+         Selected := Select_Generation (Item, Bucket, Key, Selector);
+         if not Selected.Present or else Selected.Is_Delete_Marker then
+            Result := Not_Found;
+         else
+            Identity := Identity_Of
+              (Selected, Configuration,
+               Explicit => Selector.Kind /= Current_Version);
+            if Annotation_Directory_Exists (Item, Bucket, Key, Selected) then
+               Directory := US.To_Unbounded_String
+                 (Annotation_Generation_Directory
+                    (Item, Bucket, Key, Selected));
+               Ada.Directories.Start_Search
+                 (Search, US.To_String (Directory), "*", Filter);
+               Searching := True;
+               while Ada.Directories.More_Entries (Search) loop
+                  Check_Context (Token, Deadline);
+                  Ada.Directories.Get_Next_Entry
+                    (Search, Directory_Entry);
+                  declare
+                     Simple : constant String :=
+                       Ada.Directories.Simple_Name (Directory_Entry);
+                     Path : constant String :=
+                       Ada.Directories.Full_Name (Directory_Entry);
+                  begin
+                     if Simple /= "." and then Simple /= ".." then
+                        if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+                          or else Ada.Directories.Kind (Path) /=
+                            Ada.Directories.Ordinary_File
+                        then
+                           raise Ada.IO_Exceptions.Data_Error;
+                        end if;
+                        declare
+                           File : SIO.File_Type;
+                           Stored_Name : US.Unbounded_String;
+                           Stored : Object_Information;
+                           Body_At : SIO.Positive_Count;
+                        begin
+                           SIO.Open (File, SIO.In_File, Path);
+                           Read_Header_Any
+                             (File, Stored_Name, Stored, Body_At);
+                           SIO.Close (File);
+                           if Path /= Annotation_Path
+                               (Item, Bucket, Key, Selected,
+                                US.To_String (Stored_Name))
+                             or else Stored.Size not in
+                               1 .. Maximum_Annotation_Payload_Bytes
+                           then
+                              raise Ada.IO_Exceptions.Data_Error;
+                           end if;
+                           declare
+                              Value_Name : constant String :=
+                                US.To_String (Stored_Name);
+                           begin
+                              if (Prefix'Length = 0
+                                  or else
+                                    (Value_Name'Length >= Prefix'Length
+                                     and then Value_Name
+                                       (Value_Name'First ..
+                                        Value_Name'First + Prefix'Length - 1)
+                                         = Prefix))
+                                and then
+                                  (not Options.Has_After
+                                   or else Value_Name >
+                                     US.To_String (Options.After))
+                              then
+                                 Keep
+                                   ((Name => Stored_Name,
+                                     Info =>
+                                       (Size       => Stored.Size,
+                                        Modified   => Stored.Modified,
+                                        Entity_Tag => Stored.Entity_Tag,
+                                        Checksum   => Stored.Checksum,
+                                        Version    => Annotation_Version
+                                          (Selected, Configuration))));
+                              end if;
+                           end;
+                        exception
+                           when others =>
+                              if SIO.Is_Open (File) then
+                                 SIO.Close (File);
+                              end if;
+                              raise;
+                        end;
+                     end if;
+                  end;
+               end loop;
+               Ada.Directories.End_Search (Search);
+               Searching := False;
+               if Natural (Page.Annotations.Length) >
+                 Natural (Options.Maximum)
+               then
+                  Page.Annotations.Delete_Last;
+                  Page.Is_Truncated := True;
+                  Page.Next_After := Page.Annotations.Last_Element.Name;
+               end if;
+            end if;
+            Result := Success;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page :=
+           (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page :=
+           (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Object_Annotations;
+
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
@@ -8360,6 +9838,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Selected  : Selected_Generation;
       Configuration : Bucket_Versioning_Configuration := (others => <>);
       Object_Lock : Persisted_Object_Lock_State;
+      Annotation_Generation_ID : US.Unbounded_String;
    begin
       Identity := (others => <>);
       Check_Context (Token, Deadline);
@@ -8393,6 +9872,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          return;
       end if;
+      Annotation_Generation_ID := US.To_Unbounded_String
+        (Stored_Annotation_Generation_ID (Selected));
       Path := Selected.Path;
 
       SIO.Open (Source, SIO.In_File, US.To_String (Path));
@@ -8413,7 +9894,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Staged_Open := True;
       Write_Header
         (Staged, Key, Info, Tags => Tags, Parts => Completed_Parts,
-         Object_Lock => Object_Lock);
+         Object_Lock => Object_Lock,
+         Annotation_Generation_ID =>
+           US.To_String (Annotation_Generation_ID));
       SIO.Set_Index (Source, Body_At);
       Remaining := Info.Size;
       while Remaining > 0 loop

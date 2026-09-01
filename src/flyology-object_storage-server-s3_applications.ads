@@ -43,6 +43,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,
    --  Put/Get/Head/DeleteObject, GetObjectAcl, DeleteObjects,
+   --  Put/Get/List/DeleteObjectAnnotation,
    --  ListObjects v1/v2, and core
    --  multipart operations,
    --  including ListParts and ListMultipartUploads. Unsupported S3 operations

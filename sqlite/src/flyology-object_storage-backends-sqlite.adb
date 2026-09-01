@@ -14,7 +14,6 @@ with GNAT.OS_Lib;
 with GNAT.SHA256;
 with Interfaces.C;
 with Interfaces.C.Strings;
-with System;
 
 package body Flyology.Object_Storage.Backends.SQLite is
 
@@ -26,6 +25,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
    use type Ada.Streams.Stream_Element;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Streams.Stream_IO.Count;
+   use type Ada.Strings.Unbounded.Unbounded_String;
    use type GNAT.OS_Lib.File_Descriptor;
    use type Interfaces.C.int;
    use type Interfaces.C.Strings.chars_ptr;
@@ -39,7 +39,15 @@ package body Flyology.Object_Storage.Backends.SQLite is
      Ada.Calendar.Formatting.Time_Of
        (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
    Empty_Info : constant Object_Information := (others => <>);
+   Empty_Annotation_Info : constant Object_Annotation_Information :=
+     (Size       => 0,
+      Modified   => 0,
+      Entity_Tag => US.Null_Unbounded_String,
+      Checksum   => No_Checksum_Information,
+      Version    => US.Null_Unbounded_String);
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
+   Maximum_Annotation_Size : constant Byte_Count := 1_024 * 1_024;
+   --  Amazon S3 fixes one annotation payload at one byte through one MiB.
 
    function Sync_File_C
      (Path : Interfaces.C.Strings.chars_ptr) return Interfaces.C.int
@@ -223,6 +231,18 @@ package body Flyology.Object_Storage.Backends.SQLite is
       when others =>
          null;
    end Delete_Payload_If_Present;
+
+   procedure Delete_Payload_If_Unreferenced
+     (Item : in out Store; Name : String)
+   is
+      procedure Delete (Payload : String) is
+      begin
+         Delete_Payload_If_Present (Item, Payload);
+      end Delete;
+   begin
+      Catalogs.Delete_Payload_If_Unreferenced
+        (Item.Catalog, Name, Delete'Access);
+   end Delete_Payload_If_Unreferenced;
 
    procedure Clean_Directory
      (Item : in out Store; Directory : String; Check_References : Boolean)
@@ -2042,7 +2062,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       SIO.Open (File, SIO.Out_File, US.To_String (Staging));
    end Create_Staging_File;
 
-   overriding procedure Put_Object
+   procedure Put_Object_Internal
      (Item     : in out Store;
       Bucket   : String;
       Key      : String;
@@ -2053,7 +2073,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Info     : out Object_Information;
       Identity : out Version_Identity;
       Result   : out Status;
-      Conditions : Write_Conditions := Default_Write_Conditions)
+      Conditions : Write_Conditions;
+      Annotations : Catalogs.Annotation_Copy_Snapshot)
    is
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last      : Ada.Streams.Stream_Element_Offset;
@@ -2067,6 +2088,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Staging   : US.Unbounded_String;
       Payload   : US.Unbounded_String;
       Previous  : US.Unbounded_String;
+      Retired_Annotations : Catalogs.Payloads;
       Renamed   : Boolean;
       Hash      : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
       Direct_Hash : Checksum_Engine.Context
@@ -2197,7 +2219,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Sync_Path (Objects_Path (Item), Directory => True);
       Catalogs.Put_Object
         (Item.Catalog, Bucket, Key, US.To_String (Payload), Info, Options.Tags,
-         Previous, Identity, Result, Conditions);
+         Previous, Retired_Annotations, Identity, Result, Conditions,
+         Annotations);
       if Result /= Success then
          Ada.Directories.Delete_File
            (Join (Objects_Path (Item), US.To_String (Payload)));
@@ -2216,6 +2239,16 @@ package body Flyology.Object_Storage.Backends.SQLite is
                --  Startup garbage collection safely retires any residue.
                null;
          end;
+      end if;
+      for Retired of Retired_Annotations loop
+         begin
+            Delete_Payload_If_Unreferenced (Item, US.To_String (Retired));
+         exception
+            when others => null;
+         end;
+      end loop;
+      if not Retired_Annotations.Is_Empty then
+         Sync_Path (Objects_Path (Item), Directory => True);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -2254,6 +2287,26 @@ package body Flyology.Object_Storage.Backends.SQLite is
          else
             Result := Backend_Unavailable;
          end if;
+   end Put_Object_Internal;
+
+   overriding procedure Put_Object
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
+   is
+   begin
+      Put_Object_Internal
+        (Item, Bucket, Key, Source, Options, Token, Deadline, Info, Identity,
+         Result, Conditions,
+         Catalogs.Annotation_Copy_Record_Vectors.Empty_Vector);
    end Put_Object;
 
    overriding procedure Copy_Object
@@ -2316,9 +2369,28 @@ package body Flyology.Object_Storage.Backends.SQLite is
       File        : aliased SIO.File_Type;
       Source_Info : Object_Information;
       Source_Tags : Object_Tag_Set;
+      Source_Annotations : Catalogs.Annotation_Copy_Snapshot;
       Selected_Source : Version_Identity;
       Published_Destination : Version_Identity;
       Put_Options_Value : Put_Options;
+      Annotation_Leases_Held : Boolean := False;
+
+      procedure Release_Annotations is
+      begin
+         if Annotation_Leases_Held then
+            Catalogs.Release_Annotation_Copy_Snapshot
+              (Item.Catalog, Source_Annotations);
+            Annotation_Leases_Held := False;
+            for Annotation of Source_Annotations loop
+               begin
+                  Delete_Payload_If_Unreferenced
+                    (Item, US.To_String (Annotation.Payload));
+               exception
+                  when others => null;
+               end;
+            end loop;
+         end if;
+      end Release_Annotations;
 
       procedure Open_Source
         (Payload_Name : String;
@@ -2365,6 +2437,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
         and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Annotation_Directive = Copy_Annotations
         and then Options.Selected_Checksum = No_Checksum
         and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
@@ -2374,8 +2447,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
       Catalogs.Find_Selected_Object
         (Item.Catalog, Source_Bucket, Source_Key, Options.Source_Selector,
-         Payload, Source_Info, Source_Tags, Selected_Source, Result,
-         Open_Source'Access);
+         Payload, Source_Info, Source_Tags, Source_Annotations,
+         Selected_Source, Result, Open_Source'Access);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -2384,8 +2457,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
          return;
       elsif Result /= Success then
          return;
-      elsif not Valid_Copy_Object_Size (Source_Info.Size) then
+      end if;
+      Annotation_Leases_Held := True;
+      if not Valid_Copy_Object_Size (Source_Info.Size) then
          SIO.Close (File);
+         Release_Annotations;
          Result := Entity_Too_Large;
          return;
       end if;
@@ -2394,6 +2470,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Source_Info.Modified);
       if Result /= Success then
          SIO.Close (File);
+         Release_Annotations;
          return;
       end if;
 
@@ -2428,23 +2505,27 @@ package body Flyology.Object_Storage.Backends.SQLite is
             Total     => Source_Info.Size,
             Remaining => Source_Info.Size);
       begin
-         Item.Put_Object
-           (Destination_Bucket, Destination_Key, Source,
+         Put_Object_Internal
+           (Item, Destination_Bucket, Destination_Key, Source,
             Put_Options_Value, Token, Deadline, Info, Published_Destination,
-            Result,
-            Options.Destination_Conditions);
+            Result, Options.Destination_Conditions,
+            (if Options.Annotation_Directive = Exclude_Annotations
+             then Catalogs.Annotation_Copy_Record_Vectors.Empty_Vector
+             else Source_Annotations));
       end;
       if Result = Success then
          Source_Identity := Selected_Source;
          Destination_Identity := Published_Destination;
       end if;
       SIO.Close (File);
+      Release_Annotations;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         Release_Annotations;
          Source_Identity := (others => <>);
          Destination_Identity := (others => <>);
          raise;
@@ -2452,6 +2533,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         Release_Annotations;
          Info := Empty_Info;
          Source_Identity := (others => <>);
          Destination_Identity := (others => <>);
@@ -2718,7 +2800,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Outcome       : out Version_Delete_Outcome;
       Result        : out Status)
    is
-      Retired : US.Unbounded_String;
+      Retired : Catalogs.Payloads;
    begin
       Outcome := (others => <>);
       Check_Context (Token, Deadline);
@@ -2738,16 +2820,18 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Catalogs.Delete_Selected_Object
            (Item.Catalog, Bucket, Key, Selector, Conditions, MFA_Validated,
             Unix_Seconds (Ada.Calendar.Clock), Retired, Outcome, Result);
-         if Result = Success and then US.Length (Retired) > 0 then
-            begin
-               Delete_Payload_If_Present (Item, US.To_String (Retired));
+         if Result = Success then
+            for Payload of Retired loop
+               begin
+                  Delete_Payload_If_Unreferenced
+                    (Item, US.To_String (Payload));
+               exception
+                  when others => null;
+               end;
+            end loop;
+            if not Retired.Is_Empty then
                Sync_Path (Objects_Path (Item), Directory => True);
-            exception
-               when others =>
-                  --  The catalog commit already retired the payload. Startup
-                  --  garbage collection safely removes any durable residue.
-                  null;
-            end;
+            end if;
          end if;
       end if;
    exception
@@ -2800,7 +2884,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Unix_Seconds (Ada.Calendar.Clock), Retired, Outcomes, Result);
       if Result = Success then
          for Payload of Retired loop
-            Delete_Payload_If_Present (Item, US.To_String (Payload));
+            Delete_Payload_If_Unreferenced (Item, US.To_String (Payload));
          end loop;
       end if;
    exception
@@ -3030,6 +3114,425 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Identity := (others => <>);
          Result := Backend_Unavailable;
    end Delete_Object_Tags;
+
+   overriding procedure Put_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Source : in out Byte_Source'Class;
+      Options : Put_Object_Annotation_Options;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info : out Object_Annotation_Information;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+      Last      : Ada.Streams.Stream_Element_Offset;
+      Finished  : Boolean := False;
+      Total     : Byte_Count := 0;
+      Declared  : Source_Length := (Kind => Unknown);
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Published : Boolean := False;
+      In_Callback : Boolean := False;
+      Staging   : US.Unbounded_String;
+      Payload   : US.Unbounded_String;
+      Previous  : US.Unbounded_String;
+      Renamed   : Boolean;
+      ETag_Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Effective_Algorithm : constant Checksum_Algorithm :=
+        (if Options.Expected_Checksum.Algorithm = No_Checksum
+         then Checksum_CRC64NVME
+         else Options.Expected_Checksum.Algorithm);
+      Digest_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value (Effective_Algorithm));
+      Actual_Checksum : US.Unbounded_String;
+   begin
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Options.Conditions.Has_Object_ETag
+            and then US.Length (Options.Conditions.Object_ETag) > 0)
+           or else
+             (Options.Conditions.Has_Object_ETag
+              and then US.Length (Options.Conditions.Object_ETag) = 0))
+        or else
+          (Options.Conditions.Has_Object_ETag
+           and then not Valid_Object_Delete_ETag_Condition
+             (US.To_String (Options.Conditions.Object_ETag)))
+        or else
+          (Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then
+             (Options.Expected_Checksum.Method /= Full_Object_Checksum
+              or else not Checksum_Engine.Valid_Digest
+                (US.To_String (Options.Expected_Checksum.Value),
+                 Options.Expected_Checksum.Algorithm)))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      In_Callback := True;
+      Declared := Source.Declared_Length;
+      In_Callback := False;
+      Check_Context (Token, Deadline);
+      if Declared.Kind = Known and then Declared.Bytes = 0 then
+         Result := Invalid_Request;
+         return;
+      elsif Declared.Kind = Known
+        and then Declared.Bytes > Maximum_Annotation_Size
+      then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Create_Staging_File (Item, Bucket, Key & Character'Val (0) & Name,
+                           File, Staging, Payload);
+      Opened := True;
+      while not Finished loop
+         Check_Context (Token, Deadline);
+         In_Callback := True;
+         Source.Read (Buffer, Last, Finished, Token, Deadline);
+         In_Callback := False;
+         Check_Context (Token, Deadline);
+         if Last < Buffer'First - 1 or else Last > Buffer'Last then
+            Result := Invalid_Request;
+            SIO.Close (File);
+            Opened := False;
+            Ada.Directories.Delete_File (US.To_String (Staging));
+            return;
+         elsif Last >= Buffer'First then
+            declare
+               Count : constant Byte_Count :=
+                 Byte_Count (Last - Buffer'First + 1);
+            begin
+               if Count > Maximum_Annotation_Size
+                 or else Total > Maximum_Annotation_Size - Count
+               then
+                  Result := Entity_Too_Large;
+                  SIO.Close (File);
+                  Opened := False;
+                  Ada.Directories.Delete_File (US.To_String (Staging));
+                  return;
+               end if;
+               SIO.Write (File, Buffer (Buffer'First .. Last));
+               GNAT.MD5.Update (ETag_Hash, Buffer (Buffer'First .. Last));
+               if Options.Expected_Checksum.Algorithm /= No_Checksum then
+                  Checksum_Engine.Update
+                    (Digest_Hash, Buffer (Buffer'First .. Last));
+               end if;
+               Total := Total + Count;
+            end;
+         elsif not Finished then
+            Result := Invalid_Request;
+            SIO.Close (File);
+            Opened := False;
+            Ada.Directories.Delete_File (US.To_String (Staging));
+            return;
+         end if;
+      end loop;
+      SIO.Close (File);
+      Opened := False;
+      if Total = 0
+        or else (Declared.Kind = Known and then Declared.Bytes /= Total)
+      then
+         Result := Invalid_Request;
+         Ada.Directories.Delete_File (US.To_String (Staging));
+         return;
+      end if;
+      if Options.Expected_Checksum.Algorithm /= No_Checksum then
+         Actual_Checksum :=
+           US.To_Unbounded_String (Checksum_Engine.Finish (Digest_Hash));
+         if Actual_Checksum /= Options.Expected_Checksum.Value then
+            Result := Bad_Digest;
+            Ada.Directories.Delete_File (US.To_String (Staging));
+            return;
+         end if;
+      end if;
+      Sync_Path (US.To_String (Staging));
+      Info :=
+        (Size       => Total,
+         Modified   => Unix_Seconds (Ada.Calendar.Clock),
+         Entity_Tag => US.To_Unbounded_String (GNAT.MD5.Digest (ETag_Hash)),
+         Checksum   =>
+           (if Options.Expected_Checksum.Algorithm = No_Checksum
+            then No_Checksum_Information
+            else
+               (Algorithm => Options.Expected_Checksum.Algorithm,
+                Method    => Full_Object_Checksum,
+                Value     => Actual_Checksum)),
+         Version    => US.Null_Unbounded_String);
+      Check_Context (Token, Deadline);
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Staging),
+         Join (Objects_Path (Item), US.To_String (Payload)), Renamed);
+      if not Renamed then
+         Result := Backend_Unavailable;
+         Ada.Directories.Delete_File (US.To_String (Staging));
+         return;
+      end if;
+      Published := True;
+      Sync_Path (Objects_Path (Item), Directory => True);
+      Catalogs.Put_Object_Annotation
+        (Item.Catalog, Bucket, Key, Name, US.To_String (Payload), Info,
+         Options.Conditions, Previous, Identity, Result, Selector);
+      if Result /= Success then
+         Ada.Directories.Delete_File
+           (Join (Objects_Path (Item), US.To_String (Payload)));
+         Sync_Path (Objects_Path (Item), Directory => True);
+         Published := False;
+         return;
+      end if;
+      Info.Version := Identity.Version_ID;
+      Published := False;
+      if US.Length (Previous) > 0 then
+         begin
+            Delete_Payload_If_Unreferenced (Item, US.To_String (Previous));
+            Sync_Path (Objects_Path (Item), Directory => True);
+         exception
+            when others => null;
+         end;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if US.Length (Staging) > 0
+           and then Ada.Directories.Exists (US.To_String (Staging))
+         then
+            Ada.Directories.Delete_File (US.To_String (Staging));
+         end if;
+         if Published then
+            Ada.Directories.Delete_File
+              (Join (Objects_Path (Item), US.To_String (Payload)));
+         end if;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if US.Length (Staging) > 0
+           and then Ada.Directories.Exists (US.To_String (Staging))
+         then
+            Ada.Directories.Delete_File (US.To_String (Staging));
+         end if;
+         if Published then
+            Ada.Directories.Delete_File
+              (Join (Objects_Path (Item), US.To_String (Payload)));
+         end if;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if In_Callback then
+            raise;
+         else
+            Result := Backend_Unavailable;
+         end if;
+   end Put_Object_Annotation;
+
+   overriding procedure Get_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Sink : in out Annotation_Byte_Sink'Class;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info : out Object_Annotation_Information;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Payload : US.Unbounded_String;
+      File    : SIO.File_Type;
+      In_Callback : Boolean := False;
+
+      procedure Open_Payload
+        (Payload_Name : String; Snapshot : Object_Annotation_Information)
+      is
+         Path : constant String := Join (Objects_Path (Item), Payload_Name);
+      begin
+         Check_Context (Token, Deadline);
+         if not Is_Payload_Name (Payload_Name)
+           or else not Ada.Directories.Exists (Path)
+           or else GNAT.OS_Lib.Is_Symbolic_Link (Path)
+           or else Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         SIO.Open (File, SIO.In_File, Path);
+         if SIO.Size (File) /= SIO.Count (Snapshot.Size) then
+            SIO.Close (File);
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      end Open_Payload;
+   begin
+      Presence := Annotation_Absent;
+      Info := Empty_Annotation_Info;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Catalogs.Get_Object_Annotation
+        (Item.Catalog, Bucket, Key, Name, Payload, Presence, Info, Identity,
+         Result, Selector, Open_Payload'Access);
+      if Result /= Success or else Presence = Annotation_Absent then
+         return;
+      end if;
+      In_Callback := True;
+      Sink.Begin_Annotation (Info, Token, Deadline);
+      In_Callback := False;
+      declare
+         Buffer : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+         Last   : Ada.Streams.Stream_Element_Offset;
+      begin
+         while not SIO.End_Of_File (File) loop
+            Check_Context (Token, Deadline);
+            SIO.Read (File, Buffer, Last);
+            if Last >= Buffer'First then
+               In_Callback := True;
+               Sink.Write (Buffer (Buffer'First .. Last), Token, Deadline);
+               In_Callback := False;
+            end if;
+         end loop;
+      end;
+      SIO.Close (File);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         Presence := Annotation_Absent;
+         Info := Empty_Annotation_Info;
+         Identity := (others => <>);
+         if In_Callback then
+            raise;
+         else
+            Result := Backend_Unavailable;
+         end if;
+   end Get_Object_Annotation;
+
+   overriding procedure Delete_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Conditions : Object_Annotation_Conditions;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Previous : US.Unbounded_String;
+   begin
+      Presence := Annotation_Absent;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Annotation_Name (Name)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Conditions.Has_Object_ETag
+            and then US.Length (Conditions.Object_ETag) > 0)
+           or else
+             (Conditions.Has_Object_ETag
+              and then US.Length (Conditions.Object_ETag) = 0))
+        or else
+          (Conditions.Has_Object_ETag
+           and then not Valid_Object_Delete_ETag_Condition
+             (US.To_String (Conditions.Object_ETag)))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Catalogs.Delete_Object_Annotation
+        (Item.Catalog, Bucket, Key, Name, Conditions, Previous, Presence,
+         Identity, Result, Selector);
+      if Result = Success and then US.Length (Previous) > 0 then
+         begin
+            Delete_Payload_If_Unreferenced (Item, US.To_String (Previous));
+            Sync_Path (Objects_Path (Item), Directory => True);
+         exception
+            when others => null;
+         end;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         raise;
+      when others =>
+         Presence := Annotation_Absent;
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Delete_Object_Annotation;
+
+   overriding procedure List_Object_Annotations
+     (Item : in out Store; Bucket, Key : String;
+      Options : List_Object_Annotations_Options;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page : out Object_Annotation_Page;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
+   begin
+      Page :=
+        (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+         Is_Truncated => False,
+         Next_After   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else (Options.Has_After
+                 and then US.Length (Options.After) = 0)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.List_Object_Annotations
+           (Item.Catalog, Bucket, Key, Options, Check'Access, Page, Identity,
+            Result, Selector);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         Page :=
+           (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         raise;
+      when others =>
+         Page :=
+           (Annotations  => Listed_Object_Annotation_Vectors.Empty_Vector,
+            Is_Truncated => False,
+            Next_After   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Object_Annotations;
 
    overriding procedure List_Objects
      (Item     : in out Store;

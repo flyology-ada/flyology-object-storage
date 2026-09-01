@@ -14,7 +14,7 @@ package Flyology.Object_Storage.Backends.SQLite is
    Configuration_Error : exception;
 
    type Store is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend
+     Bucket_Metadata_Backend and Object_Annotation_Backend
      with private;
 
    function Open
@@ -1064,6 +1064,48 @@ package Flyology.Object_Storage.Backends.SQLite is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
+   --  Atomically replace one streamed annotation on a selected generation.
+   overriding procedure Put_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Source : in out Byte_Source'Class;
+      Options : Put_Object_Annotation_Options;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info : out Object_Annotation_Information;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Stream one present annotation from a selected-generation snapshot.
+   overriding procedure Get_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Sink : in out Annotation_Byte_Sink'Class;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Info : out Object_Annotation_Information;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Atomically remove one annotation from a selected generation.
+   overriding procedure Delete_Object_Annotation
+     (Item : in out Store; Bucket, Key, Name : String;
+      Conditions : Object_Annotation_Conditions;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Presence : out Object_Annotation_Presence;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   --  Return one live bytewise-name-ordered annotation page.
+   overriding procedure List_Object_Annotations
+     (Item : in out Store; Bucket, Key : String;
+      Options : List_Object_Annotations_Options;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page : out Object_Annotation_Page;
+      Identity : out Version_Identity; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
    overriding procedure List_Objects
      (Item     : in out Store;
       Bucket   : String;
@@ -1187,7 +1229,7 @@ private
    end Sequence;
 
    type Store is limited new Backend and Bucket_Notification_Backend and
-     Bucket_Metadata_Backend
+     Bucket_Metadata_Backend and Object_Annotation_Backend
      with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;

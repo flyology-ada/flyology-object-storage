@@ -603,6 +603,7 @@ delete_object = [
 ]
 delete_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-object-annotation-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-annotations-backend-server.py"],
   ["@tests", "alr", "-n", "build"],
   ["@tests", "./bin/s3_delete_object_annotation_corpus"],
   ["@tests", "./bin/s3_http_socket_corpus"],
@@ -635,6 +636,7 @@ get_object = [
 ]
 get_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-get-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-annotations-backend-server.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -680,6 +682,7 @@ write_get_object_response = [
 ]
 put_object_annotation = [
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-put-object-annotation-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-annotations-backend-server.py"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -1080,6 +1083,7 @@ get_bucket_metadata_table_configuration = [
   ["git", "diff", "--check"],
 ]
 list_object_annotations = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-object-annotations-backend-server.py"],
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListObjectAnnotations"],
   ["./tools/verify-coverage.sh"],
@@ -1757,15 +1761,15 @@ public_name = "Delete_Annotation"
 codec = "rest_xml_and_headers"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "only a complete validated exact 204 with an exactly empty body reports Annotation_Deletion_Completed; an exact recognized non-applying rejection or definite non-admission reports Annotation_Deletion_Definitely_Not_Applied, pre-admission cancellation reports Annotation_Deletion_Cancelled_Before_Admission, and every other possibly admitted, incomplete, retryable, malformed, or oversized outcome reports Annotation_Deletion_Outcome_Unknown; no automatic replay"
+certainty = "the public client retains its existing exact 204 and admission-aware deletion certainty; independently, the backend and authenticated server delete only the selected current, null, or explicit parent generation after atomic ObjectIfMatch evaluation and return annotation presence without automatic replay"
 reconciliation = "caller-selected read-only observation using the exact bucket, key, annotation name, and explicit version or generation evidence before retry; an observation does not prove that the lost deletion caused the current state or upgrade mutation certainty"
-exclusions = ["backend annotation persistence, authenticated server routing, and external-provider interoperability are not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "success requires exact HTTP 204 with an exactly empty response body; optional modeled response headers must be singleton, nonempty when present, and text-safe", "read-only observation does not establish causation or authorize automatic replay"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+exclusions = ["external-provider annotation interoperability is not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, and S3 on Outposts routing are not claimed", "client success requires exact HTTP 204 with an exactly empty response body; optional modeled response headers must be singleton, nonempty when present, and text-safe", "read-only observation does not establish causation or authorize automatic replay"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
 implementation_mode = "handwritten"
 generator_eligible = false
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tools/verify-delete-object-annotation-preparation.py", "docs/qualification/delete-object-annotation.md", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "src/flyology-object_storage-backends-memory.adb", "src/flyology-object_storage-backends-files.adb", "sqlite/src/flyology-object_storage-backends-sqlite.adb", "sqlite/src/flyology-object_storage-sqlite-catalogs.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-client-low_level.ads", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.ads", "src/flyology-object_storage-client-objects.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tools/verify-delete-object-annotation-preparation.py", "tools/verify-object-annotations-backend-server.py", "docs/qualification/delete-object-annotation.md", "docs/qualification/object-annotations-backend-server.md", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb", "tests/src/s3_server_application_corpus.adb", "tests/src/flyology-object_storage-client-objects-testing.adb", "tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "delete_object_annotation"
 ada_symbols = ["Prepare_Delete_Object_Annotation", "Decode_Delete_Object_Annotation_Response", "Execute_Delete_Object_Annotation", "Delete_Object_Annotation_Operation", "Delete_Annotation", "Finish"]
@@ -3172,17 +3176,17 @@ public_name = "Not_Exposed"
 codec = "generated_model_only_streaming_bytes_and_headers"
 absence = "the pinned model distinguishes NoSuchBucket, NoSuchKey, and NoSuchAnnotation, but no public client decoder currently exposes those modeled errors or a successful annotation payload"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "read-only model coverage only; no public client operation, response-body sink, header decoder, or runtime evidence exists, so this review exposes no annotation bytes and makes no response-validation or retry claim"
-reconciliation = "the modeled request can select an explicit VersionId or omit it, and the modeled response may carry x-amz-object-version-id; without an implemented request/response binding path, this review claims neither same-version observation nor current-version reconciliation"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects GetObjectAnnotation API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the streaming AnnotationPayload, Content-Length, ETag, checksum, encryption, requester-charge, replication, last-modified, and version response fields are inventory only and are not decoded or validated by the client", "the AnnotationName documentation describes a 1-to-512-byte domain, but the pinned string shape carries no generated minimum or maximum; this review does not invent a public bound or client validation policy", "backend storage, an authenticated Flyology GetObjectAnnotation server route, and external-provider behavior are absent and not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "read-only client model coverage only; no public client operation, response-body sink, header decoder, or runtime evidence exists; independently, the backend and authenticated server stream a selected annotation and bind its exact parent generation without automatic replay"
+reconciliation = "the backend and server distinguish exact explicit-version observation from omitted current-generation observation; neither observation proves mutation causation, while the public client remains generated-model-only and claims no implemented binding path"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects GetObjectAnnotation API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the generated client AnnotationPayload, response metadata, and checksum fields remain inventory only and are not decoded or validated by a public client", "the AnnotationName documentation describes a 1-to-512-byte domain, but the pinned string shape carries no generated minimum or maximum; this review does not invent a public bound or client validation policy", "external-provider annotation interoperability is not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "get_object_annotation"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-get-object-annotation-model.py"], server = [], corpus = ["tests/scripts/verify-get-object-annotation-model.py"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "src/flyology-object_storage-backends-memory.adb", "src/flyology-object_storage-backends-files.adb", "sqlite/src/flyology-object_storage-backends-sqlite.adb", "sqlite/src/flyology-object_storage-sqlite-catalogs.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-get-object-annotation-model.py"], server = ["src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-get-object-annotation-model.py", "tools/verify-object-annotations-backend-server.py", "docs/qualification/object-annotations-backend-server.md", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
 name = "GetObjectAttributes"
@@ -3908,15 +3912,15 @@ codec = "strict_paginated_rest_xml_and_singleton_headers"
 public_name = "List_Annotations"
 absence = "404 NoSuchBucket and NoSuchKey map to Not_Found"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+certainty = "read-only; the public client retains its strict paginated decoder, while the backend and authenticated server return a live-state page in bytewise UTF-8 annotation-name order after the exact scope-local lexical cursor"
+reconciliation = "an explicit VersionId lists annotations for that selected parent generation and an omitted selector lists the generation current when the page is read; pages are live-state observations and do not prove mutation causation"
+exclusions = ["external-provider annotation interoperability is not claimed", "backend lexical cursors are HTTP-independent and the S3 boundary owns opaque scope-bound continuation tokens", "live-state pages are not snapshot-isolated across requests"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "shared_family", server = "handwritten", tests = "shared_family" }
 implementation_mode = "shared-family"
 generator_eligible = false
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_list_object_annotations_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_object_annotations_qualification.adb"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "src/flyology-object_storage-backends-memory.adb", "src/flyology-object_storage-backends-files.adb", "sqlite/src/flyology-object_storage-backends-sqlite.adb", "sqlite/src/flyology-object_storage-sqlite-catalogs.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-paginated_rest_xml_reads.adb", "src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-objects.adb", "tests/src/s3_list_object_annotations_qualification.adb"], server = ["src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tools/verify-object-annotations-backend-server.py", "docs/qualification/object-annotations-backend-server.md", "tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_list_object_annotations_qualification.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb", "tests/src/s3_server_application_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "list_object_annotations"
 ada_symbols = ["Prepare_List_Object_Annotations", "Execute_List_Object_Annotations", "List_Object_Annotations_Operation", "List_Annotations", "Finish"]
@@ -5020,17 +5024,17 @@ public_name = "Not_Exposed"
 codec = "generated_model_only_streaming_request_and_headers"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "mutation model coverage only; no public request-body source, checksum binding, response decoder, or runtime evidence exists, so this review reports no successful mutation, no admission certainty, and no automatic replay"
-reconciliation = "the model relates PutObjectAnnotation to a later GetObjectAnnotation observation with explicit or omitted VersionId, but neither operation has an implemented binding path; no observation, causal proof, certainty upgrade, or automatic replay is claimed"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects PutObjectAnnotation API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the streaming AnnotationPayload and modeled checksum request and response fields are inventory only; no caller-owned source, exact length, digest computation, signing binding, singleton response validation, or body rewind is implemented", "model prose describes a 1-byte-to-1-MiB UTF-8 payload, a 1-to-512-byte name, and 1,000 annotations per object, but the generated payload and name shapes carry no corresponding bounds; this review does not invent public limits, encoding policy, or collection policy", "backend storage, an authenticated Flyology PutObjectAnnotation server route, and external-provider behavior are absent and not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "mutation client model coverage only; no public client request-body source, checksum binding, decoder, admission result, or runtime evidence exists; independently, the backend and authenticated server validate the selected parent generation, condition, and expected checksum before atomically publishing annotation bytes, with no automatic replay"
+reconciliation = "the backend and server support later exact explicit-version or omitted current-generation observation, but neither proves mutation causation or upgrades certainty; the public client remains generated-model-only with no implemented binding path"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects PutObjectAnnotation API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the generated client AnnotationPayload and checksum request and response fields remain inventory only; no public client source, digest computation, signing binding, singleton response validation, or body rewind is implemented", "model prose describes a 1-byte-to-1-MiB UTF-8 payload, a 1-to-512-byte name, and 1,000 annotations per object, but the generated payload and name shapes carry no corresponding bounds; this review does not invent public limits, encoding policy, or collection policy", "external-provider annotation interoperability is not claimed", "directory-bucket endpoint and session semantics, access-point, Object Lambda, S3 on Outposts, and unsupported-feature interoperability are not claimed"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "put_object_annotation"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-put-object-annotation-model.py"], server = [], corpus = ["tests/scripts/verify-put-object-annotation-model.py"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "src/flyology-object_storage-backends-memory.adb", "src/flyology-object_storage-backends-files.adb", "sqlite/src/flyology-object_storage-backends-sqlite.adb", "sqlite/src/flyology-object_storage-sqlite-catalogs.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-put-object-annotation-model.py"], server = ["src/flyology-object_storage-s3-annotations.adb", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-put-object-annotation-model.py", "tools/verify-object-annotations-backend-server.py", "docs/qualification/object-annotations-backend-server.md", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
 name = "PutObjectLegalHold"

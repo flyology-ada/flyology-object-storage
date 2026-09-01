@@ -1176,13 +1176,21 @@
     },
     "DeleteObjectAnnotation": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "sqlite/src/flyology-object_storage-sqlite-catalogs.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -1194,21 +1202,30 @@
         ],
         "corpus": [
           "tools/verify-delete-object-annotation-preparation.py",
+          "tools/verify-object-annotations-backend-server.py",
           "docs/qualification/delete-object-annotation.md",
+          "docs/qualification/object-annotations-backend-server.md",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb",
           "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_delete_object_annotation_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-s3-annotations.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bodyless_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"
@@ -2638,30 +2655,47 @@
     },
     "GetObjectAnnotation": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "sqlite/src/flyology-object_storage-sqlite-catalogs.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-get-object-annotation-model.py"
         ],
         "corpus": [
-          "tests/scripts/verify-get-object-annotation-model.py"
+          "tests/scripts/verify-get-object-annotation-model.py",
+          "tools/verify-object-annotations-backend-server.py",
+          "docs/qualification/object-annotations-backend-server.md",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-s3-annotations.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "streaming_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"
@@ -3437,13 +3471,21 @@
     },
     "ListObjectAnnotations": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "sqlite/src/flyology-object_storage-sqlite-catalogs.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-paginated_rest_xml_reads.adb",
           "src/flyology-object_storage-s3-annotations.adb",
@@ -3452,20 +3494,29 @@
           "tests/src/s3_list_object_annotations_qualification.adb"
         ],
         "corpus": [
+          "tools/verify-object-annotations-backend-server.py",
+          "docs/qualification/object-annotations-backend-server.md",
           "tests/generated/s3-negative-xml.json",
           "tests/generated/s3-signed-socket.json",
-          "tests/src/s3_list_object_annotations_qualification.adb"
+          "tests/src/s3_list_object_annotations_qualification.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-s3-annotations.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "shared-family",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "shared_family",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "shared_family"
       },
       "provider": "objects"
@@ -4728,30 +4779,47 @@
     },
     "PutObjectAnnotation": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "src/flyology-object_storage-backends-memory.adb",
+          "src/flyology-object_storage-backends-files.adb",
+          "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+          "sqlite/src/flyology-object_storage-sqlite-catalogs.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-put-object-annotation-model.py"
         ],
         "corpus": [
-          "tests/scripts/verify-put-object-annotation-model.py"
+          "tests/scripts/verify-put-object-annotation-model.py",
+          "tools/verify-object-annotations-backend-server.py",
+          "docs/qualification/object-annotations-backend-server.md",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-s3-annotations.adb",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "streaming_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"

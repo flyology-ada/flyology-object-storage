@@ -12,6 +12,7 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.IO;
 with Flyology.Object_Storage.Checksum_Engine;
+with Flyology.Object_Storage.S3.Annotations;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Attributes;
@@ -58,6 +59,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Apps renames Flyology.HTTP.Server.Applications;
    package US renames Ada.Strings.Unbounded;
    package Requests renames S3.Requests;
+   package Annotations renames S3.Annotations;
    package Buckets renames S3.Buckets;
    package Bucket_Controls renames S3.Bucket_Controls;
    package Attributes renames S3.Attributes;
@@ -100,6 +102,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Authentication.Outcome_Status;
    use type Backends.Length_Kind;
    use type Backends.Copy_Metadata_Directive;
+   use type Backends.Copy_Annotation_Directive;
    use type Backends.Copy_Tagging_Directive;
    use type Backends.Bucket_Metadata_Configuration_Kind;
    use type Backends.Version_Delete_Kind;
@@ -142,6 +145,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      Tagging.Maximum_Document_Bytes;
    --  Derived from the object-tagging codec's public document ceiling so the
    --  server and parser cannot drift; changing that source changes admission.
+   Maximum_Object_Annotation_Body : constant Byte_Count :=
+     1 * 1_024 * 1_024;
+   --  AWS fixes one object annotation payload at one byte through one MiB.
+   --  This private protocol boundary is not a public resource-policy value.
    Maximum_Bucket_Tagging_Body : constant Byte_Count :=
      Tagging.Maximum_Bucket_Document_Bytes;
    --  Derived from the bucket-tagging codec's public document ceiling so the
@@ -318,6 +325,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      (case Value is
          when Checksum_Policy.Composite   => Composite_Checksum,
          when Checksum_Policy.Full_Object => Full_Object_Checksum);
+
+   function Annotation_Algorithm
+     (Value : Checksum_Algorithm) return Annotations.Checksum_Algorithm is
+     (case Value is
+         when No_Checksum =>
+            raise Constraint_Error with "annotation checksum is absent",
+         when Checksum_CRC32     => S3.Core.CRC32,
+         when Checksum_CRC32C    => S3.Core.CRC32C,
+         when Checksum_CRC64NVME => S3.Core.CRC64NVME,
+         when Checksum_SHA1      => S3.Core.SHA1,
+         when Checksum_SHA256    => S3.Core.SHA256,
+         when Checksum_SHA512    => S3.Core.SHA512,
+         when Checksum_MD5       => S3.Core.MD5,
+         when Checksum_XXHASH64  => S3.Core.XXHASH64,
+         when Checksum_XXHASH3   => S3.Core.XXHASH3,
+         when Checksum_XXHASH128 => S3.Core.XXHASH128);
 
    function Wire_Algorithm (Value : Checksum_Algorithm) return String is
      (case Value is
@@ -755,6 +778,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_ACL, Get_Object_ACL,
+         Put_Object_Annotation, Get_Object_Annotation,
+         List_Object_Annotations, Delete_Object_Annotation,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Put_Object_Legal_Hold, Get_Object_Legal_Hold,
          Put_Object_Retention, Get_Object_Retention,
@@ -1688,6 +1713,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else
           (Parsed.Kind = Requests.Object_Target
            and then Is_Valid_Tagging_Query (Query_Text, Method));
+      Has_Annotation_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&annotation&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&annotation=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutObjectAnnotation&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetObjectAnnotation&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListObjectAnnotations&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteObjectAnnotation&") /= 0;
       Has_Bucket_Object_Lock_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&object-lock&") /= 0
         or else Ada.Strings.Fixed.Index
@@ -1974,6 +2011,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
+      Annotation_Query_Invalid : Boolean := False;
+      Annotation_Request : Annotations.Annotation_Request;
       Attributes_Query_Invalid : Boolean := False;
       Attributes_Request : Attributes.Attributes_Query;
       Has_Copy_Source : constant Boolean :=
@@ -2006,6 +2045,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       function Tagging_Version_Selector return Backends.Version_Selector is
         (To_Version_Selector
            (Tagging_Request.Has_Version_ID, Tagging_Request.Version_ID));
+
+      function Annotation_Version_Selector return
+        Backends.Version_Selector is
+        (To_Version_Selector
+           (Annotation_Request.Has_Version_ID,
+            Annotation_Request.Version_ID));
 
       function Legal_Hold_Version_Selector return
         Backends.Version_Selector is
@@ -2715,6 +2760,80 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Item.Observed := Item.Observed + Count;
          end Write;
       end Response_IO;
+
+      package Annotation_Response_IO is
+         type Response_Sink is limited new Backends.Annotation_Byte_Sink with
+         record
+            Started  : Boolean := False;
+            Expected : Byte_Count := 0;
+            Observed : Byte_Count := 0;
+         end record;
+
+         overriding procedure Begin_Annotation
+           (Item     : in out Response_Sink;
+            Info     : Object_Annotation_Information;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time);
+
+         overriding procedure Write
+           (Item     : in out Response_Sink;
+            Data     : Ada.Streams.Stream_Element_Array;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time);
+      end Annotation_Response_IO;
+
+      package body Annotation_Response_IO is
+         overriding procedure Begin_Annotation
+           (Item     : in out Response_Sink;
+            Info     : Object_Annotation_Information;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time)
+         is
+            pragma Unreferenced (Token, Deadline);
+         begin
+            if Item.Started then
+               raise Program_Error with
+                 "backend began an annotation twice";
+            end if;
+            Apps.Set_Header
+              (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
+            Apps.Set_Header
+              (X, "Last-Modified", HTTP_Last_Modified (Info.Modified));
+            if US.Length (Info.Version) > 0 then
+               Apps.Set_Header
+                 (X, "x-amz-object-version-id",
+                  US.To_String (Info.Version));
+            end if;
+            Set_Checksum_Headers (X, Info.Checksum);
+            Apps.Begin_Stream
+              (X, 200, "application/octet-stream",
+               Flyology.HTTP.Body_Size (Info.Size));
+            Item.Started := True;
+            Item.Expected := Info.Size;
+         end Begin_Annotation;
+
+         overriding procedure Write
+           (Item     : in out Response_Sink;
+            Data     : Ada.Streams.Stream_Element_Array;
+            Token    : access Flyology.Cancellation.Token;
+            Deadline : Ada.Real_Time.Time)
+         is
+            pragma Unreferenced (Token, Deadline);
+            Count : constant Byte_Count := Byte_Count (Data'Length);
+         begin
+            if not Item.Started or else Data'Length = 0 then
+               raise Program_Error with
+                 "invalid backend annotation fragment";
+            elsif Count > Item.Expected
+              or else Item.Observed > Item.Expected - Count
+            then
+               raise Program_Error with
+                 "backend exceeded annotation response length";
+            end if;
+            Apps.Write_Chunk (X, Data);
+            Item.Observed := Item.Observed + Count;
+         end Write;
+      end Annotation_Response_IO;
 
       function Body_Length (Valid : out Boolean) return Backends.Source_Length
       is
@@ -4191,6 +4310,41 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Operation := Put_Object_Retention;
          elsif Method = "GET" and then Has_Retention_Query then
             Operation := Get_Object_Retention;
+         elsif Parsed.Has_Query and then Has_Annotation_Query
+           and then Method in "PUT" | "GET" | "DELETE"
+         then
+            declare
+               Has_Name : constant Boolean :=
+                 Ada.Strings.Fixed.Index
+                   (Padded_Query, "&annotationName=") /= 0;
+               Annotation_Operation : constant
+                 Annotations.Annotation_Operation :=
+                   (if Method = "PUT" then Annotations.Put_Annotation
+                    elsif Method = "DELETE" then Annotations.Delete_Annotation
+                    elsif Has_Name then Annotations.Get_Annotation
+                    else Annotations.List_Annotations);
+            begin
+               Annotation_Request := Annotations.Parse_Query
+                 (Query_Text, Annotation_Operation);
+               Operation :=
+                 (case Annotation_Operation is
+                     when Annotations.Put_Annotation =>
+                       Put_Object_Annotation,
+                     when Annotations.Get_Annotation =>
+                       Get_Object_Annotation,
+                     when Annotations.List_Annotations =>
+                       List_Object_Annotations,
+                     when Annotations.Delete_Annotation =>
+                       Delete_Object_Annotation);
+            exception
+               when Annotations.Malformed_Annotation_Request =>
+                  Annotation_Query_Invalid := True;
+                  Operation :=
+                    (if Method = "PUT" then Put_Object_Annotation
+                     elsif Method = "DELETE" then Delete_Object_Annotation
+                     elsif Has_Name then Get_Object_Annotation
+                     else List_Object_Annotations);
+            end;
          elsif Parsed.Has_Query and then Has_Tagging_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
@@ -4349,7 +4503,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration |
          Update_Bucket_Metadata_Annotation_Table_Configuration |
          Put_Object |
-         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
+         Put_Object_Annotation | Put_Object_Tagging |
+         Delete_Objects | Put_Multipart_Part |
          Put_Object_Legal_Hold | Put_Object_Retention |
          Complete_Multipart
           then Apps.Stream_Body else Apps.Reject_Body),
@@ -4496,6 +4651,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The object tagging request query is invalid", Target_Text);
          return;
+      elsif Annotation_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The object annotation request query is invalid", Target_Text);
+         return;
       elsif Attributes_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -4520,7 +4680,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Update_Bucket_Metadata_Inventory_Table_Configuration |
         Update_Bucket_Metadata_Journal_Table_Configuration |
         Update_Bucket_Metadata_Annotation_Table_Configuration |
-        Put_Object | Put_Object_Tagging | Put_Object_Legal_Hold |
+        Put_Object | Put_Object_Annotation | Put_Object_Tagging |
+        Put_Object_Legal_Hold |
         Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
       then
@@ -11064,6 +11225,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "The annotation directive is invalid", Target_Text);
                      return;
                   end if;
+                  Copy_Options_Value.Annotation_Directive :=
+                    (if Count ("x-amz-object-annotation-directive") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-object-annotation-directive") = "EXCLUDE"
+                     then Backends.Exclude_Annotations
+                     else Backends.Copy_Annotations);
 
                   Check_Expected_Bucket_Owner
                     (US.To_String (Auth.Principal), Owner_OK);
@@ -12107,6 +12274,422 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         raise Program_Error with
                           "unexpected Object Lock object operation";
                   end case;
+               end;
+
+            when Put_Object_Annotation | Get_Object_Annotation |
+                 List_Object_Annotations | Delete_Object_Annotation =>
+               declare
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-object-if-match");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  SDK_Count : constant Natural := Apps.Request_Header_Count
+                    (X, "x-amz-sdk-checksum-algorithm");
+                  Mode_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-mode");
+                  Value_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Identity : Backends.Version_Identity;
+
+                  procedure Set_Version_Header is
+                  begin
+                     if Identity.Has_Version_ID then
+                        Apps.Set_Header
+                          (X, "x-amz-object-version-id",
+                           (if Identity.Is_Null_Version then "null"
+                            else US.To_String (Identity.Version_ID)));
+                     end if;
+                  end Set_Version_Header;
+
+                  function Conditions return
+                    Backends.Object_Annotation_Conditions is
+                    (if Match_Count = 1 then
+                       (Has_Object_ETag => True,
+                        Object_ETag => US.To_Unbounded_String
+                          (Apps.Request_Header
+                             (X, "x-amz-object-if-match")))
+                     else
+                       (Has_Object_ETag => False,
+                        Object_ETag => US.Null_Unbounded_String));
+
+                  function Valid_Common_Headers return Boolean is
+                  begin
+                     if Payer_Count > 1 or else Match_Count > 1
+                       or else MD5_Count > 1 or else SDK_Count > 1
+                       or else Mode_Count > 1 or else Value_Count > 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "An object annotation header is duplicated",
+                           Target_Text);
+                        return False;
+                     end if;
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_OK);
+                     if not Owner_OK then
+                        return False;
+                     elsif Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The request payer is invalid", Target_Text);
+                        return False;
+                     elsif Payer_Count = 1 then
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "Requester Pays is not implemented", Target_Text);
+                        return False;
+                     elsif Match_Count = 1
+                       and then not Valid_Object_Delete_ETag_Condition
+                         (Apps.Request_Header
+                            (X, "x-amz-object-if-match"))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The object ETag condition is invalid",
+                           Target_Text);
+                        return False;
+                     end if;
+                     return True;
+                  end Valid_Common_Headers;
+               begin
+                  if not Valid_Common_Headers then
+                     return;
+                  elsif Operation /= Put_Object_Annotation
+                    and then (MD5_Count > 0 or else SDK_Count > 0
+                              or else Value_Count > 0)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "This annotation operation has no request checksum",
+                        Target_Text);
+                     return;
+                  elsif Operation /= Get_Object_Annotation
+                    and then Mode_Count > 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "This annotation operation has no checksum mode",
+                        Target_Text);
+                     return;
+                  elsif Operation = Get_Object_Annotation
+                    and then Mode_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-checksum-mode") /= "ENABLED"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The checksum mode is invalid", Target_Text);
+                     return;
+                  elsif Operation = Put_Object_Annotation then
+                     if Length.Kind /= Backends.Known
+                       or else Length.Bytes not in
+                         1 .. Maximum_Object_Annotation_Body
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "PutObjectAnnotation requires a bounded nonempty " &
+                           "Content-Length", Target_Text);
+                        return;
+                     elsif MD5_Count = 1
+                       and then not S3.Wire_Core.Valid_Base64
+                         (Apps.Request_Header (X, "content-md5"), 16)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidDigest",
+                           "The Content-MD5 is invalid", Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Selected : Checksum_Algorithm := No_Checksum;
+                        Supplied : US.Unbounded_String;
+                        Valid : Boolean := True;
+                     begin
+                        if SDK_Count = 1 then
+                           Selected := Parse_Checksum_Algorithm
+                             (Apps.Request_Header
+                                (X, "x-amz-sdk-checksum-algorithm"), Valid);
+                           if not Valid then
+                              Send_Error
+                                (X, 400, "InvalidArgument",
+                                 "The checksum algorithm is invalid",
+                                 Target_Text);
+                              return;
+                           end if;
+                        end if;
+                        if Value_Count = 1 then
+                           if SDK_Count = 1
+                             and then Selected /= Checksum_Value_Algorithm
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The checksum algorithm and value differ",
+                                 Target_Text);
+                              return;
+                           end if;
+                           Selected := Checksum_Value_Algorithm;
+                           Supplied := US.To_Unbounded_String
+                             (Apps.Request_Header
+                                (X, Checksum_Header_Name (Selected)));
+                           if not Checksum_Engine.Valid_Digest
+                             (US.To_String (Supplied), Selected)
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The checksum value is invalid", Target_Text);
+                              return;
+                           end if;
+                        elsif SDK_Count = 1 then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The selected checksum value is missing",
+                              Target_Text);
+                           return;
+                        end if;
+                        declare
+                           Options : constant
+                             Backends.Put_Object_Annotation_Options :=
+                             (Expected_Checksum =>
+                                (if Selected = No_Checksum then
+                                   No_Checksum_Information
+                                 else
+                                   (Algorithm => Selected,
+                                    Method => Full_Object_Checksum,
+                                    Value => Supplied)),
+                              Conditions => Conditions);
+                           Info : Object_Annotation_Information;
+                           Source : Request_IO.Request_Source
+                             (Checksum_Engine.Algorithm_Value (Selected)) :=
+                               (Checksum_Kind =>
+                                  Checksum_Engine.Algorithm_Value (Selected),
+                                Length_Value => Length,
+                                Expected_Hash => Auth.Payload_Hash,
+                                Check_Hash =>
+                                  US.To_String (Auth.Payload_Hash) /=
+                                    S3.SigV4.Unsigned_Payload,
+                                Hash => GNAT.SHA256.Initial_Context,
+                                Check_Content_MD5 => MD5_Count = 1,
+                                Expected_Content_MD5 =>
+                                  (if MD5_Count = 1 then
+                                     US.To_Unbounded_String
+                                       (Apps.Request_Header
+                                          (X, "content-md5"))
+                                   else US.Null_Unbounded_String),
+                                Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                                Check_Body_Checksum => Value_Count = 1,
+                                Checksum_From_Trailer => False,
+                                Reject_Unexpected_Trailers => True,
+                                Expected_Body_Checksum => Supplied,
+                                Observed => 0,
+                                Maximum => Maximum_Object_Annotation_Body,
+                                Completed => False,
+                                others => <>);
+                        begin
+                           Backends.Put_Object_Annotation_If_Supported
+                             (Store, Bucket, Key,
+                              US.To_String
+                                (Annotation_Request.Annotation_Name),
+                              Source, Options, Apps.Cancellation (X),
+                              Apps.Deadline (X), Info, Identity, Result,
+                              Annotation_Version_Selector);
+                           if Result = Success and then not Source.Completed
+                           then
+                              raise Program_Error with
+                                "backend committed an incomplete annotation";
+                           end if;
+                           if Result = Success then
+                              Set_Version_Header;
+                              Apps.Set_Header
+                                (X, "ETag",
+                                 '"' & US.To_String (Info.Entity_Tag) & '"');
+                              Set_Checksum_Headers (X, Info.Checksum);
+                              Apps.Respond (X, 200, "", "");
+                           else
+                              Send_Backend_Error
+                                (X, Result, False, Target_Text);
+                           end if;
+                        end;
+                     end;
+                  elsif Operation = Get_Object_Annotation then
+                     declare
+                        Sink : Annotation_Response_IO.Response_Sink;
+                        Presence : Object_Annotation_Presence;
+                        Info : Object_Annotation_Information;
+                     begin
+                        Backends.Get_Object_Annotation_If_Supported
+                          (Store, Bucket, Key,
+                           US.To_String
+                             (Annotation_Request.Annotation_Name),
+                           Sink, Apps.Cancellation (X), Apps.Deadline (X),
+                           Presence, Info, Identity, Result,
+                           Annotation_Version_Selector);
+                        if Result = Success
+                          and then Presence = Annotation_Absent
+                        then
+                           Send_Error
+                             (X, 404, "NoSuchAnnotation",
+                              "The specified annotation does not exist",
+                              Target_Text);
+                        elsif Result = Success
+                          and then Sink.Observed = Sink.Expected
+                        then
+                           Apps.End_Stream (X);
+                        elsif Result = Success then
+                           raise Program_Error with
+                             "backend returned an incomplete annotation";
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
+                     end;
+                  elsif Operation = Delete_Object_Annotation then
+                     declare
+                        Presence : Object_Annotation_Presence;
+                     begin
+                        Backends.Delete_Object_Annotation_If_Supported
+                          (Store, Bucket, Key,
+                           US.To_String
+                             (Annotation_Request.Annotation_Name),
+                           Conditions, Apps.Cancellation (X),
+                           Apps.Deadline (X), Presence, Identity, Result,
+                           Annotation_Version_Selector);
+                        if Result = Success
+                          and then Presence = Annotation_Absent
+                        then
+                           Send_Error
+                             (X, 404, "NoSuchAnnotation",
+                              "The specified annotation does not exist",
+                              Target_Text);
+                        elsif Result = Success then
+                           Set_Version_Header;
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
+                     end;
+                  else
+                     declare
+                        Prefix : constant String :=
+                          US.To_String
+                            (Annotation_Request.Annotation_Prefix);
+                        Version : constant String :=
+                          US.To_String (Annotation_Request.Version_ID);
+                        After : US.Unbounded_String;
+                        Page : Backends.Object_Annotation_Page;
+                        Wire : Annotations.Annotation_Page;
+                     begin
+                        if Annotation_Request.Has_Continuation_Token then
+                           declare
+                              Decoded : constant
+                                Annotations.Continuation_Result :=
+                                  Annotations.Decode_Continuation
+                                    (US.To_String
+                                       (Annotation_Request.
+                                          Continuation_Token),
+                                     Bucket, Key, Version, Prefix);
+                           begin
+                              if not Decoded.Valid then
+                                 Send_Error
+                                   (X, 400, "InvalidToken",
+                                    "The continuation token is invalid",
+                                    Target_Text);
+                                 return;
+                              end if;
+                              After := Decoded.After;
+                           end;
+                        end if;
+                        Backends.List_Object_Annotations_If_Supported
+                          (Store, Bucket, Key,
+                           (Prefix =>
+                              Annotation_Request.Annotation_Prefix,
+                            Has_After =>
+                              Annotation_Request.Has_Continuation_Token,
+                            After => After,
+                            Maximum => Backends.List_Limit
+                              (if Annotation_Request.Has_Maximum then
+                                 Annotation_Request.Maximum
+                               else
+                                 Annotations.Annotation_Result_Limit'Last)),
+                           Apps.Cancellation (X), Apps.Deadline (X), Page,
+                           Identity, Result, Annotation_Version_Selector);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                           return;
+                        end if;
+                        Wire.Has_Annotations := True;
+                        for Annotation of Page.Annotations loop
+                           declare
+                              Item : Annotations.Annotation_Entry;
+                           begin
+                              Item.Name := Annotation.Name;
+                              Item.Last_Modified := US.To_Unbounded_String
+                                (Last_Modified (Annotation.Info.Modified));
+                              Item.Entity_Tag :=
+                                (Is_Set => True,
+                                 Value => US.To_Unbounded_String
+                                   ('"' & US.To_String
+                                      (Annotation.Info.Entity_Tag) & '"'));
+                              Item.Replication :=
+                                (Is_Set => False,
+                                 Value => Annotations.Replication_Complete);
+                              Item.Size := Annotation.Info.Size;
+                              if Annotation.Info.Checksum.Algorithm /=
+                                No_Checksum
+                              then
+                                 Item.Checksums.Append
+                                   (Annotation_Algorithm
+                                      (Annotation.Info.Checksum.Algorithm));
+                              end if;
+                              Wire.Annotations.Append (Item);
+                           end;
+                        end loop;
+                        Wire.Bucket :=
+                          (Is_Set => True,
+                           Value => US.To_Unbounded_String (Bucket));
+                        Wire.Key :=
+                          (Is_Set => True,
+                           Value => US.To_Unbounded_String (Key));
+                        Wire.Annotation_Prefix :=
+                          (Is_Set =>
+                             Annotation_Request.Has_Annotation_Prefix,
+                           Value =>
+                             Annotation_Request.Annotation_Prefix);
+                        Wire.Max_Annotation_Results :=
+                          (Is_Set => Annotation_Request.Has_Maximum,
+                           Value => Annotation_Request.Maximum);
+                        Wire.Annotation_Count :=
+                          (Is_Set => True,
+                           Text => US.To_Unbounded_String
+                             (Ada.Strings.Fixed.Trim
+                                (Natural'Image
+                                   (Natural (Page.Annotations.Length)),
+                                 Ada.Strings.Both)));
+                        Wire.Continuation_Token :=
+                          (Is_Set =>
+                             Annotation_Request.Has_Continuation_Token,
+                           Value => Annotation_Request.Continuation_Token);
+                        Wire.Next_Continuation_Token :=
+                          (Is_Set => Page.Is_Truncated,
+                           Value =>
+                             (if Page.Is_Truncated then
+                                US.To_Unbounded_String
+                                  (Annotations.Encode_Continuation
+                                     (Bucket, Key, Version, Prefix,
+                                      US.To_String (Page.Next_After)))
+                              else US.Null_Unbounded_String));
+                        Set_Version_Header;
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Annotations.Serialize_List (Wire));
+                     end;
+                  end if;
                end;
 
             when Put_Object_Tagging | Get_Object_Tagging |
