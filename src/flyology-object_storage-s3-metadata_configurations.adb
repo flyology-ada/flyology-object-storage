@@ -655,6 +655,474 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
       end case;
    end End_Element;
 
+   type Request_Kind is
+     (Create_Request, Inventory_Update_Request, Journal_Update_Request,
+      Annotation_Update_Request);
+   type Request_Container_Kind is
+     (No_Request_Container, Request_Root_Container,
+      Request_Journal_Container, Request_Inventory_Container,
+      Request_Annotation_Container, Request_Expiration_Container,
+      Request_Encryption_Container);
+   type Request_Scalar_Kind is
+     (No_Request_Scalar, Request_Inventory_State_Scalar,
+      Request_Annotation_State_Scalar, Request_Annotation_Role_Scalar,
+      Request_Expiration_State_Scalar, Request_Expiration_Days_Scalar,
+      Request_Encryption_Algorithm_Scalar,
+      Request_Encryption_KMS_ARN_Scalar);
+
+   function Empty_Metadata_Configuration_Request
+     return Metadata_Configuration_Request is
+     --  Enum values are unreachable scratch state while their surrounding
+     --  presence flags are false. They are parser initialization only.
+     ((Journal =>
+         (Expiration =>
+            (Expiration => Expiration_Disabled,
+             Days =>
+               (Is_Set => False, Text => US.Null_Unbounded_String)),
+          Encryption =>
+            (Is_Set => False, Algorithm => Metadata_SSE_S3,
+             KMS_Key_ARN => Empty_Optional_String)),
+       Inventory =>
+         (Is_Set => False, Configuration_State => Inventory_Disabled,
+          Encryption =>
+            (Is_Set => False, Algorithm => Metadata_SSE_S3,
+             KMS_Key_ARN => Empty_Optional_String)),
+       Annotation =>
+         (Is_Set => False, Configuration_State => Annotation_Disabled,
+          Encryption =>
+            (Is_Set => False, Algorithm => Metadata_SSE_S3,
+             KMS_Key_ARN => Empty_Optional_String),
+          Role => Empty_Optional_String)));
+
+   type Metadata_Request_Handler (Kind : Request_Kind) is
+     new XML.Event_Handler with record
+      Depth                       : Natural := 0;
+      Root_Seen                   : Boolean := False;
+      Journal_Seen                : Boolean := False;
+      Inventory_Seen              : Boolean := False;
+      Annotation_Seen             : Boolean := False;
+      Journal_Expiration_Seen     : Boolean := False;
+      Journal_Encryption_Seen     : Boolean := False;
+      Inventory_State_Seen        : Boolean := False;
+      Inventory_Encryption_Seen   : Boolean := False;
+      Annotation_State_Seen       : Boolean := False;
+      Annotation_Encryption_Seen  : Boolean := False;
+      Annotation_Role_Seen        : Boolean := False;
+      Expiration_State_Seen       : Boolean := False;
+      Expiration_Days_Seen        : Boolean := False;
+      Encryption_Algorithm_Seen   : Boolean := False;
+      Encryption_KMS_ARN_Seen     : Boolean := False;
+      Namespace                   : Namespace_Style :=
+        Namespace_Not_Selected;
+      Container                   : Request_Container_Kind :=
+        No_Request_Container;
+      Parent_Container            : Request_Container_Kind :=
+        No_Request_Container;
+      Scalar                      : Request_Scalar_Kind := No_Request_Scalar;
+      Text_Value                  : US.Unbounded_String;
+      Value                       : Metadata_Configuration_Request :=
+        Empty_Metadata_Configuration_Request;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Metadata_Request_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Metadata_Request_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Metadata_Request_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Metadata_Request_Handler; Local_Name : String);
+
+   function Request_Root_Name (Kind : Request_Kind) return String is
+     (case Kind is
+         when Create_Request            => "MetadataConfiguration",
+         when Inventory_Update_Request  => "InventoryTableConfiguration",
+         when Journal_Update_Request    => "JournalTableConfiguration",
+         when Annotation_Update_Request => "AnnotationTableConfiguration");
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Metadata_Request_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      Style : constant Namespace_Style :=
+        (if Namespace_URI'Length = 0 then Unqualified
+         elsif Namespace_URI = "http://s3.amazonaws.com/doc/2006-03-01/"
+         then S3_Qualified
+         else Namespace_Not_Selected);
+   begin
+      if Attribute_Count /= 0
+        or else Style = Namespace_Not_Selected
+        or else (Item.Namespace /= Namespace_Not_Selected
+                 and then Item.Namespace /= Style)
+      then
+         raise Malformed_Metadata_Configuration with
+           "metadata request namespace or attributes are invalid";
+      end if;
+      Item.Namespace := Style;
+   end Start_Element_Details;
+
+   procedure Begin_Request_Scalar
+     (Item : in out Metadata_Request_Handler;
+      Kind : Request_Scalar_Kind) is
+   begin
+      Item.Scalar := Kind;
+      Item.Text_Value := US.Null_Unbounded_String;
+   end Begin_Request_Scalar;
+
+   procedure Begin_Request_Encryption
+     (Item : in out Metadata_Request_Handler) is
+   begin
+      Item.Parent_Container := Item.Container;
+      Item.Container := Request_Encryption_Container;
+      Item.Encryption_Algorithm_Seen := False;
+      Item.Encryption_KMS_ARN_Seen := False;
+      case Item.Parent_Container is
+         when Request_Journal_Container =>
+            Item.Value.Journal.Encryption.Is_Set := True;
+         when Request_Inventory_Container =>
+            Item.Value.Inventory.Encryption.Is_Set := True;
+         when Request_Annotation_Container =>
+            Item.Value.Annotation.Encryption.Is_Set := True;
+         when others =>
+            raise Malformed_Metadata_Configuration with
+              "metadata encryption outside a table configuration";
+      end case;
+   end Begin_Request_Encryption;
+
+   overriding procedure Start_Element
+     (Item : in out Metadata_Request_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Metadata_Configuration with
+           "metadata request depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen or else Local_Name /= Request_Root_Name (Item.Kind)
+         then
+            raise Malformed_Metadata_Configuration with
+              "invalid metadata request root";
+         end if;
+         Item.Root_Seen := True;
+         case Item.Kind is
+            when Create_Request =>
+               Item.Container := Request_Root_Container;
+            when Inventory_Update_Request =>
+               Item.Container := Request_Inventory_Container;
+               Item.Value.Inventory.Is_Set := True;
+            when Journal_Update_Request =>
+               Item.Container := Request_Journal_Container;
+            when Annotation_Update_Request =>
+               Item.Container := Request_Annotation_Container;
+               Item.Value.Annotation.Is_Set := True;
+         end case;
+         return;
+      elsif Item.Scalar /= No_Request_Scalar then
+         raise Malformed_Metadata_Configuration with
+           "nested metadata request scalar";
+      end if;
+
+      case Item.Container is
+         when Request_Root_Container =>
+            if Local_Name = "JournalTableConfiguration"
+              and then not Item.Journal_Seen
+            then
+               Item.Journal_Seen := True;
+               Item.Container := Request_Journal_Container;
+            elsif Local_Name = "InventoryTableConfiguration"
+              and then not Item.Inventory_Seen
+            then
+               Item.Inventory_Seen := True;
+               Item.Value.Inventory.Is_Set := True;
+               Item.Container := Request_Inventory_Container;
+            elsif Local_Name = "AnnotationTableConfiguration"
+              and then not Item.Annotation_Seen
+            then
+               Item.Annotation_Seen := True;
+               Item.Value.Annotation.Is_Set := True;
+               Item.Container := Request_Annotation_Container;
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate metadata request member";
+            end if;
+         when Request_Journal_Container =>
+            if Local_Name = "RecordExpiration"
+              and then not Item.Journal_Expiration_Seen
+            then
+               Item.Journal_Expiration_Seen := True;
+               Item.Parent_Container := Request_Journal_Container;
+               Item.Container := Request_Expiration_Container;
+            elsif Item.Kind = Create_Request
+              and then Local_Name = "EncryptionConfiguration"
+              and then not Item.Journal_Encryption_Seen
+            then
+               Item.Journal_Encryption_Seen := True;
+               Begin_Request_Encryption (Item);
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate metadata journal member";
+            end if;
+         when Request_Inventory_Container =>
+            if Local_Name = "ConfigurationState"
+              and then not Item.Inventory_State_Seen
+            then
+               Item.Inventory_State_Seen := True;
+               Begin_Request_Scalar
+                 (Item, Request_Inventory_State_Scalar);
+            elsif Local_Name = "EncryptionConfiguration"
+              and then not Item.Inventory_Encryption_Seen
+            then
+               Item.Inventory_Encryption_Seen := True;
+               Begin_Request_Encryption (Item);
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate metadata inventory member";
+            end if;
+         when Request_Annotation_Container =>
+            if Local_Name = "ConfigurationState"
+              and then not Item.Annotation_State_Seen
+            then
+               Item.Annotation_State_Seen := True;
+               Begin_Request_Scalar
+                 (Item, Request_Annotation_State_Scalar);
+            elsif Local_Name = "EncryptionConfiguration"
+              and then not Item.Annotation_Encryption_Seen
+            then
+               Item.Annotation_Encryption_Seen := True;
+               Begin_Request_Encryption (Item);
+            elsif Local_Name = "Role" and then not Item.Annotation_Role_Seen
+            then
+               Item.Annotation_Role_Seen := True;
+               Begin_Request_Scalar (Item, Request_Annotation_Role_Scalar);
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate metadata annotation member";
+            end if;
+         when Request_Expiration_Container =>
+            if Local_Name = "Expiration"
+              and then not Item.Expiration_State_Seen
+            then
+               Item.Expiration_State_Seen := True;
+               Begin_Request_Scalar
+                 (Item, Request_Expiration_State_Scalar);
+            elsif Local_Name = "Days" and then not Item.Expiration_Days_Seen
+            then
+               Item.Expiration_Days_Seen := True;
+               Begin_Request_Scalar (Item, Request_Expiration_Days_Scalar);
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate record-expiration member";
+            end if;
+         when Request_Encryption_Container =>
+            if Local_Name = "SseAlgorithm"
+              and then not Item.Encryption_Algorithm_Seen
+            then
+               Item.Encryption_Algorithm_Seen := True;
+               Begin_Request_Scalar
+                 (Item, Request_Encryption_Algorithm_Scalar);
+            elsif Local_Name = "KmsKeyArn"
+              and then not Item.Encryption_KMS_ARN_Seen
+            then
+               Item.Encryption_KMS_ARN_Seen := True;
+               Begin_Request_Scalar
+                 (Item, Request_Encryption_KMS_ARN_Scalar);
+            else
+               raise Malformed_Metadata_Configuration with
+                 "unknown or duplicate metadata encryption member";
+            end if;
+         when No_Request_Container =>
+            raise Malformed_Metadata_Configuration with
+              "metadata request member outside a container";
+      end case;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Metadata_Request_Handler; Value : String) is
+   begin
+      if Item.Scalar /= No_Request_Scalar then
+         US.Append (Item.Text_Value, Value);
+      elsif Item.Depth > 0 then
+         Require_Whitespace (Value);
+      else
+         raise Malformed_Metadata_Configuration with
+           "metadata request text outside modeled member";
+      end if;
+   end Text;
+
+   function Request_Scalar_Name (Kind : Request_Scalar_Kind) return String is
+     (case Kind is
+         when Request_Inventory_State_Scalar |
+              Request_Annotation_State_Scalar => "ConfigurationState",
+         when Request_Annotation_Role_Scalar => "Role",
+         when Request_Expiration_State_Scalar => "Expiration",
+         when Request_Expiration_Days_Scalar => "Days",
+         when Request_Encryption_Algorithm_Scalar => "SseAlgorithm",
+         when Request_Encryption_KMS_ARN_Scalar => "KmsKeyArn",
+         when No_Request_Scalar => "");
+
+   procedure Store_Request_Encryption_Algorithm
+     (Item  : in out Metadata_Request_Handler;
+      Value : Metadata_Table_SSE_Algorithm) is
+   begin
+      case Item.Parent_Container is
+         when Request_Journal_Container =>
+            Item.Value.Journal.Encryption.Algorithm := Value;
+         when Request_Inventory_Container =>
+            Item.Value.Inventory.Encryption.Algorithm := Value;
+         when Request_Annotation_Container =>
+            Item.Value.Annotation.Encryption.Algorithm := Value;
+         when others =>
+            raise Malformed_Metadata_Configuration with
+              "metadata encryption scalar outside encryption";
+      end case;
+   end Store_Request_Encryption_Algorithm;
+
+   procedure Store_Request_Encryption_KMS_ARN
+     (Item : in out Metadata_Request_Handler) is
+      Value : constant Optional_String := Optional (Item.Text_Value);
+   begin
+      case Item.Parent_Container is
+         when Request_Journal_Container =>
+            Item.Value.Journal.Encryption.KMS_Key_ARN := Value;
+         when Request_Inventory_Container =>
+            Item.Value.Inventory.Encryption.KMS_Key_ARN := Value;
+         when Request_Annotation_Container =>
+            Item.Value.Annotation.Encryption.KMS_Key_ARN := Value;
+         when others =>
+            raise Malformed_Metadata_Configuration with
+              "metadata encryption scalar outside encryption";
+      end case;
+   end Store_Request_Encryption_KMS_ARN;
+
+   procedure Store_Request_Scalar
+     (Item : in out Metadata_Request_Handler) is
+      Value : constant String := US.To_String (Item.Text_Value);
+   begin
+      case Item.Scalar is
+         when Request_Inventory_State_Scalar =>
+            Item.Value.Inventory.Configuration_State :=
+              (if Value = "ENABLED" then Inventory_Enabled
+               elsif Value = "DISABLED" then Inventory_Disabled
+               else raise Malformed_Metadata_Configuration with
+                 "invalid inventory-table configuration state");
+         when Request_Annotation_State_Scalar =>
+            Item.Value.Annotation.Configuration_State :=
+              (if Value = "ENABLED" then Annotation_Enabled
+               elsif Value = "DISABLED" then Annotation_Disabled
+               else raise Malformed_Metadata_Configuration with
+                 "invalid annotation-table configuration state");
+         when Request_Annotation_Role_Scalar =>
+            Item.Value.Annotation.Role := Optional (Item.Text_Value);
+         when Request_Expiration_State_Scalar =>
+            Item.Value.Journal.Expiration.Expiration :=
+              (if Value = "ENABLED" then Expiration_Enabled
+               elsif Value = "DISABLED" then Expiration_Disabled
+               else raise Malformed_Metadata_Configuration with
+                 "invalid record-expiration state");
+         when Request_Expiration_Days_Scalar =>
+            if not Valid_Integer_Text (Value) then
+               raise Malformed_Metadata_Configuration with
+                 "invalid record-expiration day count";
+            end if;
+            Item.Value.Journal.Expiration.Days :=
+              (Is_Set => True, Text => Item.Text_Value);
+         when Request_Encryption_Algorithm_Scalar =>
+            Store_Request_Encryption_Algorithm
+              (Item,
+               (if Value = "aws:kms" then Metadata_SSE_KMS
+                elsif Value = "AES256" then Metadata_SSE_S3
+                else raise Malformed_Metadata_Configuration with
+                  "invalid metadata-table encryption algorithm"));
+         when Request_Encryption_KMS_ARN_Scalar =>
+            Store_Request_Encryption_KMS_ARN (Item);
+         when No_Request_Scalar =>
+            raise Malformed_Metadata_Configuration with
+              "metadata request close without scalar";
+      end case;
+      Item.Scalar := No_Request_Scalar;
+      Item.Text_Value := US.Null_Unbounded_String;
+   end Store_Request_Scalar;
+
+   overriding procedure End_Element
+     (Item : in out Metadata_Request_Handler; Local_Name : String) is
+   begin
+      if Item.Scalar /= No_Request_Scalar then
+         if Local_Name /= Request_Scalar_Name (Item.Scalar) then
+            raise Malformed_Metadata_Configuration with
+              "mismatched metadata request scalar close";
+         end if;
+         Store_Request_Scalar (Item);
+         Item.Depth := Item.Depth - 1;
+         return;
+      end if;
+
+      case Item.Container is
+         when Request_Expiration_Container =>
+            if Local_Name /= "RecordExpiration"
+              or else not Item.Expiration_State_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete record-expiration request";
+            end if;
+            Item.Container := Item.Parent_Container;
+            Item.Parent_Container := No_Request_Container;
+         when Request_Encryption_Container =>
+            if Local_Name /= "EncryptionConfiguration"
+              or else not Item.Encryption_Algorithm_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete metadata encryption request";
+            end if;
+            Item.Container := Item.Parent_Container;
+            Item.Parent_Container := No_Request_Container;
+         when Request_Journal_Container =>
+            if Local_Name /= "JournalTableConfiguration"
+              or else not Item.Journal_Expiration_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete metadata journal request";
+            end if;
+            Item.Container :=
+              (if Item.Kind = Create_Request
+               then Request_Root_Container else No_Request_Container);
+         when Request_Inventory_Container =>
+            if Local_Name /= "InventoryTableConfiguration"
+              or else not Item.Inventory_State_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete metadata inventory request";
+            end if;
+            Item.Container :=
+              (if Item.Kind = Create_Request
+               then Request_Root_Container else No_Request_Container);
+         when Request_Annotation_Container =>
+            if Local_Name /= "AnnotationTableConfiguration"
+              or else not Item.Annotation_State_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete metadata annotation request";
+            end if;
+            Item.Container :=
+              (if Item.Kind = Create_Request
+               then Request_Root_Container else No_Request_Container);
+         when Request_Root_Container =>
+            if Local_Name /= "MetadataConfiguration"
+              or else not Item.Journal_Seen
+            then
+               raise Malformed_Metadata_Configuration with
+                 "incomplete metadata create request";
+            end if;
+            Item.Container := No_Request_Container;
+         when No_Request_Container =>
+            raise Malformed_Metadata_Configuration with
+              "metadata request close without open container";
+      end case;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Metadata_Configuration
@@ -672,6 +1140,47 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
          raise Malformed_Metadata_Configuration with
            "malformed metadata-configuration XML";
    end Parse;
+
+   function Parse_Request
+     (Document : String;
+      Limits   : XML.Parse_Limits;
+      Kind     : Request_Kind) return Metadata_Configuration_Request
+   is
+      Handler : aliased Metadata_Request_Handler (Kind);
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0 or else not Handler.Root_Seen then
+         raise Malformed_Metadata_Configuration with
+           "incomplete metadata request document";
+      end if;
+      return Handler.Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Metadata_Configuration with
+           "malformed metadata request XML";
+   end Parse_Request;
+
+   function Parse_Create
+     (Document : String; Limits : XML.Parse_Limits)
+      return Metadata_Configuration_Request is
+     (Parse_Request (Document, Limits, Create_Request));
+
+   function Parse_Update_Inventory
+     (Document : String; Limits : XML.Parse_Limits)
+      return Inventory_Table_Configuration is
+     (Parse_Request (Document, Limits, Inventory_Update_Request).Inventory);
+
+   function Parse_Update_Journal
+     (Document : String; Limits : XML.Parse_Limits)
+      return Record_Expiration is
+     (Parse_Request (Document, Limits, Journal_Update_Request)
+        .Journal.Expiration);
+
+   function Parse_Update_Annotation
+     (Document : String; Limits : XML.Parse_Limits)
+      return Annotation_Table_Configuration is
+     (Parse_Request (Document, Limits, Annotation_Update_Request)
+        .Annotation);
 
    function Annotation_State_Image
      (Value : Annotation_Configuration_State) return String is
@@ -696,6 +1205,111 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
      (case Value is
          when Metadata_SSE_KMS => "aws:kms",
          when Metadata_SSE_S3  => "AES256");
+
+   function S3_Tables_Bucket_Type_Image
+     (Value : S3_Tables_Bucket_Type) return String is
+     (case Value is
+         when AWS_Table_Bucket      => "aws",
+         when Customer_Table_Bucket => "customer");
+
+   function Valid_Optional_String (Value : Optional_String) return Boolean is
+     (Value.Is_Set or else US.Length (Value.Value) = 0);
+
+   function Valid_Optional_Integer
+     (Value : Optional_Integer_Text) return Boolean is
+     ((Value.Is_Set
+       and then Valid_Integer_Text (US.To_String (Value.Text)))
+      or else (not Value.Is_Set and then US.Length (Value.Text) = 0));
+
+   function Valid_Error (Value : Error_Details) return Boolean is
+     (Valid_Optional_String (Value.Code)
+      and then Valid_Optional_String (Value.Message)
+      and then (Value.Is_Set
+                or else (not Value.Code.Is_Set
+                         and then not Value.Message.Is_Set)));
+
+   procedure Require_Result_Invariants (Value : Metadata_Configuration) is
+   begin
+      if not Valid_Optional_String (Value.Destination.Table_Bucket_ARN)
+        or else not Valid_Optional_String (Value.Destination.Table_Namespace)
+      then
+         raise Malformed_Metadata_Configuration with
+           "invalid absent metadata destination member";
+      elsif not Value.Journal.Is_Set
+        and then
+          (US.Length (Value.Journal.Table_Status) /= 0
+           or else US.Length (Value.Journal.Table_Name) /= 0
+           or else Value.Journal.Error.Is_Set
+           or else Value.Journal.Table_ARN.Is_Set
+           or else Value.Journal.Expiration.Days.Is_Set)
+      then
+         raise Malformed_Metadata_Configuration with
+           "absent metadata journal result contains members";
+      elsif not Valid_Error (Value.Journal.Error)
+        or else not Valid_Optional_String (Value.Journal.Table_ARN)
+        or else not Valid_Optional_Integer
+          (Value.Journal.Expiration.Days)
+      then
+         raise Malformed_Metadata_Configuration with
+           "invalid metadata journal result member";
+      elsif not Value.Inventory.Is_Set
+        and then
+          (Value.Inventory.Table_Status.Is_Set
+           or else Value.Inventory.Error.Is_Set
+           or else Value.Inventory.Table_Name.Is_Set
+           or else Value.Inventory.Table_ARN.Is_Set)
+      then
+         raise Malformed_Metadata_Configuration with
+           "absent metadata inventory result contains members";
+      elsif not Valid_Optional_String (Value.Inventory.Table_Status)
+        or else not Valid_Error (Value.Inventory.Error)
+        or else not Valid_Optional_String (Value.Inventory.Table_Name)
+        or else not Valid_Optional_String (Value.Inventory.Table_ARN)
+      then
+         raise Malformed_Metadata_Configuration with
+           "invalid metadata inventory result member";
+      elsif not Value.Annotation.Is_Set
+        and then
+          (Value.Annotation.Table_Status.Is_Set
+           or else Value.Annotation.Error.Is_Set
+           or else Value.Annotation.Table_Name.Is_Set
+           or else Value.Annotation.Table_ARN.Is_Set
+           or else Value.Annotation.Role.Is_Set)
+      then
+         raise Malformed_Metadata_Configuration with
+           "absent metadata annotation result contains members";
+      elsif not Valid_Optional_String (Value.Annotation.Table_Status)
+        or else not Valid_Error (Value.Annotation.Error)
+        or else not Valid_Optional_String (Value.Annotation.Table_Name)
+        or else not Valid_Optional_String (Value.Annotation.Table_ARN)
+        or else not Valid_Optional_String (Value.Annotation.Role)
+      then
+         raise Malformed_Metadata_Configuration with
+           "invalid metadata annotation result member";
+      end if;
+   end Require_Result_Invariants;
+
+   procedure Write_Optional_String
+     (Item  : in out XML_Writers.Writer;
+      Name  : String;
+      Value : Optional_String) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Text_Element
+           (Item, Name, US.To_String (Value.Value));
+      end if;
+   end Write_Optional_String;
+
+   procedure Write_Error
+     (Item : in out XML_Writers.Writer; Value : Error_Details) is
+   begin
+      if Value.Is_Set then
+         XML_Writers.Start_Element (Item, "Error");
+         Write_Optional_String (Item, "ErrorCode", Value.Code);
+         Write_Optional_String (Item, "ErrorMessage", Value.Message);
+         XML_Writers.End_Element (Item, "Error");
+      end if;
+   end Write_Error;
 
    procedure Write_Encryption
      (Item  : in out XML_Writers.Writer;
@@ -772,6 +1386,89 @@ package body Flyology.Object_Storage.S3.Metadata_Configurations is
          raise Malformed_Metadata_Configuration with
            "metadata serialization violates caller limits";
    end Serialize_Create;
+
+   function Serialize_Result
+     (Value  : Metadata_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+   begin
+      Require_Result_Invariants (Value);
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "GetBucketMetadataConfigurationResult",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      XML_Writers.Start_Element (Item, "MetadataConfigurationResult");
+      XML_Writers.Start_Element (Item, "DestinationResult");
+      if Value.Destination.Table_Bucket_Type.Is_Set then
+         XML_Writers.Text_Element
+           (Item, "TableBucketType",
+            S3_Tables_Bucket_Type_Image
+              (Value.Destination.Table_Bucket_Type.Value));
+      end if;
+      Write_Optional_String
+        (Item, "TableBucketArn", Value.Destination.Table_Bucket_ARN);
+      Write_Optional_String
+        (Item, "TableNamespace", Value.Destination.Table_Namespace);
+      XML_Writers.End_Element (Item, "DestinationResult");
+
+      if Value.Journal.Is_Set then
+         XML_Writers.Start_Element
+           (Item, "JournalTableConfigurationResult");
+         XML_Writers.Text_Element
+           (Item, "TableStatus", US.To_String (Value.Journal.Table_Status));
+         Write_Error (Item, Value.Journal.Error);
+         XML_Writers.Text_Element
+           (Item, "TableName", US.To_String (Value.Journal.Table_Name));
+         Write_Optional_String (Item, "TableArn", Value.Journal.Table_ARN);
+         Write_Record_Expiration (Item, Value.Journal.Expiration);
+         XML_Writers.End_Element
+           (Item, "JournalTableConfigurationResult");
+      end if;
+
+      if Value.Inventory.Is_Set then
+         XML_Writers.Start_Element
+           (Item, "InventoryTableConfigurationResult");
+         XML_Writers.Text_Element
+           (Item, "ConfigurationState",
+            Inventory_State_Image (Value.Inventory.Configuration_State));
+         Write_Optional_String
+           (Item, "TableStatus", Value.Inventory.Table_Status);
+         Write_Error (Item, Value.Inventory.Error);
+         Write_Optional_String
+           (Item, "TableName", Value.Inventory.Table_Name);
+         Write_Optional_String
+           (Item, "TableArn", Value.Inventory.Table_ARN);
+         XML_Writers.End_Element
+           (Item, "InventoryTableConfigurationResult");
+      end if;
+
+      if Value.Annotation.Is_Set then
+         XML_Writers.Start_Element
+           (Item, "AnnotationTableConfigurationResult");
+         XML_Writers.Text_Element
+           (Item, "ConfigurationState",
+            Annotation_State_Image (Value.Annotation.Configuration_State));
+         Write_Optional_String
+           (Item, "TableStatus", Value.Annotation.Table_Status);
+         Write_Error (Item, Value.Annotation.Error);
+         Write_Optional_String
+           (Item, "TableName", Value.Annotation.Table_Name);
+         Write_Optional_String
+           (Item, "TableArn", Value.Annotation.Table_ARN);
+         Write_Optional_String (Item, "Role", Value.Annotation.Role);
+         XML_Writers.End_Element
+           (Item, "AnnotationTableConfigurationResult");
+      end if;
+
+      XML_Writers.End_Element (Item, "MetadataConfigurationResult");
+      return XML_Writers.Finish
+        (Item, "GetBucketMetadataConfigurationResult");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Configuration with
+           "metadata result serialization violates caller limits";
+   end Serialize_Result;
 
    function Serialize_Update_Inventory
      (Value  : Inventory_Table_Configuration;

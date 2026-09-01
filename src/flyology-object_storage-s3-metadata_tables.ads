@@ -68,11 +68,21 @@ package Flyology.Object_Storage.S3.Metadata_Tables is
    --  @param Document Complete same-response XML document
    --  @param Limits Caller-selected shared S3 XML resource limits
    --  @return Present result with every modeled member preserved
-   --  @exception Malformed_Metadata_Table Document violates the pinned model
+   --  @exception Malformed_Metadata_Table Document violates model or limits
    function Parse
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Metadata_Table_Configuration_Result;
+
+   --  Parse one exact CreateBucketMetadataTableConfiguration request.
+   --  @param Document Complete same-request XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Required exact destination strings
+   --  @exception Malformed_Metadata_Table Document violates model or limits
+   function Parse_Create
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return S3_Tables_Destination;
 
    --  Serialize one exact CreateBucketMetadataTableConfiguration payload.
    --  @param Value Required destination strings
@@ -81,6 +91,16 @@ package Flyology.Object_Storage.S3.Metadata_Tables is
    --  @exception Malformed_Metadata_Table Encoded document exceeds limits
    function Serialize_Create
      (Value  : S3_Tables_Destination;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
+
+   --  Serialize one exact GetBucketMetadataTableConfiguration result.
+   --  An absent result remains an exactly empty response body.
+   --  @param Value Presence-preserving provider result
+   --  @param Limits Caller-selected document serialization limits
+   --  @return Exact bounded result XML or empty bytes when absent
+   --  @exception Malformed_Metadata_Table Value violates model or limits
+   function Serialize_Result
+     (Value  : Metadata_Table_Configuration_Result;
       Limits : XML.Parse_Limits := XML.Default_Limits) return String;
 
 end Flyology.Object_Storage.S3.Metadata_Tables;

@@ -36,6 +36,8 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Metadata_Configurations;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Object_Reads;
@@ -20278,6 +20280,312 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Low_Level_Object_Tagging;
 
+   procedure Check_Metadata_Configuration_Codecs
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Metadata renames
+        Flyology.Object_Storage.S3.Metadata_Configurations;
+      package Tables renames Flyology.Object_Storage.S3.Metadata_Tables;
+      package US renames Ada.Strings.Unbounded;
+      package XML renames Flyology.Object_Storage.S3.XML;
+
+      use type Metadata.Annotation_Configuration_State;
+      use type Metadata.Expiration_State;
+      use type Metadata.Inventory_Configuration_State;
+      use type Metadata.Metadata_Table_SSE_Algorithm;
+      use type Metadata.S3_Tables_Bucket_Type;
+
+      procedure Expect_Invalid_Create (Document : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Metadata.Metadata_Configuration_Request :=
+                 Metadata.Parse_Create (Document, XML.Default_Limits);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Metadata.Malformed_Metadata_Configuration =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid metadata create payload was accepted");
+      end Expect_Invalid_Create;
+
+      Request : constant Metadata.Metadata_Configuration_Request :=
+        (Journal =>
+           (Expiration =>
+              (Expiration => Metadata.Expiration_Enabled,
+               Days =>
+                 (Is_Set => True,
+                  Text => US.To_Unbounded_String ("30"))),
+            Encryption =>
+              (Is_Set => True,
+               Algorithm => Metadata.Metadata_SSE_KMS,
+               KMS_Key_ARN =>
+                 (Is_Set => True,
+                  Value => US.To_Unbounded_String ("kms&amp;<key>")))),
+         Inventory =>
+           (Is_Set => True,
+            Configuration_State => Metadata.Inventory_Enabled,
+            Encryption =>
+              (Is_Set => True,
+               Algorithm => Metadata.Metadata_SSE_S3,
+               KMS_Key_ARN =>
+                 (Is_Set => False,
+                  Value => US.Null_Unbounded_String))),
+         Annotation =>
+           (Is_Set => True,
+            Configuration_State => Metadata.Annotation_Disabled,
+            Encryption =>
+              (Is_Set => False,
+               Algorithm => Metadata.Metadata_SSE_S3,
+               KMS_Key_ARN =>
+                 (Is_Set => False,
+                  Value => US.Null_Unbounded_String)),
+            Role =>
+              (Is_Set => True,
+               Value => US.To_Unbounded_String ("role&amp;<value>"))));
+      Parsed_Request : constant Metadata.Metadata_Configuration_Request :=
+        Metadata.Parse_Create
+          (Metadata.Serialize_Create (Request, XML.Default_Limits),
+           XML.Default_Limits);
+   begin
+      Assert
+        (Parsed_Request.Journal.Expiration.Expiration =
+           Metadata.Expiration_Enabled
+         and then Parsed_Request.Journal.Expiration.Days.Is_Set
+         and then US.To_String
+           (Parsed_Request.Journal.Expiration.Days.Text) = "30"
+         and then Parsed_Request.Journal.Encryption.Is_Set
+         and then Parsed_Request.Journal.Encryption.Algorithm =
+           Metadata.Metadata_SSE_KMS
+         and then Parsed_Request.Inventory.Is_Set
+         and then Parsed_Request.Inventory.Configuration_State =
+           Metadata.Inventory_Enabled
+         and then Parsed_Request.Annotation.Is_Set
+         and then Parsed_Request.Annotation.Configuration_State =
+           Metadata.Annotation_Disabled
+         and then Parsed_Request.Annotation.Role.Is_Set
+         and then US.To_String (Parsed_Request.Annotation.Role.Value) =
+           "role&amp;<value>",
+         "metadata create request round trip");
+
+      declare
+         Inventory : constant Metadata.Inventory_Table_Configuration :=
+           Metadata.Parse_Update_Inventory
+             (Metadata.Serialize_Update_Inventory
+                (Request.Inventory, XML.Default_Limits),
+              XML.Default_Limits);
+         Journal : constant Metadata.Record_Expiration :=
+           Metadata.Parse_Update_Journal
+             (Metadata.Serialize_Update_Journal
+                (Request.Journal.Expiration, XML.Default_Limits),
+              XML.Default_Limits);
+         Annotation : constant Metadata.Annotation_Table_Configuration :=
+           Metadata.Parse_Update_Annotation
+             (Metadata.Serialize_Update_Annotation
+                (Request.Annotation, XML.Default_Limits),
+              XML.Default_Limits);
+      begin
+         Assert
+           (Inventory.Is_Set
+            and then Inventory.Configuration_State =
+              Metadata.Inventory_Enabled
+            and then Journal.Expiration = Metadata.Expiration_Enabled
+            and then Journal.Days.Is_Set
+            and then Annotation.Is_Set
+            and then Annotation.Configuration_State =
+              Metadata.Annotation_Disabled
+            and then Annotation.Role.Is_Set,
+            "metadata update request round trips");
+      end;
+
+      Expect_Invalid_Create ("<InventoryTableConfiguration/>");
+      Expect_Invalid_Create
+        ("<MetadataConfiguration>" &
+         "<JournalTableConfiguration><RecordExpiration>" &
+         "<Expiration>ENABLED</Expiration></RecordExpiration>" &
+         "</JournalTableConfiguration><JournalTableConfiguration>" &
+         "<RecordExpiration><Expiration>DISABLED</Expiration>" &
+         "</RecordExpiration></JournalTableConfiguration>" &
+         "</MetadataConfiguration>");
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Metadata.Record_Expiration :=
+                 Metadata.Parse_Update_Journal
+                   ("<JournalTableConfiguration>" &
+                    "<RecordExpiration><Expiration>ENABLED</Expiration>" &
+                    "</RecordExpiration><EncryptionConfiguration>" &
+                    "<SseAlgorithm>AES256</SseAlgorithm>" &
+                    "</EncryptionConfiguration>" &
+                    "</JournalTableConfiguration>",
+                    XML.Default_Limits);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Metadata.Malformed_Metadata_Configuration =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "journal update accepted create-only encryption");
+      end;
+
+      declare
+         Document : constant String :=
+           "<GetBucketMetadataConfigurationResult>" &
+           "<MetadataConfigurationResult><DestinationResult>" &
+           "<TableBucketType>customer</TableBucketType>" &
+           "<TableBucketArn>bucket&amp;arn</TableBucketArn>" &
+           "<TableNamespace>namespace</TableNamespace>" &
+           "</DestinationResult><JournalTableConfigurationResult>" &
+           "<TableStatus>ACTIVE</TableStatus>" &
+           "<TableName>journal</TableName><RecordExpiration>" &
+           "<Expiration>ENABLED</Expiration><Days>30</Days>" &
+           "</RecordExpiration></JournalTableConfigurationResult>" &
+           "<InventoryTableConfigurationResult>" &
+           "<ConfigurationState>ENABLED</ConfigurationState>" &
+           "</InventoryTableConfigurationResult>" &
+           "<AnnotationTableConfigurationResult>" &
+           "<ConfigurationState>DISABLED</ConfigurationState>" &
+           "<Role>role&amp;value</Role>" &
+           "</AnnotationTableConfigurationResult>" &
+           "</MetadataConfigurationResult>" &
+           "</GetBucketMetadataConfigurationResult>";
+         Parsed : constant Metadata.Metadata_Configuration :=
+           Metadata.Parse (Document, XML.Default_Limits);
+         Round_Trip : constant Metadata.Metadata_Configuration :=
+           Metadata.Parse
+             (Metadata.Serialize_Result (Parsed, XML.Default_Limits),
+              XML.Default_Limits);
+      begin
+         Assert
+           (Round_Trip.Destination.Table_Bucket_ARN.Is_Set
+            and then US.To_String
+              (Round_Trip.Destination.Table_Bucket_ARN.Value) = "bucket&arn"
+            and then Round_Trip.Destination.Table_Bucket_Type.Is_Set
+            and then Round_Trip.Destination.Table_Bucket_Type.Value =
+              Metadata.Customer_Table_Bucket
+            and then Round_Trip.Destination.Table_Namespace.Is_Set
+            and then US.To_String
+              (Round_Trip.Destination.Table_Namespace.Value) = "namespace"
+            and then Round_Trip.Journal.Is_Set
+            and then US.To_String (Round_Trip.Journal.Table_Status) =
+              "ACTIVE"
+            and then US.To_String (Round_Trip.Journal.Table_Name) = "journal"
+            and then Round_Trip.Journal.Expiration.Expiration =
+              Metadata.Expiration_Enabled
+            and then Round_Trip.Journal.Expiration.Days.Is_Set
+            and then US.To_String
+              (Round_Trip.Journal.Expiration.Days.Text) = "30"
+            and then Round_Trip.Inventory.Is_Set
+            and then Round_Trip.Inventory.Configuration_State =
+              Metadata.Inventory_Enabled
+            and then Round_Trip.Annotation.Is_Set
+            and then Round_Trip.Annotation.Configuration_State =
+              Metadata.Annotation_Disabled
+            and then Round_Trip.Annotation.Role.Is_Set
+            and then US.To_String (Round_Trip.Annotation.Role.Value) =
+              "role&value",
+            "metadata result round trip");
+      end;
+
+      declare
+         Destination : constant Tables.S3_Tables_Destination :=
+           (Table_Bucket_ARN => US.To_Unbounded_String ("bucket&arn"),
+            Table_Name => US.To_Unbounded_String ("table<name>"));
+         Parsed : constant Tables.S3_Tables_Destination :=
+           Tables.Parse_Create (Tables.Serialize_Create (Destination));
+         Result : constant Tables.Metadata_Table_Configuration_Result :=
+           (Is_Set => True,
+            Destination =>
+              (Table_Bucket_ARN => US.To_Unbounded_String ("bucket&arn"),
+               Table_Name => US.To_Unbounded_String ("table"),
+               Table_ARN => US.To_Unbounded_String ("table&arn"),
+               Table_Namespace => US.To_Unbounded_String ("namespace")),
+            Status => US.To_Unbounded_String ("READY"),
+            Error =>
+              (Is_Set => True,
+               Code =>
+                 (Is_Set => True,
+                  Value => US.To_Unbounded_String ("notice")),
+               Message =>
+                 (Is_Set => False,
+                  Value => US.Null_Unbounded_String)));
+         Round_Trip : constant Tables.Metadata_Table_Configuration_Result :=
+           Tables.Parse (Tables.Serialize_Result (Result));
+         Absent : constant Tables.Metadata_Table_Configuration_Result :=
+           (Is_Set => False, others => <>);
+      begin
+         Assert
+           (US.To_String (Parsed.Table_Bucket_ARN) = "bucket&arn"
+            and then US.To_String (Parsed.Table_Name) = "table<name>",
+            "metadata-table create request round trip");
+         Assert
+           (Round_Trip.Is_Set
+            and then US.To_String (Round_Trip.Destination.Table_ARN) =
+              "table&arn"
+            and then Round_Trip.Error.Is_Set
+            and then Round_Trip.Error.Code.Is_Set
+            and then US.To_String (Round_Trip.Error.Code.Value) = "notice",
+            "metadata-table result round trip");
+         Assert
+           (Tables.Serialize_Result (Absent) = "",
+            "absent metadata-table result gained a body");
+      end;
+
+      declare
+         Invalid : Tables.Metadata_Table_Configuration_Result :=
+           (Is_Set => False, others => <>);
+         Raised : Boolean := False;
+      begin
+         Invalid.Status := US.To_Unbounded_String ("hidden");
+         begin
+            declare
+               Ignored : constant String := Tables.Serialize_Result (Invalid);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tables.Malformed_Metadata_Table =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "absent metadata-table result discarded hidden state");
+      end;
+
+      declare
+         Invalid : Tables.Metadata_Table_Configuration_Result :=
+           (Is_Set => False, others => <>);
+         Raised : Boolean := False;
+      begin
+         Invalid.Error.Is_Set := True;
+         begin
+            declare
+               Ignored : constant String := Tables.Serialize_Result (Invalid);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tables.Malformed_Metadata_Table =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "absent metadata-table result discarded present error");
+      end;
+   end Check_Metadata_Configuration_Codecs;
+
    procedure Check_Bucket_Versioning (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -21194,6 +21502,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.bucket-versioning-core",
             Check_Bucket_Versioning'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.metadata-configuration-codecs",
+            Check_Metadata_Configuration_Codecs'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.generated-model-exhaustive",

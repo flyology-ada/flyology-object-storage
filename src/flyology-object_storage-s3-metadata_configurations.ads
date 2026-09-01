@@ -205,18 +205,73 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
    --  @param Document Complete same-response XML document
    --  @param Limits Caller-selected shared S3 XML resource limits
    --  @return Complete presence-preserving metadata configuration
-   --  @exception Malformed_Metadata_Configuration Document violates model
+   --  @exception Malformed_Metadata_Configuration Document violates model or
+   --  caller limits
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Metadata_Configuration;
+
+   --  Parse one exact CreateBucketMetadataConfiguration request payload.
+   --  @param Document Complete same-request XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Complete presence-preserving metadata configuration request
+   --  @exception Malformed_Metadata_Configuration Document violates model or
+   --  caller limits
+   function Parse_Create
+     (Document : String; Limits : XML.Parse_Limits)
+      return Metadata_Configuration_Request;
+
+   --  Parse one exact UpdateBucketMetadataInventoryTableConfiguration
+   --  request payload.
+   --  @param Document Complete same-request XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Present inventory-table configuration update
+   --  @exception Malformed_Metadata_Configuration Document violates model or
+   --  caller limits
+   function Parse_Update_Inventory
+     (Document : String; Limits : XML.Parse_Limits)
+      return Inventory_Table_Configuration;
+
+   --  Parse one exact UpdateBucketMetadataJournalTableConfiguration request
+   --  payload.
+   --  @param Document Complete same-request XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Complete record-expiration update
+   --  @exception Malformed_Metadata_Configuration Document violates model or
+   --  caller limits
+   function Parse_Update_Journal
+     (Document : String; Limits : XML.Parse_Limits)
+      return Record_Expiration;
+
+   --  Parse one exact UpdateBucketMetadataAnnotationTableConfiguration
+   --  request payload.
+   --  @param Document Complete same-request XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Present annotation-table configuration update
+   --  @exception Malformed_Metadata_Configuration Document violates model or
+   --  caller limits
+   function Parse_Update_Annotation
+     (Document : String; Limits : XML.Parse_Limits)
+      return Annotation_Table_Configuration;
 
    --  Serialize one exact CreateBucketMetadataConfiguration payload.
    --  @param Value Complete caller-selected metadata configuration
    --  @param Limits Caller-selected XML serialization limits
    --  @return Exact namespaced REST/XML request payload
-   --  @exception Malformed_Metadata_Configuration Value violates the model
+   --  @exception Malformed_Metadata_Configuration Value violates model or
+   --  caller limits
    function Serialize_Create
      (Value  : Metadata_Configuration_Request;
+      Limits : XML.Parse_Limits) return String;
+
+   --  Serialize one exact GetBucketMetadataConfiguration result payload.
+   --  @param Value Complete provider-supplied metadata configuration result
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML result payload
+   --  @exception Malformed_Metadata_Configuration Value violates model or
+   --  caller limits
+   function Serialize_Result
+     (Value  : Metadata_Configuration;
       Limits : XML.Parse_Limits) return String;
 
    --  Serialize one exact UpdateBucketMetadataInventoryTableConfiguration
@@ -225,7 +280,8 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
    --  @param Value Complete caller-selected inventory-table update
    --  @param Limits Caller-selected XML serialization limits
    --  @return Exact namespaced REST/XML request payload
-   --  @exception Malformed_Metadata_Configuration Value violates the model
+   --  @exception Malformed_Metadata_Configuration Value violates model or
+   --  caller limits
    function Serialize_Update_Inventory
      (Value  : Inventory_Table_Configuration;
       Limits : XML.Parse_Limits) return String;
@@ -235,7 +291,8 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
    --  @param Value Complete caller-selected record-expiration update
    --  @param Limits Caller-selected XML serialization limits
    --  @return Exact namespaced REST/XML request payload
-   --  @exception Malformed_Metadata_Configuration Value violates the model
+   --  @exception Malformed_Metadata_Configuration Value violates model or
+   --  caller limits
    function Serialize_Update_Journal
      (Value  : Record_Expiration;
       Limits : XML.Parse_Limits) return String;
@@ -246,7 +303,8 @@ package Flyology.Object_Storage.S3.Metadata_Configurations is
    --  @param Value Complete caller-selected annotation-table update
    --  @param Limits Caller-selected XML serialization limits
    --  @return Exact namespaced REST/XML request payload
-   --  @exception Malformed_Metadata_Configuration Value violates the model
+   --  @exception Malformed_Metadata_Configuration Value violates model or
+   --  caller limits
    function Serialize_Update_Annotation
      (Value  : Annotation_Table_Configuration;
       Limits : XML.Parse_Limits) return String;

@@ -1,3 +1,5 @@
+with Flyology.Object_Storage.S3.XML_Writers;
+
 package body Flyology.Object_Storage.S3.Metadata_Tables is
 
    package US renames Ada.Strings.Unbounded;
@@ -304,6 +306,172 @@ package body Flyology.Object_Storage.S3.Metadata_Tables is
       end case;
    end End_Element;
 
+   type Request_Container_Kind is
+     (No_Request_Container, Request_Configuration_Container,
+      Request_Destination_Container);
+   type Request_Scalar_Kind is
+     (No_Request_Scalar, Request_Table_Bucket_ARN_Scalar,
+      Request_Table_Name_Scalar);
+
+   type Metadata_Table_Request_Handler is new XML.Event_Handler with record
+      Depth              : Natural := 0;
+      Root_Seen          : Boolean := False;
+      Destination_Seen   : Boolean := False;
+      Table_Bucket_Seen  : Boolean := False;
+      Table_Name_Seen    : Boolean := False;
+      Namespace          : Namespace_Style := Namespace_Not_Selected;
+      Container          : Request_Container_Kind := No_Request_Container;
+      Scalar             : Request_Scalar_Kind := No_Request_Scalar;
+      Text_Value         : US.Unbounded_String;
+      Value              : S3_Tables_Destination;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Metadata_Table_Request_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Metadata_Table_Request_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Metadata_Table_Request_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Metadata_Table_Request_Handler; Local_Name : String);
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Metadata_Table_Request_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      Style : constant Namespace_Style :=
+        (if Namespace_URI'Length = 0 then Unqualified
+         elsif Namespace_URI = "http://s3.amazonaws.com/doc/2006-03-01/"
+         then S3_Qualified
+         else Namespace_Not_Selected);
+   begin
+      if Attribute_Count /= 0
+        or else Style = Namespace_Not_Selected
+        or else (Item.Namespace /= Namespace_Not_Selected
+                 and then Item.Namespace /= Style)
+      then
+         raise Malformed_Metadata_Table with
+           "metadata-table request namespace or attributes are invalid";
+      end if;
+      Item.Namespace := Style;
+   end Start_Element_Details;
+
+   overriding procedure Start_Element
+     (Item : in out Metadata_Table_Request_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Metadata_Table with
+           "metadata-table request depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      case Item.Depth is
+         when 1 =>
+            if Item.Root_Seen
+              or else Local_Name /= "MetadataTableConfiguration"
+            then
+               raise Malformed_Metadata_Table with
+                 "invalid metadata-table request root";
+            end if;
+            Item.Root_Seen := True;
+            Item.Container := Request_Configuration_Container;
+         when 2 =>
+            if Item.Container /= Request_Configuration_Container
+              or else Item.Destination_Seen
+              or else Local_Name /= "S3TablesDestination"
+            then
+               raise Malformed_Metadata_Table with
+                 "unknown or duplicate metadata-table request member";
+            end if;
+            Item.Destination_Seen := True;
+            Item.Container := Request_Destination_Container;
+         when 3 =>
+            if Item.Container /= Request_Destination_Container then
+               raise Malformed_Metadata_Table with
+                 "metadata-table request scalar outside destination";
+            elsif Local_Name = "TableBucketArn"
+              and then not Item.Table_Bucket_Seen
+            then
+               Item.Table_Bucket_Seen := True;
+               Item.Scalar := Request_Table_Bucket_ARN_Scalar;
+               Item.Text_Value := US.Null_Unbounded_String;
+            elsif Local_Name = "TableName" and then not Item.Table_Name_Seen
+            then
+               Item.Table_Name_Seen := True;
+               Item.Scalar := Request_Table_Name_Scalar;
+               Item.Text_Value := US.Null_Unbounded_String;
+            else
+               raise Malformed_Metadata_Table with
+                 "unknown or duplicate metadata-table destination member";
+            end if;
+         when others =>
+            raise Malformed_Metadata_Table with
+              "nested metadata-table request member";
+      end case;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Metadata_Table_Request_Handler; Value : String) is
+   begin
+      if Item.Scalar /= No_Request_Scalar and then Item.Depth = 3 then
+         US.Append (Item.Text_Value, Value);
+      elsif Item.Depth in 1 .. 2 then
+         Require_Whitespace (Value);
+      else
+         raise Malformed_Metadata_Table with
+           "metadata-table request text outside modeled member";
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Metadata_Table_Request_Handler; Local_Name : String) is
+   begin
+      case Item.Depth is
+         when 3 =>
+            if Item.Scalar = Request_Table_Bucket_ARN_Scalar
+              and then Local_Name = "TableBucketArn"
+            then
+               Item.Value.Table_Bucket_ARN := Item.Text_Value;
+            elsif Item.Scalar = Request_Table_Name_Scalar
+              and then Local_Name = "TableName"
+            then
+               Item.Value.Table_Name := Item.Text_Value;
+            else
+               raise Malformed_Metadata_Table with
+                 "mismatched metadata-table request scalar close";
+            end if;
+            Item.Scalar := No_Request_Scalar;
+            Item.Text_Value := US.Null_Unbounded_String;
+            Item.Depth := 2;
+         when 2 =>
+            if Item.Container /= Request_Destination_Container
+              or else Local_Name /= "S3TablesDestination"
+              or else not Item.Table_Bucket_Seen
+              or else not Item.Table_Name_Seen
+            then
+               raise Malformed_Metadata_Table with
+                 "incomplete metadata-table request destination";
+            end if;
+            Item.Container := Request_Configuration_Container;
+            Item.Depth := 1;
+         when 1 =>
+            if Item.Container /= Request_Configuration_Container
+              or else Local_Name /= "MetadataTableConfiguration"
+              or else not Item.Destination_Seen
+            then
+               raise Malformed_Metadata_Table with
+                 "incomplete metadata-table request";
+            end if;
+            Item.Container := No_Request_Container;
+            Item.Depth := 0;
+         when others =>
+            raise Malformed_Metadata_Table with
+              "invalid metadata-table request closing element";
+      end case;
+   end End_Element;
+
    function Parse
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
@@ -321,6 +489,25 @@ package body Flyology.Object_Storage.S3.Metadata_Tables is
       when XML.XML_Error =>
          raise Malformed_Metadata_Table with "malformed metadata-table XML";
    end Parse;
+
+   function Parse_Create
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return S3_Tables_Destination
+   is
+      Handler : aliased Metadata_Table_Request_Handler;
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0 or else not Handler.Root_Seen then
+         raise Malformed_Metadata_Table with
+           "incomplete metadata-table request document";
+      end if;
+      return Handler.Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Metadata_Table with
+           "malformed metadata-table request XML";
+   end Parse_Create;
 
    function Serialize_Create
      (Value  : S3_Tables_Destination;
@@ -399,5 +586,81 @@ package body Flyology.Object_Storage.S3.Metadata_Tables is
       Append_Bounded (Suffix);
       return US.To_String (Result);
    end Serialize_Create;
+
+   function Serialize_Result
+     (Value  : Metadata_Table_Configuration_Result;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Item : XML_Writers.Writer;
+
+      function Valid_Optional_String (Value : Optional_String)
+         return Boolean is
+        (Value.Is_Set or else US.Length (Value.Value) = 0);
+
+      function Valid_Error (Value : Error_Details) return Boolean is
+        (Valid_Optional_String (Value.Code)
+         and then Valid_Optional_String (Value.Message)
+         and then (Value.Is_Set
+                   or else (not Value.Code.Is_Set
+                            and then not Value.Message.Is_Set)));
+   begin
+      if not Value.Is_Set then
+         if US.Length (Value.Destination.Table_Bucket_ARN) /= 0
+           or else US.Length (Value.Destination.Table_Name) /= 0
+           or else US.Length (Value.Destination.Table_ARN) /= 0
+           or else US.Length (Value.Destination.Table_Namespace) /= 0
+           or else US.Length (Value.Status) /= 0
+           or else Value.Error.Is_Set
+           or else not Valid_Error (Value.Error)
+         then
+            raise Malformed_Metadata_Table with
+              "absent metadata-table result contains provider state";
+         end if;
+         return "";
+      elsif not Valid_Error (Value.Error) then
+         raise Malformed_Metadata_Table with
+           "metadata-table error presence is inconsistent";
+      end if;
+
+      XML_Writers.Initialize (Item, Limits);
+      XML_Writers.Start_Document
+        (Item, "GetBucketMetadataTableConfigurationResult",
+         "http://s3.amazonaws.com/doc/2006-03-01/");
+      XML_Writers.Start_Element (Item, "MetadataTableConfigurationResult");
+      XML_Writers.Start_Element (Item, "S3TablesDestinationResult");
+      XML_Writers.Text_Element
+        (Item, "TableBucketArn",
+         US.To_String (Value.Destination.Table_Bucket_ARN));
+      XML_Writers.Text_Element
+        (Item, "TableName", US.To_String (Value.Destination.Table_Name));
+      XML_Writers.Text_Element
+        (Item, "TableArn", US.To_String (Value.Destination.Table_ARN));
+      XML_Writers.Text_Element
+        (Item, "TableNamespace",
+         US.To_String (Value.Destination.Table_Namespace));
+      XML_Writers.End_Element (Item, "S3TablesDestinationResult");
+      XML_Writers.End_Element (Item, "MetadataTableConfigurationResult");
+      XML_Writers.Text_Element
+        (Item, "Status", US.To_String (Value.Status));
+      if Value.Error.Is_Set then
+         XML_Writers.Start_Element (Item, "Error");
+         if Value.Error.Code.Is_Set then
+            XML_Writers.Text_Element
+              (Item, "ErrorCode", US.To_String (Value.Error.Code.Value));
+         end if;
+         if Value.Error.Message.Is_Set then
+            XML_Writers.Text_Element
+              (Item, "ErrorMessage",
+               US.To_String (Value.Error.Message.Value));
+         end if;
+         XML_Writers.End_Element (Item, "Error");
+      end if;
+      return XML_Writers.Finish
+        (Item, "GetBucketMetadataTableConfigurationResult");
+   exception
+      when XML_Writers.Encoding_Error =>
+         raise Malformed_Metadata_Table with
+           "metadata-table result serialization violates caller limits";
+   end Serialize_Result;
 
 end Flyology.Object_Storage.S3.Metadata_Tables;
