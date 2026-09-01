@@ -133,6 +133,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Existing project-policy admission ceiling for the buffered
    --  CreateBucket configuration. It keeps request memory bounded; changing
    --  it changes accepted wire inputs and requires compatibility review.
+   Maximum_Create_Session_Header_Bytes : constant Positive := 8_192;
+   --  Mirrors the already-qualified client CreateSession wire-policy ceiling.
+   --  This is a private admission boundary, not a public server capacity.
    Maximum_Versioning_Body : constant Byte_Count :=
      Versioning.Maximum_Document_Bytes;
    --  Derived from the versioning codec's public document ceiling so the
@@ -1722,7 +1725,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       type Operation_Kind is
         (Unsupported, Unsupported_ACL,
          List_Buckets, List_Directory_Buckets,
-         Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
+         Create_Bucket, Create_Session, Get_Bucket_Location, Head_Bucket,
+         Delete_Bucket,
          Put_Bucket_ACL, Get_Bucket_ACL,
          Put_Bucket_ABAC, Get_Bucket_ABAC,
          Put_Bucket_Acceleration, Get_Bucket_Acceleration,
@@ -2285,6 +2289,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Query_Text = Subresource & "=&x-id=" & Operation_ID
          or else
            Query_Text = "x-id=" & Operation_ID & "&" & Subresource & "=");
+      Is_Create_Session_Query : constant Boolean :=
+        Method = "GET"
+        and then Is_Exact_Bucket_Control_Query ("session", "CreateSession");
       Is_Bucket_ABAC_Query : constant Boolean :=
         Is_Exact_Bucket_Control_Query
           ("abac",
@@ -2553,6 +2560,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Query_Text = "notification=&x-id=GetBucketNotification"
            or else Query_Text = "x-id=GetBucketNotification&notification=");
       Padded_Query : constant String := '&' & Query_Text & '&';
+      Has_Create_Session_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&session&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&session=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=CreateSession&") /= 0;
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&tagging=") /= 0;
@@ -3122,6 +3134,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Object_Read_Query_Invalid : Boolean := False;
       Restore_Query_Invalid : Boolean := False;
       Bucket_Versioning_Query_Invalid : Boolean := False;
+      Create_Session_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
@@ -5306,6 +5319,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "GET" | "PUT"
            and then Has_Bucket_Versioning_Query
            and then not Is_Bucket_Versioning_Query;
+         Create_Session_Query_Invalid :=
+           Method = "GET" and then Has_Create_Session_Query
+           and then not Is_Create_Session_Query;
          Object_Lock_Query_Invalid :=
            Method in "GET" | "PUT"
            and then Has_Bucket_Object_Lock_Query
@@ -5367,7 +5383,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Looks_Like_Metadata_Query
            and then not Is_Metadata_Query;
          Operation :=
-           (if Looks_Like_ACL_Query
+           (if Method = "GET" and then Has_Create_Session_Query
+            then Create_Session
+            elsif Looks_Like_ACL_Query
             then
               (if Method = "GET" then Get_Bucket_ACL
                elsif Method = "PUT" then Put_Bucket_ACL
@@ -5907,7 +5925,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
-          Get_Object | Get_Object_Attributes | List_Multipart_Parts |
+          Get_Object | Get_Object_Attributes | Create_Session |
+          List_Multipart_Parts |
           Create_Multipart | Complete_Multipart |
           List_Bucket_Analytics | List_Bucket_Metrics |
           List_Bucket_Intelligent_Tiering | List_Bucket_Inventory
@@ -5942,6 +5961,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The bucket versioning request query is invalid", Target_Text);
+         return;
+      elsif Create_Session_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The CreateSession request query is invalid", Target_Text);
          return;
       elsif Bucket_Tagging_Query_Invalid then
          Send_Error
@@ -6431,6 +6455,144 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Backend_Error (X, Result, True, Target_Text);
                   end if;
 
+               end;
+
+            when Create_Session =>
+               declare
+                  Mode_Name : constant String :=
+                    "x-amz-create-session-mode";
+                  Encryption_Name : constant String :=
+                    "x-amz-server-side-encryption";
+                  Key_Name : constant String :=
+                    "x-amz-server-side-encryption-aws-kms-key-id";
+                  Context_Name : constant String :=
+                    "x-amz-server-side-encryption-context";
+                  Bucket_Key_Name : constant String :=
+                    "x-amz-server-side-encryption-bucket-key-enabled";
+
+                  function Count (Name : String) return Natural is
+                    (Apps.Request_Header_Count (X, Name));
+
+                  function Present (Name : String) return Boolean is
+                    (Count (Name) = 1);
+
+                  function Value (Name : String) return String is
+                    (Apps.Request_Header (X, Name));
+
+                  function Valid_Optional_Text
+                    (Name : String) return Boolean
+                  is
+                  begin
+                     if Count (Name) > 1 then
+                        return False;
+                     elsif not Present (Name) then
+                        return True;
+                     end if;
+                     return Value (Name)'Length in
+                       1 .. Maximum_Create_Session_Header_Bytes
+                       and then Valid_Header_Text (Value (Name));
+                  end Valid_Optional_Text;
+
+                  function Valid_Canonical_Base64
+                    (Text : String) return Boolean
+                  is
+                     Padding : Natural := 0;
+                  begin
+                     if Text'Length = 0 or else Text'Length mod 4 /= 0 then
+                        return False;
+                     end if;
+                     if Text (Text'Last) = '=' then
+                        Padding := 1;
+                        if Text'Length >= 2
+                          and then Text (Text'Last - 1) = '='
+                        then
+                           Padding := 2;
+                        end if;
+                     end if;
+                     return S3.Wire_Core.Valid_Base64
+                       (Text, Text'Length / 4 * 3 - Padding);
+                  end Valid_Canonical_Base64;
+
+                  function Has_Unmodeled_Encryption_Header return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if (Ada.Strings.Fixed.Index
+                                 (Name,
+                                  "x-amz-server-side-encryption") =
+                                 Name'First
+                               or else Ada.Strings.Fixed.Index
+                                 (Name,
+                                  "x-amz-copy-source-server-side-encryption") =
+                                 Name'First)
+                             and then Name not in
+                               Encryption_Name | Key_Name | Context_Name |
+                               Bucket_Key_Name
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_Unmodeled_Encryption_Header;
+
+                  Mode : constant String :=
+                    (if Present (Mode_Name) then Value (Mode_Name) else "");
+                  Encryption : constant String :=
+                    (if Present (Encryption_Name)
+                     then Value (Encryption_Name) else "");
+                  Key : constant String :=
+                    (if Present (Key_Name) then Value (Key_Name) else "");
+                  Context : constant String :=
+                    (if Present (Context_Name)
+                     then Value (Context_Name) else "");
+                  Bucket_Key : constant String :=
+                    (if Present (Bucket_Key_Name)
+                     then Value (Bucket_Key_Name) else "");
+                  KMS_Mode : constant Boolean :=
+                    Encryption in "aws:kms" | "aws:kms:dsse";
+                  Has_Companion : constant Boolean :=
+                    Present (Key_Name) or else Present (Context_Name)
+                    or else Present (Bucket_Key_Name);
+                  Valid : constant Boolean :=
+                    not Has_Unmodeled_Encryption_Header
+                    and then Valid_Optional_Text (Mode_Name)
+                    and then Valid_Optional_Text (Encryption_Name)
+                    and then Valid_Optional_Text (Key_Name)
+                    and then Valid_Optional_Text (Context_Name)
+                    and then Valid_Optional_Text (Bucket_Key_Name)
+                    and then Mode in "" | "ReadOnly" | "ReadWrite"
+                    and then Encryption in
+                      "" | "AES256" | "aws:fsx" | "aws:backup" |
+                      "aws:kms" | "aws:kms:dsse"
+                    and then (not Has_Companion or else KMS_Mode)
+                    and then (not KMS_Mode or else Key'Length > 0)
+                    and then
+                      (Context'Length = 0
+                       or else Valid_Canonical_Base64 (Context))
+                    and then Bucket_Key in "" | "true";
+               begin
+                  if not Valid then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The CreateSession policy is invalid", Target_Text);
+                     return;
+                  end if;
+                  Store.Head_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                     Result);
+                  if Result = Success then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Directory-bucket sessions are not implemented",
+                        Target_Text);
+                  else
+                     Send_Backend_Error (X, Result, True, Target_Text);
+                  end if;
                end;
 
             when Create_Bucket_Metadata_Configuration |

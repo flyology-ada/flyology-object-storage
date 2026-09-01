@@ -41,6 +41,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  Serve one Flyology HTTP exchange. The current slice implements the
    --  service-level ListBuckets, path-style
    --  Create/GetBucketLocation/Put/GetBucketVersioning/Head/DeleteBucket,
+   --  validated negative-capability CreateSession routing,
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,

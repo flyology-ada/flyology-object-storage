@@ -6,7 +6,7 @@ CreateBucket	core	covered	covered	covered	covered
 CreateBucketMetadataConfiguration	extended	covered	covered	covered	covered
 CreateBucketMetadataTableConfiguration	extended	covered	covered	covered	covered
 CreateMultipartUpload	core	covered	covered	covered	covered
-CreateSession	extended	missing	covered	missing	covered
+CreateSession	extended	covered	covered	covered	covered
 DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 DeleteBucketCors	extended	covered	covered	covered	covered

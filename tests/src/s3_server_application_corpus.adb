@@ -1,4 +1,5 @@
 with Ada.Calendar;
+with Ada.Characters.Handling;
 with Ada.Containers;
 with Ada.Calendar.Formatting;
 with Ada.Real_Time;
@@ -11170,6 +11171,167 @@ begin
                  ("GET", "/", Query, "unexpected")),
             "400 Bad Request"),
          "ListDirectoryBuckets accepted a request body");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("session", ""));
+
+      function Session
+        (Target        : String := "/test-bucket";
+         Request_Query : SigV4.Name_Value_Array := Query;
+         Extra         : String := "";
+         Payload       : String := "";
+         Corrupt       : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("GET", Target, Request_Query, Payload, Extra,
+               Corrupt_Signature => Corrupt)));
+
+      function Rejected (Value : String) return Boolean is
+        (Has (Value, "501 Not Implemented")
+         and then Has (Value, "<Code>NotImplemented</Code>")
+         and then not Has (Value, "<Credentials>")
+         and then not Has (Value, "<AccessKeyId>")
+         and then not Has (Value, "<SecretAccessKey>")
+         and then not Has (Value, "<SessionToken>")
+         and then not Has
+           (Ada.Characters.Handling.To_Lower (Value),
+            "x-amz-s3session-token:"));
+   begin
+      Require
+        (Rejected (Session),
+         "CreateSession did not reject a general-purpose bucket");
+      Require
+        (Rejected
+           (Session
+              (Request_Query =>
+                 (SigV4.Pair ("session", ""),
+                  SigV4.Pair ("x-id", "CreateSession")))),
+         "CreateSession rejected its exact operation identifier");
+      Require
+        (Has
+           (Session (Target => "/absent-bucket"),
+            "<Code>NoSuchBucket</Code>"),
+         "CreateSession did not distinguish a missing bucket");
+      Require
+        (Rejected
+           (Session
+              (Extra => "x-amz-create-session-mode: ReadOnly" & CRLF)),
+         "CreateSession rejected ReadOnly mode");
+      Require
+        (Rejected
+           (Session
+              (Extra =>
+                 "x-amz-create-session-mode: ReadWrite" & CRLF &
+                 "x-amz-server-side-encryption: AES256" & CRLF)),
+         "CreateSession rejected its non-KMS policy");
+      Require
+        (Rejected
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption: aws:kms" & CRLF &
+                 "x-amz-server-side-encryption-aws-kms-key-id: key" &
+                 CRLF & "x-amz-server-side-encryption-context: e30=" &
+                 CRLF &
+                 "x-amz-server-side-encryption-bucket-key-enabled: true" &
+                 CRLF)),
+         "CreateSession rejected its complete KMS policy");
+      Require
+        (Has
+           (Session
+              (Request_Query =>
+                 (SigV4.Pair ("session", ""),
+                  SigV4.Pair ("unexpected", "value"))),
+            "<Code>InvalidArgument</Code>"),
+         "CreateSession accepted an unknown query member");
+      Require
+        (Has
+           (Session
+              (Request_Query =>
+                 (SigV4.Pair ("session", ""),
+                  SigV4.Pair ("unexpected", "value")),
+               Corrupt => True),
+            "403 Forbidden"),
+         "CreateSession query validation preceded authentication");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-create-session-mode: ReadOnly" & CRLF &
+                 "x-amz-create-session-mode: ReadWrite" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted a duplicate mode");
+      Require
+        (Has
+           (Session
+              (Extra => "x-amz-create-session-mode: invalid" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted an invalid mode");
+      Require
+        (Has
+           (Session
+              (Extra => "x-amz-create-session-mode: invalid" & CRLF,
+               Corrupt => True),
+            "403 Forbidden"),
+         "CreateSession header validation preceded authentication");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: " &
+                 "AES256" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted an unmodeled encryption header");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-copy-source-server-side-encryption-customer-" &
+                 "algorithm: AES256" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted an unmodeled copy-source header");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption: aws:kms" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted KMS mode without a key");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption-aws-kms-key-id: key" &
+                 CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted an orphaned KMS key");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption: aws:kms" & CRLF &
+                 "x-amz-server-side-encryption-aws-kms-key-id: key" &
+                 CRLF & "x-amz-server-side-encryption-context: abc" &
+                 CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted noncanonical Base64 context");
+      Require
+        (Has
+           (Session
+              (Extra =>
+                 "x-amz-server-side-encryption: aws:kms" & CRLF &
+                 "x-amz-server-side-encryption-aws-kms-key-id: key" &
+                 CRLF &
+                 "x-amz-server-side-encryption-bucket-key-enabled: false" &
+                 CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted an explicitly disabled bucket key");
+      Require
+        (Has
+           (Session (Payload => "unexpected"),
+            "<Code>InvalidRequest</Code>"),
+         "CreateSession accepted a request body");
    end;
 
    Check_Cancellation_Propagation;

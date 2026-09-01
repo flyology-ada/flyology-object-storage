@@ -9,7 +9,7 @@ LEDGER="$TEMP_ROOT/aws-s3-operations.tsv"
 OUTPUT="$TEMP_ROOT/output.txt"
 awk -F '\t' '
   BEGIN { OFS="\t" }
-  $1 == "CreateSession" { $5="covered"; changed=1 }
+  $1 == "RenameObject" { $5="covered"; changed=1 }
   { print }
   END { if (!changed) exit 2 }
 ' "$PROJECT_DIR/coverage/aws-s3-operations.tsv" >"$LEDGER"

@@ -10557,6 +10557,32 @@ def main() -> None:
     assert "exact HTTP 200" in create_session["exclusions"][1]
     assert "zeroizing Credentials" in create_session["exclusions"][2]
     assert "no refresh task" in create_session["exclusions"][3]
+    assert "rejects existing general-purpose buckets" in (
+        create_session["exclusions"][4]
+    )
+    assert "credential issuance" in create_session["exclusions"][5]
+    assert create_session["coverage"] == {
+        "backend": "covered",
+        "client": "covered",
+        "server": "covered",
+        "corpus": "covered",
+    }
+    assert create_session["provenance"] == {
+        "backend": "shared_family",
+        "client": "handwritten",
+        "server": "handwritten",
+        "tests": "handwritten",
+    }
+    assert create_session["evidence_tokens"] == ["Head_Bucket"]
+    assert "src/flyology-object_storage-backends.ads" in (
+        create_session["evidence"]["backend"]
+    )
+    assert "src/flyology-object_storage-server-s3_applications.adb" in (
+        create_session["evidence"]["server"]
+    )
+    assert "tests/src/s3_server_application_corpus.adb" in (
+        create_session["evidence"]["server"]
+    )
     for label, key, value in (
         ("missing name", "public_name", None),
         ("wrong name", "public_name", "Create_Directory_Session"),
@@ -10581,33 +10607,61 @@ def main() -> None:
         s3_operation.qualification_plan(registry, ["CreateSession"])
     )
     assert create_session_qualification == "create_session"
-    assert create_session_commands[:4] == [
+    assert create_session_commands[:5] == [
         [
             "uv", "run", "--python", "3.13", "--",
             "tools/verify-create-session-preparation.py",
         ],
         ["@tests", "alr", "-n", "build"],
         ["@tests", "./bin/s3_create_session_tls_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
         ["./tools/verify-coverage.sh"],
     ]
-    assert create_session_commands[4] == [
+    assert create_session_commands[5] == [
         "./tools/build-api-docs.sh",
-        "/private/tmp/fos-create-session-gnatdoc",
+        "{repository}/build/gnatdoc/create-session",
         "--operation",
         "CreateSession",
     ]
-    assert create_session_commands[5:] == [
+    assert create_session_commands[6:] == [
         ["./tools/ci/check-repository.sh", "{model}"],
         ["git", "diff", "--check"],
     ]
 
-    promoted = copy.deepcopy(create_session)
-    promoted["coverage"]["server"] = "covered"
-    promoted["provenance"]["server"] = "handwritten"
-    findings = s3_operation.evidence_findings(
-        promoted, include_partial=False
-    )
-    assert "covered server lacks executable evidence" in findings
+    for label, mutate in (
+        (
+            "missing backend coverage",
+            lambda entry: entry["coverage"].update(backend="missing"),
+        ),
+        (
+            "missing server evidence",
+            lambda entry: entry["evidence"].update(server=[]),
+        ),
+        (
+            "wrong shared capability",
+            lambda entry: entry.update(evidence_tokens=["Get_Object"]),
+        ),
+        (
+            "missing negative-capability exclusion",
+            lambda entry: entry["exclusions"].pop(4),
+        ),
+    ):
+        candidate = copy.deepcopy(registry)
+        mutate(candidate.operations["CreateSession"])
+        assert candidate.operations["CreateSession"] != create_session
+        rejected = False
+        try:
+            entry = candidate.operations["CreateSession"]
+            assert entry["coverage"]["backend"] == "covered"
+            assert entry["coverage"]["server"] == "covered"
+            assert entry["evidence_tokens"] == ["Head_Bucket"]
+            assert entry["evidence"]["server"]
+            assert "rejects existing general-purpose buckets" in (
+                entry["exclusions"][4]
+            )
+        except (AssertionError, IndexError, KeyError, TypeError):
+            rejected = True
+        assert rejected, f"{label} CreateSession mutation was accepted"
 
     point_configuration_operations = {
         "DeleteBucketAnalyticsConfiguration": "analytics report generation",

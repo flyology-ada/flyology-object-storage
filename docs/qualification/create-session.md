@@ -1,9 +1,9 @@
 # CreateSession client qualification
 
 This record qualifies the synchronous and provider-owned composable client
-boundary for the directory-bucket CreateSession operation. It does not claim a
-directory-bucket backend, an
-authenticated Flyology server route, or interoperability from the pinned
+boundary and the Flyology server's authenticated negative-capability route for
+the directory-bucket CreateSession operation. It does not claim successful
+directory-bucket session issuance or interoperability from the pinned
 general-purpose S3-compatible servers.
 
 ## Authority and inventory
@@ -58,6 +58,24 @@ task. Transport recovery remains the configured Flyology HTTP client's policy.
 A typed exchange failure preserves admission certainty for the caller's retry
 decision.
 
+## Local authenticated negative-capability route
+
+The Flyology server recognizes only the exact authenticated bucket-target
+`GET ?session` forms, including the pinned `x-id=CreateSession` association.
+It rejects malformed query shapes after authentication, rejects request
+bodies, and validates physical singleton, nonempty, text-safe values for all
+five modeled policy headers. Session mode, encryption enumeration, KMS
+companions, canonical Base64 context, and the exact enabled bucket-key value
+follow the same request contract as the qualified client.
+
+After validation the route calls the existing shared `Head_Bucket` capability.
+It returns `NoSuchBucket` for an absent bucket and `NotImplemented` for an
+existing general-purpose bucket. It does not issue credentials, persist a
+directory-bucket/session model, retain session state, or add session-token
+authentication. The route therefore proves strict authenticated admission and
+an explicit capability boundary; it does not manufacture successful
+CreateSession support.
+
 ## Independent corpus
 
 `tests/corpora/create-session/members.tsv` accounts for all 15 modeled members.
@@ -88,10 +106,11 @@ implementation matrix do not supply that capability. Their absence is an
 explicit external capability exclusion, not a reason to relax the client or
 to claim server interoperability.
 
-The machine ledger records the reviewed operation as `missing / covered /
-missing / covered` with its exact public name, symbols, exclusions, evidence,
-and isolated qualification lane. This records client and corpus readiness; it
-does not manufacture backend state, a server route, or provider compatibility.
+The machine ledger records the reviewed operation as `covered / covered /
+covered / covered` with its exact public name, symbols, exclusions, evidence,
+and isolated qualification lane. Backend coverage is the shared bucket
+existence capability used by the authenticated negative route; it does not
+claim directory-bucket state, credential issuance, or provider compatibility.
 
 ## Frozen gate evidence
 

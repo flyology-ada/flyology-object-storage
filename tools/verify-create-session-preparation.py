@@ -18,6 +18,9 @@ LOW_SPEC = ROOT / "src" / "flyology-object_storage-client-low_level.ads"
 LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
 HIGH_SPEC = ROOT / "src" / "flyology-object_storage-client-buckets.ads"
 HIGH_BODY = ROOT / "src" / "flyology-object_storage-client-buckets.adb"
+SERVER_SPEC = ROOT / "src" / "flyology-object_storage-server-s3_applications.ads"
+SERVER_BODY = ROOT / "src" / "flyology-object_storage-server-s3_applications.adb"
+SERVER_CORPUS = ROOT / "tests" / "src" / "s3_server_application_corpus.adb"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 REGISTRY = ROOT / "coverage" / "s3-operations.toml"
 QUALIFICATION = ROOT / "docs" / "qualification" / "create-session.md"
@@ -54,8 +57,9 @@ LANE = [
      "tools/verify-create-session-preparation.py"],
     ["@tests", "alr", "-n", "build"],
     ["@tests", "./bin/s3_create_session_tls_corpus"],
+    ["@tests", "./bin/s3_server_application_corpus"],
     ["./tools/verify-coverage.sh"],
-    ["./tools/build-api-docs.sh", "/private/tmp/fos-create-session-gnatdoc"],
+    ["./tools/build-api-docs.sh", "{repository}/build/gnatdoc/create-session"],
     ["./tools/ci/check-repository.sh", "{model}"],
     ["git", "diff", "--check"],
 ]
@@ -63,6 +67,25 @@ LANE = [
 
 def fail(message: str) -> None:
     raise ValueError(message)
+
+
+def require_in_order(text: str, fragments: list[str], label: str) -> None:
+    position = 0
+    for fragment in fragments:
+        found = text.find(fragment, position)
+        if found < 0:
+            fail(f"{label}: missing or reordered {fragment!r}")
+        position = found + len(fragment)
+
+
+def exact_region(text: str, start: str, end: str, label: str) -> str:
+    if text.count(start) != 1 or text.count(end) != 1:
+        fail(f"{label}: region boundary is not unique")
+    first = text.index(start)
+    last = text.index(end, first)
+    if last <= first:
+        fail(f"{label}: region boundary is reversed")
+    return text[first:last]
 
 
 def registry_entry(data: dict[str, object]) -> dict[str, object]:
@@ -86,11 +109,18 @@ def verify_registry(data: dict[str, object]) -> None:
         "certainty": "read_only",
         "reconciliation": "not_applicable",
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
+        "provenance": {
+            "backend": "shared_family",
+            "client": "handwritten",
+            "server": "handwritten",
+            "tests": "handwritten",
+        },
+        "evidence_tokens": ["Head_Bucket"],
         "ada_symbols": [
             "Prepare_Create_Session",
             "Decode_Create_Session_Complete_Response",
@@ -109,6 +139,24 @@ def verify_registry(data: dict[str, object]) -> None:
         fail("CreateSession credential ownership changed")
     if "no refresh task" not in entry["exclusions"][3]:
         fail("CreateSession lifecycle boundary changed")
+    if "rejects existing general-purpose buckets" not in entry["exclusions"][4]:
+        fail("CreateSession local negative-capability boundary changed")
+    if "credential issuance" not in entry["exclusions"][5]:
+        fail("CreateSession omitted capability exclusion changed")
+    for path in (
+        "src/flyology-object_storage-backends.ads",
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+    ):
+        if path not in entry["evidence"]["backend"]:
+            fail(f"CreateSession backend evidence lacks {path}")
+    for path in (
+        "src/flyology-object_storage-server-s3_applications.ads",
+        "src/flyology-object_storage-server-s3_applications.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ):
+        if path not in entry["evidence"]["server"]:
+            fail(f"CreateSession server evidence lacks {path}")
     if data["qualification"].get("create_session") != LANE:
         fail("CreateSession qualification lane changed")
 
@@ -224,6 +272,9 @@ def main() -> int:
         "low-level body": LOW_BODY.read_text(encoding="utf-8"),
         "provider specification": HIGH_SPEC.read_text(encoding="utf-8"),
         "provider body": HIGH_BODY.read_text(encoding="utf-8"),
+        "server specification": SERVER_SPEC.read_text(encoding="utf-8"),
+        "server body": SERVER_BODY.read_text(encoding="utf-8"),
+        "server corpus": SERVER_CORPUS.read_text(encoding="utf-8"),
     }
     members = read_tsv(CORPUS / "members.tsv", MEMBER_HEADER)
     vectors = read_tsv(CORPUS / "vectors.tsv", VECTOR_HEADER)
@@ -343,6 +394,92 @@ def main() -> int:
     if not operation_check < metadata_check < min(session_field_accesses):
         fail("CreateSession decoder reads response/request fields before validation")
 
+    server_body = sources["server body"]
+    handler = exact_region(
+        server_body,
+        "            when Create_Session =>",
+        "            when Create_Bucket_Metadata_Configuration |",
+        "CreateSession server handler",
+    )
+    require_in_order(
+        handler,
+        [
+            '"x-amz-create-session-mode"',
+            '"x-amz-server-side-encryption"',
+            '"x-amz-server-side-encryption-aws-kms-key-id"',
+            '"x-amz-server-side-encryption-context"',
+            '"x-amz-server-side-encryption-bucket-key-enabled"',
+            "Has_Unmodeled_Encryption_Header",
+            '"x-amz-server-side-encryption"',
+            '"x-amz-copy-source-server-side-encryption"',
+            'Name not in',
+            'Encryption_Name | Key_Name | Context_Name |',
+            'Bucket_Key_Name',
+            "not Has_Unmodeled_Encryption_Header",
+            "Valid_Optional_Text (Mode_Name)",
+            'Mode in "" | "ReadOnly" | "ReadWrite"',
+            "Encryption in",
+            '"" | "AES256" | "aws:fsx" | "aws:backup" |',
+            '"aws:kms" | "aws:kms:dsse"',
+            "Valid_Canonical_Base64 (Context)",
+            'Bucket_Key in "" | "true"',
+            "Store.Head_Bucket",
+            "if Result = Success then",
+            '501, "NotImplemented"',
+            '"Directory-bucket sessions are not implemented"',
+            "Send_Backend_Error (X, Result, True, Target_Text)",
+        ],
+        "CreateSession server handler",
+    )
+    for forbidden in (
+        "AccessKeyId",
+        "SecretAccessKey",
+        "SessionToken",
+        "x-amz-s3session-token",
+    ):
+        if forbidden in handler:
+            fail(f"CreateSession server handler issues credentials: {forbidden}")
+    require_in_order(
+        server_body,
+        [
+            "Is_Create_Session_Query : constant Boolean :=",
+            'Is_Exact_Bucket_Control_Query ("session", "CreateSession")',
+            "Padded_Query : constant String :=",
+            "Has_Create_Session_Query : constant Boolean :=",
+            "Create_Session_Query_Invalid :=",
+            'Method = "GET" and then Has_Create_Session_Query',
+            "then Create_Session",
+            "Auth := Authentication.Verify_Request",
+            "Create_Session_Query_Invalid then",
+            '"The CreateSession request query is invalid"',
+        ],
+        "CreateSession authenticated routing",
+    )
+    server_corpus = sources["server corpus"]
+    require_in_order(
+        server_corpus,
+        [
+            'SigV4.Pair ("session", "")',
+            '"CreateSession did not reject a general-purpose bucket"',
+            'SigV4.Pair ("x-id", "CreateSession")',
+            '"CreateSession did not distinguish a missing bucket"',
+            '"CreateSession rejected its complete KMS policy"',
+            '"CreateSession query validation preceded authentication"',
+            '"CreateSession accepted a duplicate mode"',
+            '"CreateSession header validation preceded authentication"',
+            '"CreateSession accepted an unmodeled encryption header"',
+            '"CreateSession accepted an unmodeled copy-source header"',
+            '"CreateSession accepted noncanonical Base64 context"',
+            '"CreateSession accepted an explicitly disabled bucket key"',
+            '"CreateSession accepted a request body"',
+        ],
+        "CreateSession server corpus",
+    )
+    if "validated negative-capability CreateSession routing" not in sources[
+        "server specification"
+    ]:
+        fail("CreateSession server specification boundary changed")
+
     registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8"))
     verify_registry(registry)
     verify_registry_negatives(registry)
@@ -350,8 +487,9 @@ def main() -> int:
         QUALIFICATION.read_text(encoding="utf-8").split()
     )
     for fact in (
-        "reviewed operation as `missing / covered / missing / covered`",
+        "reviewed operation as `covered / covered / covered / covered`",
         "No overload creates a refresh task",
+        "does not issue credentials",
         "Repository-wide qualification remains blocked",
     ):
         if fact not in qualification:
