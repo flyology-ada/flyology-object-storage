@@ -29,7 +29,7 @@ DeleteObjects	core	covered	covered	covered	covered
 DeletePublicAccessBlock	extended	covered	covered	covered	covered
 GetBucketAbac	extended	covered	covered	covered	covered
 GetBucketAccelerateConfiguration	extended	covered	covered	covered	covered
-GetBucketAcl	extended	missing	covered	covered	covered
+GetBucketAcl	extended	covered	covered	covered	covered
 GetBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	covered	covered	covered	covered
@@ -53,7 +53,7 @@ GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	covered	covered	covered	covered
 GetObject	core	covered	covered	covered	covered
-GetObjectAcl	extended	missing	covered	covered	covered
+GetObjectAcl	extended	covered	covered	covered	covered
 GetObjectAnnotation	extended	missing	partial	missing	covered
 GetObjectAttributes	core	covered	covered	covered	covered
 GetObjectLegalHold	extended	missing	covered	missing	covered
@@ -78,7 +78,7 @@ ListObjectsV2	core	covered	covered	covered	covered
 ListParts	core	covered	covered	covered	covered
 PutBucketAbac	extended	covered	covered	covered	covered
 PutBucketAccelerateConfiguration	extended	covered	covered	covered	covered
-PutBucketAcl	extended	missing	covered	missing	covered
+PutBucketAcl	extended	missing	covered	covered	covered
 PutBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	covered	covered	covered	covered
@@ -98,7 +98,7 @@ PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	covered	covered	covered	covered
 PutObject	core	covered	covered	covered	covered
-PutObjectAcl	extended	missing	partial	missing	covered
+PutObjectAcl	extended	missing	partial	covered	covered
 PutObjectAnnotation	extended	missing	partial	missing	covered
 PutObjectLegalHold	extended	missing	covered	missing	covered
 PutObjectLockConfiguration	extended	missing	covered	missing	covered

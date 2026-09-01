@@ -3633,17 +3633,141 @@ def main() -> None:
     else:
         raise AssertionError("mixed GetObjectAnnotation lane accepted")
 
+    put_bucket_acl_certainty = (
+        "the Flyology server reports exact 200 only after authenticating a "
+        "checksum-bound empty request with x-amz-acl private and observing "
+        "the target bucket through the backend; this is an idempotent "
+        "validation of the immutable private profile, not stored ACL "
+        "mutation; the client never automatically replays a possibly "
+        "admitted request"
+    )
+    put_bucket_acl_reconciliation = (
+        "caller-selected Get_ACL observes the same derived private owner "
+        "FULL_CONTROL projection and bucket existence before any retry; it "
+        "does not prove that a prior request caused state or upgrade "
+        "mutation certainty"
+    )
+
+    def assert_put_bucket_acl_server_registry(candidate):
+        entry = candidate.operations["PutBucketAcl"]
+        assert entry.get("public_name") == "Set_ACL"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "generated_acl_mutation"
+        assert entry.get("certainty") == put_bucket_acl_certainty
+        assert entry.get("reconciliation") == put_bucket_acl_reconciliation
+        assert entry["coverage"] == {
+            "backend": "missing", "client": "covered",
+            "server": "covered", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "absent", "client": "generated",
+            "server": "handwritten", "tests": "handwritten",
+        }
+        assert "empty request with exact x-amz-acl private" in (
+            entry["exclusions"][0]
+        )
+        assert "not arbitrary persisted ACL state" in (
+            entry["exclusions"][1]
+        )
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+        assert entry["evidence"]["corpus"][:2] == [
+            "tools/verify-private-acl-server.py",
+            "docs/qualification/private-acl-server.md",
+        ]
+        assert entry["generation"]["intentional_exclusions"][3] == (
+            "the generated client qualification establishes no backend "
+            "compatibility and does not itself establish the separately "
+            "reviewed Flyology private-profile server compatibility"
+        )
+        assert candidate.qualification["generated_acl_mutation"] == [
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-private-acl-server.py",
+            ],
+            ["@tests", "alr", "-n", "build"],
+            ["@tests", "./bin/s3_server_application_corpus"],
+            [
+                "@tests", "uv", "run", "--python", "3.13", "--",
+                "../tools/s3-signed-socket.py", "PutBucketAcl",
+            ],
+            ["./tools/verify-coverage.sh"],
+            [
+                "./tools/build-api-docs.sh",
+                "/private/tmp/fos-generated-acl-mutation-gnatdoc",
+            ],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def reject_put_bucket_acl_server_registry(candidate, label):
+        try:
+            assert_put_bucket_acl_server_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} PutBucketAcl server profile accepted")
+
+    assert_put_bucket_acl_server_registry(registry)
+    missing_put_bucket_acl_server = copy.deepcopy(registry)
+    missing_put_bucket_acl_server.operations["PutBucketAcl"]["coverage"][
+        "server"
+    ] = "missing"
+    reject_put_bucket_acl_server_registry(
+        missing_put_bucket_acl_server, "missing server coverage"
+    )
+    persisted_put_bucket_acl = copy.deepcopy(registry)
+    persisted_put_bucket_acl.operations["PutBucketAcl"]["exclusions"][
+        1
+    ] = "the server persists arbitrary ACL state"
+    reject_put_bucket_acl_server_registry(
+        persisted_put_bucket_acl, "invented persistence"
+    )
+    xml_put_bucket_acl = copy.deepcopy(registry)
+    xml_put_bucket_acl.operations["PutBucketAcl"]["exclusions"][
+        0
+    ] = "XML policies and explicit grants are fully supported"
+    reject_put_bucket_acl_server_registry(
+        xml_put_bucket_acl, "invented general ACL mode"
+    )
+    detached_put_bucket_acl_verifier = copy.deepcopy(registry)
+    detached_put_bucket_acl_verifier.qualification[
+        "generated_acl_mutation"
+    ].pop(0)
+    reject_put_bucket_acl_server_registry(
+        detached_put_bucket_acl_verifier, "detached focused verifier"
+    )
+    detached_put_bucket_acl_corpus = copy.deepcopy(registry)
+    detached_put_bucket_acl_corpus.qualification[
+        "generated_acl_mutation"
+    ].pop(2)
+    reject_put_bucket_acl_server_registry(
+        detached_put_bucket_acl_corpus, "detached server corpus"
+    )
+    stale_put_bucket_acl_generation_exclusion = copy.deepcopy(registry)
+    stale_put_bucket_acl_generation_exclusion.operations["PutBucketAcl"][
+        "generation"
+    ]["intentional_exclusions"][3] = "no backend or server compatibility claim"
+    reject_put_bucket_acl_server_registry(
+        stale_put_bucket_acl_generation_exclusion,
+        "stale generated-client compatibility exclusion",
+    )
+
     put_object_acl_certainty = (
-        "mutation model coverage only; no public ACL source, grant-header "
-        "builder, checksum binding, response decoder, or runtime evidence "
-        "exists, so this review reports no successful mutation, no "
-        "admission certainty, and no automatic replay"
+        "the public client remains model-only and exposes no runtime "
+        "mutation; independently, the Flyology server reports exact 200 "
+        "only after authenticating a checksum-bound empty request with "
+        "x-amz-acl private and observing the selected current, null, or "
+        "exact object generation; this idempotent validation stores no ACL "
+        "state and performs no automatic replay"
     )
     put_object_acl_reconciliation = (
-        "the model carries an optional VersionId and ACL controls, but no "
-        "implemented request, response, or ACL-state binding path exists; "
-        "this review claims no selected-version mutation, later ACL "
-        "observation, causal proof, certainty upgrade, or automatic replay"
+        "GetObjectAcl for the same explicit VersionId observes the selected "
+        "generation's derived private owner FULL_CONTROL projection, while "
+        "an omitted selector observes the current generation; neither form "
+        "proves request causation or upgrades mutation certainty"
     )
 
     def assert_put_object_acl_registry(candidate):
@@ -3660,29 +3784,43 @@ def main() -> None:
         assert entry.get("ada_symbols") is None
         assert entry["coverage"] == {
             "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
             "backend": "absent", "client": "generated",
-            "server": "absent", "tests": "handwritten",
+            "server": "handwritten", "tests": "handwritten",
         }
         assert "registry sentinel and not an Ada declaration" in (
             entry["exclusions"][0]
         )
-        assert "are inventory only" in entry["exclusions"][1]
-        assert "structural inventory only" in entry["exclusions"][2]
+        assert "empty request with exact x-amz-acl private" in (
+            entry["exclusions"][1]
+        )
+        assert "client-side structural inventory" in entry["exclusions"][2]
         assert entry["evidence"] == {
             "backend": [],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-put-object-acl-model.py",
             ],
-            "server": [],
-            "corpus": ["tests/scripts/verify-put-object-acl-model.py"],
+            "server": [
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+            "corpus": [
+                "tools/verify-private-acl-server.py",
+                "docs/qualification/private-acl-server.md",
+                "tests/scripts/verify-put-object-acl-model.py",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
         }
         assert candidate.qualification["put_object_acl"] == [
             ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-put-object-acl-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-private-acl-server.py"],
+            ["@tests", "alr", "-n", "build"],
+            ["@tests", "./bin/s3_server_application_corpus"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -3751,6 +3889,27 @@ def main() -> None:
     ]["evidence"]["client"] = []
     reject_put_object_acl_registry(
         missing_put_object_acl_model, "missing model evidence"
+    )
+    missing_put_object_acl_server = copy.deepcopy(registry)
+    missing_put_object_acl_server.operations[
+        "PutObjectAcl"
+    ]["coverage"]["server"] = "missing"
+    reject_put_object_acl_registry(
+        missing_put_object_acl_server, "missing server coverage"
+    )
+    detached_put_object_acl_verifier = copy.deepcopy(registry)
+    detached_put_object_acl_verifier.qualification[
+        "put_object_acl"
+    ].pop(1)
+    reject_put_object_acl_registry(
+        detached_put_object_acl_verifier, "detached focused verifier"
+    )
+    detached_put_object_acl_corpus = copy.deepcopy(registry)
+    detached_put_object_acl_corpus.qualification[
+        "put_object_acl"
+    ].pop(3)
+    reject_put_object_acl_registry(
+        detached_put_object_acl_corpus, "detached server corpus"
     )
     put_object_acl_lane, put_object_acl_commands = (
         s3_operation.qualification_plan(registry, ["PutObjectAcl"])
@@ -5783,14 +5942,25 @@ def main() -> None:
         assert entry.get("certainty") == get_object_acl_certainty
         assert entry.get("reconciliation") == get_object_acl_reconciliation
         assert entry.get("ada_symbols") == get_object_acl_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["evidence"]["backend"] == [
+            "tests/src/object_storage_test_cases.adb",
+            "tests/src/versioned_object_conformance.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        ]
         assert "NoSuchVersion" in entry["absence"]
         assert "no version identifier" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["get_object_acl"][0][-1]
-            == "tools/verify-get-object-acl-preparation.py"
-        )
+        assert candidate.qualification["get_object_acl"][:2] == [
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-get-object-acl-preparation.py",
+            ],
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-private-acl-server.py",
+            ],
+        ]
 
     def reject_get_object_acl_registry(candidate, label):
         try:
@@ -5815,12 +5985,12 @@ def main() -> None:
         "certainty"
     ] = "read-only; retry automatically"
     reject_get_object_acl_registry(retry_get_object_acl, "automatic retry")
-    backend_get_object_acl = copy.deepcopy(registry)
-    backend_get_object_acl.operations["GetObjectAcl"]["coverage"][
+    missing_backend_get_object_acl = copy.deepcopy(registry)
+    missing_backend_get_object_acl.operations["GetObjectAcl"]["coverage"][
         "backend"
-    ] = "covered"
+    ] = "missing"
     reject_get_object_acl_registry(
-        backend_get_object_acl, "invented backend coverage"
+        missing_backend_get_object_acl, "missing backend substrate"
     )
     cross_get_object_acl_symbol = copy.deepcopy(registry)
     cross_get_object_acl_symbol.operations["GetObjectAcl"][
@@ -5833,24 +6003,28 @@ def main() -> None:
         s3_operation.qualification_plan(registry, ["GetObjectAcl"])
     )
     assert get_object_acl_qualification == "get_object_acl"
-    assert get_object_acl_commands[:5] == [
+    assert get_object_acl_commands[:6] == [
         [
             "uv", "run", "--python", "3.13", "--",
             "tools/verify-get-object-acl-preparation.py",
+        ],
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-private-acl-server.py",
         ],
         ["@tests", "alr", "-n", "build"],
         ["@tests", "./bin/s3_get_object_acl_corpus"],
         ["@tests", "./bin/s3_server_application_corpus"],
         ["@tests", "./bin/s3_http_socket_corpus"],
     ]
-    assert get_object_acl_commands[5] == ["./tools/verify-coverage.sh"]
-    assert get_object_acl_commands[6] == [
+    assert get_object_acl_commands[6] == ["./tools/verify-coverage.sh"]
+    assert get_object_acl_commands[7] == [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-get-object-acl-gnatdoc",
         "--operation",
         "GetObjectAcl",
     ]
-    assert get_object_acl_commands[7:] == [
+    assert get_object_acl_commands[8:] == [
         ["./tools/ci/check-repository.sh", "{model}"],
         ["git", "diff", "--check"],
     ]
@@ -5899,14 +6073,24 @@ def main() -> None:
         assert entry.get("certainty") == get_bucket_acl_certainty
         assert entry.get("reconciliation") == get_bucket_acl_reconciliation
         assert entry.get("ada_symbols") == get_bucket_acl_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["evidence"]["backend"] == [
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        ]
         assert "NoSuchBucket" in entry["absence"]
         assert "does not persist arbitrary ACL state" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["get_bucket_acl"][0][-1]
-            == "tools/verify-get-bucket-acl-preparation.py"
-        )
+        assert candidate.qualification["get_bucket_acl"][:2] == [
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-get-bucket-acl-preparation.py",
+            ],
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-private-acl-server.py",
+            ],
+        ]
 
     def reject_get_bucket_acl_registry(candidate, label):
         try:
@@ -5931,12 +6115,12 @@ def main() -> None:
         "certainty"
     ] = "read-only; retry automatically"
     reject_get_bucket_acl_registry(retry_get_bucket_acl, "automatic retry")
-    backend_get_bucket_acl = copy.deepcopy(registry)
-    backend_get_bucket_acl.operations["GetBucketAcl"]["coverage"][
+    missing_backend_get_bucket_acl = copy.deepcopy(registry)
+    missing_backend_get_bucket_acl.operations["GetBucketAcl"]["coverage"][
         "backend"
-    ] = "covered"
+    ] = "missing"
     reject_get_bucket_acl_registry(
-        backend_get_bucket_acl, "invented backend coverage"
+        missing_backend_get_bucket_acl, "missing backend substrate"
     )
     cross_get_bucket_acl_symbol = copy.deepcopy(registry)
     cross_get_bucket_acl_symbol.operations["GetBucketAcl"][
@@ -5949,24 +6133,28 @@ def main() -> None:
         s3_operation.qualification_plan(registry, ["GetBucketAcl"])
     )
     assert get_bucket_acl_qualification == "get_bucket_acl"
-    assert get_bucket_acl_commands[:5] == [
+    assert get_bucket_acl_commands[:6] == [
         [
             "uv", "run", "--python", "3.13", "--",
             "tools/verify-get-bucket-acl-preparation.py",
+        ],
+        [
+            "uv", "run", "--python", "3.13", "--",
+            "tools/verify-private-acl-server.py",
         ],
         ["@tests", "alr", "-n", "build"],
         ["@tests", "./bin/s3_get_bucket_acl_corpus"],
         ["@tests", "./bin/s3_server_application_corpus"],
         ["@tests", "./bin/s3_http_socket_corpus"],
     ]
-    assert get_bucket_acl_commands[5] == ["./tools/verify-coverage.sh"]
-    assert get_bucket_acl_commands[6] == [
+    assert get_bucket_acl_commands[6] == ["./tools/verify-coverage.sh"]
+    assert get_bucket_acl_commands[7] == [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-get-bucket-acl-gnatdoc",
         "--operation",
         "GetBucketAcl",
     ]
-    assert get_bucket_acl_commands[7:] == [
+    assert get_bucket_acl_commands[8:] == [
         ["./tools/ci/check-repository.sh", "{model}"],
         ["git", "diff", "--check"],
     ]

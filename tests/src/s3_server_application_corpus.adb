@@ -4274,10 +4274,21 @@ begin
         (1 => SigV4.Pair ("acl", ""));
       Bucket_ID_Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("acl", ""), SigV4.Pair ("x-id", "GetBucketAcl"));
+      Bucket_Put_ID_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("acl", ""), SigV4.Pair ("x-id", "PutBucketAcl"));
       Object_Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("acl", ""));
       Object_Version_Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("acl", ""), SigV4.Pair ("versionId", "null"));
+      Object_Put_ID_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("acl", ""), SigV4.Pair ("x-id", "PutObjectAcl"));
+      Empty_Content_MD5 : constant String :=
+        "1B2M2Y8AsgTpgAmY7PhCfg==";
+
+      function Private_ACL_Headers
+        (Additional : String := "") return String is
+        ("x-amz-acl: private" & CRLF &
+         "Content-MD5: " & Empty_Content_MD5 & CRLF & Additional);
 
       function Encoded_ACL_Request
         (Method, Target : String) return String
@@ -4342,6 +4353,154 @@ begin
         (Run (Signed_Query_Request
           ("GET", "/test-bucket", Bucket_ID_Query)),
          "GetBucketAcl x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers)),
+            "200 OK"),
+         "PutBucketAcl rejected the private canned ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Put_ID_Query, "",
+                  Private_ACL_Headers)),
+            "200 OK"),
+         "PutBucketAcl rejected its exact x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("x-id", "PutObjectAcl")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutBucketAcl accepted the object operation id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("acl", "")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutBucketAcl accepted a duplicate acl query");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("unexpected", "1")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutBucketAcl accepted an extra query member");
+      Check_Private_ACL
+        (Run (Signed_Query_Request
+          ("GET", "/test-bucket", Bucket_Query)),
+         "GetBucketAcl after private replacement");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  "x-amz-acl: public-read" & CRLF &
+                  "Content-MD5: " & Empty_Content_MD5 & CRLF)),
+            "501 Not Implemented"),
+         "PutBucketAcl accepted a non-private canned ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  "x-amz-grant-read: id=""test-principal""" & CRLF &
+                  "Content-MD5: " & Empty_Content_MD5 & CRLF)),
+            "501 Not Implemented"),
+         "PutBucketAcl accepted an explicit grant");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers
+                    ("x-amz-expected-bucket-owner: different-owner" &
+                     CRLF))),
+            "403 Forbidden"),
+         "PutBucketAcl ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/absent-bucket", Bucket_Query, "",
+                  Private_ACL_Headers)),
+            "<Code>NoSuchBucket</Code>"),
+         "PutBucketAcl did not verify bucket existence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  "x-amz-acl: private" & CRLF &
+                  "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketAcl accepted a mismatched empty-body digest");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  "x-amz-acl: private" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAcl accepted a missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers
+                    ("x-amz-acl: private" & CRLF))),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAcl accepted duplicate canned ACL fields");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers
+                    ("Content-MD5: " & Empty_Content_MD5 & CRLF))),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAcl accepted duplicate Content-MD5 fields");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers
+                    ("x-amz-grant-read: id=""test-principal""" &
+                     CRLF))),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAcl accepted conflicting ACL modes");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query, "",
+                  Private_ACL_Headers
+                    ("x-amz-sdk-checksum-algorithm: SHA256" & CRLF))),
+            "501 Not Implemented"),
+         "PutBucketAcl accepted an additional checksum algorithm");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Bucket_Query,
+                  "<AccessControlPolicy/>")),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketAcl accepted XML policy mode");
       Check_Private_ACL
         (Run
            (Signed_Query_Request
@@ -4417,6 +4576,129 @@ begin
            (Signed_Query_Request
               ("GET", "/test-bucket/acl-object", Object_Version_Query)),
          "GetObjectAcl null version");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Query, "",
+                  Private_ACL_Headers)),
+            "200 OK"),
+         "PutObjectAcl rejected the private canned ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Put_ID_Query, "",
+                  Private_ACL_Headers)),
+            "200 OK"),
+         "PutObjectAcl rejected its exact x-id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("x-id", "PutBucketAcl")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutObjectAcl accepted the bucket operation id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("acl", "")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutObjectAcl accepted a duplicate acl query");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("unexpected", "1")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutObjectAcl accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("versionId", "")), "",
+                  Private_ACL_Headers)),
+            "400 Bad Request"),
+         "PutObjectAcl accepted an empty version selector");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Version_Query, "",
+                  Private_ACL_Headers)),
+            "200 OK"),
+         "PutObjectAcl rejected the null version selector");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket/acl-object", Object_Query, "",
+                 Private_ACL_Headers
+                   ("x-amz-request-payer: requester" & CRLF)));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "x-amz-request-charged: requester"),
+            "PutObjectAcl requester-pays response mismatch");
+      end;
+      Check_Private_ACL
+        (Run (Signed_Query_Request
+          ("GET", "/test-bucket/acl-object", Object_Query)),
+         "GetObjectAcl after private replacement");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Query, "",
+                  "x-amz-acl: public-read" & CRLF &
+                  "Content-MD5: " & Empty_Content_MD5 & CRLF)),
+            "501 Not Implemented"),
+         "PutObjectAcl accepted a non-private canned ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Query, "",
+                  "x-amz-acl: private" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectAcl accepted a missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/acl-object", Object_Query, "",
+                  "x-amz-acl: private" & CRLF &
+                  "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutObjectAcl accepted a mismatched empty-body digest");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/missing-acl-object", Object_Query, "",
+                  Private_ACL_Headers)),
+            "<Code>NoSuchKey</Code>"),
+         "PutObjectAcl did not verify object existence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/absent-bucket/object", Object_Query, "",
+                  Private_ACL_Headers)),
+            "<Code>NoSuchBucket</Code>"),
+         "PutObjectAcl did not distinguish an absent bucket");
       Check_Private_ACL
         (Run
            (Signed_Query_Request
@@ -4499,15 +4781,15 @@ begin
            (Run
               (Signed_Query_Request
                  ("PUT", "/test-bucket/acl-mutation-guard", Object_Query)),
-            "501 Not Implemented"),
-         "PutObjectAcl was not rejected explicitly");
+            "400 Bad Request"),
+         "PutObjectAcl accepted a missing canned ACL");
       Require
         (Has
            (Run
               (Encoded_ACL_Request
                  ("PUT", "/test-bucket/encoded-acl-mutation-guard")),
-            "501 Not Implemented"),
-         "encoded PutObjectAcl was not rejected explicitly");
+            "400 Bad Request"),
+         "encoded PutObjectAcl accepted a missing canned ACL");
       Require
         (Has
            (Run
@@ -13553,6 +13835,12 @@ begin
             Target_ID : constant String := US.To_String (Retained_ID);
             Other_ID  : constant String :=
               US.To_String (First.Versions (1).Version_ID);
+            Exact_ACL_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("acl", ""),
+               SigV4.Pair ("versionId", Target_ID));
+            Missing_ACL_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("acl", ""),
+               SigV4.Pair ("versionId", "unknown-generation"));
             Target_Query : constant SigV4.Name_Value_Array :=
               (SigV4.Pair ("tagging", ""),
                SigV4.Pair ("versionId", Target_ID));
@@ -13565,6 +13853,22 @@ begin
             Document : constant String :=
               "<Tagging><TagSet><Tag><Key>generation</Key>" &
               "<Value>retained</Value></Tag></TagSet></Tagging>";
+            Put_ACL_Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/" & Bucket & "/alpha", Exact_ACL_Query, "",
+                    "x-amz-acl: private" & CRLF &
+                    "Content-MD5: " & Content_MD5 ("") & CRLF));
+            Get_ACL_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Exact_ACL_Query));
+            Missing_ACL_Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/" & Bucket & "/alpha", Missing_ACL_Query, "",
+                    "x-amz-acl: private" & CRLF &
+                    "Content-MD5: " & Content_MD5 ("") & CRLF));
             Put_Response : constant String :=
               Run
                 (Signed_Query_Body_Request
@@ -13602,6 +13906,14 @@ begin
                 (Signed_Query_Request
                    ("DELETE", "/" & Bucket & "/alpha", Unknown_Query));
          begin
+            Require
+              (Has (Put_ACL_Response, "200 OK")
+               and then Has (Get_ACL_Response, "200 OK")
+               and then Has
+                 (Get_ACL_Response, "<Permission>FULL_CONTROL</Permission>")
+               and then Has
+                 (Missing_ACL_Response, "<Code>NoSuchKey</Code>"),
+               "exact-version PutObjectAcl selection mismatch");
             Require
               (Has (Put_Response, "200 OK")
                and then Has

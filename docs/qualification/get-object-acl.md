@@ -2,9 +2,9 @@
 
 This record qualifies the strict bounded provider-owned composable and typed
 synchronous clients, corpus, and authenticated Flyology server route for
-`GetObjectAcl`. It does not claim ACL persistence in a Flyology backend, ACL
-mutation, public grants, requester billing, or external server
-interoperability.
+`GetObjectAcl`. It does not claim arbitrary ACL persistence, public grants,
+requester billing, or external server interoperability. The companion private
+server profile admits only an idempotent private canned-ACL replacement.
 
 ## Pinned authority and inventory
 
@@ -112,11 +112,13 @@ and every HTTP terminal failure across all admission certainties. The common
 root gate repeats the full sequence under native and Flyology lightweight task
 owners three times.
 
-The machine ledger records `GetObjectAcl` as `missing / covered / covered /
-covered`. The backend cell remains missing because no ACL is persisted. The
-server cell is gated by the strict authenticated application corpus and a
-separate signed client over the real Flyology memory-server socket; neither
-gate claims external-server interoperability.
+The machine ledger records `GetObjectAcl` as `covered / covered / covered /
+covered`. Backend coverage is limited to current, null, and retained exact
+generation selection used to derive the immutable private projection; no
+arbitrary ACL is persisted. The server cell is gated by the strict
+authenticated application corpus and a separate signed client over the real
+Flyology memory-server socket; neither gate claims external-server
+interoperability.
 
 ## Formal boundary
 

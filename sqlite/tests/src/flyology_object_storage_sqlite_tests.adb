@@ -6420,6 +6420,8 @@ begin
             "SQLite bucket listing cleanup snapshot failed");
          SQLite_Bucket_Created := Page.Buckets.First_Element.Created;
       end;
+      --  GetBucketAcl derives its private projection from this exact
+      --  Head_Bucket existence substrate; SQLite stores no separate ACL.
       Store.Head_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket head failed");
@@ -7266,6 +7268,8 @@ begin
                "SQLite named-configuration list did not survive reopen");
          end;
       end;
+      --  GetObjectAcl derives its private projection from the current,
+      --  null, and exact Head_Object selector substrate exercised below.
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
       Assert

@@ -629,7 +629,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         (Unsupported, Unsupported_ACL,
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
-         Get_Bucket_ACL,
+         Put_Bucket_ACL, Get_Bucket_ACL,
          Put_Bucket_ABAC, Get_Bucket_ABAC,
          Put_Bucket_Acceleration, Get_Bucket_Acceleration,
          Put_Bucket_Request_Payment, Get_Bucket_Request_Payment,
@@ -665,7 +665,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
-         Get_Object_ACL,
+         Put_Object_ACL, Get_Object_ACL,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Get_Object_Attributes,
          Delete_Objects,
@@ -781,7 +781,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           or else
                             (Name = "x-id"
                              and then Value in
-                               "GetBucketAcl" | "GetObjectAcl")
+                               "GetBucketAcl" | "GetObjectAcl" |
+                               "PutBucketAcl" | "PutObjectAcl")
                         then
                            return True;
                         end if;
@@ -1577,7 +1578,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       function Parse_ACL_Query
         (Query        : String;
-         Object_Scope : Boolean) return ACL_Query_Result
+         Object_Scope : Boolean;
+         Request_Method : String) return ACL_Query_Result
       is
          Result       : ACL_Query_Result;
          Seen_ACL     : Boolean := False;
@@ -1595,9 +1597,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                Count := Count + 1;
             end if;
          end loop;
-         --  Pinned GetBucketAcl has acl plus optional x-id; GetObjectAcl adds
-         --  only versionId. These model fields, rather than server policy,
-         --  establish the two- and three-member query bounds.
+         --  Pinned bucket ACL operations have acl plus optional x-id; object
+         --  ACL operations add only versionId. These model fields, rather
+         --  than server policy, establish the two- and three-member bounds.
          if Count > (if Object_Scope then 3 else 2) then
             return Result;
          end if;
@@ -1639,8 +1641,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      elsif Name = "x-id" then
                         if Seen_X_ID
                           or else Value /=
-                            (if Object_Scope
-                             then "GetObjectAcl" else "GetBucketAcl")
+                            (if Object_Scope then
+                               (if Request_Method = "PUT"
+                                then "PutObjectAcl" else "GetObjectAcl")
+                             elsif Request_Method = "PUT" then
+                               "PutBucketAcl"
+                             else "GetBucketAcl")
                         then
                            return Result;
                         end if;
@@ -1662,7 +1668,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       ACL_Request : constant ACL_Query_Result :=
         Parse_ACL_Query
-          (Query_Text, Parsed.Kind = Requests.Object_Target);
+          (Query_Text, Parsed.Kind = Requests.Object_Target, Method);
       ACL_Query_Invalid : Boolean := False;
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
@@ -1947,6 +1953,100 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            "</ID></Grantee><Permission>FULL_CONTROL</Permission>" &
            "</Grant></AccessControlList></AccessControlPolicy>";
       end Private_ACL_Document;
+
+      procedure Validate_Private_Canned_ACL
+        (Operation_Name : String;
+         Object_Scope   : Boolean;
+         Accepted       : out Boolean)
+      is
+         ACL_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-acl");
+         MD5_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "content-md5");
+         Payer_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-request-payer");
+         Grant_Full_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-grant-full-control");
+         Grant_Read_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-grant-read");
+         Grant_Read_ACP_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-grant-read-acp");
+         Grant_Write_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-grant-write");
+         Grant_Write_ACP_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-grant-write-acp");
+         Grant_Count : constant Natural :=
+           Grant_Full_Count + Grant_Read_Count + Grant_Read_ACP_Count +
+           Grant_Write_Count + Grant_Write_ACP_Count;
+         Checksum_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-sdk-checksum-algorithm") +
+           Apps.Request_Header_Count (X, "x-amz-trailer") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc32") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc32c") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc64nvme") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha1") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha256") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha512") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-md5") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash64") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash3") +
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash128");
+      begin
+         Accepted := False;
+         if ACL_Count > 1 or else MD5_Count > 1 or else Payer_Count > 1
+           or else Grant_Full_Count > 1 or else Grant_Read_Count > 1
+           or else Grant_Read_ACP_Count > 1 or else Grant_Write_Count > 1
+           or else Grant_Write_ACP_Count > 1
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "A " & Operation_Name & " header is duplicated", Target_Text);
+         elsif Grant_Count > 0 and then ACL_Count > 0 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The " & Operation_Name & " ACL modes conflict", Target_Text);
+         elsif Grant_Count > 0 then
+            Send_Error
+              (X, 501, "NotImplemented",
+               "Explicit ACL grants are not implemented", Target_Text);
+         elsif ACL_Count = 0 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " requires one canned ACL", Target_Text);
+         elsif Apps.Request_Header (X, "x-amz-acl") /= "private" then
+            Send_Error
+              (X, 501, "NotImplemented",
+               "Only the private canned ACL is implemented", Target_Text);
+         elsif MD5_Count /= 1 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " requires Content-MD5", Target_Text);
+         elsif Apps.Request_Header (X, "content-md5") /= Content_MD5 ("") then
+            Send_Error
+              (X, 400, "BadDigest",
+               "The Content-MD5 does not match the empty request body",
+               Target_Text);
+         elsif Checksum_Count > 0 then
+            Send_Error
+              (X, 501, "NotImplemented",
+               "Additional ACL checksum algorithms are not implemented",
+               Target_Text);
+         elsif Object_Scope
+           and then Payer_Count = 1
+           and then Apps.Request_Header (X, "x-amz-request-payer") /=
+             "requester"
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The PutObjectAcl RequestPayer header is invalid", Target_Text);
+         elsif not Object_Scope and then Payer_Count > 0 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "PutBucketAcl does not define RequestPayer", Target_Text);
+         else
+            Accepted := True;
+         end if;
+      end Validate_Private_Canned_ACL;
 
       function Copy_Result_XML
         (Root : String; Value : Object_Information) return String
@@ -2761,7 +2861,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Operation := (if Method = "GET" then List_Buckets else Unsupported);
       elsif Parsed.Kind = Requests.Bucket_Target then
          ACL_Query_Invalid :=
-           Method = "GET" and then Looks_Like_ACL_Query
+           Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
          Bucket_Tagging_Query_Invalid :=
            Method in "PUT" | "GET" | "DELETE"
@@ -2825,7 +2925,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Operation :=
            (if Looks_Like_ACL_Query
             then
-              (if Method = "GET" then Get_Bucket_ACL else Unsupported_ACL)
+              (if Method = "GET" then Get_Bucket_ACL
+               elsif Method = "PUT" then Put_Bucket_ACL
+               else Unsupported_ACL)
             elsif Method = "PUT" and then Looks_Like_Bucket_CORS_Query
             then Put_Bucket_CORS
             elsif Method = "GET" and then Looks_Like_Bucket_CORS_Query
@@ -3048,11 +3150,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             else Unsupported);
       elsif Parsed.Kind = Requests.Object_Target then
          ACL_Query_Invalid :=
-           Method = "GET" and then Looks_Like_ACL_Query
+           Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
          if Looks_Like_ACL_Query then
             Operation :=
-              (if Method = "GET" then Get_Object_ACL else Unsupported_ACL);
+              (if Method = "GET" then Get_Object_ACL
+               elsif Method = "PUT" then Put_Object_ACL
+               else Unsupported_ACL);
          elsif Parsed.Has_Query and then Has_Tagging_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
@@ -3758,6 +3862,33 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
                            Result);
                         if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_ACL =>
+               declare
+                  ACL_Accepted : Boolean;
+                  Owner_Accepted : Boolean;
+               begin
+                  Validate_Private_Canned_ACL
+                    ("PutBucketAcl", False, ACL_Accepted);
+                  if ACL_Accepted then
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Head_Bucket
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           --  Private is the server's immutable ACL profile,
+                           --  so this is an idempotent validation, not stored
+                           --  ACL state or a general mutation engine.
                            Apps.Respond (X, 200, "", "");
                         else
                            Send_Backend_Error
@@ -10721,6 +10852,59 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Apps.Respond (X, 204, "", "");
                      else
                         Send_Backend_Error (X, Result, False, Target_Text);
+                     end if;
+                  end if;
+               end;
+
+            when Put_Object_ACL =>
+               declare
+                  ACL_Accepted : Boolean;
+                  Owner_Accepted : Boolean;
+                  Selected_Info : Object_Information;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Selector : constant Backends.Version_Selector :=
+                    (if not ACL_Request.Has_Version_ID
+                     then Backends.Current_Version_Selector
+                     elsif US.To_String (ACL_Request.Version_ID) = "null"
+                     then Backends.Null_Version_Selector
+                     else
+                       (Kind => Backends.Exact_Version,
+                        ID   => ACL_Request.Version_ID));
+               begin
+                  Validate_Private_Canned_ACL
+                    ("PutObjectAcl", True, ACL_Accepted);
+                  if ACL_Accepted then
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Head_Object
+                          (Bucket, Key, Apps.Cancellation (X),
+                           Apps.Deadline (X), Selected_Info, Result,
+                           Selector => Selector);
+                        if Result = Success then
+                           if Payer_Count = 1 then
+                              Apps.Set_Header
+                                (X, "x-amz-request-charged", "requester");
+                           end if;
+                           --  The selected object generation already has the
+                           --  immutable private ACL profile. No state changes.
+                           Apps.Respond (X, 200, "", "");
+                        elsif Result = Not_Found then
+                           Store.Head_Bucket
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                           if Result = Success then
+                              Send_Backend_Error
+                                (X, Not_Found, False, Target_Text);
+                           else
+                              Send_Backend_Error
+                                (X, Result, True, Target_Text);
+                           end if;
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
                      end if;
                   end if;
                end;

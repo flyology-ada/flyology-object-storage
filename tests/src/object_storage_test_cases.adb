@@ -4029,6 +4029,8 @@ package body Object_Storage_Test_Cases is
       Store.Create_Bucket
         ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "create bucket");
+      --  GetBucketAcl derives its private projection from this exact
+      --  Head_Bucket existence substrate; there is no independent ACL state.
       Store.Head_Bucket
         ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "head existing memory bucket");
@@ -4206,6 +4208,8 @@ package body Object_Storage_Test_Cases is
            "5eb63bbbe01eeed093cb22bb8f5acdc3",
          "memory generates single-part MD5 entity tag");
       Assert (Store.Bytes_Used = 11, "account committed bytes");
+      --  GetObjectAcl derives its private projection from the current,
+      --  null, and exact Head_Object selector substrate exercised here.
       Store.Head_Object
         ("test-bucket", "../opaque/key", null,
          Ada.Real_Time.Time_Last, Info, Result);
@@ -5655,6 +5659,8 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Backend_Unavailable,
             "FOSOBJ05 accepted a composite checksum without parts");
+         --  GetBucketAcl derives its private projection from this exact
+         --  Head_Bucket existence substrate; files store no separate ACL.
          Store.Head_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "head existing files bucket");
@@ -6142,6 +6148,8 @@ package body Object_Storage_Test_Cases is
                   "files named-configuration list did not survive reopen");
             end;
          end;
+         --  GetObjectAcl derives its private projection from the current,
+         --  null, and exact Head_Object selector substrate exercised here.
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
          Assert

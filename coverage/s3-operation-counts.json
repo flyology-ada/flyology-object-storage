@@ -1,7 +1,7 @@
 {
   "backend": {
-    "covered": 84,
-    "missing": 32,
+    "covered": 86,
+    "missing": 30,
     "partial": 0
   },
   "client": {
@@ -41,9 +41,9 @@
   "operations": 116,
   "provenance": {
     "backend": {
-      "absent": 32,
+      "absent": 30,
       "generated": 0,
-      "handwritten": 84,
+      "handwritten": 86,
       "shared_family": 0
     },
     "client": {
@@ -53,15 +53,15 @@
       "shared_family": 17
     },
     "server": {
-      "absent": 30,
+      "absent": 28,
       "generated": 0,
-      "handwritten": 86,
+      "handwritten": 88,
       "shared_family": 0
     },
     "tests": {
       "absent": 0,
-      "generated": 8,
-      "handwritten": 100,
+      "generated": 7,
+      "handwritten": 101,
       "shared_family": 8
     }
   },
@@ -71,8 +71,8 @@
     "transfers": 8
   },
   "server": {
-    "covered": 86,
-    "missing": 30,
+    "covered": 88,
+    "missing": 28,
     "partial": 0
   }
 }

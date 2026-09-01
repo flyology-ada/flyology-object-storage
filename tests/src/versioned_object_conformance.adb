@@ -8,6 +8,10 @@ with Flyology.Object_Storage;
 
 package body Versioned_Object_Conformance is
 
+   --  GetObjectAcl derives its private projection from the current, null,
+   --  and exact Head_Object selector substrate exercised by this shared
+   --  memory, files, and SQLite conformance state machine.
+
    use Flyology.Object_Storage;
    use Flyology.Object_Storage.Backends;
    use type Ada.Containers.Count_Type;
