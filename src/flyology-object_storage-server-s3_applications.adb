@@ -53,6 +53,8 @@ with Flyology.Object_Storage.Tags;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
 
+   pragma Unreferenced (Metadata_Provider);
+
    package Apps renames Flyology.HTTP.Server.Applications;
    package US renames Ada.Strings.Unbounded;
    package Requests renames S3.Requests;

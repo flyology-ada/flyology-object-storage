@@ -465,6 +465,41 @@ package Flyology.Object_Storage.Backends is
    --  adapters below.
    type Bucket_Notification_Backend is limited interface;
 
+   --  Optional capability for retaining one provider-resolved bucket metadata
+   --  configuration. A backend that does not implement this interface remains
+   --  a valid Backend and reports Not_Implemented through the class-wide
+   --  adapters below.
+   type Bucket_Metadata_Backend is limited interface;
+
+   --  API generation that originally created one retained metadata
+   --  configuration. The generation controls V1 compatibility only; V2 reads
+   --  and deletes address either generation.
+   --  @enum Legacy_Metadata_Table_Configuration Created by the V1 API
+   --  @enum Current_Metadata_Configuration Created by the V2 API
+   type Bucket_Metadata_Configuration_Kind is
+     (Legacy_Metadata_Table_Configuration,
+      Current_Metadata_Configuration);
+
+   --  Complete provider-resolved metadata state retained atomically by a
+   --  backend. Current_Configuration_Document is the canonical V2
+   --  configuration used by later updates. Current_Result_Document is the
+   --  canonical V2 GET
+   --  projection. Legacy_Result_Document is meaningful only for legacy state
+   --  and may be empty when the V1 outer result is absent.
+   --  @field Kind API generation that created the state
+   --  @field Current_Configuration_Document Canonical V2 configuration bytes
+   --  @field Current_Result_Document Canonical V2 GET result bytes
+   --  @field Legacy_Result_Document Canonical V1 GET result bytes when legacy
+   type Bucket_Metadata_State is record
+      Kind : Bucket_Metadata_Configuration_Kind;
+      Current_Configuration_Document :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Current_Result_Document :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Legacy_Result_Document :
+        Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    subtype Multipart_Part_Number is Positive range 1 .. 10_000;
 
    --  Maximum source size accepted by one atomic S3 CopyObject request.
@@ -1465,6 +1500,151 @@ package Flyology.Object_Storage.Backends is
       Configured : out Boolean;
       Result     : out Status);
 
+   --  Check structural invariants and the established per-document bucket
+   --  configuration persistence ceiling for one metadata state. Strict S3
+   --  codecs establish canonical document contents before this boundary.
+   --  @param Value Candidate provider-resolved state
+   --  @return True when the state is structurally retainable
+   function Valid_Bucket_Metadata_State
+     (Value : Bucket_Metadata_State) return Boolean;
+
+   --  Atomically create one metadata state when none is retained.
+   --  @param Item Backend with metadata persistence capability
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete provider-resolved state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Success, Not_Found, Already_Exists,
+   --  Capacity_Exceeded, Invalid_Request, or Backend_Unavailable
+   procedure Create_Bucket_Metadata_State
+     (Item     : in out Bucket_Metadata_Backend;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic metadata-state snapshot.
+   --  @param Item Backend with metadata persistence capability
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete retained state when configured
+   --  @param Configured Whether metadata state is retained
+   --  @param Result Success, Not_Found, Invalid_Request, or
+   --  Backend_Unavailable
+   procedure Get_Bucket_Metadata_State
+     (Item       : in out Bucket_Metadata_Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically replace one unchanged metadata-state snapshot. No retry is
+   --  performed when another caller changes the snapshot first.
+   --  @param Item Backend with metadata persistence capability
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Value Complete replacement state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Success, Not_Found, Conflict,
+   --  Capacity_Exceeded, Invalid_Request, or Backend_Unavailable
+   procedure Replace_Bucket_Metadata_State
+     (Item     : in out Bucket_Metadata_Backend;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Atomically delete one unchanged metadata-state snapshot. Absence is
+   --  idempotent; a changed snapshot reports Conflict without deletion.
+   --  @param Item Backend with metadata persistence capability
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Success, Not_Found, Conflict, Invalid_Request, or
+   --  Backend_Unavailable
+   procedure Delete_Bucket_Metadata_State
+     (Item     : in out Bucket_Metadata_Backend;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Dispatch create when Item implements the optional metadata capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete provider-resolved state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Capability result, or Not_Implemented when unsupported
+   procedure Create_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Dispatch retrieval when Item implements the optional metadata
+   --  capability. Outputs are reset when unsupported.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete retained state when configured
+   --  @param Configured Whether metadata state is retained
+   --  @param Result Capability result, or Not_Implemented when unsupported
+   procedure Get_Bucket_Metadata_State_If_Supported
+     (Item       : in out Backend'Class;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Dispatch exact-state replacement when Item implements the optional
+   --  metadata capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Value Complete replacement state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Capability result, or Not_Implemented when unsupported
+   procedure Replace_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Dispatch exact-state deletion when Item implements the optional
+   --  metadata capability.
+   --  @param Item Pluggable backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Capability result, or Not_Implemented when unsupported
+   procedure Delete_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    --  Atomically replace the complete canonical replication document. The
    --  backend retains configuration state but does not execute replication.
    --  @param Item Backend that owns the bucket configuration
@@ -2296,6 +2476,13 @@ package Flyology.Object_Storage.Backends is
       Result    : out Status) is abstract;
 
 private
+   Unsupported_Bucket_Metadata_Status : constant Status := Not_Implemented;
+
+   procedure Reset_Unsupported_Bucket_Metadata_Get
+     (Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
    Maximum_Bucket_Policy_Bytes : constant Byte_Count := 16 * 1_024 * 1_024;
    --  Private project-policy ceiling shared by backend persistence paths. It
    --  preserves the established S3.XML.Default_Limits document admission

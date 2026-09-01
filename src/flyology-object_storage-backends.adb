@@ -1,5 +1,24 @@
 package body Flyology.Object_Storage.Backends is
 
+   function Empty_Bucket_Metadata_State return Bucket_Metadata_State is
+     ((Kind                    => Current_Metadata_Configuration,
+       Current_Configuration_Document =>
+         Ada.Strings.Unbounded.Null_Unbounded_String,
+       Current_Result_Document =>
+         Ada.Strings.Unbounded.Null_Unbounded_String,
+       Legacy_Result_Document =>
+         Ada.Strings.Unbounded.Null_Unbounded_String));
+
+   procedure Reset_Unsupported_Bucket_Metadata_Get
+     (Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      Value := Empty_Bucket_Metadata_State;
+      Configured := False;
+      Result := Unsupported_Bucket_Metadata_Status;
+   end Reset_Unsupported_Bucket_Metadata_Get;
+
    function Valid_Bucket_CORS_Document (Document : String) return Boolean is
      (Byte_Count (Document'Length) <= Maximum_Bucket_CORS_Bytes);
 
@@ -67,6 +86,100 @@ package body Flyology.Object_Storage.Backends is
          Result := Not_Implemented;
       end if;
    end Get_Bucket_Notification_If_Supported;
+
+   function Valid_Bucket_Metadata_State
+     (Value : Bucket_Metadata_State) return Boolean
+   is
+      Configuration_Length : constant Byte_Count := Byte_Count
+        (Ada.Strings.Unbounded.Length
+           (Value.Current_Configuration_Document));
+      Current_Length : constant Byte_Count := Byte_Count
+        (Ada.Strings.Unbounded.Length (Value.Current_Result_Document));
+      Legacy_Length : constant Byte_Count := Byte_Count
+        (Ada.Strings.Unbounded.Length (Value.Legacy_Result_Document));
+   begin
+      return Configuration_Length > 0
+        and then Current_Length > 0
+        and then
+          (Value.Kind = Legacy_Metadata_Table_Configuration
+           or else Legacy_Length = 0)
+        and then Configuration_Length <= Maximum_Bucket_Configuration_Bytes
+        and then Current_Length <= Maximum_Bucket_Configuration_Bytes
+        and then Legacy_Length <= Maximum_Bucket_Configuration_Bytes;
+   end Valid_Bucket_Metadata_State;
+
+   procedure Create_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      if Item in Bucket_Metadata_Backend'Class then
+         Create_Bucket_Metadata_State
+           (Bucket_Metadata_Backend'Class (Item), Bucket, Value, Token,
+            Deadline, Result);
+      else
+         Result := Unsupported_Bucket_Metadata_Status;
+      end if;
+   end Create_Bucket_Metadata_State_If_Supported;
+
+   procedure Get_Bucket_Metadata_State_If_Supported
+     (Item       : in out Backend'Class;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status) is
+   begin
+      if Item in Bucket_Metadata_Backend'Class then
+         Value := Empty_Bucket_Metadata_State;
+         Configured := False;
+         Get_Bucket_Metadata_State
+           (Bucket_Metadata_Backend'Class (Item), Bucket, Token, Deadline,
+            Value, Configured, Result);
+      else
+         Reset_Unsupported_Bucket_Metadata_Get
+           (Value, Configured, Result);
+      end if;
+   end Get_Bucket_Metadata_State_If_Supported;
+
+   procedure Replace_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      if Item in Bucket_Metadata_Backend'Class then
+         Replace_Bucket_Metadata_State
+           (Bucket_Metadata_Backend'Class (Item), Bucket, Expected, Value,
+            Token, Deadline, Result);
+      else
+         Result := Unsupported_Bucket_Metadata_Status;
+      end if;
+   end Replace_Bucket_Metadata_State_If_Supported;
+
+   procedure Delete_Bucket_Metadata_State_If_Supported
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      if Item in Bucket_Metadata_Backend'Class then
+         Delete_Bucket_Metadata_State
+           (Bucket_Metadata_Backend'Class (Item), Bucket, Expected, Token,
+            Deadline, Result);
+      else
+         Result := Unsupported_Bucket_Metadata_Status;
+      end if;
+   end Delete_Bucket_Metadata_State_If_Supported;
 
    function Valid_Bucket_Named_Configuration
      (Identifier : String; Document : String) return Boolean is

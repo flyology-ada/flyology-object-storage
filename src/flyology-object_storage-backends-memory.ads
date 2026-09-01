@@ -12,8 +12,8 @@ with Flyology.Object_Storage.Tags;
 --  Byte_Capacity covers retained committed, staged, and in-progress object
 --  payload buffers plus retained opaque bucket-configuration bytes, including
 --  policy, CORS, encryption, ownership controls, lifecycle, logging,
---  analytics, and metrics; atomic replacement and multipart assembly
---  therefore require coexistence headroom.
+--  analytics, metrics, and provider-resolved metadata state; atomic
+--  replacement and multipart assembly therefore require coexistence headroom.
 --  It implements the same contract as durable backends and is the reference
 --  oracle for conformance tests; capacity exhaustion is an ordinary reported
 --  outcome.
@@ -23,7 +23,8 @@ package Flyology.Object_Storage.Backends.Memory is
      (Bucket_Capacity : Positive;
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
-   is limited new Backend and Bucket_Notification_Backend with private;
+   is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend with private;
 
    overriding procedure Create_Bucket
      (Item     : in out Store;
@@ -306,6 +307,70 @@ package Flyology.Object_Storage.Backends.Memory is
       Document   : out Ada.Strings.Unbounded.Unbounded_String;
       Configured : out Boolean;
       Result     : out Status);
+
+   --  Atomically create one bounded provider-resolved metadata state.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete provider-resolved state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic metadata-state snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete retained state when configured
+   --  @param Configured Whether metadata state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Atomically replace one exact metadata-state snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Value Complete replacement state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Atomically delete one exact metadata-state snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
 
    --  Retain one bounded replication document in memory.
    --  @param Item In-memory backend
@@ -1230,6 +1295,15 @@ private
         (others => False);
       Configuration_Documents : Configuration_Document_Array;
       Configuration_Metadata : Configuration_Document_Array;
+      Metadata_Configured : Boolean := False;
+      Metadata_State : Bucket_Metadata_State :=
+        (Kind => Current_Metadata_Configuration,
+         Current_Configuration_Document =>
+           Ada.Strings.Unbounded.Null_Unbounded_String,
+         Current_Result_Document =>
+           Ada.Strings.Unbounded.Null_Unbounded_String,
+         Legacy_Result_Document =>
+           Ada.Strings.Unbounded.Null_Unbounded_String);
       Named_Configurations : Named_Configuration_Map_Array;
       Public_Access_Block_Configured : Boolean := False;
       Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
@@ -1377,6 +1451,24 @@ private
         (Name   : String;
          Kind   : Singleton_Configuration_Kind;
          Result : out Status);
+      procedure Create_Bucket_Metadata_State
+        (Name   : String;
+         Value  : Bucket_Metadata_State;
+         Result : out Status);
+      procedure Get_Bucket_Metadata_State
+        (Name       : String;
+         Value      : out Bucket_Metadata_State;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Replace_Bucket_Metadata_State
+        (Name     : String;
+         Expected : Bucket_Metadata_State;
+         Value    : Bucket_Metadata_State;
+         Result   : out Status);
+      procedure Delete_Bucket_Metadata_State
+        (Name     : String;
+         Expected : Bucket_Metadata_State;
+         Result   : out Status);
       procedure Put_Named_Bucket_Configuration
         (Name       : String;
          Kind       : Named_Configuration_Kind;
@@ -1607,7 +1699,8 @@ private
      (Bucket_Capacity : Positive;
       Object_Capacity : Positive;
       Byte_Capacity   : Byte_Count)
-   is limited new Backend and Bucket_Notification_Backend with record
+   is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend with record
       State : Memory_State
         (Bucket_Capacity, Object_Capacity, Byte_Capacity);
    end record;

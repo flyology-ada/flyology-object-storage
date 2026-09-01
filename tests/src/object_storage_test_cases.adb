@@ -22,6 +22,7 @@ with Flyology.HTTP.Client;
 with Flyology.IO;
 with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
+with Flyology.Object_Storage.Backends.Testing;
 with Flyology.Object_Storage.Backends.Files;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Checksum_Engine;
@@ -3966,6 +3967,7 @@ package body Object_Storage_Test_Cases is
          Observed         : Boolean := False;
          Written          : Natural := 0;
          Competing_Result : Status := Success;
+         Metadata_Result  : Status := Success;
       end record;
       overriding procedure Begin_Object
         (Item           : in out Reservation_Sink;
@@ -4009,8 +4011,21 @@ package body Object_Storage_Test_Cases is
             Length   => (Kind => Known, Bytes => 43),
             Bad_Last => False);
          Ignored : Object_Information;
+         Metadata_State : constant Bucket_Metadata_State :=
+           (Kind => Current_Metadata_Configuration,
+            Current_Configuration_Document =>
+              Ada.Strings.Unbounded.To_Unbounded_String
+                (String'(1 .. 21 => 'c')),
+            Current_Result_Document =>
+              Ada.Strings.Unbounded.To_Unbounded_String
+                (String'(1 .. 22 => 'r')),
+            Legacy_Result_Document =>
+              Ada.Strings.Unbounded.Null_Unbounded_String);
       begin
          Item.Observed := Item.Store.Bytes_Used = 22;
+         Item.Store.Create_Bucket_Metadata_State
+           ("test-bucket", Metadata_State, null, Ada.Real_Time.Time_Last,
+            Item.Metadata_Result);
          Item.Store.Put_Object
            ("test-bucket", "competitor", Competitor,
             Default_Put_Options, null, Ada.Real_Time.Time_Last,
@@ -4243,8 +4258,9 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success and then Probe.Observed
             and then Probe.Competing_Result = Capacity_Exceeded
+            and then Probe.Metadata_Result = Capacity_Exceeded
             and then Probe.Written = 11 and then Store.Bytes_Used = 11,
-            "outbound snapshot escaped or leaked byte accounting");
+            "outbound reservation escaped metadata byte accounting");
       end;
       declare
          Failed : Raising_Sink;
@@ -20583,6 +20599,238 @@ package body Object_Storage_Test_Cases is
          end;
          Assert
            (Raised, "absent metadata-table result discarded present error");
+      end;
+
+      declare
+         package Backends renames Flyology.Object_Storage.Backends;
+         Current : Backends.Bucket_Metadata_State :=
+           (Kind => Backends.Current_Metadata_Configuration,
+            Current_Configuration_Document =>
+              US.To_Unbounded_String ("configuration"),
+            Current_Result_Document =>
+              US.To_Unbounded_String ("current-result"),
+            Legacy_Result_Document => US.Null_Unbounded_String);
+         Legacy : Backends.Bucket_Metadata_State :=
+           (Kind => Backends.Legacy_Metadata_Table_Configuration,
+            Current_Configuration_Document =>
+              Current.Current_Configuration_Document,
+            Current_Result_Document => Current.Current_Result_Document,
+            Legacy_Result_Document => US.Null_Unbounded_String);
+      begin
+         Assert
+           (Backends.Valid_Bucket_Metadata_State (Current),
+            "structurally valid current metadata state rejected");
+         Assert
+           (Backends.Valid_Bucket_Metadata_State (Legacy),
+            "legacy metadata state rejected an absent V1 outer result");
+         Legacy.Legacy_Result_Document :=
+           US.To_Unbounded_String ("legacy-result");
+         Assert
+           (Backends.Valid_Bucket_Metadata_State (Legacy),
+            "legacy metadata state rejected a present V1 result");
+         Current.Legacy_Result_Document :=
+           US.To_Unbounded_String ("legacy-result");
+         Assert
+           (not Backends.Valid_Bucket_Metadata_State (Current),
+            "current metadata state retained a legacy result");
+         Legacy.Current_Configuration_Document := US.Null_Unbounded_String;
+         Assert
+           (not Backends.Valid_Bucket_Metadata_State (Legacy),
+            "metadata state accepted missing current configuration");
+         Legacy.Current_Configuration_Document :=
+           US.To_Unbounded_String ("configuration");
+         Legacy.Current_Result_Document := US.Null_Unbounded_String;
+         Assert
+           (not Backends.Valid_Bucket_Metadata_State (Legacy),
+            "metadata state accepted missing current result");
+      end;
+
+      declare
+         package Backends renames Flyology.Object_Storage.Backends;
+         package Testing renames Flyology.Object_Storage.Backends.Testing;
+         use type Backends.Bucket_Metadata_Configuration_Kind;
+         Value : Backends.Bucket_Metadata_State :=
+           (Kind => Backends.Legacy_Metadata_Table_Configuration,
+            Current_Configuration_Document =>
+              US.To_Unbounded_String ("changed"),
+            Current_Result_Document => US.To_Unbounded_String ("changed"),
+            Legacy_Result_Document => US.To_Unbounded_String ("changed"));
+         Configured : Boolean := True;
+         Result : Flyology.Object_Storage.Status :=
+           Flyology.Object_Storage.Success;
+      begin
+         Testing.Reset_Unsupported_Bucket_Metadata_Get_For_Testing
+           (Value, Configured, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Not_Implemented
+            and then not Configured
+            and then Value.Kind = Backends.Current_Metadata_Configuration
+            and then US.Length (Value.Current_Configuration_Document) = 0
+            and then US.Length (Value.Current_Result_Document) = 0
+            and then US.Length (Value.Legacy_Result_Document) = 0,
+            "unsupported metadata Get did not reset every output");
+         Assert
+           (Testing.Unsupported_Bucket_Metadata_Status_For_Testing =
+              Flyology.Object_Storage.Not_Implemented,
+            "unsupported metadata mutations did not fail explicitly");
+      end;
+
+      declare
+         package Backends renames Flyology.Object_Storage.Backends;
+         package Testing renames Flyology.Object_Storage.Backends.Testing;
+         Maximum : constant Natural := Natural
+           (Testing.Maximum_Bucket_Configuration_Bytes_For_Testing);
+         Boundary : US.Unbounded_String := US.To_Unbounded_String ("x");
+         Value : Backends.Bucket_Metadata_State :=
+           (Kind => Backends.Current_Metadata_Configuration,
+            Current_Configuration_Document =>
+              US.To_Unbounded_String ("configuration"),
+            Current_Result_Document => US.Null_Unbounded_String,
+            Legacy_Result_Document => US.Null_Unbounded_String);
+      begin
+         while US.Length (Boundary) < Maximum loop
+            declare
+               Remaining : constant Natural :=
+                 Maximum - US.Length (Boundary);
+               Fragment_Length : constant Natural :=
+                 Natural'Min (US.Length (Boundary), Remaining);
+            begin
+               US.Append
+                 (Boundary,
+                  US.Slice (Boundary, 1, Fragment_Length));
+            end;
+         end loop;
+         Value.Current_Result_Document := Boundary;
+         Assert
+           (Backends.Valid_Bucket_Metadata_State (Value),
+            "metadata state rejected the per-document boundary");
+         US.Append (Value.Current_Result_Document, "x");
+         Assert
+           (not Backends.Valid_Bucket_Metadata_State (Value),
+            "metadata state accepted an over-bound document");
+      end;
+
+      declare
+         package Backends renames Flyology.Object_Storage.Backends;
+         package Memory renames Flyology.Object_Storage.Backends.Memory;
+         use type Backends.Bucket_Metadata_State;
+         Store : Memory.Store (1, 1, 128);
+         Original : constant Backends.Bucket_Metadata_State :=
+           (Kind => Backends.Legacy_Metadata_Table_Configuration,
+            Current_Configuration_Document =>
+              US.To_Unbounded_String ("configuration"),
+            Current_Result_Document =>
+              US.To_Unbounded_String ("current-result"),
+            Legacy_Result_Document =>
+              US.To_Unbounded_String ("legacy-result"));
+         Replacement : Backends.Bucket_Metadata_State := Original;
+         Oversized : Backends.Bucket_Metadata_State := Original;
+         Loaded : Backends.Bucket_Metadata_State;
+         Configured : Boolean;
+         Result : Flyology.Object_Storage.Status;
+      begin
+         Store.Create_Bucket
+           ("metadata-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "metadata-state test bucket creation failed");
+         Store.Create_Bucket_Metadata_State
+           ("metadata-bucket", Original, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "memory metadata create failed");
+         Assert
+           (Store.Bytes_Used =
+              Flyology.Object_Storage.Byte_Count
+                (US.Length (Original.Current_Configuration_Document)
+                 + US.Length (Original.Current_Result_Document)
+                 + US.Length (Original.Legacy_Result_Document)),
+            "memory metadata create did not charge retained bytes");
+         Store.Create_Bucket_Metadata_State
+           ("metadata-bucket", Original, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Already_Exists,
+            "memory metadata duplicate create was not rejected");
+         Store.Get_Bucket_Metadata_State
+           ("metadata-bucket", null, Ada.Real_Time.Time_Last, Loaded,
+            Configured, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success and then Configured
+            and then Loaded = Original,
+            "memory metadata snapshot changed after create");
+
+         Replacement.Current_Result_Document :=
+           US.To_Unbounded_String ("updated-result-grows");
+         Store.Replace_Bucket_Metadata_State
+           ("metadata-bucket", Original, Replacement, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "memory metadata exact replacement failed");
+         Assert
+           (Store.Bytes_Used =
+              Flyology.Object_Storage.Byte_Count
+                (US.Length (Replacement.Current_Configuration_Document)
+                 + US.Length (Replacement.Current_Result_Document)
+                 + US.Length (Replacement.Legacy_Result_Document)),
+            "memory metadata replacement retained the obsolete byte charge");
+         Store.Replace_Bucket_Metadata_State
+           ("metadata-bucket", Original, Replacement, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Conflict,
+            "memory metadata stale replacement did not conflict");
+
+         Oversized.Current_Result_Document :=
+           US.To_Unbounded_String ((1 .. 129 => 'x'));
+         Store.Replace_Bucket_Metadata_State
+           ("metadata-bucket", Replacement, Oversized, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Capacity_Exceeded,
+            "memory metadata replacement ignored byte capacity");
+         Store.Delete_Bucket_Metadata_State
+           ("metadata-bucket", Original, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Conflict,
+            "memory metadata stale deletion did not conflict");
+         Store.Delete_Bucket_Metadata_State
+           ("metadata-bucket", Replacement, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "memory metadata exact deletion failed");
+         Assert
+           (Store.Bytes_Used = 0,
+            "memory metadata deletion did not release retained bytes");
+         Store.Delete_Bucket_Metadata_State
+           ("metadata-bucket", Replacement, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "memory metadata absent deletion was not idempotent");
+         Store.Get_Bucket_Metadata_State
+           ("metadata-bucket", null, Ada.Real_Time.Time_Last, Loaded,
+            Configured, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success and then not Configured,
+            "memory metadata deletion retained configured state");
+         Store.Create_Bucket_Metadata_State
+           ("metadata-bucket", Replacement, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Store.Bytes_Used > 0,
+            "bucket cascade fixture did not retain metadata state");
+         Store.Delete_Bucket
+           ("metadata-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Store.Bytes_Used = 0,
+            "bucket deletion did not release retained metadata bytes");
       end;
    end Check_Metadata_Configuration_Codecs;
 

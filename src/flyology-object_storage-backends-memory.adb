@@ -34,10 +34,30 @@ package body Flyology.Object_Storage.Backends.Memory is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Strings.Unbounded.Unbounded_String;
+   use type Bucket_Metadata_State;
    package Checksum_Engine renames
      Flyology.Object_Storage.Checksum_Engine;
 
    Empty_Info : constant Object_Information := (others => <>);
+   Empty_Metadata_State : constant Bucket_Metadata_State :=
+     (Kind => Current_Metadata_Configuration,
+      Current_Configuration_Document =>
+        Ada.Strings.Unbounded.Null_Unbounded_String,
+      Current_Result_Document =>
+        Ada.Strings.Unbounded.Null_Unbounded_String,
+      Legacy_Result_Document =>
+        Ada.Strings.Unbounded.Null_Unbounded_String);
+
+   function Metadata_Bytes
+     (Value : Bucket_Metadata_State) return Byte_Count is
+     (Byte_Count
+        (Ada.Strings.Unbounded.Length
+           (Value.Current_Configuration_Document))
+      + Byte_Count
+          (Ada.Strings.Unbounded.Length (Value.Current_Result_Document))
+      + Byte_Count
+          (Ada.Strings.Unbounded.Length (Value.Legacy_Result_Document)));
+
    Epoch : constant Ada.Calendar.Time :=
      Ada.Calendar.Formatting.Time_Of
        (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
@@ -566,6 +586,10 @@ package body Flyology.Object_Storage.Backends.Memory is
                 (Ada.Strings.Unbounded.Length
                    (Buckets (Index).Configuration_Metadata (Kind)));
          end loop;
+         if Buckets (Index).Metadata_Configured then
+            Bytes := Bytes - Metadata_Bytes
+              (Buckets (Index).Metadata_State);
+         end if;
          for Kind in Named_Configuration_Kind loop
             for Position in
               Buckets (Index).Named_Configurations (Kind).Iterate
@@ -929,6 +953,102 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_Configuration;
+
+      procedure Create_Bucket_Metadata_State
+        (Name   : String;
+         Value  : Bucket_Metadata_State;
+         Result : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Metadata_Bytes (Value);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         elsif Buckets (Index).Metadata_Configured then
+            Result := Already_Exists;
+         elsif Incoming > Byte_Limit - Bytes
+           or else Reserved_Bytes > Byte_Limit - Bytes - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).Metadata_State := Value;
+            Buckets (Index).Metadata_Configured := True;
+            Bytes := Bytes + Incoming;
+            Result := Success;
+         end if;
+      end Create_Bucket_Metadata_State;
+
+      procedure Get_Bucket_Metadata_State
+        (Name       : String;
+         Value      : out Bucket_Metadata_State;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Value := Empty_Metadata_State;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Buckets (Index).Metadata_State;
+            Configured := Buckets (Index).Metadata_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_Metadata_State;
+
+      procedure Replace_Bucket_Metadata_State
+        (Name     : String;
+         Expected : Bucket_Metadata_State;
+         Value    : Bucket_Metadata_State;
+         Result   : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Metadata_Bytes (Value);
+         Existing : Byte_Count := 0;
+         Base     : Byte_Count;
+      begin
+         if Index = 0 or else not Buckets (Index).Metadata_Configured then
+            Result := Not_Found;
+            return;
+         elsif Buckets (Index).Metadata_State /= Expected then
+            Result := Conflict;
+            return;
+         end if;
+         Existing := Metadata_Bytes (Buckets (Index).Metadata_State);
+         Base := Bytes - Existing;
+         if Incoming > Byte_Limit - Base
+           or else Reserved_Bytes > Byte_Limit - Base - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).Metadata_State := Value;
+            Bytes := Base + Incoming;
+            Result := Success;
+         end if;
+      end Replace_Bucket_Metadata_State;
+
+      procedure Delete_Bucket_Metadata_State
+        (Name     : String;
+         Expected : Bucket_Metadata_State;
+         Result   : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         elsif not Buckets (Index).Metadata_Configured then
+            Result := Success;
+         elsif Buckets (Index).Metadata_State /= Expected then
+            Result := Conflict;
+         else
+            Bytes := Bytes - Metadata_Bytes
+              (Buckets (Index).Metadata_State);
+            Buckets (Index).Metadata_State := Empty_Metadata_State;
+            Buckets (Index).Metadata_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Metadata_State;
 
       procedure Put_Named_Bucket_Configuration
         (Name       : String;
@@ -3482,6 +3602,88 @@ package body Flyology.Object_Storage.Backends.Memory is
             Configured, Result);
       end if;
    end Get_Bucket_Notification;
+
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Value)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Create_Bucket_Metadata_State (Bucket, Value, Result);
+      end if;
+   end Create_Bucket_Metadata_State;
+
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Value := Empty_Metadata_State;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Metadata_State
+           (Bucket, Value, Configured, Result);
+      end if;
+   end Get_Bucket_Metadata_State;
+
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Expected)
+        or else not Valid_Bucket_Metadata_State (Value)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Replace_Bucket_Metadata_State
+           (Bucket, Expected, Value, Result);
+      end if;
+   end Replace_Bucket_Metadata_State;
+
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Expected)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Metadata_State
+           (Bucket, Expected, Result);
+      end if;
+   end Delete_Bucket_Metadata_State;
 
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;
