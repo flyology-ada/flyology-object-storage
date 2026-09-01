@@ -3383,13 +3383,17 @@
     },
     "ListDirectoryBuckets": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-generated_list_directory_buckets_xml.ads",
           "src/flyology-object_storage-s3-generated_list_directory_buckets_xml.adb",
@@ -3404,18 +3408,23 @@
           "tests/generated/s3-negative-xml.json",
           "tests/generated/s3-signed-socket.json",
           "tests/src/s3_paginated_rest_xml_read_qualification.adb",
-          "tests/src/s3_list_directory_buckets_qualification.adb"
+          "tests/src/s3_list_directory_buckets_qualification.adb",
+          "tests/src/s3_server_application_corpus.adb",
+          "docs/qualification/list-directory-buckets.md"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "paginated_rest_xml_read",
       "generator_eligible": true,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "shared_family",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "shared_family"
       },
       "provider": "buckets"

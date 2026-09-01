@@ -1721,7 +1721,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    procedure Handle (X : in out Apps.Exchange) is
       type Operation_Kind is
         (Unsupported, Unsupported_ACL,
-         List_Buckets,
+         List_Buckets, List_Directory_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Put_Bucket_ACL, Get_Bucket_ACL,
          Put_Bucket_ABAC, Get_Bucket_ABAC,
@@ -1918,6 +1918,101 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Continuation_Token     : US.Unbounded_String;
          Has_Continuation_Token : Boolean := False;
       end record;
+
+      type Directory_Bucket_List_Query_Result is record
+         Recognized : Boolean := False;
+         Valid      : Boolean := False;
+      end record;
+
+      --  Pinned S3 ListDirectoryBuckets model contract. This body-only value
+      --  validates the wire request and is not a local storage capacity.
+      Maximum_Directory_Buckets : constant Natural := 1_000;
+
+      function Parse_Directory_Bucket_List_Query
+        (Query : String) return Directory_Bucket_List_Query_Result
+      is
+         Result            : Directory_Bucket_List_Query_Result;
+         Seen_Continuation : Boolean := False;
+         Seen_Maximum      : Boolean := False;
+         Seen_Operation    : Boolean := False;
+         Invalid           : Boolean := False;
+      begin
+         if Query'Length = 0 then
+            return Result;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index = First then
+                     Invalid := True;
+                  else
+                     declare
+                        Pair_Text : constant String :=
+                          Raw (First .. Index - 1);
+                        Equals    : constant Natural :=
+                          Ada.Strings.Fixed.Index (Pair_Text, "=");
+                        Name      : constant String :=
+                          Decode_ACL_Query_Component
+                            ((if Equals = 0 then Pair_Text
+                              elsif Equals = Pair_Text'First then ""
+                              else Pair_Text
+                                (Pair_Text'First .. Equals - 1)));
+                        Value     : constant String :=
+                          Decode_ACL_Query_Component
+                            ((if Equals = 0 or else Equals = Pair_Text'Last
+                              then ""
+                              else Pair_Text
+                                (Equals + 1 .. Pair_Text'Last)));
+                     begin
+                        if Name = "continuation-token" then
+                           Invalid := Invalid or else Seen_Continuation;
+                           Seen_Continuation := True;
+                           --  This empty local catalog never issues a token.
+                           Invalid := True;
+                        elsif Name = "max-directory-buckets" then
+                           Result.Recognized := True;
+                           Invalid := Invalid or else Seen_Maximum
+                             or else Value'Length = 0;
+                           Seen_Maximum := True;
+                           for Item of Value loop
+                              Invalid :=
+                                Invalid or else Item not in '0' .. '9';
+                           end loop;
+                           if not Invalid then
+                              declare
+                                 Parsed_Maximum : constant Natural :=
+                                   Natural'Value (Value);
+                              begin
+                                 Invalid :=
+                                   Parsed_Maximum >
+                                     Maximum_Directory_Buckets;
+                              end;
+                           end if;
+                        elsif Name = "x-id"
+                          and then Value = "ListDirectoryBuckets"
+                        then
+                           Result.Recognized := True;
+                           Invalid := Invalid or else Seen_Operation;
+                           Seen_Operation := True;
+                        else
+                           Invalid := True;
+                        end if;
+                     end;
+                  end if;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         Result.Valid := Result.Recognized and then not Invalid;
+         return Result;
+      exception
+         when Constraint_Error =>
+            Result.Valid := False;
+            return Result;
+      end Parse_Directory_Bucket_List_Query;
 
       type Point_Configuration_Family is
         (Analytics_Family, Metrics_Family, Intelligent_Tiering_Family,
@@ -2142,6 +2237,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Requests.Parse_Target (Target_Text);
       Query_Text  : constant String :=
         Requests.Query_String (Target_Text, Parsed);
+      Directory_Bucket_List_Request : constant
+        Directory_Bucket_List_Query_Result :=
+          Parse_Directory_Bucket_List_Query (Query_Text);
       Is_Ordinary_Operation_Query : constant Boolean :=
         (Parsed.Kind = Requests.Bucket_Target
          and then
@@ -4989,7 +5087,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
 
       if Parsed.Kind = Requests.Service_Target then
-         Operation := (if Method = "GET" then List_Buckets else Unsupported);
+         Operation :=
+           (if Method /= "GET" then Unsupported
+            elsif Directory_Bucket_List_Request.Recognized then
+              List_Directory_Buckets
+            else List_Buckets);
       elsif Parsed.Kind = Requests.Bucket_Target then
          ACL_Query_Invalid :=
            Method in "GET" | "PUT" and then Looks_Like_ACL_Query
@@ -5889,6 +5991,33 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidArgument",
                         "The ListBuckets request is invalid", Target_Text);
                end;
+
+            when List_Directory_Buckets =>
+               if not Directory_Bucket_List_Request.Valid then
+                  Send_Error
+                    (X, 400, "InvalidArgument",
+                     "The ListDirectoryBuckets request is invalid",
+                     Target_Text);
+               else
+                  declare
+                     Options : constant Backends.List_Buckets_Options :=
+                       (Prefix  => US.Null_Unbounded_String,
+                        After   => US.Null_Unbounded_String,
+                        Maximum => Backends.Bucket_List_Limit'First);
+                     Page : Backends.Bucket_Page;
+                  begin
+                     Store.List_Buckets
+                       (Options, Apps.Cancellation (X), Apps.Deadline (X),
+                        Page, Result);
+                     if Result /= Success then
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     else
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           "<ListDirectoryBucketsOutput/>");
+                     end if;
+                  end;
+               end if;
 
             when Create_Bucket =>
                declare

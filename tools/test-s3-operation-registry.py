@@ -4377,6 +4377,123 @@ def main() -> None:
     else:
         raise AssertionError("duplicate RestoreObject lane accepted")
 
+    list_directory_certainty = (
+        "read-only; the generated client retains its strict bounded page "
+        "contract, while the authenticated local server consults the "
+        "general bucket catalog only to propagate backend availability and "
+        "returns an empty directory-bucket page without exposing any "
+        "general-purpose bucket"
+    )
+    list_directory_reconciliation = (
+        "every response is an independent read-only observation; the local "
+        "server never issues a continuation token because its "
+        "directory-bucket catalog is empty, and no request or page is "
+        "retried automatically"
+    )
+    list_directory_exclusions = [
+        "caller supplies the S3 Express control endpoint origin; no "
+        "endpoint discovery or rewriting",
+        "the maintained local backend has no directory-bucket kind and "
+        "CreateBucket rejects directory configuration, so server "
+        "compatibility is intentionally empty-only and claims no nonempty "
+        "directory-bucket storage",
+        "an initial local server request must carry max-directory-buckets "
+        "or the exact x-id=ListDirectoryBuckets discriminator because an "
+        "empty service-root query is reserved for ListBuckets; a "
+        "continuation token is rejected because the empty local profile "
+        "never issues one",
+        "directory-bucket availability zones, names, regions, ARNs, "
+        "lifecycle, and external-provider interoperability are not "
+        "implemented or qualified",
+    ]
+    list_directory_lane = [
+        ["uv", "run", "--python", "3.13", "--",
+         "tools/test-s3-operation-registry.py"],
+        ["@tests", "alr", "-n", "build"],
+        ["@tests", "uv", "run", "--python", "3.13", "--",
+         "../tools/s3-signed-socket.py", "ListDirectoryBuckets"],
+        ["@tests", "./bin/s3_server_application_corpus"],
+        ["./tools/verify-coverage.sh"],
+        ["./tools/build-api-docs.sh",
+         "{repository}/build/gnatdoc/list-directory-buckets"],
+        ["./tools/ci/check-repository.sh", "{model}"],
+        ["git", "diff", "--check"],
+    ]
+
+    def assert_list_directory_registry(candidate):
+        entry = candidate.operations["ListDirectoryBuckets"]
+        assert entry.get("public_name") == "List_Directory_Buckets"
+        assert entry.get("decision_status") == "reviewed"
+        assert entry.get("human_decisions_resolved") is True
+        assert entry.get("qualification") == "list_directory_buckets"
+        assert entry.get("certainty") == list_directory_certainty
+        assert entry.get("reconciliation") == list_directory_reconciliation
+        assert entry.get("exclusions") == list_directory_exclusions
+        assert entry["coverage"] == {
+            "backend": "covered", "client": "covered",
+            "server": "covered", "corpus": "covered",
+        }
+        assert entry["provenance"] == {
+            "backend": "shared_family", "client": "generated",
+            "server": "handwritten", "tests": "shared_family",
+        }
+        assert entry["evidence"]["backend"] == [
+            "src/flyology-object_storage-backends.ads",
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/"
+            "flyology_object_storage_sqlite_tests.adb",
+        ]
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+        assert candidate.qualification[
+            "list_directory_buckets"
+        ] == list_directory_lane
+
+    def reject_list_directory_registry(candidate, label):
+        try:
+            assert_list_directory_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} ListDirectoryBuckets registry accepted"
+        )
+
+    assert_list_directory_registry(registry)
+    for label, mutate in [
+        ("missing backend", lambda item: item["coverage"].update(
+            backend="missing")),
+        ("missing server", lambda item: item["coverage"].update(
+            server="missing")),
+        ("invented nonempty catalog", lambda item: item["exclusions"].pop(1)),
+        ("automatic retry", lambda item: item.update(
+            reconciliation="automatically retry every page")),
+        ("general bucket public name", lambda item: item.update(
+            public_name="List_Page")),
+    ]:
+        changed = copy.deepcopy(registry)
+        mutate(changed.operations["ListDirectoryBuckets"])
+        assert changed != registry
+        reject_list_directory_registry(changed, label)
+    duplicate_list_directory_lane = copy.deepcopy(registry)
+    duplicate_list_directory_lane.qualification[
+        "list_directory_buckets"
+    ].append(["@tests", "./bin/s3_server_application_corpus"])
+    assert duplicate_list_directory_lane != registry
+    reject_list_directory_registry(
+        duplicate_list_directory_lane, "duplicate server corpus"
+    )
+    planned_lane, planned_commands = s3_operation.qualification_plan(
+        registry, ["ListDirectoryBuckets"]
+    )
+    assert planned_lane == "list_directory_buckets"
+    planned_list_directory_lane = copy.deepcopy(list_directory_lane)
+    planned_list_directory_lane[-3].extend(
+        ["--operation", "ListDirectoryBuckets"]
+    )
+    assert planned_commands == planned_list_directory_lane
+
     select_object_content_certainty = (
         "read model coverage only; no public Select request serializer, "
         "accepted query, event-stream decoder, complete End event, result "

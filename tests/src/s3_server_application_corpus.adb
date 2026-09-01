@@ -29,6 +29,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
 with
   Flyology.Object_Storage.S3.Generated_Put_Bucket_Inventory_Configuration_XML;
+with Flyology.Object_Storage.S3.Generated_List_Directory_Buckets_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Website_XML;
 with Flyology.Object_Storage.S3.Generated_Put_Bucket_Logging_XML;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
@@ -78,6 +79,8 @@ procedure S3_Server_Application_Corpus is
    package Generated_Inventory renames
      Flyology.Object_Storage.S3.
        Generated_Put_Bucket_Inventory_Configuration_XML;
+   package Generated_Directory_Buckets renames
+     Flyology.Object_Storage.S3.Generated_List_Directory_Buckets_XML;
    package Generated_Website renames
      Flyology.Object_Storage.S3.Generated_Put_Bucket_Website_XML;
    package Generated_Logging renames
@@ -10980,6 +10983,82 @@ begin
         (Has (Run (Signed_Request ("GET", "/", "unexpected")),
               "400 Bad Request"),
          "ListBuckets accepted a request body");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("max-directory-buckets", "1"));
+      Response : constant String :=
+        Run (Signed_Query_Request ("GET", "/", Query));
+      Page : constant Buckets.List_Buckets_Result :=
+        Generated_Directory_Buckets.Parse
+          (Response_Body (Response), XML.Default_Limits, 1);
+      Explicit_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("x-id", "ListDirectoryBuckets"));
+      Continuation_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("continuation-token", "not-issued"),
+         SigV4.Pair ("max-directory-buckets", "1"));
+      Duplicate_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("max-directory-buckets", "1"),
+         SigV4.Pair ("max-directory-buckets", "2"));
+      Malformed_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("max-directory-buckets", "1x"));
+      Zero_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("max-directory-buckets", "0"));
+      Over_Maximum_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("max-directory-buckets", "1001"));
+      Unknown_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("max-directory-buckets", "1"),
+         SigV4.Pair ("unexpected", "value"));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Page.Buckets.Is_Empty
+         and then not Has (Response, "list-alpha-bucket")
+         and then not Has (Response, "list-zeta-bucket"),
+         "ListDirectoryBuckets leaked general-purpose buckets");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Explicit_Query)),
+            "200 OK"),
+         "explicit ListDirectoryBuckets operation ID was rejected");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Continuation_Query)),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted an unissued continuation token");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Duplicate_Query)),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted a duplicate maximum");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Malformed_Query)),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted a malformed maximum");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Zero_Query)),
+            "200 OK"),
+         "ListDirectoryBuckets rejected the modeled zero maximum");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Over_Maximum_Query)),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted a maximum above the model bound");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Unknown_Query)),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted an unknown parameter");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/", Query, "unexpected")),
+            "400 Bad Request"),
+         "ListDirectoryBuckets accepted a request body");
    end;
 
    Check_Cancellation_Propagation;

@@ -79,7 +79,7 @@ remain inventory-only until their audits gain executable evidence.
 | ListBucketInventoryConfigurations | List_Inventory_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | ListBucketMetricsConfigurations | List_Metrics_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | ListBuckets | List_Page | buckets | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListDirectoryBuckets | List_Directory_Buckets | buckets | paginated_rest_xml_read | generated | true | true | missing / absent | covered / generated | missing / absent | covered / shared_family |
+| ListDirectoryBuckets | List_Directory_Buckets | buckets | paginated_rest_xml_read | generated | true | true | covered / shared_family | covered / generated | covered / handwritten | covered / shared_family |
 | ListMultipartUploads | List_Multipart_Uploads_Page | transfers | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / shared_family |
 | ListObjectVersions | List_Versions_Page | objects | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

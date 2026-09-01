@@ -125,10 +125,12 @@ list_bucket_configurations = [
   ["git", "diff", "--check"],
 ]
 list_directory_buckets = [
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListDirectoryBuckets"],
+  ["@tests", "./bin/s3_server_application_corpus"],
   ["./tools/verify-coverage.sh"],
-  ["./tools/build-api-docs.sh", "/private/tmp/fos-list-directory-buckets-gnatdoc"],
+  ["./tools/build-api-docs.sh", "{repository}/build/gnatdoc/list-directory-buckets"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
@@ -3805,18 +3807,18 @@ codec = "strict_paginated_rest_xml_and_singleton_headers"
 public_name = "List_Directory_Buckets"
 absence = "no modeled absence; non-200 responses remain structured rejections"
 errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "read_only"
-reconciliation = "not_applicable"
-exclusions = ["caller supplies the S3 Express control endpoint origin; no endpoint discovery or rewriting", "client qualification does not claim backend or server support"]
-coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "shared_family" }
+certainty = "read-only; the generated client retains its strict bounded page contract, while the authenticated local server consults the general bucket catalog only to propagate backend availability and returns an empty directory-bucket page without exposing any general-purpose bucket"
+reconciliation = "every response is an independent read-only observation; the local server never issues a continuation token because its directory-bucket catalog is empty, and no request or page is retried automatically"
+exclusions = ["caller supplies the S3 Express control endpoint origin; no endpoint discovery or rewriting", "the maintained local backend has no directory-bucket kind and CreateBucket rejects directory configuration, so server compatibility is intentionally empty-only and claims no nonempty directory-bucket storage", "an initial local server request must carry max-directory-buckets or the exact x-id=ListDirectoryBuckets discriminator because an empty service-root query is reserved for ListBuckets; a continuation token is rejected because the empty local profile never issues one", "directory-bucket availability zones, names, regions, ARNs, lifecycle, and external-provider interoperability are not implemented or qualified"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "shared_family", client = "generated", server = "handwritten", tests = "shared_family" }
 implementation_mode = "generated"
 generator_eligible = true
 human_decisions_resolved = true
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_list_directory_buckets_xml.ads", "src/flyology-object_storage-s3-generated_list_directory_buckets_xml.adb", "src/flyology-object_storage-s3-strict_xml_codecs.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-paginated_rest_xml_reads.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-generated_list_directory_buckets_xml.ads", "src/flyology-object_storage-s3-generated_list_directory_buckets_xml.adb", "src/flyology-object_storage-s3-strict_xml_codecs.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-paginated_rest_xml_reads.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb"], server = ["src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_paginated_rest_xml_read_qualification.adb", "tests/src/s3_list_directory_buckets_qualification.adb", "tests/src/s3_server_application_corpus.adb", "docs/qualification/list-directory-buckets.md"] }
 decision_status = "reviewed"
 ada_symbols = ["List_Directory_Buckets_Parameters", "List_Directory_Buckets_Result", "List_Directory_Buckets_Operation", "List_Directory_Buckets", "Finish"]
-generation = { public_result = "List_Directory_Buckets_Result wrapping the exact low-level outcome", response_representation = "Flyology.Object_Storage.S3.Buckets.List_Buckets_Result", replay = "read-only request; provider operation performs one modeled exchange and adds no operation-level retry", ownership = "operation owns its prepared request and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain", cross_field_validation = "no additional response cross-field rule beyond the pinned model", intentional_exclusions = ["no automatic S3 Express control endpoint selection", "no backend or server compatibility claim"] }
+generation = { public_result = "List_Directory_Buckets_Result wrapping the exact low-level outcome", response_representation = "Flyology.Object_Storage.S3.Buckets.List_Buckets_Result", replay = "read-only request; provider operation performs one modeled exchange and adds no operation-level retry", ownership = "operation owns its prepared request and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain", cross_field_validation = "no additional response cross-field rule beyond the pinned model", intentional_exclusions = ["no automatic S3 Express control endpoint selection", "local backend/server compatibility is empty-only and makes no nonempty directory-bucket claim"] }
 negative_xml = { valid_document = "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>", xml_namespace = "" }
 qualification = "list_directory_buckets"
 

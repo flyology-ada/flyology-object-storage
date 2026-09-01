@@ -69,7 +69,7 @@ ListBucketIntelligentTieringConfigurations	extended	covered	covered	covered	cove
 ListBucketInventoryConfigurations	extended	covered	covered	covered	covered
 ListBucketMetricsConfigurations	extended	covered	covered	covered	covered
 ListBuckets	core	covered	covered	covered	covered
-ListDirectoryBuckets	extended	missing	covered	missing	covered
+ListDirectoryBuckets	extended	covered	covered	covered	covered
 ListMultipartUploads	core	covered	covered	covered	covered
 ListObjectAnnotations	extended	covered	covered	covered	covered
 ListObjectVersions	core	covered	covered	covered	covered
