@@ -165,6 +165,45 @@ package Flyology.Object_Storage.Backends is
       Next_After   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  One query-keyed bucket configuration in exact identifier order.
+   --  Identifier remains independent from any modeled Id inside Document.
+   --  @field Identifier Exact request identifier
+   --  @field Document Exact retained canonical document
+   type Listed_Bucket_Configuration is record
+      Identifier : Ada.Strings.Unbounded.Unbounded_String;
+      Document   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Listed_Bucket_Configuration_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Bucket_Configuration);
+
+   --  HTTP-independent selection for one named-configuration family.
+   --  Both bounds are supplied by the caller; Maximum_Bytes counts exact
+   --  identifier and document bytes copied into the returned page.
+   --  @field Has_After Whether After is an exclusive cursor
+   --  @field After Exclusive exact-identifier cursor when Has_After is true
+   --  @field Maximum Maximum number of complete entries
+   --  @field Maximum_Bytes Maximum retained bytes copied into the page
+   type List_Bucket_Configurations_Options is record
+      Has_After     : Boolean;
+      After         : Ada.Strings.Unbounded.Unbounded_String;
+      Maximum       : List_Limit;
+      Maximum_Bytes : Byte_Count;
+   end record;
+
+   --  One bounded, ordered named-configuration snapshot. A successful
+   --  truncated page is nonempty and Next_After is the exact identifier of
+   --  its final entry. When the first eligible complete entry cannot fit the
+   --  caller's bounds, the operation returns Invalid_Request instead.
+   --  @field Configurations Complete entries in exact identifier order
+   --  @field Is_Truncated Whether additional entries remain
+   --  @field Next_After Exclusive cursor for the next page
+   type Bucket_Configuration_Page is record
+      Configurations : Listed_Bucket_Configuration_Vectors.Vector;
+      Is_Truncated   : Boolean := False;
+      Next_After     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Presence of a signed source-condition timestamp. The S3 boundary parses
    --  HTTP dates before crossing this HTTP-independent contract.
    type Optional_Copy_Condition_Time (Is_Set : Boolean := False) is record
@@ -843,6 +882,23 @@ package Flyology.Object_Storage.Backends is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status) is abstract;
 
+   --  Return analytics configurations in exact request-identifier order.
+   --  @param Item Backend that owns the bucket configurations
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Read result
+   procedure List_Bucket_Analytics_Configurations
+     (Item     : in out Backend;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is abstract;
+
    --  Atomically replace one request-metrics configuration selected by the
    --  exact request identifier. The backend does not emit CloudWatch metrics.
    --  @param Item Backend that owns the bucket configuration
@@ -896,6 +952,23 @@ package Flyology.Object_Storage.Backends is
       Token      : access Flyology.Cancellation.Token;
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status) is abstract;
+
+   --  Return metrics configurations in exact request-identifier order.
+   --  @param Item Backend that owns the bucket configurations
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Read result
+   procedure List_Bucket_Metrics_Configurations
+     (Item     : in out Backend;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is abstract;
 
    --  Atomically replace one Intelligent-Tiering configuration selected by
    --  the exact request identifier. Identifier and the canonical payload's
@@ -952,6 +1025,23 @@ package Flyology.Object_Storage.Backends is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status) is abstract;
 
+   --  Return Intelligent-Tiering configurations in request-identifier order.
+   --  @param Item Backend that owns the bucket configurations
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Read result
+   procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item     : in out Backend;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is abstract;
+
    --  Atomically replace one inventory configuration selected by the exact
    --  request identifier. Identifier and the canonical payload's modeled Id
    --  remain independent; the backend does not generate inventory reports.
@@ -1006,6 +1096,23 @@ package Flyology.Object_Storage.Backends is
       Token      : access Flyology.Cancellation.Token;
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status) is abstract;
+
+   --  Return inventory configurations in exact request-identifier order.
+   --  @param Item Backend that owns the bucket configurations
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Read result
+   procedure List_Bucket_Inventory_Configurations
+     (Item     : in out Backend;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is abstract;
 
    --  Atomically replace the complete canonical CORS document of an existing
    --  bucket.  The backend treats Document as bounded opaque bytes and does

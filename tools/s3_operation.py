@@ -2006,6 +2006,17 @@ def check_generated_outputs(
             )
 
 
+def expand_command_arguments(
+    arguments: list[str], pinned_model: Path
+) -> list[str]:
+    return [
+        str(pinned_model)
+        if part == "{model}"
+        else part.replace("{repository}", str(ROOT))
+        for part in arguments
+    ]
+
+
 def run_commands(commands: list[list[str]], pinned_model: Path) -> None:
     for command in commands:
         cwd = ROOT
@@ -2013,9 +2024,6 @@ def run_commands(commands: list[list[str]], pinned_model: Path) -> None:
         if arguments[0] == "@tests":
             cwd = ROOT / "tests"
             arguments.pop(0)
-        arguments = [
-            str(pinned_model) if part == "{model}" else part
-            for part in arguments
-        ]
+        arguments = expand_command_arguments(arguments, pinned_model)
         print("+", shlex.join(arguments), flush=True)
         subprocess.run(arguments, cwd=cwd, check=True)

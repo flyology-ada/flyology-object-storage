@@ -64,10 +64,10 @@ GetObjectTorrent	extended	missing	covered	missing	covered
 GetPublicAccessBlock	extended	covered	covered	covered	covered
 HeadBucket	core	covered	covered	covered	covered
 HeadObject	core	covered	covered	covered	covered
-ListBucketAnalyticsConfigurations	extended	missing	covered	missing	covered
-ListBucketIntelligentTieringConfigurations	extended	missing	covered	missing	covered
-ListBucketInventoryConfigurations	extended	missing	covered	missing	covered
-ListBucketMetricsConfigurations	extended	missing	covered	missing	covered
+ListBucketAnalyticsConfigurations	extended	covered	covered	covered	covered
+ListBucketIntelligentTieringConfigurations	extended	covered	covered	covered	covered
+ListBucketInventoryConfigurations	extended	covered	covered	covered	covered
+ListBucketMetricsConfigurations	extended	covered	covered	covered	covered
 ListBuckets	core	covered	covered	covered	covered
 ListDirectoryBuckets	extended	missing	covered	missing	covered
 ListMultipartUploads	core	covered	covered	covered	covered

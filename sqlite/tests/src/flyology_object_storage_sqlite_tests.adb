@@ -5943,6 +5943,213 @@ begin
             Ada.Real_Time.Time_Last, Result);
       end;
       declare
+         Empty_Analytics : constant String :=
+           "<AnalyticsConfiguration><Id>empty</Id>" &
+           "</AnalyticsConfiguration>";
+         Options : List_Bucket_Configurations_Options :=
+           (Has_After     => False,
+            After         => US.Null_Unbounded_String,
+            Maximum       => 1,
+            Maximum_Bytes => Byte_Count'Last);
+         Page   : Bucket_Configuration_Page;
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+         First_Bytes : Byte_Count := 0;
+         Low_ID  : constant String := (1 => Character'Val (0));
+         ASCII_ID : constant String := "A";
+         DEL_ID  : constant String := (1 => Character'Val (127));
+         High_ID : constant String := (1 => Character'Val (255));
+      begin
+         Store.Put_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "", Empty_Analytics, null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.List_Bucket_Analytics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then US.To_String
+              (Page.Configurations.First_Element.Identifier) = ""
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Next_After) = "",
+            "SQLite analytics list omitted the exact empty identifier");
+         Options.Has_After := True;
+         Options.After := Page.Next_After;
+         Store.List_Bucket_Analytics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then US.To_String
+              (Page.Configurations.First_Element.Identifier) = "query-a"
+            and then Page.Is_Truncated,
+            "SQLite empty-identifier continuation did not progress");
+         First_Bytes :=
+           Byte_Count
+             (US.Length (Page.Configurations.First_Element.Identifier) +
+              US.Length (Page.Configurations.First_Element.Document));
+         Options.After := Page.Next_After;
+         Store.List_Bucket_Analytics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then US.To_String
+              (Page.Configurations.First_Element.Identifier) = "query-other"
+            and then not Page.Is_Truncated,
+            "SQLite analytics continuation repeated or skipped a row");
+         Store.Delete_Bucket_Analytics_Configuration
+           ("sqlite-bucket", "", null, Ada.Real_Time.Time_Last, Result);
+         Options :=
+           (Has_After     => False,
+            After         => US.Null_Unbounded_String,
+            Maximum       => 2,
+            Maximum_Bytes => First_Bytes);
+         Store.List_Bucket_Analytics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then Page.Is_Truncated,
+            "SQLite named-configuration byte budget was not enforced");
+         Options.Maximum := 0;
+         Store.List_Bucket_Analytics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Invalid_Request and then Page.Configurations.Is_Empty,
+            "SQLite unrepresentable configuration page did not fail closed");
+         Options :=
+           (Has_After     => False,
+            After         => US.Null_Unbounded_String,
+            Maximum       => 5,
+            Maximum_Bytes => Byte_Count'Last);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", Low_ID, "<MetricsConfiguration/>", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", ASCII_ID, "<MetricsConfiguration/>", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", DEL_ID, "<MetricsConfiguration/>", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Metrics_Configuration
+           ("sqlite-bucket", High_ID, "<MetricsConfiguration/>", null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.List_Bucket_Metrics_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 5
+            and then US.To_String
+              (Page.Configurations.Element (1).Identifier) = Low_ID
+            and then US.To_String
+              (Page.Configurations.Element (2).Identifier) = ASCII_ID
+            and then US.To_String
+              (Page.Configurations.Element (3).Identifier) = "query-m"
+            and then US.To_String
+              (Page.Configurations.Element (4).Identifier) = DEL_ID
+            and then US.To_String
+              (Page.Configurations.Element (5).Identifier) = High_ID,
+            "SQLite metrics list lost exact binary identifier order");
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", Low_ID, null, Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", ASCII_ID, null, Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", DEL_ID, null, Ada.Real_Time.Time_Last, Result);
+         Store.Delete_Bucket_Metrics_Configuration
+           ("sqlite-bucket", High_ID, null, Ada.Real_Time.Time_Last, Result);
+         Options.Maximum := 1;
+         Store.List_Bucket_Intelligent_Tiering_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then US.To_String
+              (Page.Configurations.First_Element.Identifier) = "query-tier",
+            "SQLite Intelligent-Tiering list used another family");
+         Store.List_Bucket_Inventory_Configurations
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Configurations.Length = 1
+            and then US.To_String
+              (Page.Configurations.First_Element.Identifier) = "query-tier",
+            "SQLite inventory list used another family");
+         Store.List_Bucket_Inventory_Configurations
+           ("missing-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Not_Found and then Page.Configurations.Is_Empty,
+            "SQLite named-configuration list lost missing-bucket status");
+         declare
+            Injector : Databases.Database;
+         begin
+            Databases.Open (Injector, Backend_Root & "/catalog.sqlite3");
+            Databases.Execute
+              (Injector,
+               "INSERT INTO bucket_analytics_configurations" &
+               "(bucket_name,configuration_id,document) VALUES" &
+               "('sqlite-bucket','invalid-text-id',X'3C2F3E');");
+            Databases.Close (Injector);
+            Store.List_Bucket_Analytics_Configurations
+              ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "SQLite configuration list accepted a TEXT identifier");
+            Databases.Open (Injector, Backend_Root & "/catalog.sqlite3");
+            Databases.Execute
+              (Injector,
+               "DELETE FROM bucket_analytics_configurations WHERE " &
+               "typeof(configuration_id)='text';" &
+               "INSERT INTO bucket_analytics_configurations" &
+               "(bucket_name,configuration_id,document) VALUES" &
+               "('sqlite-bucket',X'696E76616C69642D646F63756D656E74'," &
+               "'<invalid/>');");
+            Databases.Close (Injector);
+            Store.List_Bucket_Analytics_Configurations
+              ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "SQLite configuration list accepted a TEXT document");
+            Databases.Open (Injector, Backend_Root & "/catalog.sqlite3");
+            Databases.Execute
+              (Injector,
+               "DELETE FROM bucket_analytics_configurations WHERE " &
+               "typeof(document)='text';");
+            Databases.Close (Injector);
+         exception
+            when others =>
+               if Databases.Is_Open (Injector) then
+                  Databases.Close (Injector);
+               end if;
+               raise;
+         end;
+         Cancel.Request;
+         begin
+            Store.List_Bucket_Analytics_Configurations
+              ("sqlite-bucket", Options, Cancel'Access,
+               Ada.Real_Time.Time_Last, Page, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert
+           (Raised,
+            "SQLite named-configuration list ignored cancellation");
+         Raised := False;
+         begin
+            Store.List_Bucket_Analytics_Configurations
+              ("sqlite-bucket", Options, null, Ada.Real_Time.Time_First,
+               Page, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "SQLite named-configuration list ignored deadline");
+      end;
+      declare
          First : constant String :=
            "{""Version"":""2012-10-17"",""Statement"":[]}";
          Second : constant String :=
@@ -6879,6 +7086,26 @@ begin
            (Result = Success and then Configured
             and then US.To_String (Document) = Inventory,
             "SQLite inventory state did not survive reopen");
+         declare
+            Options : constant List_Bucket_Configurations_Options :=
+              (Has_After     => False,
+               After         => US.Null_Unbounded_String,
+               Maximum       => 3,
+               Maximum_Bytes => Byte_Count'Last);
+            Page : Bucket_Configuration_Page;
+         begin
+            Store.List_Bucket_Analytics_Configurations
+              ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Assert
+              (Result = Success and then Page.Configurations.Length = 2
+               and then US.To_String
+                 (Page.Configurations.First_Element.Identifier) = "query-a"
+               and then US.To_String
+                 (Page.Configurations.Last_Element.Identifier) =
+                   "query-other",
+               "SQLite named-configuration list did not survive reopen");
+         end;
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

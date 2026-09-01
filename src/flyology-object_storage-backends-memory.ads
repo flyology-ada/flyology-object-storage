@@ -416,6 +416,23 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
 
+   --  List analytics configurations from one in-memory bucket snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   overriding procedure List_Bucket_Analytics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status);
+
    --  Retain one metrics configuration by its exact request identifier.
    --  @param Item In-memory backend
    --  @param Bucket Existing bucket name
@@ -466,6 +483,23 @@ package Flyology.Object_Storage.Backends.Memory is
       Token      : access Flyology.Cancellation.Token;
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
+
+   --  List metrics configurations from one in-memory bucket snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   overriding procedure List_Bucket_Metrics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status);
 
    --  Retain one Intelligent-Tiering configuration by its exact request
    --  identifier.
@@ -521,6 +555,23 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
 
+   --  List tiering configurations from one in-memory bucket snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   overriding procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status);
+
    --  Retain one inventory configuration by its exact request identifier.
    --  @param Item In-memory backend
    --  @param Bucket Existing bucket name
@@ -571,6 +622,23 @@ package Flyology.Object_Storage.Backends.Memory is
       Token      : access Flyology.Cancellation.Token;
       Deadline   : Ada.Real_Time.Time;
       Result     : out Status);
+
+   --  List inventory configurations from one in-memory bucket snapshot.
+   --  @param Item In-memory backend
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   overriding procedure List_Bucket_Inventory_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status);
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
@@ -1231,6 +1299,12 @@ private
          Kind       : Named_Configuration_Kind;
          Identifier : String;
          Result     : out Status);
+      procedure List_Named_Bucket_Configurations
+        (Name    : String;
+         Kind    : Named_Configuration_Kind;
+         Options : List_Bucket_Configurations_Options;
+         Page    : out Bucket_Configuration_Page;
+         Result  : out Status);
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
          Configuration : Bucket_Public_Access_Block_Configuration;

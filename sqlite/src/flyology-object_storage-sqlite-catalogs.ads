@@ -357,6 +357,21 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Identifier : String;
       Result     : out Status);
 
+   --  List query-keyed analytics documents in binary identifier order.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Check Cancellation and deadline checkpoint
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   procedure List_Bucket_Analytics_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status);
+
    --  Transactionally replace one query-keyed metrics document.
    --  @param Item Open catalog
    --  @param Bucket Existing bucket name
@@ -395,6 +410,21 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket     : String;
       Identifier : String;
       Result     : out Status);
+
+   --  List query-keyed metrics documents in binary identifier order.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Check Cancellation and deadline checkpoint
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   procedure List_Bucket_Metrics_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status);
 
    --  Transactionally replace one query-keyed intelligent-tiering document.
    --  @param Item Open catalog
@@ -435,6 +465,21 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Identifier : String;
       Result     : out Status);
 
+   --  List query-keyed tiering documents in binary identifier order.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Check Cancellation and deadline checkpoint
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status);
+
    --  Transactionally replace one query-keyed inventory document.
    --  @param Item Open catalog
    --  @param Bucket Existing bucket name
@@ -473,6 +518,21 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket     : String;
       Identifier : String;
       Result     : out Status);
+
+   --  List query-keyed inventory documents in binary identifier order.
+   --  @param Item Open catalog
+   --  @param Bucket Existing bucket name
+   --  @param Options Explicit cursor and page bounds
+   --  @param Check Cancellation and deadline checkpoint
+   --  @param Page Ordered bounded snapshot
+   --  @param Result Storage outcome
+   procedure List_Bucket_Inventory_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status);
 
    procedure Put_Bucket_Public_Access_Block
      (Item          : in out Catalog;

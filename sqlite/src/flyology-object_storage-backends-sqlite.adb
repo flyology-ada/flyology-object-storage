@@ -1060,6 +1060,51 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Bucket_Website;
 
+   type List_Bucket_Configurations_Access is access procedure
+     (Item    : in out Catalogs.Catalog;
+      Bucket  : String;
+      Options : List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Bucket_Configuration_Page;
+      Result  : out Status);
+
+   procedure List_Bucket_Configurations
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Bucket_Configurations_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Operation : not null List_Bucket_Configurations_Access;
+      Page      : out Bucket_Configuration_Page;
+      Result    : out Status)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
+   begin
+      Page := (others => <>);
+      Check;
+      if not Valid_Bucket_Name (Bucket)
+        or else
+          (Options.Has_After
+           and then not Valid_Bucket_Named_Configuration
+             (US.To_String (Options.After), ""))
+      then
+         Result := Invalid_Request;
+      else
+         Operation.all
+           (Item.Catalog, Bucket, Options, Check'Access, Page, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Bucket_Configurations;
+
    overriding procedure Put_Bucket_Analytics_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -1146,6 +1191,20 @@ package body Flyology.Object_Storage.Backends.SQLite is
       when others =>
          Result := Backend_Unavailable;
    end Delete_Bucket_Analytics_Configuration;
+
+   overriding procedure List_Bucket_Analytics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Bucket_Configurations
+        (Item, Bucket, Options, Token, Deadline,
+         Catalogs.List_Bucket_Analytics_Configurations'Access, Page, Result);
+   end List_Bucket_Analytics_Configurations;
 
    overriding procedure Put_Bucket_Metrics_Configuration
      (Item       : in out Store;
@@ -1234,6 +1293,20 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Bucket_Metrics_Configuration;
 
+   overriding procedure List_Bucket_Metrics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Bucket_Configurations
+        (Item, Bucket, Options, Token, Deadline,
+         Catalogs.List_Bucket_Metrics_Configurations'Access, Page, Result);
+   end List_Bucket_Metrics_Configurations;
+
    overriding procedure Put_Bucket_Intelligent_Tiering_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -1321,6 +1394,21 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Bucket_Intelligent_Tiering_Configuration;
 
+   overriding procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Bucket_Configurations
+        (Item, Bucket, Options, Token, Deadline,
+         Catalogs.List_Bucket_Intelligent_Tiering_Configurations'Access,
+         Page, Result);
+   end List_Bucket_Intelligent_Tiering_Configurations;
+
    overriding procedure Put_Bucket_Inventory_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -1407,6 +1495,20 @@ package body Flyology.Object_Storage.Backends.SQLite is
       when others =>
          Result := Backend_Unavailable;
    end Delete_Bucket_Inventory_Configuration;
+
+   overriding procedure List_Bucket_Inventory_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Bucket_Configurations
+        (Item, Bucket, Options, Token, Deadline,
+         Catalogs.List_Bucket_Inventory_Configurations'Access, Page, Result);
+   end List_Bucket_Inventory_Configurations;
 
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;

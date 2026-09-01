@@ -7272,9 +7272,30 @@ begin
       Inventory_Empty : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("inventory", ""),
          SigV4.Pair ("id", ""));
+      Analytics_List : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("analytics", ""),
+         SigV4.Pair ("x-id", "ListBucketAnalyticsConfigurations"));
+      Metrics_List : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("metrics", ""),
+         SigV4.Pair ("x-id", "ListBucketMetricsConfigurations"));
+      Intelligent_Tiering_List : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("intelligent-tiering", ""),
+         SigV4.Pair
+           ("x-id", "ListBucketIntelligentTieringConfigurations"));
+      Inventory_List : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("inventory", ""),
+         SigV4.Pair ("x-id", "ListBucketInventoryConfigurations"));
       Analytics_Document : constant String :=
         "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
         "<Id>stored analytics</Id><StorageClassAnalysis/>" &
+        "</AnalyticsConfiguration>";
+      First_Analytics_Document : constant String :=
+        "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
+        "<Id>first analytics</Id><StorageClassAnalysis/>" &
+        "</AnalyticsConfiguration>";
+      Last_Analytics_Document : constant String :=
+        "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
+        "<Id>last analytics</Id><StorageClassAnalysis/>" &
         "</AnalyticsConfiguration>";
       Metrics_Document : constant String :=
         "<MetricsConfiguration xmlns=""" & Namespace & """>" &
@@ -7319,7 +7340,89 @@ begin
            (Signed_Query_Body_Request
               ("PUT", "/test-bucket", Query, Document, Extra,
                Corrupt_Signature => Corrupt_Signature)));
+
+      function List_Get
+        (Bucket, Family, Operation_ID : String;
+         Continuation_Token : String := "";
+         Has_Continuation_Token : Boolean := False;
+         Extra_Header_Name : String := "";
+         Extra_Header_Value : String := "";
+         Second_Header_Value : String := "") return String is
+        (Run
+           (Signed_Query_Request
+              ("GET", "/" & Bucket,
+               (if Has_Continuation_Token then
+                  (SigV4.Pair (Family, ""),
+                   SigV4.Pair
+                     ("continuation-token", Continuation_Token),
+                   SigV4.Pair ("x-id", Operation_ID))
+                else
+                  (SigV4.Pair (Family, ""),
+                   SigV4.Pair ("x-id", Operation_ID))),
+               Extra_Header_Name, Extra_Header_Value,
+               Second_Header_Value => Second_Header_Value)));
    begin
+      declare
+         Analytics_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Analytics_List));
+         Metrics_Response : constant String :=
+           List_Get
+             ("test-bucket", "metrics",
+              "ListBucketMetricsConfigurations", "",
+              Has_Continuation_Token => True);
+         Intelligent_Tiering_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Intelligent_Tiering_List));
+         Inventory_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Inventory_List));
+         Analytics_Page : constant Analytics.Analytics_Configuration_Page :=
+           Analytics.Parse_List
+             (Response_Body (Analytics_Response), XML.Default_Limits);
+         Metrics_Page : constant Metrics.Metrics_Configuration_Page :=
+           Metrics.Parse_List
+             (Response_Body (Metrics_Response), XML.Default_Limits);
+         Intelligent_Tiering_Page : constant
+           Intelligent_Tiering.Intelligent_Tiering_Configuration_Page :=
+           Intelligent_Tiering.Parse_List
+             (Response_Body (Intelligent_Tiering_Response),
+              XML.Default_Limits);
+         Inventory_Page : constant Inventory.Inventory_Configuration_Page :=
+           Inventory.Parse_List
+             (Response_Body (Inventory_Response), XML.Default_Limits);
+      begin
+         Require
+           (Has (Analytics_Response, "200 OK")
+            and then Analytics_Page.Has_Is_Truncated
+            and then not Analytics_Page.Is_Truncated
+            and then Analytics_Page.Configurations.Is_Empty,
+            "ListBucketAnalyticsConfigurations lost the empty page");
+         Require
+           (Has (Metrics_Response, "200 OK")
+            and then Metrics_Page.Has_Is_Truncated
+            and then not Metrics_Page.Is_Truncated
+            and then Metrics_Page.Configurations.Is_Empty
+            and then Metrics_Page.Continuation_Token.Is_Set
+            and then
+              US.Length (Metrics_Page.Continuation_Token.Value) = 0,
+            "ListBucketMetricsConfigurations lost an explicit empty token");
+         Require
+           (Has (Intelligent_Tiering_Response, "200 OK")
+            and then Intelligent_Tiering_Page.Has_Is_Truncated
+            and then not Intelligent_Tiering_Page.Is_Truncated
+            and then Intelligent_Tiering_Page.Configurations.Is_Empty,
+            "ListBucketIntelligentTieringConfigurations lost the empty page");
+         Require
+           (Has (Inventory_Response, "200 OK")
+            and then Inventory_Page.Has_Is_Truncated
+            and then not Inventory_Page.Is_Truncated
+            and then Inventory_Page.Configurations.Is_Empty,
+            "ListBucketInventoryConfigurations lost the empty page");
+      end;
       Require
         (Has
            (Run
@@ -7387,6 +7490,19 @@ begin
                  ("GET", "/test-bucket", Analytics_Empty))) =
            Canonical_Analytics,
          "GetBucketAnalyticsConfiguration lost an empty id");
+      declare
+         Page : constant Analytics.Analytics_Configuration_Page :=
+           Analytics.Parse_List
+             (Response_Body
+                (Run
+                   (Signed_Query_Request
+                      ("GET", "/test-bucket", Analytics_List))),
+              XML.Default_Limits);
+      begin
+         Require
+           (Page.Configurations.Length = 1,
+            "ListBucketAnalyticsConfigurations omitted an empty identifier");
+      end;
       Require
         (Has
            (Run
@@ -7517,6 +7633,188 @@ begin
                  ("GET", "/test-bucket", Inventory_Get))) =
            Canonical_Inventory,
          "GetBucketInventoryConfiguration lost canonical state");
+      Require
+        (Has
+           (Put
+              ((SigV4.Pair ("analytics", ""),
+                SigV4.Pair ("id", "00-analytics-order")),
+               First_Analytics_Document),
+            "200 OK"),
+         "analytics list ordering fixture rejected its first entry");
+      Require
+        (Has
+           (Put
+              ((SigV4.Pair ("analytics", ""),
+                SigV4.Pair ("id", "zz-analytics-order")),
+               Last_Analytics_Document),
+            "200 OK"),
+         "analytics list ordering fixture rejected its last entry");
+      declare
+         Analytics_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Analytics_List));
+         Metrics_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Metrics_List));
+         Intelligent_Tiering_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Intelligent_Tiering_List));
+         Inventory_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Inventory_List));
+         Analytics_Page : constant Analytics.Analytics_Configuration_Page :=
+           Analytics.Parse_List
+             (Response_Body (Analytics_Response), XML.Default_Limits);
+         Metrics_Page : constant Metrics.Metrics_Configuration_Page :=
+           Metrics.Parse_List
+             (Response_Body (Metrics_Response), XML.Default_Limits);
+         Intelligent_Tiering_Page : constant
+           Intelligent_Tiering.Intelligent_Tiering_Configuration_Page :=
+           Intelligent_Tiering.Parse_List
+             (Response_Body (Intelligent_Tiering_Response),
+              XML.Default_Limits);
+         Inventory_Page : constant Inventory.Inventory_Configuration_Page :=
+           Inventory.Parse_List
+             (Response_Body (Inventory_Response), XML.Default_Limits);
+      begin
+         Require
+           (Analytics_Page.Configurations.Length = 3
+            and then
+              US.To_String (Analytics_Page.Configurations.Element (1).ID) =
+                "first analytics"
+            and then
+              US.To_String (Analytics_Page.Configurations.Element (2).ID) =
+                "stored analytics"
+            and then
+              US.To_String (Analytics_Page.Configurations.Element (3).ID) =
+                "last analytics",
+            "ListBucketAnalyticsConfigurations lost identifier ordering");
+         Require
+           (Metrics_Page.Configurations.Length = 1
+            and then
+              US.To_String (Metrics_Page.Configurations.First_Element.ID) =
+                "stored metrics",
+            "ListBucketMetricsConfigurations lost canonical state");
+         Require
+           (Intelligent_Tiering_Page.Configurations.Length = 1
+            and then
+              US.To_String
+                (Intelligent_Tiering_Page.Configurations.First_Element.ID) =
+                  "stored tiering",
+            "ListBucketIntelligentTieringConfigurations lost canonical state");
+         Require
+           (Inventory_Page.Configurations.Length = 1
+            and then
+              US.To_String (Inventory_Page.Configurations.First_Element.ID) =
+                "stored inventory",
+            "ListBucketInventoryConfigurations lost canonical state");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket",
+                  (SigV4.Pair ("analytics", ""),
+                   SigV4.Pair ("id", "00-analytics-order")))),
+            "204 No Content"),
+         "analytics list ordering fixture cleanup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket",
+                  (SigV4.Pair ("analytics", ""),
+                   SigV4.Pair ("id", "zz-analytics-order")))),
+            "204 No Content"),
+         "analytics list ordering fixture cleanup failed");
+      Require
+        (Has
+           (List_Get
+              ("absent-bucket", "analytics",
+               "ListBucketAnalyticsConfigurations"),
+            "<Code>NoSuchBucket</Code>"),
+         "ListBucketAnalyticsConfigurations confused bucket absence");
+      Require
+        (Has
+           (List_Get
+              ("test-bucket", "inventory",
+               "ListBucketInventoryConfigurations",
+               Extra_Header_Name => "x-amz-expected-bucket-owner",
+               Extra_Header_Value => "different-owner"),
+            "403 Forbidden"),
+         "ListBucketInventoryConfigurations ignored expected owner");
+      Require
+        (Has
+           (List_Get
+              ("test-bucket", "metrics",
+               "ListBucketMetricsConfigurations",
+               Extra_Header_Name => "x-amz-expected-bucket-owner",
+               Extra_Header_Value => "owner",
+               Second_Header_Value => "owner"),
+            "<Code>InvalidRequest</Code>"),
+         "ListBucketMetricsConfigurations accepted duplicate owner headers");
+      Require
+        (Has
+           (List_Get
+              ("test-bucket", "intelligent-tiering",
+               "ListBucketIntelligentTieringConfigurations",
+               Extra_Header_Name => "content-type",
+               Extra_Header_Value => "application/xml"),
+            "<Code>InvalidRequest</Code>"),
+         "ListBucketIntelligentTieringConfigurations accepted a header");
+      Require
+        (Has
+           (List_Get
+              ("test-bucket", "analytics",
+               "ListBucketAnalyticsConfigurations",
+               Extra_Header_Name => "x-amz-mfa",
+               Extra_Header_Value => "device 123456"),
+            "<Code>InvalidRequest</Code>"),
+         "ListBucketAnalyticsConfigurations accepted an MFA header");
+      Require
+        (Has
+           (List_Get
+              ("test-bucket", "inventory",
+               "ListBucketInventoryConfigurations",
+               Extra_Header_Name =>
+                 "x-amz-server-side-encryption-customer-algorithm",
+               Extra_Header_Value => "AES256"),
+            "<Code>InvalidRequest</Code>"),
+         "ListBucketInventoryConfigurations accepted encryption controls");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Inventory_List, "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "ListBucketInventoryConfigurations accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("analytics", ""),
+                   SigV4.Pair ("unexpected", "1"),
+                   SigV4.Pair
+                     ("x-id", "ListBucketAnalyticsConfigurations")))),
+            "<Code>InvalidArgument</Code>"),
+         "ListBucketAnalyticsConfigurations accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("metrics", ""),
+                   SigV4.Pair ("unexpected", "1"),
+                   SigV4.Pair
+                     ("x-id", "ListBucketMetricsConfigurations")),
+                  "", Corrupt_Signature => True)),
+            "403 Forbidden"),
+         "configuration-list query validation ran before authentication");
       Require
         (Has
            (Put
@@ -7891,11 +8189,342 @@ begin
                  ("inventory", "inventory-1", Inventory_Document),
                "200 OK"),
             "inventory limit rejected replacement of an existing id");
+         declare
+            Analytics_Response : constant String :=
+              List_Get
+                (Limit_Bucket, "analytics",
+                 "ListBucketAnalyticsConfigurations");
+            Metrics_Response : constant String :=
+              List_Get
+                (Limit_Bucket, "metrics",
+                 "ListBucketMetricsConfigurations");
+            Intelligent_Tiering_Response : constant String :=
+              List_Get
+                (Limit_Bucket, "intelligent-tiering",
+                 "ListBucketIntelligentTieringConfigurations");
+            Inventory_Response : constant String :=
+              List_Get
+                (Limit_Bucket, "inventory",
+                 "ListBucketInventoryConfigurations");
+            Analytics_Page : constant
+              Analytics.Analytics_Configuration_Page :=
+              Analytics.Parse_List
+                (Response_Body (Analytics_Response), XML.Default_Limits);
+            Metrics_Page : constant Metrics.Metrics_Configuration_Page :=
+              Metrics.Parse_List
+                (Response_Body (Metrics_Response), XML.Default_Limits);
+            Intelligent_Tiering_Page : constant
+              Intelligent_Tiering.Intelligent_Tiering_Configuration_Page :=
+              Intelligent_Tiering.Parse_List
+                (Response_Body (Intelligent_Tiering_Response),
+                 XML.Default_Limits);
+            Inventory_Page : constant
+              Inventory.Inventory_Configuration_Page :=
+              Inventory.Parse_List
+                (Response_Body (Inventory_Response), XML.Default_Limits);
+            Analytics_Token : constant String :=
+              US.To_String (Analytics_Page.Next_Continuation_Token.Value);
+            Analytics_Next_Response : constant String :=
+              List_Get
+                (Limit_Bucket, "analytics",
+                 "ListBucketAnalyticsConfigurations", Analytics_Token,
+                 Has_Continuation_Token => True);
+            Analytics_Next_Page : constant
+              Analytics.Analytics_Configuration_Page :=
+              Analytics.Parse_List
+                (Response_Body (Analytics_Next_Response),
+                 XML.Default_Limits);
+         begin
+            Require
+              (Analytics_Page.Configurations.Length = 100
+               and then Analytics_Page.Is_Truncated
+               and then Analytics_Page.Next_Continuation_Token.Is_Set,
+               "ListBucketAnalyticsConfigurations lost its 100-entry page");
+            Require
+              (Metrics_Page.Configurations.Length = 100
+               and then Metrics_Page.Is_Truncated
+               and then Metrics_Page.Next_Continuation_Token.Is_Set,
+               "ListBucketMetricsConfigurations lost its 100-entry page");
+            Require
+              (Inventory_Page.Configurations.Length = 100
+               and then Inventory_Page.Is_Truncated
+               and then Inventory_Page.Next_Continuation_Token.Is_Set,
+               "ListBucketInventoryConfigurations lost its 100-entry page");
+            Require
+              (Intelligent_Tiering_Page.Configurations.Length = 1_000
+               and then not Intelligent_Tiering_Page.Is_Truncated
+               and then
+                 not Intelligent_Tiering_Page.Next_Continuation_Token.Is_Set,
+               "ListBucketIntelligentTieringConfigurations lost its " &
+               "established 1,000-entry ceiling");
+            Require
+              (Analytics_Next_Page.Configurations.Length = 100
+               and then Analytics_Next_Page.Continuation_Token.Is_Set
+               and then
+                 US.To_String
+                   (Analytics_Next_Page.Continuation_Token.Value) =
+                     Analytics_Token,
+               "ListBucketAnalyticsConfigurations lost its opaque cursor");
+            Require
+              (Has
+                 (List_Get
+                    (Limit_Bucket, "metrics",
+                     "ListBucketMetricsConfigurations", Analytics_Token,
+                     Has_Continuation_Token => True),
+                  "<Code>InvalidArgument</Code>"),
+               "configuration continuation token crossed a family");
+            Require
+              (Has
+                 (List_Get
+                    ("other-bucket", "analytics",
+                     "ListBucketAnalyticsConfigurations", Analytics_Token,
+                     Has_Continuation_Token => True),
+                  "<Code>InvalidArgument</Code>"),
+               "configuration continuation token crossed a bucket");
+            Require
+              (Has
+                 (List_Get
+                    (Limit_Bucket, "analytics",
+                     "ListBucketAnalyticsConfigurations", "malformed",
+                     Has_Continuation_Token => True),
+                  "<Code>InvalidArgument</Code>"),
+               "malformed configuration continuation token was accepted");
+         end;
          Store.Delete_Bucket
            (Limit_Bucket, null, Ada.Real_Time.Time_Last, Result);
          Require
            (Result = Flyology.Object_Storage.Success,
             "point-configuration limit bucket cleanup failed");
+      end;
+      declare
+         Budget_Bucket : constant String := "configuration-budget-bucket";
+         Document_Budget : constant Positive :=
+           XML.Default_Limits.Maximum_Document_Bytes;
+         Metrics_Prefix : constant String :=
+           "<MetricsConfiguration xmlns=""" & Namespace & """>" &
+           "<Id>budget</Id><Filter><Prefix>";
+         Metrics_Suffix : constant String :=
+           "</Prefix></Filter></MetricsConfiguration>";
+         Analytics_Prefix : constant String :=
+           "<AnalyticsConfiguration xmlns=""" & Namespace & """>" &
+           "<Id>budget</Id><Filter><Prefix>";
+         Analytics_Suffix : constant String :=
+           "</Prefix></Filter><StorageClassAnalysis/>" &
+           "</AnalyticsConfiguration>";
+         Result : Flyology.Object_Storage.Status;
+         type Document_Access is access all String;
+
+         function Sized_Document
+           (Prefix, Suffix : String;
+            Total_Length   : Positive;
+            Fill           : Character) return Document_Access
+         is
+            Result : constant Document_Access :=
+              new String (1 .. Total_Length);
+            Prefix_Last : constant Natural := Prefix'Length;
+            Suffix_First : constant Positive :=
+              Total_Length - Suffix'Length + 1;
+         begin
+            Result.all (1 .. Prefix_Last) := Prefix;
+            Result.all (Prefix_Last + 1 .. Suffix_First - 1) :=
+              (others => Fill);
+            Result.all (Suffix_First .. Total_Length) := Suffix;
+            return Result;
+         end Sized_Document;
+      begin
+         Store.Create_Bucket
+           (Budget_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "configuration listing budget bucket creation failed");
+         declare
+            First_Length : constant Positive := Document_Budget / 2 - 1;
+            Second_Length : constant Positive :=
+              Document_Budget - 2 - First_Length;
+            First_Document : constant Document_Access :=
+              Sized_Document
+                (Metrics_Prefix, Metrics_Suffix, First_Length, 'a');
+            Second_Document : constant Document_Access :=
+              Sized_Document
+                (Metrics_Prefix, Metrics_Suffix, Second_Length, 'b');
+         begin
+            Store.Put_Bucket_Metrics_Configuration
+              (Budget_Bucket, "", First_Document.all, null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "first listing budget fixture was rejected");
+            Store.Put_Bucket_Metrics_Configuration
+              (Budget_Bucket, "b", Second_Document.all, null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "second listing budget fixture was rejected");
+         end;
+         declare
+            Response : constant Document_Access :=
+              new String'
+                (List_Get
+                   (Budget_Bucket, "metrics",
+                    "ListBucketMetricsConfigurations"));
+            Response_Marker : constant Natural :=
+              Ada.Strings.Fixed.Index (Response.all, CRLF & CRLF);
+            Response_Document : String renames
+              Response.all (Response_Marker + 4 .. Response.all'Last);
+            Page : constant Metrics.Metrics_Configuration_Page :=
+              Metrics.Parse_List (Response_Document, XML.Default_Limits);
+            Token : constant String :=
+              US.To_String (Page.Next_Continuation_Token.Value);
+            Next_Response : constant Document_Access :=
+              new String'
+                (List_Get
+                   (Budget_Bucket, "metrics",
+                    "ListBucketMetricsConfigurations", Token,
+                    Has_Continuation_Token => True));
+            Next_Response_Marker : constant Natural :=
+              Ada.Strings.Fixed.Index (Next_Response.all, CRLF & CRLF);
+            Next_Response_Document : String renames
+              Next_Response.all
+                (Next_Response_Marker + 4 .. Next_Response.all'Last);
+            Next_Page : constant Metrics.Metrics_Configuration_Page :=
+              Metrics.Parse_List
+                (Next_Response_Document, XML.Default_Limits);
+         begin
+            Require
+              (Has (Response.all, "200 OK")
+               and then Response_Marker > 0
+               and then Response_Document'Length <= Document_Budget
+               and then Page.Configurations.Length = 1
+               and then Page.Is_Truncated
+               and then Page.Next_Continuation_Token.Is_Set,
+               "configuration listing did not reserve its XML envelope");
+            Require
+              (Next_Response_Marker > 0
+               and then Next_Page.Configurations.Length = 1
+               and then not Next_Page.Is_Truncated
+               and then Next_Page.Continuation_Token.Is_Set
+               and then
+                 US.To_String (Next_Page.Continuation_Token.Value) = Token,
+               "an empty-identifier cursor restarted the listing");
+         end;
+         Store.Delete_Bucket_Metrics_Configuration
+           (Budget_Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "first listing budget fixture cleanup failed");
+         Store.Delete_Bucket_Metrics_Configuration
+           (Budget_Bucket, "b", null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "second listing budget fixture cleanup failed");
+         declare
+            First_Length : constant Positive := Document_Budget / 2 - 1;
+            Second_Length : constant Positive :=
+              Document_Budget - 2 - First_Length;
+            First_Document : constant Document_Access :=
+              Sized_Document
+                (Metrics_Prefix, Metrics_Suffix, First_Length, 'c');
+            Second_Document : constant Document_Access :=
+              Sized_Document
+                (Metrics_Prefix, Metrics_Suffix, Second_Length, 'd');
+            Large_Binary_ID : constant String :=
+              'b' & Character'Val (0) & String'(1 .. 1_023 => 'x');
+         begin
+            Store.Put_Bucket_Metrics_Configuration
+              (Budget_Bucket, Large_Binary_ID, First_Document.all, null,
+               Ada.Real_Time.Time_Last, Result);
+            Store.Put_Bucket_Metrics_Configuration
+              (Budget_Bucket, "c", Second_Document.all, null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "large binary cursor fixtures were rejected");
+            declare
+               Response : constant Document_Access :=
+                 new String'
+                   (List_Get
+                      (Budget_Bucket, "metrics",
+                       "ListBucketMetricsConfigurations"));
+               Marker : constant Natural :=
+                 Ada.Strings.Fixed.Index (Response.all, CRLF & CRLF);
+               Document : String renames
+                 Response.all (Marker + 4 .. Response.all'Last);
+               Page : constant Metrics.Metrics_Configuration_Page :=
+                 Metrics.Parse_List (Document, XML.Default_Limits);
+               Cursor : constant String :=
+                 US.To_String (Page.Next_Continuation_Token.Value);
+               Next_Response : constant Document_Access :=
+                 new String'
+                   (List_Get
+                      (Budget_Bucket, "metrics",
+                       "ListBucketMetricsConfigurations", Cursor,
+                       Has_Continuation_Token => True));
+               Next_Marker : constant Natural :=
+                 Ada.Strings.Fixed.Index (Next_Response.all, CRLF & CRLF);
+               Next_Document : String renames
+                 Next_Response.all
+                   (Next_Marker + 4 .. Next_Response.all'Last);
+               Next_Page : constant Metrics.Metrics_Configuration_Page :=
+                 Metrics.Parse_List (Next_Document, XML.Default_Limits);
+            begin
+               Require
+                 (Marker > 0 and then Page.Configurations.Length = 1
+                  and then Page.Is_Truncated and then Cursor'Length = 135
+                  and then Next_Marker > 0
+                  and then Next_Page.Configurations.Length = 1
+                  and then not Next_Page.Is_Truncated,
+                  "configuration cursor did not preserve a large binary id");
+               Store.Delete_Bucket_Metrics_Configuration
+                 (Budget_Bucket, Large_Binary_ID, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Require
+                 (Result = Flyology.Object_Storage.Success,
+                  "configuration cursor marker deletion failed");
+               Require
+                 (Has
+                    (List_Get
+                       (Budget_Bucket, "metrics",
+                        "ListBucketMetricsConfigurations", Cursor,
+                        Has_Continuation_Token => True),
+                     "<Code>InvalidArgument</Code>"),
+                  "deleted marker did not invalidate configuration cursor");
+            end;
+            Store.Delete_Bucket_Metrics_Configuration
+              (Budget_Bucket, "c", null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "large binary cursor fixture cleanup failed");
+         end;
+         declare
+            Only_Document : constant Document_Access :=
+              Sized_Document
+                (Analytics_Prefix, Analytics_Suffix,
+                 Document_Budget - 4, 'c');
+            Response : US.Unbounded_String;
+         begin
+            Store.Put_Bucket_Analytics_Configuration
+              (Budget_Bucket, "only", Only_Document.all, null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "single over-envelope listing fixture was rejected");
+            Response := US.To_Unbounded_String
+              (List_Get
+                 (Budget_Bucket, "analytics",
+                  "ListBucketAnalyticsConfigurations"));
+            Require
+              (Has (US.To_String (Response), "500 Internal Server Error")
+               and then Has
+                 (US.To_String (Response), "<Code>InternalError</Code>")
+               and then not Has
+                 (US.To_String (Response), "<AnalyticsConfiguration"),
+               "an over-envelope configuration produced a partial page");
+         end;
+         Store.Delete_Bucket
+           (Budget_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "configuration listing budget bucket cleanup failed");
       end;
       Require
         (Has

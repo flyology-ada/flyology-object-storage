@@ -3738,6 +3738,107 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Delete_Bucket_Point_Configuration;
 
+   procedure List_Bucket_Point_Configurations
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Options    : Backends.List_Bucket_Configurations_Options;
+      Table_Name : String;
+      Label      : String;
+      Check      : not null access procedure;
+      Page       : out Backends.Bucket_Configuration_Page;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Integrity : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+      Used   : Byte_Count := 0;
+   begin
+      Page := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check.all;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with Label & " bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+
+      DB.Prepare
+        (Integrity, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM " & Table_Name &
+         " WHERE bucket_name=?1 AND " &
+         "(typeof(configuration_id)<>'blob' OR " &
+         "typeof(document)<>'blob'))");
+      DB.Bind (Integrity, 1, Bucket);
+      if DB.Step (Integrity) /= DB.Row then
+         raise Catalog_Error with Label & " integrity query returned no row";
+      elsif DB.Column (Integrity, 0) /= 0 then
+         raise Catalog_Error with Label & " catalog row has invalid storage";
+      end if;
+
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT configuration_id,document FROM " & Table_Name &
+         " WHERE bucket_name=?1 AND (?2=0 OR configuration_id>?3) " &
+         "ORDER BY configuration_id COLLATE BINARY LIMIT ?4");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind (Query, 2, Boolean'Pos (Options.Has_After));
+      DB.Bind_Bytes (Query, 3, US.To_String (Options.After));
+      DB.Bind
+        (Query, 4, Long_Long_Integer (Options.Maximum) + 1);
+      while DB.Step (Query) = DB.Row loop
+         Check.all;
+         declare
+            Identifier : constant String := DB.Column_Bytes (Query, 0);
+            Document   : constant String := DB.Column_Bytes (Query, 1);
+            Entry_Bytes : constant Byte_Count :=
+              Byte_Count (Identifier'Length) + Byte_Count (Document'Length);
+         begin
+            if not Valid_Bucket_Named_Configuration
+              (Identifier, Document)
+            then
+               raise Catalog_Error with Label & " catalog row is invalid";
+            elsif Page.Configurations.Length >=
+                 Ada.Containers.Count_Type (Options.Maximum)
+              or else Entry_Bytes > Options.Maximum_Bytes - Used
+            then
+               Page.Is_Truncated := True;
+               exit;
+            end if;
+            Page.Configurations.Append
+              ((Identifier => US.To_Unbounded_String (Identifier),
+                Document   => US.To_Unbounded_String (Document)));
+            Used := Used + Entry_Bytes;
+            Page.Next_After := US.To_Unbounded_String (Identifier);
+         end;
+      end loop;
+      if Page.Is_Truncated and then Page.Configurations.Is_Empty then
+         Page := (others => <>);
+         Item.Gate.Release;
+         Locked := False;
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Page := (others => <>);
+         raise;
+   end List_Bucket_Point_Configurations;
+
    procedure Put_Bucket_Encryption
      (Item     : in out Catalog;
       Bucket   : String;
@@ -4063,6 +4164,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "bucket analytics", Result);
    end Delete_Bucket_Analytics_Configuration;
 
+   procedure List_Bucket_Analytics_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status) is
+   begin
+      List_Bucket_Point_Configurations
+        (Item, Bucket, Options, "bucket_analytics_configurations",
+         "bucket analytics", Check, Page, Result);
+   end List_Bucket_Analytics_Configurations;
+
    procedure Put_Bucket_Metrics_Configuration
      (Item       : in out Catalog;
       Bucket     : String;
@@ -4099,6 +4213,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, Identifier, "bucket_metrics_configurations",
          "bucket metrics", Result);
    end Delete_Bucket_Metrics_Configuration;
+
+   procedure List_Bucket_Metrics_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status) is
+   begin
+      List_Bucket_Point_Configurations
+        (Item, Bucket, Options, "bucket_metrics_configurations",
+         "bucket metrics", Check, Page, Result);
+   end List_Bucket_Metrics_Configurations;
 
    procedure Put_Bucket_Intelligent_Tiering_Configuration
      (Item       : in out Catalog;
@@ -4139,6 +4266,20 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "bucket intelligent-tiering", Result);
    end Delete_Bucket_Intelligent_Tiering_Configuration;
 
+   procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status) is
+   begin
+      List_Bucket_Point_Configurations
+        (Item, Bucket, Options,
+         "bucket_intelligent_tiering_configurations",
+         "bucket intelligent-tiering", Check, Page, Result);
+   end List_Bucket_Intelligent_Tiering_Configurations;
+
    procedure Put_Bucket_Inventory_Configuration
      (Item       : in out Catalog;
       Bucket     : String;
@@ -4174,6 +4315,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item, Bucket, Identifier, "bucket_inventory_configurations",
          "bucket inventory", Result);
    end Delete_Bucket_Inventory_Configuration;
+
+   procedure List_Bucket_Inventory_Configurations
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Bucket_Configurations_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Configuration_Page;
+      Result  : out Status) is
+   begin
+      List_Bucket_Point_Configurations
+        (Item, Bucket, Options, "bucket_inventory_configurations",
+         "bucket inventory", Check, Page, Result);
+   end List_Bucket_Inventory_Configurations;
 
    procedure Put_Bucket_Policy
      (Item   : in out Catalog;

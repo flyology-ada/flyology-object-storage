@@ -1000,6 +1000,67 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
       end Delete_Named_Bucket_Configuration;
 
+      procedure List_Named_Bucket_Configurations
+        (Name    : String;
+         Kind    : Named_Configuration_Kind;
+         Options : List_Bucket_Configurations_Options;
+         Page    : out Bucket_Configuration_Page;
+         Result  : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Position : Named_Configuration_Maps.Cursor;
+         Used     : Byte_Count := 0;
+      begin
+         Page := (others => <>);
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         end if;
+
+         Position := Buckets (Index).Named_Configurations (Kind).First;
+         while Named_Configuration_Maps.Has_Element (Position) loop
+            declare
+               Identifier : constant String :=
+                 Named_Configuration_Maps.Key (Position);
+               Document : constant Ada.Strings.Unbounded.Unbounded_String :=
+                 Named_Configuration_Maps.Element (Position);
+               Entry_Bytes : constant Byte_Count :=
+                 Byte_Count (Identifier'Length) +
+                 Byte_Count (Ada.Strings.Unbounded.Length (Document));
+            begin
+               if not Options.Has_After
+                 or else
+                   Identifier >
+                     Ada.Strings.Unbounded.To_String (Options.After)
+               then
+                  if Page.Configurations.Length >=
+                       Ada.Containers.Count_Type (Options.Maximum)
+                    or else Entry_Bytes > Options.Maximum_Bytes - Used
+                  then
+                     Page.Is_Truncated := True;
+                     exit;
+                  end if;
+                  Page.Configurations.Append
+                    (Listed_Bucket_Configuration'
+                       (Identifier =>
+                          Ada.Strings.Unbounded.To_Unbounded_String
+                            (Identifier),
+                        Document   => Document));
+                  Used := Used + Entry_Bytes;
+                  Page.Next_After :=
+                    Ada.Strings.Unbounded.To_Unbounded_String (Identifier);
+               end if;
+            end;
+            Position := Named_Configuration_Maps.Next (Position);
+         end loop;
+         if Page.Is_Truncated and then Page.Configurations.Is_Empty then
+            Page := (others => <>);
+            Result := Invalid_Request;
+            return;
+         end if;
+         Result := Success;
+      end List_Named_Bucket_Configurations;
+
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
          Configuration : Bucket_Public_Access_Block_Configuration;
@@ -3387,6 +3448,32 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
    end Delete_Named_Bucket_Configuration;
 
+   procedure List_Named_Bucket_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Kind     : Named_Configuration_Kind;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status)
+   is
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else
+          (Options.Has_After
+           and then not Valid_Bucket_Named_Configuration
+             (Ada.Strings.Unbounded.To_String (Options.After), ""))
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.List_Named_Bucket_Configurations
+           (Bucket, Kind, Options, Page, Result);
+      end if;
+   end List_Named_Bucket_Configurations;
+
    overriding procedure Put_Bucket_Analytics_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -3428,6 +3515,20 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Item, Bucket, Analytics_Configuration, Identifier, Token, Deadline,
          Result);
    end Delete_Bucket_Analytics_Configuration;
+
+   overriding procedure List_Bucket_Analytics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Named_Bucket_Configurations
+        (Item, Bucket, Analytics_Configuration, Options, Token, Deadline,
+         Page, Result);
+   end List_Bucket_Analytics_Configurations;
 
    overriding procedure Put_Bucket_Metrics_Configuration
      (Item       : in out Store;
@@ -3471,6 +3572,20 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result);
    end Delete_Bucket_Metrics_Configuration;
 
+   overriding procedure List_Bucket_Metrics_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Named_Bucket_Configurations
+        (Item, Bucket, Metrics_Configuration, Options, Token, Deadline,
+         Page, Result);
+   end List_Bucket_Metrics_Configurations;
+
    overriding procedure Put_Bucket_Intelligent_Tiering_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -3513,6 +3628,20 @@ package body Flyology.Object_Storage.Backends.Memory is
          Deadline, Result);
    end Delete_Bucket_Intelligent_Tiering_Configuration;
 
+   overriding procedure List_Bucket_Intelligent_Tiering_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Named_Bucket_Configurations
+        (Item, Bucket, Intelligent_Tiering_Configuration, Options, Token,
+         Deadline, Page, Result);
+   end List_Bucket_Intelligent_Tiering_Configurations;
+
    overriding procedure Put_Bucket_Inventory_Configuration
      (Item       : in out Store;
       Bucket     : String;
@@ -3554,6 +3683,20 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Item, Bucket, Inventory_Configuration, Identifier, Token, Deadline,
          Result);
    end Delete_Bucket_Inventory_Configuration;
+
+   overriding procedure List_Bucket_Inventory_Configurations
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Bucket_Configurations_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Configuration_Page;
+      Result   : out Status) is
+   begin
+      List_Named_Bucket_Configurations
+        (Item, Bucket, Inventory_Configuration, Options, Token, Deadline,
+         Page, Result);
+   end List_Bucket_Inventory_Configurations;
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;

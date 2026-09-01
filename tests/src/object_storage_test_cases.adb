@@ -48,6 +48,9 @@ with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
 with GNAT.SHA256;
+with GNAT.OS_Lib;
+with Interfaces.C;
+with Interfaces.C.Strings;
 with Flyology.Object_Storage.Tags;
 
 package body Object_Storage_Test_Cases is
@@ -1478,6 +1481,210 @@ package body Object_Storage_Test_Cases is
          Free (Over_Limit);
          raise;
    end Exercise_Bucket_Singleton_Configuration_Bounds;
+
+   procedure Exercise_Bucket_Named_Configuration_Listing
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Alpha : constant String :=
+        "<AnalyticsConfiguration><Id>payload-z</Id>" &
+        "</AnalyticsConfiguration>";
+      Alpha_Replacement : constant String :=
+        "<AnalyticsConfiguration><Id>payload-replaced</Id>" &
+        "</AnalyticsConfiguration>";
+      Middle : constant String :=
+        "<AnalyticsConfiguration><Id>payload-a</Id>" &
+        "</AnalyticsConfiguration>";
+      Zeta : constant String :=
+        "<AnalyticsConfiguration><Id>payload-m</Id>" &
+        "</AnalyticsConfiguration>";
+      Options : List_Bucket_Configurations_Options :=
+        (Has_After     => False,
+         After         => US.Null_Unbounded_String,
+         Maximum       => 2,
+         Maximum_Bytes => Byte_Count'Last);
+      Page   : Bucket_Configuration_Page;
+      Result : Status;
+   begin
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Is_Empty
+         and then not Page.Is_Truncated,
+         "new bucket exposed analytics list entries");
+      Store.List_Bucket_Analytics_Configurations
+        ("missing-configuration-list-bucket", Options, null,
+         Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Not_Found and then Page.Configurations.Is_Empty,
+         "named-configuration list lost missing-bucket status");
+
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "zeta", Zeta, null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "", "<AnalyticsConfiguration><Id>empty</Id>" &
+           "</AnalyticsConfiguration>",
+         null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "alpha", Alpha, null, Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "middle", Middle, null, Ada.Real_Time.Time_Last, Result);
+      Options.Maximum := 1;
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String
+           (Page.Configurations.First_Element.Identifier) = ""
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After) = "",
+         "named-configuration list omitted the exact empty identifier");
+      Options.Has_After := True;
+      Options.After := Page.Next_After;
+      Options.Maximum := 2;
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 2
+         and then US.To_String (Page.Configurations.Element (1).Identifier) =
+           "alpha"
+         and then US.To_String (Page.Configurations.Element (2).Identifier) =
+           "middle"
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After) = "middle",
+         "named-configuration list did not use request-ID byte order");
+      Options.Has_After := True;
+      Options.After := Page.Next_After;
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String (Page.Configurations.First_Element.Identifier) =
+           "zeta"
+         and then not Page.Is_Truncated,
+         "named-configuration continuation repeated or skipped an entry");
+
+      Store.Put_Bucket_Analytics_Configuration
+        (Bucket, "alpha", Alpha_Replacement, null,
+         Ada.Real_Time.Time_Last, Result);
+      Options :=
+        (Has_After     => True,
+         After         => US.Null_Unbounded_String,
+         Maximum       => 3,
+         Maximum_Bytes => Byte_Count
+           (5 + Alpha_Replacement'Length));
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String (Page.Configurations.First_Element.Document) =
+           Alpha_Replacement
+         and then Page.Is_Truncated,
+         "named-configuration byte budget or replacement was not exact");
+      Options.Maximum := 0;
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Invalid_Request and then Page.Configurations.Is_Empty,
+         "an unrepresentable named-configuration page did not fail closed");
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "middle", null, Ada.Real_Time.Time_Last, Result);
+      Options :=
+        (Has_After     => False,
+         After         => US.Null_Unbounded_String,
+         Maximum       => 3,
+         Maximum_Bytes => Byte_Count'Last);
+      Store.List_Bucket_Analytics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 3
+         and then US.To_String (Page.Configurations.Element (1).Identifier) =
+           ""
+         and then US.To_String (Page.Configurations.Element (2).Identifier) =
+           "alpha"
+         and then US.To_String (Page.Configurations.Element (3).Identifier) =
+           "zeta",
+         "named-configuration deletion remained visible in its list");
+
+      Store.Put_Bucket_Metrics_Configuration
+        (Bucket, "metrics", "<MetricsConfiguration/>", null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "tiering", "<IntelligentTieringConfiguration/>", null,
+         Ada.Real_Time.Time_Last, Result);
+      Store.Put_Bucket_Inventory_Configuration
+        (Bucket, "inventory", "<InventoryConfiguration/>", null,
+         Ada.Real_Time.Time_Last, Result);
+      Options :=
+        (Has_After     => False,
+         After         => US.Null_Unbounded_String,
+         Maximum       => 1,
+         Maximum_Bytes => Byte_Count'Last);
+      Store.List_Bucket_Metrics_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String (Page.Configurations.First_Element.Identifier) =
+           "metrics",
+         "metrics list did not use its own family");
+      Store.List_Bucket_Intelligent_Tiering_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String (Page.Configurations.First_Element.Identifier) =
+           "tiering",
+         "Intelligent-Tiering list did not use its own family");
+      Store.List_Bucket_Inventory_Configurations
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Configurations.Length = 1
+         and then US.To_String (Page.Configurations.First_Element.Identifier) =
+           "inventory",
+         "inventory list did not use its own family");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.List_Bucket_Analytics_Configurations
+              (Bucket, Options, Cancel'Access, Ada.Real_Time.Time_Last,
+               Page, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "named-configuration list ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.List_Bucket_Analytics_Configurations
+              (Bucket, Options, null, Ada.Real_Time.Time_First, Page, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "named-configuration list ignored deadline");
+      end;
+
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Analytics_Configuration
+        (Bucket, "zeta", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Metrics_Configuration
+        (Bucket, "metrics", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Intelligent_Tiering_Configuration
+        (Bucket, "tiering", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket_Inventory_Configuration
+        (Bucket, "inventory", null, Ada.Real_Time.Time_Last, Result);
+   end Exercise_Bucket_Named_Configuration_Listing;
 
    procedure Exercise_Bucket_Named_Configuration_Bounds
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
@@ -3810,6 +4017,8 @@ package body Object_Storage_Test_Cases is
          Configuration_Store.Create_Bucket
            ("configuration-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "create memory configuration bucket");
+         Exercise_Bucket_Named_Configuration_Listing
+           (Configuration_Store, "configuration-bucket");
          Exercise_Bucket_Configuration_Documents
            (Configuration_Store, "configuration-bucket");
          Assert
@@ -5378,6 +5587,110 @@ package body Object_Storage_Test_Cases is
          Store.Head_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "head existing files bucket");
+         Store.Create_Bucket
+           ("file-configuration-list", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "create files configuration-list bucket");
+         Exercise_Bucket_Named_Configuration_Listing
+           (Store, "file-configuration-list");
+         declare
+            Configuration : constant String := Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"),
+                  "file-configuration-list"),
+               "configuration");
+            Original : constant String := Ada.Directories.Compose
+              (Configuration,
+               "analytics-" & GNAT.SHA256.Digest ("corrupt-id") & ".fos");
+            Wrong_Hash : constant String := Ada.Directories.Compose
+              (Configuration,
+               "analytics-" & GNAT.SHA256.Digest ("wrong-id") & ".fos");
+            Symlink : constant String := Ada.Directories.Compose
+              (Configuration,
+               "analytics-" & GNAT.SHA256.Digest ("link-id") & ".fos");
+            Options : constant List_Bucket_Configurations_Options :=
+              (Has_After     => False,
+               After         => US.Null_Unbounded_String,
+               Maximum       => 1,
+               Maximum_Bytes => Byte_Count'Last);
+            Page    : Bucket_Configuration_Page;
+            Changed : Boolean := False;
+            Corrupt : Ada.Streams.Stream_IO.File_Type;
+
+            package C_Strings renames Interfaces.C.Strings;
+            use type Interfaces.C.int;
+            use type C_Strings.chars_ptr;
+
+            function C_Symlink
+              (Target, Link_Name : C_Strings.chars_ptr)
+               return Interfaces.C.int
+              with Import, Convention => C, External_Name => "symlink";
+
+            procedure Create_Test_Symbolic_Link
+              (Target, Link_Name : String;
+               Created           : out Boolean)
+            is
+               Target_P : C_Strings.chars_ptr :=
+                 C_Strings.New_String (Target);
+               Link_P   : C_Strings.chars_ptr := C_Strings.Null_Ptr;
+            begin
+               Link_P := C_Strings.New_String (Link_Name);
+               Created := C_Symlink (Target_P, Link_P) = 0;
+               C_Strings.Free (Target_P);
+               C_Strings.Free (Link_P);
+            exception
+               when others =>
+                  if Target_P /= C_Strings.Null_Ptr then
+                     C_Strings.Free (Target_P);
+                  end if;
+                  if Link_P /= C_Strings.Null_Ptr then
+                     C_Strings.Free (Link_P);
+                  end if;
+                  raise;
+            end Create_Test_Symbolic_Link;
+         begin
+            Store.Put_Bucket_Analytics_Configuration
+              ("file-configuration-list", "corrupt-id", "document", null,
+               Ada.Real_Time.Time_Last, Result);
+            GNAT.OS_Lib.Rename_File (Original, Wrong_Hash, Changed);
+            Assert (Changed, "could not create files hash-mismatch fixture");
+            Store.List_Bucket_Analytics_Configurations
+              ("file-configuration-list", Options, null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "files list accepted mismatched identifier hash path");
+            GNAT.OS_Lib.Rename_File (Wrong_Hash, Original, Changed);
+            Assert (Changed, "could not restore files hash-mismatch fixture");
+            Ada.Streams.Stream_IO.Create
+              (Corrupt, Ada.Streams.Stream_IO.Out_File, Original);
+            Character'Write (Ada.Streams.Stream_IO.Stream (Corrupt), 'x');
+            Ada.Streams.Stream_IO.Close (Corrupt);
+            Store.List_Bucket_Analytics_Configurations
+              ("file-configuration-list", Options, null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "files named-configuration list accepted corrupt bytes");
+            Ada.Directories.Delete_File (Original);
+            Store.Put_Bucket_Analytics_Configuration
+              ("file-configuration-list", "corrupt-id", "document", null,
+               Ada.Real_Time.Time_Last, Result);
+            Create_Test_Symbolic_Link (Original, Symlink, Changed);
+            Assert (Changed, "could not create files list symlink fixture");
+            Store.List_Bucket_Analytics_Configurations
+              ("file-configuration-list", Options, null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Backend_Unavailable,
+               "files named-configuration list followed a symbolic link");
+            Ada.Directories.Delete_File (Symlink);
+            Store.Delete_Bucket_Analytics_Configuration
+              ("file-configuration-list", "corrupt-id", null,
+               Ada.Real_Time.Time_Last, Result);
+         end;
+         Store.Delete_Bucket
+           ("file-configuration-list", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "delete files configuration-list bucket");
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Exercise_Bucket_CORS (Store, "file-bucket");
@@ -5707,6 +6020,24 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Configured
                and then US.To_String (Document)'Length > 0,
                "files inventory state did not persist across reopen");
+            declare
+               Options : constant List_Bucket_Configurations_Options :=
+                 (Has_After     => False,
+                  After         => US.Null_Unbounded_String,
+                  Maximum       => 3,
+                  Maximum_Bytes => Byte_Count'Last);
+               Page : Bucket_Configuration_Page;
+            begin
+               Store.List_Bucket_Analytics_Configurations
+                 ("file-bucket", Options, null, Ada.Real_Time.Time_Last,
+                  Page, Result);
+               Assert
+                 (Result = Success and then Page.Configurations.Length = 1
+                  and then US.To_String
+                    (Page.Configurations.First_Element.Identifier) =
+                      "query-analytics",
+                  "files named-configuration list did not survive reopen");
+            end;
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

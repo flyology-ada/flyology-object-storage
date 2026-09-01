@@ -917,6 +917,13 @@ def _reject_paginated_docs(
 
 
 def main() -> None:
+    assert s3_operation.expand_command_arguments(
+        ["{repository}/build/gnatdoc/example", "{model}"],
+        Path("/model/service.json"),
+    ) == [
+        str(s3_operation.ROOT / "build/gnatdoc/example"),
+        "/model/service.json",
+    ]
     buckets_source = (
         s3_operation.ROOT
         / "src/flyology-object_storage-client-buckets.ads"
@@ -2694,6 +2701,360 @@ def main() -> None:
     ).replace("updated", "generated") == replacement
 
     registry = s3_operation.load_registry()
+    list_configuration_operations = [
+        "ListBucketAnalyticsConfigurations",
+        "ListBucketIntelligentTieringConfigurations",
+        "ListBucketInventoryConfigurations",
+        "ListBucketMetricsConfigurations",
+    ]
+    list_configuration_names = {
+        "ListBucketAnalyticsConfigurations":
+            "List_Analytics_Configurations",
+        "ListBucketIntelligentTieringConfigurations":
+            "List_Intelligent_Tiering_Configurations",
+        "ListBucketInventoryConfigurations":
+            "List_Inventory_Configurations",
+        "ListBucketMetricsConfigurations": "List_Metrics_Configurations",
+    }
+    list_configuration_codecs = {
+        "ListBucketAnalyticsConfigurations": "analytics",
+        "ListBucketIntelligentTieringConfigurations":
+            "intelligent_tiering",
+        "ListBucketInventoryConfigurations": "inventory",
+        "ListBucketMetricsConfigurations": "metrics",
+    }
+
+    def list_configuration_symbols(operation):
+        codec = list_configuration_codecs[operation]
+        stem = "_".join(part.title() for part in codec.split("_"))
+        procedure = f"List_Bucket_{stem}_Configurations"
+        return [
+            f"Prepare_{procedure}",
+            f"Execute_{procedure}",
+            f"List_Bucket_{stem}_Operation",
+            list_configuration_names[operation],
+            "Finish",
+        ]
+
+    def list_configuration_evidence(operation):
+        codec = list_configuration_codecs[operation]
+        qualification = (
+            f"tests/src/s3_list_bucket_{codec}_configurations_"
+            "qualification.adb"
+        )
+        return {
+            "backend": [
+                "tests/src/object_storage_test_cases.adb",
+                "sqlite/tests/src/"
+                "flyology_object_storage_sqlite_tests.adb",
+            ],
+            "client": [
+                "src/flyology-object_storage-s3-"
+                "paginated_rest_xml_reads.adb",
+                f"src/flyology-object_storage-s3-{codec}.adb",
+                "src/flyology-object_storage-client-low_level.adb",
+                "src/flyology-object_storage-client-buckets.adb",
+                qualification,
+            ],
+            "server": [
+                f"src/flyology-object_storage-s3-{codec}.ads",
+                f"src/flyology-object_storage-s3-{codec}.adb",
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+            "corpus": [
+                "tools/verify-list-bucket-configurations-preparation.py",
+                "docs/qualification/list-bucket-configurations.md",
+                "tests/generated/s3-negative-xml.json",
+                "tests/generated/s3-signed-socket.json",
+                qualification,
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+        }
+
+    def list_configuration_lane():
+        return [
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-list-bucket-configurations-preparation.py",
+            ],
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/test-s3-operation-registry.py",
+            ],
+            ["@tests", "alr", "-n", "build"],
+            *[
+                [
+                    "@tests", "uv", "run", "--python", "3.13", "--",
+                    "../tools/s3-signed-socket.py", operation,
+                ]
+                for operation in list_configuration_operations
+            ],
+            ["@tests", "./bin/s3_server_application_corpus"],
+            ["@tests", "./bin/s3_http_socket_corpus"],
+            ["./tools/verify-coverage.sh"],
+            [
+                "./tools/build-api-docs.sh",
+                "{repository}/build/gnatdoc/list-bucket-configurations",
+            ],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def assert_list_configuration_registry(candidate):
+        for operation in list_configuration_operations:
+            entry = candidate.operations[operation]
+            public_name = list_configuration_names[operation]
+            assert entry.get("public_name") == public_name
+            assert entry.get("family") == "paginated_rest_xml_read"
+            assert entry.get("implementation_mode") == "shared-family"
+            assert entry.get("decision_status") == "reviewed"
+            assert entry.get("human_decisions_resolved") is True
+            assert entry.get("qualification") == (
+                "list_bucket_configurations"
+            )
+            assert entry["ada_symbols"] == list_configuration_symbols(
+                operation
+            )
+            assert entry["evidence"] == list_configuration_evidence(operation)
+            assert entry.get("coverage") == {
+                "backend": "covered",
+                "client": "covered",
+                "server": "covered",
+                "corpus": "covered",
+            }
+            assert entry["provenance"]["backend"] == "handwritten"
+            assert entry["provenance"]["server"] == "handwritten"
+            assert "exact HTTP 200" in entry["absence"]
+            assert "HTTP 404 NoSuchBucket maps to Not_Found" in (
+                entry["absence"]
+            )
+            assert "no per-configuration absence" in entry["absence"]
+            assert "no next-page request is automatic" in (
+                entry["certainty"]
+            )
+            assert public_name in entry["reconciliation"]
+            assert "does not create a cross-page snapshot" in (
+                entry["reconciliation"]
+            )
+            assert "deleting its marker invalidates the token" in (
+                entry["reconciliation"]
+            )
+            assert "request identifiers bytewise" in (
+                entry["exclusions"][1]
+            )
+            assert "payload Id remains independent" in (
+                entry["exclusions"][1]
+            )
+            assert "atomic current snapshot" in entry["exclusions"][2]
+            assert (
+                "tools/verify-list-bucket-configurations-preparation.py"
+                in entry["evidence"]["corpus"]
+            )
+            assert "docs/qualification/list-bucket-configurations.md" in (
+                entry["evidence"]["corpus"]
+            )
+            assert entry["evidence"]["backend"] == [
+                "tests/src/object_storage_test_cases.adb",
+                "sqlite/tests/src/"
+                "flyology_object_storage_sqlite_tests.adb",
+            ]
+            assert (
+                "src/flyology-object_storage-server-s3_applications.adb"
+                in entry["evidence"]["server"]
+            )
+        analytics = candidate.operations[
+            "ListBucketAnalyticsConfigurations"
+        ]
+        inventory = candidate.operations[
+            "ListBucketInventoryConfigurations"
+        ]
+        metrics = candidate.operations[
+            "ListBucketMetricsConfigurations"
+        ]
+        tiering = candidate.operations[
+            "ListBucketIntelligentTieringConfigurations"
+        ]
+        for entry in (analytics, inventory, metrics):
+            assert "at most 100" in entry["exclusions"][0]
+        assert "states no Intelligent-Tiering service page maximum" in (
+            tiering["exclusions"][0]
+        )
+        assert "1,000-per-family storage ceiling" in (
+            tiering["exclusions"][0]
+        )
+        assert "no AWS page-size compatibility claim" in (
+            tiering["exclusions"][0]
+        )
+        assert candidate.qualification["list_bucket_configurations"] == (
+            list_configuration_lane()
+        )
+
+    def reject_list_configuration_registry(candidate, label):
+        assert candidate != registry, (
+            f"{label} ListBucketConfigurations candidate did not mutate"
+        )
+        try:
+            assert_list_configuration_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(
+            f"{label} ListBucketConfigurations registry accepted"
+        )
+
+    assert_list_configuration_registry(registry)
+    missing_list_configuration = copy.deepcopy(registry)
+    del missing_list_configuration.operations[
+        "ListBucketAnalyticsConfigurations"
+    ]
+    reject_list_configuration_registry(
+        missing_list_configuration, "missing operation"
+    )
+    swapped_list_configuration = copy.deepcopy(registry)
+    swapped_list_configuration.operations[
+        "ListBucketAnalyticsConfigurations"
+    ]["public_name"] = "List_Metrics_Configurations"
+    reject_list_configuration_registry(
+        swapped_list_configuration, "cross-operation public name"
+    )
+    absent_list_configuration = copy.deepcopy(registry)
+    absent_list_configuration.operations[
+        "ListBucketInventoryConfigurations"
+    ]["absence"] = "an empty page is Not_Found"
+    reject_list_configuration_registry(
+        absent_list_configuration, "wrong empty-page absence"
+    )
+    causal_list_configuration = copy.deepcopy(registry)
+    causal_list_configuration.operations[
+        "ListBucketMetricsConfigurations"
+    ]["reconciliation"] = "one cursor freezes every later page"
+    reject_list_configuration_registry(
+        causal_list_configuration, "cross-page snapshot claim"
+    )
+    persistent_marker = copy.deepcopy(registry)
+    persistent_marker.operations[
+        "ListBucketAnalyticsConfigurations"
+    ]["reconciliation"] = (
+        "caller-selected List_Analytics_Configurations preserves every "
+        "continuation token after its marker is deleted"
+    )
+    reject_list_configuration_registry(
+        persistent_marker, "deleted marker preserves cursor"
+    )
+    capped_tiering = copy.deepcopy(registry)
+    capped_tiering.operations[
+        "ListBucketIntelligentTieringConfigurations"
+    ]["exclusions"][0] = "AWS returns at most 100 configurations"
+    reject_list_configuration_registry(
+        capped_tiering, "invented Intelligent-Tiering service cap"
+    )
+    unordered_list_configuration = copy.deepcopy(registry)
+    unordered_list_configuration.operations[
+        "ListBucketAnalyticsConfigurations"
+    ]["exclusions"][1] = "payload Id order"
+    reject_list_configuration_registry(
+        unordered_list_configuration, "payload identifier ordering"
+    )
+    uncovered_list_configuration = copy.deepcopy(registry)
+    uncovered_list_configuration.operations[
+        "ListBucketInventoryConfigurations"
+    ]["coverage"]["server"] = "missing"
+    reject_list_configuration_registry(
+        uncovered_list_configuration, "missing server coverage"
+    )
+    detached_list_configuration = copy.deepcopy(registry)
+    detached_list_configuration.operations[
+        "ListBucketMetricsConfigurations"
+    ]["qualification"] = "list_bucket_metrics_configurations"
+    reject_list_configuration_registry(
+        detached_list_configuration, "detached operation lane"
+    )
+    missing_list_configuration_command = copy.deepcopy(registry)
+    missing_list_configuration_command.qualification[
+        "list_bucket_configurations"
+    ].pop(0)
+    reject_list_configuration_registry(
+        missing_list_configuration_command, "missing verifier command"
+    )
+    swapped_symbols = copy.deepcopy(registry)
+    analytics = swapped_symbols.operations[
+        "ListBucketAnalyticsConfigurations"
+    ]
+    metrics = swapped_symbols.operations["ListBucketMetricsConfigurations"]
+    analytics["ada_symbols"], metrics["ada_symbols"] = (
+        metrics["ada_symbols"],
+        analytics["ada_symbols"],
+    )
+    reject_list_configuration_registry(
+        swapped_symbols, "cross-operation Ada symbols"
+    )
+    for section in ("client", "server"):
+        swapped_evidence = copy.deepcopy(registry)
+        analytics = swapped_evidence.operations[
+            "ListBucketAnalyticsConfigurations"
+        ]
+        metrics = swapped_evidence.operations[
+            "ListBucketMetricsConfigurations"
+        ]
+        analytics["evidence"][section], metrics["evidence"][section] = (
+            metrics["evidence"][section],
+            analytics["evidence"][section],
+        )
+        reject_list_configuration_registry(
+            swapped_evidence, f"cross-operation {section} evidence"
+        )
+    missing_corpus_evidence = copy.deepcopy(registry)
+    missing_corpus_evidence.operations[
+        "ListBucketInventoryConfigurations"
+    ]["evidence"]["corpus"].remove(
+        "tests/src/s3_list_bucket_inventory_configurations_qualification.adb"
+    )
+    reject_list_configuration_registry(
+        missing_corpus_evidence, "missing operation corpus evidence"
+    )
+    missing_middle_command = copy.deepcopy(registry)
+    missing_middle_command.qualification[
+        "list_bucket_configurations"
+    ].pop(4)
+    reject_list_configuration_registry(
+        missing_middle_command, "missing middle signed-socket command"
+    )
+    list_configuration_lane, list_configuration_commands = (
+        s3_operation.qualification_plan(
+            registry, list_configuration_operations
+        )
+    )
+    assert list_configuration_lane == "list_bucket_configurations"
+    assert list_configuration_commands[-3] == [
+        "./tools/build-api-docs.sh",
+        "{repository}/build/gnatdoc/list-bucket-configurations",
+        "--operation",
+        "ListBucketAnalyticsConfigurations",
+        "--operation",
+        "ListBucketIntelligentTieringConfigurations",
+        "--operation",
+        "ListBucketInventoryConfigurations",
+        "--operation",
+        "ListBucketMetricsConfigurations",
+    ]
+    try:
+        s3_operation.qualification_plan(
+            registry, list_configuration_operations[:-1]
+        )
+    except s3_operation.Audit_Error as error:
+        assert "complete reviewed qualification lane" in str(error)
+    else:
+        raise AssertionError("incomplete list-configuration lane accepted")
+    try:
+        s3_operation.qualification_plan(
+            registry,
+            list_configuration_operations
+            + ["ListBucketAnalyticsConfigurations"],
+        )
+    except s3_operation.Audit_Error as error:
+        assert "appears more than once" in str(error)
+    else:
+        raise AssertionError("duplicate list-configuration lane accepted")
     batch_operations = [
         "PutBucketInventoryConfiguration",
         "PutBucketLogging",

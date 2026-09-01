@@ -538,11 +538,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Delete_Bucket_Lifecycle,
          Put_Bucket_Logging, Get_Bucket_Logging,
          Put_Bucket_Analytics, Get_Bucket_Analytics,
+         List_Bucket_Analytics,
          Delete_Bucket_Analytics,
-         Put_Bucket_Metrics, Get_Bucket_Metrics, Delete_Bucket_Metrics,
+         Put_Bucket_Metrics, Get_Bucket_Metrics, List_Bucket_Metrics,
+         Delete_Bucket_Metrics,
          Put_Bucket_Intelligent_Tiering, Get_Bucket_Intelligent_Tiering,
+         List_Bucket_Intelligent_Tiering,
          Delete_Bucket_Intelligent_Tiering,
          Put_Bucket_Inventory, Get_Bucket_Inventory,
+         List_Bucket_Inventory,
          Delete_Bucket_Inventory,
          Put_Bucket_Replication, Get_Bucket_Replication,
          Delete_Bucket_Replication,
@@ -687,6 +691,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          ID    : US.Unbounded_String;
       end record;
 
+      type Configuration_List_Query_Result is record
+         Valid                  : Boolean := False;
+         Continuation_Token     : US.Unbounded_String;
+         Has_Continuation_Token : Boolean := False;
+      end record;
+
       type Point_Configuration_Family is
         (Analytics_Family, Metrics_Family, Intelligent_Tiering_Family,
          Inventory_Family);
@@ -735,6 +745,36 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   else "DeleteBucketInventoryConfiguration");
          end case;
       end Point_Operation_ID;
+
+      function List_Operation_ID
+        (Family : Point_Configuration_Family) return String is
+        (case Family is
+            when Analytics_Family =>
+              "ListBucketAnalyticsConfigurations",
+            when Metrics_Family =>
+              "ListBucketMetricsConfigurations",
+            when Intelligent_Tiering_Family =>
+              "ListBucketIntelligentTieringConfigurations",
+            when Inventory_Family =>
+              "ListBucketInventoryConfigurations");
+
+      Configuration_Token_Prefix : constant String := "fosc1.";
+
+      function Configuration_Scope_Digest
+        (Bucket : String; Family : Point_Configuration_Family) return String is
+        (GNAT.SHA256.Digest
+           ("flyology-configuration-list-scope-v1" & Character'Val (0) &
+            Bucket & Character'Val (0) & Point_Subresource (Family)));
+
+      function Encode_Configuration_Continuation
+        (Bucket     : String;
+         Family     : Point_Configuration_Family;
+         Identifier : String) return String is
+        (Configuration_Token_Prefix &
+         Configuration_Scope_Digest (Bucket, Family) & "." &
+         GNAT.SHA256.Digest
+           ("flyology-configuration-list-cursor-v1" & Character'Val (0) &
+            Identifier));
 
       function Parse_Point_Configuration_Query
         (Query, Subresource, Operation_ID : String)
@@ -803,6 +843,76 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          when Constraint_Error =>
             return Result;
       end Parse_Point_Configuration_Query;
+
+      function Parse_Configuration_List_Query
+        (Query, Subresource, Operation_ID : String)
+         return Configuration_List_Query_Result
+      is
+         Result           : Configuration_List_Query_Result;
+         Seen_Subresource : Boolean := False;
+         Seen_Token       : Boolean := False;
+         Seen_Operation   : Boolean := False;
+      begin
+         if Query'Length = 0 then
+            return Result;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index = First then
+                     return Result;
+                  end if;
+                  declare
+                     Pair_Text : constant String := Raw (First .. Index - 1);
+                     Equals    : constant Natural :=
+                       Ada.Strings.Fixed.Index (Pair_Text, "=");
+                     Name      : constant String :=
+                       Decode_ACL_Query_Component
+                         ((if Equals = 0 then Pair_Text
+                           elsif Equals = Pair_Text'First then ""
+                           else Pair_Text
+                             (Pair_Text'First .. Equals - 1)));
+                     Value     : constant String :=
+                       Decode_ACL_Query_Component
+                         ((if Equals = 0 or else Equals = Pair_Text'Last then
+                              ""
+                           else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  begin
+                     if Name = Subresource then
+                        if Seen_Subresource or else Value'Length /= 0 then
+                           return Result;
+                        end if;
+                        Seen_Subresource := True;
+                     elsif Name = "continuation-token" then
+                        if Seen_Token then
+                           return Result;
+                        end if;
+                        Seen_Token := True;
+                        Result.Has_Continuation_Token := True;
+                        Result.Continuation_Token :=
+                          US.To_Unbounded_String (Value);
+                     elsif Name = "x-id" then
+                        if Seen_Operation or else Value /= Operation_ID then
+                           return Result;
+                        end if;
+                        Seen_Operation := True;
+                     else
+                        return Result;
+                     end if;
+                  end;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         Result.Valid := Seen_Subresource;
+         return Result;
+      exception
+         when Constraint_Error =>
+            return Result;
+      end Parse_Configuration_List_Query;
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
@@ -994,6 +1104,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Parse_Point_Configuration_Query
           (Query_Text, Point_Subresource (Inventory_Family),
            Point_Operation_ID (Inventory_Family, Method));
+      Analytics_List_Request : constant Configuration_List_Query_Result :=
+        Parse_Configuration_List_Query
+          (Query_Text, Point_Subresource (Analytics_Family),
+           List_Operation_ID (Analytics_Family));
+      Metrics_List_Request : constant Configuration_List_Query_Result :=
+        Parse_Configuration_List_Query
+          (Query_Text, Point_Subresource (Metrics_Family),
+           List_Operation_ID (Metrics_Family));
+      Intelligent_Tiering_List_Request : constant
+        Configuration_List_Query_Result :=
+        Parse_Configuration_List_Query
+          (Query_Text, Point_Subresource (Intelligent_Tiering_Family),
+           List_Operation_ID (Intelligent_Tiering_Family));
+      Inventory_List_Request : constant Configuration_List_Query_Result :=
+        Parse_Configuration_List_Query
+          (Query_Text, Point_Subresource (Inventory_Family),
+           List_Operation_ID (Inventory_Family));
 
       function Point_Request
         (Family : Point_Configuration_Family)
@@ -1003,6 +1130,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             when Metrics_Family             => Metrics_Request,
             when Intelligent_Tiering_Family => Intelligent_Tiering_Request,
             when Inventory_Family           => Inventory_Request);
+
+      function List_Request
+        (Family : Point_Configuration_Family)
+         return Configuration_List_Query_Result is
+        (case Family is
+            when Analytics_Family           => Analytics_List_Request,
+            when Metrics_Family             => Metrics_List_Request,
+            when Intelligent_Tiering_Family =>
+              Intelligent_Tiering_List_Request,
+            when Inventory_Family           => Inventory_List_Request);
       Is_Legacy_Bucket_Lifecycle_Get_Query : constant Boolean :=
         Method = "GET"
         and then
@@ -1149,12 +1286,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetBucketAnalyticsConfiguration&") /= 0
         or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListBucketAnalyticsConfigurations&") /= 0
+        or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=DeleteBucketAnalyticsConfiguration&") /= 0;
       Has_Metrics_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketMetricsConfiguration&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetBucketMetricsConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListBucketMetricsConfigurations&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=DeleteBucketMetricsConfiguration&") /= 0;
       Has_Intelligent_Tiering_Configuration_Operation_ID : constant Boolean :=
@@ -1166,12 +1307,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            "&x-id=GetBucketIntelligentTieringConfiguration&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query,
+           "&x-id=ListBucketIntelligentTieringConfigurations&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query,
            "&x-id=DeleteBucketIntelligentTieringConfiguration&") /= 0;
       Has_Inventory_Configuration_Operation_ID : constant Boolean :=
         Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=PutBucketInventoryConfiguration&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetBucketInventoryConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListBucketInventoryConfigurations&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=DeleteBucketInventoryConfiguration&") /= 0;
       Looks_Like_Bucket_Configuration_Query : constant Boolean :=
@@ -2504,7 +2650,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then not
              (Analytics_Request.Valid or else Metrics_Request.Valid
               or else Intelligent_Tiering_Request.Valid
-              or else Inventory_Request.Valid)
+              or else Inventory_Request.Valid
+              or else
+                (Method = "GET"
+                 and then
+                   (Analytics_List_Request.Valid
+                    or else Metrics_List_Request.Valid
+                    or else Intelligent_Tiering_List_Request.Valid
+                    or else Inventory_List_Request.Valid)))
          then
             Bucket_Configuration_Query_Invalid := True;
          end if;
@@ -2618,7 +2771,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Analytics
             elsif Method = "GET"
               and then Looks_Like_Analytics_Configuration_Query
-            then Get_Bucket_Analytics
+            then
+              (if Analytics_List_Request.Valid
+               then List_Bucket_Analytics else Get_Bucket_Analytics)
             elsif Method = "DELETE"
               and then Looks_Like_Analytics_Configuration_Query
             then Delete_Bucket_Analytics
@@ -2627,7 +2782,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Metrics
             elsif Method = "GET"
               and then Looks_Like_Metrics_Configuration_Query
-            then Get_Bucket_Metrics
+            then
+              (if Metrics_List_Request.Valid
+               then List_Bucket_Metrics else Get_Bucket_Metrics)
             elsif Method = "DELETE"
               and then Looks_Like_Metrics_Configuration_Query
             then Delete_Bucket_Metrics
@@ -2636,7 +2793,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Intelligent_Tiering
             elsif Method = "GET"
               and then Looks_Like_Intelligent_Tiering_Configuration_Query
-            then Get_Bucket_Intelligent_Tiering
+            then
+              (if Intelligent_Tiering_List_Request.Valid
+               then List_Bucket_Intelligent_Tiering
+               else Get_Bucket_Intelligent_Tiering)
             elsif Method = "DELETE"
               and then Looks_Like_Intelligent_Tiering_Configuration_Query
             then Delete_Bucket_Intelligent_Tiering
@@ -2645,7 +2805,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Inventory
             elsif Method = "GET"
               and then Looks_Like_Inventory_Configuration_Query
-            then Get_Bucket_Inventory
+            then
+              (if Inventory_List_Request.Valid
+               then List_Bucket_Inventory else Get_Bucket_Inventory)
             elsif Method = "DELETE"
               and then Looks_Like_Inventory_Configuration_Query
             then Delete_Bucket_Inventory
@@ -2935,7 +3097,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
           Get_Object | Get_Object_Attributes | List_Multipart_Parts |
-          Create_Multipart | Complete_Multipart
+          Create_Multipart | Complete_Multipart |
+          List_Bucket_Analytics | List_Bucket_Metrics |
+          List_Bucket_Intelligent_Tiering | List_Bucket_Inventory
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -5179,6 +5343,263 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         end if;
                      end if;
                   end if;
+               end;
+
+            when List_Bucket_Analytics | List_Bucket_Metrics |
+                 List_Bucket_Intelligent_Tiering |
+                 List_Bucket_Inventory =>
+               declare
+                  Family : constant Point_Configuration_Family :=
+                    (case Operation is
+                        when List_Bucket_Analytics => Analytics_Family,
+                        when List_Bucket_Metrics => Metrics_Family,
+                        when List_Bucket_Intelligent_Tiering =>
+                          Intelligent_Tiering_Family,
+                        when List_Bucket_Inventory => Inventory_Family,
+                        when others => raise Program_Error);
+                  Operation_Name : constant String :=
+                    List_Operation_ID (Family);
+                  Request : constant Configuration_List_Query_Result :=
+                    List_Request (Family);
+                  --  The pinned list APIs cap Analytics, Metrics, and
+                  --  Inventory pages at 100 entries. Intelligent-Tiering
+                  --  instead uses the established backend list ceiling.
+                  Maximum : constant Backends.List_Limit :=
+                    (if Family = Intelligent_Tiering_Family
+                     then Backends.List_Limit'Last else 100);
+                  Options : Backends.List_Bucket_Configurations_Options :=
+                    (Has_After     => False,
+                     After         => US.Null_Unbounded_String,
+                     Maximum       => Maximum,
+                     Maximum_Bytes => Maximum_Bucket_Configuration_Body);
+                  Resolved_After : US.Unbounded_String;
+                  Token_Valid : Boolean := False;
+                  Page : Backends.Bucket_Configuration_Page;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Unexpected_Header : constant Boolean :=
+                    Apps.Request_Header_Count (X, "content-type") > 0
+                    or else Apps.Request_Header_Count (X, "content-md5") > 0
+                    or else Apps.Request_Header_Count (X, "x-amz-mfa") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count (X, "x-amz-trailer") > 0
+                    or else Checksum_Value_Header_Count > 0
+                    or else Has_Encryption_Header;
+                  Owner_Accepted : Boolean;
+                  Response_Budget : constant Natural :=
+                    XML.Default_Limits.Maximum_Document_Bytes;
+
+                  function Root_Name return String is
+                    (case Family is
+                        when Analytics_Family =>
+                          "ListBucketAnalyticsConfigurationsOutput",
+                        when Metrics_Family =>
+                          "ListBucketMetricsConfigurationsOutput",
+                        when Intelligent_Tiering_Family =>
+                          "ListBucketIntelligentTieringConfigurationsOutput",
+                        when Inventory_Family =>
+                          "ListBucketInventoryConfigurationsOutput");
+
+                  procedure Load_Page
+                    (Selection   : Backends.List_Bucket_Configurations_Options;
+                     Loaded_Page : out Backends.Bucket_Configuration_Page;
+                     Outcome     : out Status) is
+                  begin
+                     case Family is
+                        when Analytics_Family =>
+                           Store.List_Bucket_Analytics_Configurations
+                             (Bucket, Selection, Apps.Cancellation (X),
+                              Apps.Deadline (X), Loaded_Page, Outcome);
+                        when Metrics_Family =>
+                           Store.List_Bucket_Metrics_Configurations
+                             (Bucket, Selection, Apps.Cancellation (X),
+                              Apps.Deadline (X), Loaded_Page, Outcome);
+                        when Intelligent_Tiering_Family =>
+                           Store.
+                             List_Bucket_Intelligent_Tiering_Configurations
+                             (Bucket, Selection, Apps.Cancellation (X),
+                              Apps.Deadline (X), Loaded_Page, Outcome);
+                        when Inventory_Family =>
+                           Store.List_Bucket_Inventory_Configurations
+                             (Bucket, Selection, Apps.Cancellation (X),
+                              Apps.Deadline (X), Loaded_Page, Outcome);
+                     end case;
+                  end Load_Page;
+
+                  procedure Resolve_Configuration_Continuation
+                    (Candidate : String;
+                     After     : out US.Unbounded_String;
+                     Valid     : out Boolean;
+                     Outcome   : out Status)
+                  is
+                     Scan_Options :
+                       Backends.List_Bucket_Configurations_Options :=
+                         (Has_After     => False,
+                          After         => US.Null_Unbounded_String,
+                          Maximum       => Backends.List_Limit'Last,
+                          Maximum_Bytes =>
+                            Maximum_Bucket_Configuration_Body);
+                     Scan_Page : Backends.Bucket_Configuration_Page;
+                     Match_Count : Natural := 0;
+                  begin
+                     After := US.Null_Unbounded_String;
+                     Valid := False;
+                     Outcome := Success;
+                     if Candidate'Length /=
+                          Configuration_Token_Prefix'Length + 64 + 1 + 64
+                       or else Candidate
+                         (Candidate'First .. Candidate'First +
+                            Configuration_Token_Prefix'Length + 64) /=
+                           Configuration_Token_Prefix &
+                             Configuration_Scope_Digest (Bucket, Family) & "."
+                     then
+                        return;
+                     end if;
+                     loop
+                        Load_Page (Scan_Options, Scan_Page, Outcome);
+                        if Outcome /= Success then
+                           return;
+                        end if;
+                        for Configuration of Scan_Page.Configurations loop
+                           if Encode_Configuration_Continuation
+                                (Bucket, Family,
+                                 US.To_String (Configuration.Identifier)) =
+                                  Candidate
+                           then
+                              Match_Count := Match_Count + 1;
+                              After := Configuration.Identifier;
+                           end if;
+                        end loop;
+                        exit when not Scan_Page.Is_Truncated;
+                        if Scan_Page.Configurations.Is_Empty then
+                           Outcome := Invalid_Request;
+                           return;
+                        end if;
+                        Scan_Options.Has_After := True;
+                        Scan_Options.After := Scan_Page.Next_After;
+                     end loop;
+                     Valid := Match_Count = 1;
+                  end Resolve_Configuration_Continuation;
+
+                  function Serialize_Page return String is
+                     Root : constant String := Root_Name;
+                     Response : US.Unbounded_String :=
+                       US.To_Unbounded_String
+                         ("<" & Root & " xmlns=""" &
+                          "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+                          "<IsTruncated>" &
+                          (if Page.Is_Truncated then "true" else "false") &
+                          "</IsTruncated>");
+                  begin
+                     if Request.Has_Continuation_Token then
+                        US.Append
+                          (Response, "<ContinuationToken>" &
+                           XML.Escape_Text
+                             (US.To_String (Request.Continuation_Token)) &
+                           "</ContinuationToken>");
+                     end if;
+                     if Page.Is_Truncated then
+                        US.Append
+                          (Response, "<NextContinuationToken>" &
+                           XML.Escape_Text
+                             (Encode_Configuration_Continuation
+                                (Bucket, Family,
+                                 US.To_String (Page.Next_After))) &
+                           "</NextContinuationToken>");
+                     end if;
+                     for Configuration of Page.Configurations loop
+                        US.Append
+                          (Response, US.To_String (Configuration.Document));
+                     end loop;
+                     US.Append (Response, "</" & Root & ">");
+                     return US.To_String (Response);
+                  end Serialize_Page;
+               begin
+                  if Payer_Count > 0 or else Unexpected_Header then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        Operation_Name &
+                        " does not define the supplied request header",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if not Owner_Accepted then
+                     return;
+                  end if;
+                  if Request.Has_Continuation_Token
+                    and then US.Length (Request.Continuation_Token) > 0
+                  then
+                     Resolve_Configuration_Continuation
+                       (US.To_String (Request.Continuation_Token),
+                        Resolved_After, Token_Valid, Result);
+                     if Result = Invalid_Request then
+                        Send_Error
+                          (X, 500, "InternalError",
+                           "The backend page cannot be represented within " &
+                           "listing limits", Target_Text);
+                        return;
+                     elsif Result /= Success then
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                        return;
+                     elsif not Token_Valid then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The continuation token provided is incorrect",
+                           Target_Text);
+                        return;
+                     end if;
+                     Options.Has_After := True;
+                     Options.After := Resolved_After;
+                  end if;
+                  loop
+                     Load_Page (Options, Page, Result);
+                     if Result = Invalid_Request then
+                        Send_Error
+                          (X, 500, "InternalError",
+                           "The backend page cannot be represented within " &
+                           "listing limits", Target_Text);
+                        return;
+                     elsif Result /= Success then
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                        return;
+                     elsif Page.Is_Truncated
+                       and then Page.Configurations.Is_Empty
+                     then
+                        Send_Error
+                          (X, 500, "InternalError",
+                           "The backend page cannot be represented within " &
+                           "listing limits", Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Response : constant String := Serialize_Page;
+                        Returned_Bytes : Byte_Count := 0;
+                     begin
+                        if Response'Length <= Response_Budget then
+                           Apps.Respond
+                             (X, 200, "application/xml", Response);
+                           return;
+                        end if;
+                        for Configuration of Page.Configurations loop
+                           Returned_Bytes := Returned_Bytes +
+                             Byte_Count
+                               (US.Length (Configuration.Identifier)) +
+                             Byte_Count (US.Length (Configuration.Document));
+                        end loop;
+                        declare
+                           Overflow : constant Byte_Count :=
+                             Byte_Count (Response'Length - Response_Budget);
+                        begin
+                           Options.Maximum_Bytes :=
+                             (if Overflow >= Returned_Bytes
+                              then 0
+                              else Returned_Bytes - Overflow);
+                        end;
+                     end;
+                  end loop;
                end;
 
             when Delete_Bucket_Analytics | Delete_Bucket_Metrics |
