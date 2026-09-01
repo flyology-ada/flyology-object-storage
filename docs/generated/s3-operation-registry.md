@@ -88,7 +88,7 @@ remain inventory-only until their audits gain executable evidence.
 | ListParts | List_Parts_Page | transfers | paginated_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketAbac | Set_ABAC | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketAccelerateConfiguration | Set_Accelerate_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketAcl | Set_ACL | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | covered / handwritten | covered / handwritten |
+| PutBucketAcl | Set_ACL | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / handwritten |
 | PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | PutBucketCors | Set_CORS | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketEncryption | Set_Encryption | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
@@ -108,7 +108,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketVersioning | Set_Versioning_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketWebsite | Set_Website | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / generated |
 | PutObject | Put_Object | objects | streaming_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutObjectAcl | Not_Exposed | objects | rest_xml_mutation | generated | false | true | missing / absent | partial / generated | covered / handwritten | covered / handwritten |
+| PutObjectAcl | Not_Exposed | objects | rest_xml_mutation | generated | false | true | covered / handwritten | partial / generated | covered / handwritten | covered / handwritten |
 | PutObjectAnnotation | Not_Exposed | objects | streaming_mutation | generated | false | true | missing / absent | partial / generated | missing / absent | covered / handwritten |
 | PutObjectLegalHold | Put_Legal_Hold | objects | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutObjectLockConfiguration | Put_Object_Lock_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

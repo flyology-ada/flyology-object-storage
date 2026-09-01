@@ -1,7 +1,7 @@
 {
   "backend": {
-    "covered": 92,
-    "missing": 24,
+    "covered": 94,
+    "missing": 22,
     "partial": 0
   },
   "client": {
@@ -41,9 +41,9 @@
   "operations": 116,
   "provenance": {
     "backend": {
-      "absent": 24,
+      "absent": 22,
       "generated": 0,
-      "handwritten": 92,
+      "handwritten": 94,
       "shared_family": 0
     },
     "client": {

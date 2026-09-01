@@ -3657,11 +3657,11 @@ def main() -> None:
         assert entry.get("certainty") == put_bucket_acl_certainty
         assert entry.get("reconciliation") == put_bucket_acl_reconciliation
         assert entry["coverage"] == {
-            "backend": "missing", "client": "covered",
+            "backend": "covered", "client": "covered",
             "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
-            "backend": "absent", "client": "generated",
+            "backend": "handwritten", "client": "generated",
             "server": "handwritten", "tests": "handwritten",
         }
         assert "empty request with exact x-amz-acl private" in (
@@ -3672,6 +3672,11 @@ def main() -> None:
         )
         assert entry["evidence"]["server"] == [
             "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+        assert entry["evidence"]["backend"] == [
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
             "tests/src/s3_server_application_corpus.adb",
         ]
         assert entry["evidence"]["corpus"][:2] == [
@@ -3717,6 +3722,13 @@ def main() -> None:
     ] = "missing"
     reject_put_bucket_acl_server_registry(
         missing_put_bucket_acl_server, "missing server coverage"
+    )
+    missing_put_bucket_acl_backend = copy.deepcopy(registry)
+    missing_put_bucket_acl_backend.operations["PutBucketAcl"]["coverage"][
+        "backend"
+    ] = "missing"
+    reject_put_bucket_acl_server_registry(
+        missing_put_bucket_acl_backend, "missing backend substrate"
     )
     persisted_put_bucket_acl = copy.deepcopy(registry)
     persisted_put_bucket_acl.operations["PutBucketAcl"]["exclusions"][
@@ -3783,11 +3795,11 @@ def main() -> None:
         assert entry.get("reconciliation") == put_object_acl_reconciliation
         assert entry.get("ada_symbols") is None
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
+            "backend": "covered", "client": "partial",
             "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
-            "backend": "absent", "client": "generated",
+            "backend": "handwritten", "client": "generated",
             "server": "handwritten", "tests": "handwritten",
         }
         assert "registry sentinel and not an Ada declaration" in (
@@ -3798,7 +3810,12 @@ def main() -> None:
         )
         assert "client-side structural inventory" in entry["exclusions"][2]
         assert entry["evidence"] == {
-            "backend": [],
+            "backend": [
+                "tests/src/object_storage_test_cases.adb",
+                "tests/src/versioned_object_conformance.adb",
+                "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-put-object-acl-model.py",
@@ -3896,6 +3913,13 @@ def main() -> None:
     ]["coverage"]["server"] = "missing"
     reject_put_object_acl_registry(
         missing_put_object_acl_server, "missing server coverage"
+    )
+    missing_put_object_acl_backend = copy.deepcopy(registry)
+    missing_put_object_acl_backend.operations[
+        "PutObjectAcl"
+    ]["evidence"]["backend"] = []
+    reject_put_object_acl_registry(
+        missing_put_object_acl_backend, "missing backend substrate"
     )
     detached_put_object_acl_verifier = copy.deepcopy(registry)
     detached_put_object_acl_verifier.qualification[

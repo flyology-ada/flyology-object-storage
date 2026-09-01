@@ -78,7 +78,7 @@ ListObjectsV2	core	covered	covered	covered	covered
 ListParts	core	covered	covered	covered	covered
 PutBucketAbac	extended	covered	covered	covered	covered
 PutBucketAccelerateConfiguration	extended	covered	covered	covered	covered
-PutBucketAcl	extended	missing	covered	covered	covered
+PutBucketAcl	extended	covered	covered	covered	covered
 PutBucketAnalyticsConfiguration	extended	covered	covered	covered	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	covered	covered	covered	covered
@@ -98,7 +98,7 @@ PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	covered	covered	covered	covered
 PutObject	core	covered	covered	covered	covered
-PutObjectAcl	extended	missing	partial	covered	covered
+PutObjectAcl	extended	covered	partial	covered	covered
 PutObjectAnnotation	extended	missing	partial	missing	covered
 PutObjectLegalHold	extended	covered	covered	covered	covered
 PutObjectLockConfiguration	extended	covered	covered	covered	covered

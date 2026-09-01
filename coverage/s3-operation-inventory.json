@@ -3684,13 +3684,17 @@
     },
     "PutBucketAcl": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
         "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-generated_put_bucket_acl_xml.ads",
           "src/flyology-object_storage-s3-generated_put_bucket_acl_xml.adb",
@@ -3717,7 +3721,7 @@
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
         "server": "handwritten",
         "tests": "handwritten"
@@ -4611,13 +4615,18 @@
     },
     "PutObjectAcl": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
         "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "tests/src/versioned_object_conformance.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-put-object-acl-model.py"
@@ -4638,7 +4647,7 @@
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
         "server": "handwritten",
         "tests": "handwritten"

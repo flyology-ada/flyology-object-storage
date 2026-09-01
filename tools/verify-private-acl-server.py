@@ -70,8 +70,8 @@ def verify_registry() -> None:
     expected = {
         "GetBucketAcl": ("covered", "covered", "get_bucket_acl"),
         "GetObjectAcl": ("covered", "covered", "get_object_acl"),
-        "PutBucketAcl": ("missing", "covered", "generated_acl_mutation"),
-        "PutObjectAcl": ("missing", "covered", "put_object_acl"),
+        "PutBucketAcl": ("covered", "covered", "generated_acl_mutation"),
+        "PutObjectAcl": ("covered", "covered", "put_object_acl"),
     }
     for name, (backend, server, lane) in expected.items():
         entry = operations[name]
@@ -94,6 +94,24 @@ def verify_registry() -> None:
         fail("PutBucketAcl public name changed")
     if operations["PutObjectAcl"]["public_name"] != "Not_Exposed":
         fail("PutObjectAcl invented a public client API")
+    expected_backend_evidence = {
+        "PutBucketAcl": [
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ],
+        "PutObjectAcl": [
+            "tests/src/object_storage_test_cases.adb",
+            "tests/src/versioned_object_conformance.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ],
+    }
+    for name, evidence in expected_backend_evidence.items():
+        if operations[name]["evidence"]["backend"] != evidence:
+            fail(f"{name} backend substrate evidence changed")
+        if operations[name]["provenance"]["backend"] != "handwritten":
+            fail(f"{name} backend provenance changed")
     persistence_facts = {
         "PutBucketAcl": "not arbitrary persisted ACL state",
         "PutObjectAcl": "rather than stored ACL state",
