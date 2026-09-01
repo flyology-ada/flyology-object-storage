@@ -2,9 +2,10 @@
 
 ## Scope
 
-This qualification covers the backend-independent provider-owned composable
-and synchronous `PutObjectLockConfiguration` client contract. It makes no
-backend, server, or external-provider interoperability claim.
+This record covers the provider-owned composable and synchronous
+`PutObjectLockConfiguration` client contract. Shared Flyology backend and
+authenticated server evidence is recorded in `object-lock-server.md`; it makes
+no external-provider interoperability claim.
 
 The locked botocore S3 graph at revision
 `36c34f15391da01cd717c73c0fffa747c9889768` defines exact
@@ -78,9 +79,9 @@ HTTP terminal failure across all admission-certainty values, and inconsistent
 success certainty. The root gate runs the sequence under native and lightweight
 task owners.
 
-The machine ledger records `missing / covered / missing / covered`: backend and
-server support remain absent, while the complete client and independent corpus
-are covered.
+The machine ledger records `covered / covered / covered / covered`. This
+client record remains operation-specific; the shared Object Lock record owns
+backend persistence, authenticated routing, and black-box server evidence.
 
 ## Verification
 

@@ -477,6 +477,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE current_object_versions;" &
          "DROP TABLE object_version_tags;" &
          "DROP TABLE object_version_metadata;" &
@@ -530,6 +532,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_policies;" &
          "DROP TABLE bucket_cors_documents;" &
          "DROP TABLE bucket_encryption_documents;" &
@@ -567,6 +571,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_cors_documents;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
@@ -603,6 +609,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
@@ -638,6 +646,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_encryption_documents;" &
          "DROP TABLE bucket_ownership_controls_documents;" &
          "DROP TABLE bucket_lifecycle_documents;" &
@@ -670,6 +680,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_lifecycle_documents;" &
          "DROP TABLE bucket_logging_documents;" &
          "DROP TABLE bucket_notification_documents;" &
@@ -700,6 +712,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
          "DROP TABLE bucket_replication_documents;" &
          "DROP TABLE bucket_website_documents;" &
@@ -728,6 +742,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
          "DROP TABLE bucket_replication_documents;" &
          "DROP TABLE bucket_website_documents;" &
@@ -754,6 +770,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
          "DROP TABLE bucket_replication_documents;" &
          "DROP TABLE bucket_website_documents;" &
@@ -778,6 +796,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Open (Legacy, Database_Path);
       Databases.Execute
         (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
          "DROP TABLE bucket_notification_documents;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-notify-v19',59);" &
          "PRAGMA user_version=19;");
@@ -789,6 +809,29 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V19_Database;
+
+   procedure Create_V20_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE object_version_locks;" &
+         "DROP TABLE bucket_object_locks;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-lock-v20',61);" &
+         "PRAGMA user_version=20;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V20_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1691,7 +1734,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1737,7 +1780,7 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
          "schema-v11 migration did not publish the current schema atomically");
@@ -1781,10 +1824,10 @@ begin
          "AND name='bucket_cors_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v12 migration did not publish schema 20 atomically");
+         "schema-v12 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1838,10 +1881,10 @@ begin
          "'request_payment_status')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Columns) = Databases.Row
          and then Databases.Column (Columns, 0) = 3,
-         "schema-v13 migration did not publish schema 20 atomically");
+         "schema-v13 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1921,10 +1964,10 @@ begin
          "'bucket_ownership_controls_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v14 migration did not publish schema 20 atomically");
+         "schema-v14 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2017,10 +2060,10 @@ begin
          "'bucket_logging_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v15 migration did not publish schema 20 atomically");
+         "schema-v15 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2099,10 +2142,10 @@ begin
          "'bucket_metrics_configurations')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v16 migration did not publish schema 20 atomically");
+         "schema-v16 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2182,10 +2225,10 @@ begin
          "'bucket_replication_documents','bucket_website_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 4,
-         "schema-v17 migration did not publish schema 20 atomically");
+         "schema-v17 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2288,10 +2331,10 @@ begin
          "'bucket_website_documents')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 2,
-         "schema-v18 migration did not publish schema 20 atomically");
+         "schema-v18 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3798,10 +3841,10 @@ begin
          "AND name='bucket_notification_documents'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Tables) = Databases.Row
          and then Databases.Column (Tables, 0) = 1,
-         "schema-v19 migration did not publish schema 20 atomically");
+         "schema-v19 migration did not publish schema 21 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3827,6 +3870,219 @@ begin
       Assert
         (Rejected,
          "schema-v19 migration accepted a partial table publication");
+   end;
+   Delete_Database;
+
+   Create_V20_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Configuration : Bucket_Versioning_Configuration;
+      State         : Bucket_Object_Lock_Status;
+      Result        : Status;
+   begin
+      Catalogs.Get_Bucket_Object_Lock
+        (Catalog, "legacy-lock-v20", State, Result);
+      Assert
+        (Result = Success and then State = Bucket_Object_Lock_Disabled,
+         "schema-v20 migration invented Object Lock state");
+      Catalogs.Enable_Bucket_Object_Lock
+        (Catalog, "legacy-lock-v20", Result);
+      Assert
+        (Result = Invalid_Request,
+         "schema-v20 migration enabled Object Lock without versioning");
+      Configuration :=
+        (Status => Versioning_Enabled,
+         MFA_Delete => MFA_Delete_Unconfigured);
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "legacy-lock-v20", Configuration, Result);
+      Assert
+        (Result = Success,
+         "schema-v20 migration could not enable bucket versioning");
+      Catalogs.Enable_Bucket_Object_Lock
+        (Catalog, "legacy-lock-v20", Result);
+      Catalogs.Get_Bucket_Object_Lock
+        (Catalog, "legacy-lock-v20", State, Result);
+      Assert
+        (Result = Success and then State = Bucket_Object_Lock_Enabled,
+         "schema-v20 migration could not persist Object Lock state");
+      declare
+         use Flyology.Object_Storage.Backends;
+         Info : Object_Information :=
+           (Size         => 4,
+            Modified     => 62,
+            Entity_Tag   => US.To_Unbounded_String ("lock-etag"),
+            Content_Type => US.To_Unbounded_String ("application/test"),
+            Version      => US.Null_Unbounded_String,
+            Checksum     => No_Checksum_Information,
+            Metadata     => Empty_Object_Metadata);
+         Previous : US.Unbounded_String;
+         Identity : Version_Identity;
+      begin
+         Catalogs.Put_Object
+           (Catalog, "legacy-lock-v20", "locked", "lock-payload", Info,
+            Empty_Object_Tags, Previous, Identity, Result);
+         Assert
+           (Result = Success and then Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) > 0,
+            "schema-v20 migrated Object Lock bucket could not publish data");
+         Catalogs.Put_Object_Legal_Hold
+           (Catalog, "legacy-lock-v20", "locked", Current_Version_Selector,
+            Object_Legal_Hold_On, Identity, Result);
+         Assert
+           (Result = Success,
+            "schema-v20 migrated Object Lock legal hold was not stored");
+         Catalogs.Put_Object_Retention
+           (Catalog, "legacy-lock-v20", "locked", Current_Version_Selector,
+            (Mode         => Compliance_Object_Retention,
+             Retain_Until => 200,
+             Exact_Text   => US.To_Unbounded_String
+               ("1970-01-01T00:03:20Z")),
+            62, Identity, Result);
+         Assert
+           (Result = Success,
+            "schema-v20 migrated Object Lock retention was not stored");
+      end;
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      State     : Bucket_Object_Lock_Status;
+      Hold      : Object_Legal_Hold_Status;
+      Retention : Object_Retention;
+      Identity  : Version_Identity;
+      Retired   : US.Unbounded_String;
+      Outcome   : Version_Delete_Outcome;
+      Result    : Status;
+   begin
+      Catalogs.Get_Bucket_Object_Lock
+        (Catalog, "legacy-lock-v20", State, Result);
+      Assert
+        (Result = Success and then State = Bucket_Object_Lock_Enabled,
+         "migrated Object Lock state did not survive reopen");
+      Catalogs.Get_Object_Legal_Hold
+        (Catalog, "legacy-lock-v20", "locked", Current_Version_Selector,
+         Hold, Identity, Result);
+      Assert
+        (Result = Success and then Hold = Object_Legal_Hold_On,
+         "migrated legal hold did not survive reopen");
+      Catalogs.Get_Object_Retention
+        (Catalog, "legacy-lock-v20", "locked", Current_Version_Selector,
+         Retention, Identity, Result);
+      Assert
+        (Result = Success
+         and then Retention.Mode = Compliance_Object_Retention
+         and then Retention.Retain_Until = 200
+         and then US.To_String (Retention.Exact_Text) =
+           "1970-01-01T00:03:20Z",
+         "migrated retention did not survive reopen");
+      declare
+         Exact : constant Version_Selector :=
+           (Kind => Exact_Version, ID => Identity.Version_ID);
+      begin
+         Catalogs.Delete_Selected_Object
+           (Catalog, "legacy-lock-v20", "locked", Exact,
+            No_Delete_Object_Conditions, False, 100, Retired, Outcome,
+            Result);
+         Assert
+           (Result = Access_Denied and then US.Length (Retired) = 0,
+            "legal hold allowed exact protected deletion");
+         Catalogs.Put_Object_Legal_Hold
+           (Catalog, "legacy-lock-v20", "locked", Exact,
+            Object_Legal_Hold_Off, Identity, Result);
+         Catalogs.Delete_Selected_Object
+           (Catalog, "legacy-lock-v20", "locked", Exact,
+            No_Delete_Object_Conditions, False, 100, Retired, Outcome,
+            Result);
+         Assert
+           (Result = Access_Denied and then US.Length (Retired) = 0,
+            "active retention allowed exact protected deletion");
+         Catalogs.Delete_Selected_Object
+           (Catalog, "legacy-lock-v20", "locked", Exact,
+            No_Delete_Object_Conditions, False, 201, Retired, Outcome,
+            Result);
+         Assert
+           (Result = Success and then Outcome.Kind = Object_Version_Removed
+            and then US.To_String (Retired) = "lock-payload",
+            "expired retention did not release exact deletion");
+      end;
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name IN ('bucket_object_locks','object_version_locks')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 21
+         and then Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v20 migration did not publish schema 21 atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V20_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE bucket_object_locks (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "enabled INTEGER NOT NULL CHECK(enabled=1)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v20 migration accepted a partial Object Lock publication");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE object_version_locks;" &
+      "CREATE TABLE object_version_locks (" &
+      "bucket_name TEXT NOT NULL COLLATE BINARY," &
+      "object_key BLOB NOT NULL," &
+      "version_id BLOB NOT NULL," &
+      "legal_hold INTEGER NOT NULL DEFAULT 0," &
+      "retention_mode INTEGER NOT NULL DEFAULT 0," &
+      "retention_until INTEGER NOT NULL DEFAULT 0," &
+      "retention_text BLOB NOT NULL DEFAULT X''," &
+      "PRIMARY KEY(bucket_name,object_key,version_id)" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema 21 accepted malformed Object Lock constraints");
    end;
    Delete_Database;
 
@@ -3871,8 +4127,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20,
-         "schema-v1 migration did not publish version 20");
+         and then Databases.Column (Version, 0) = 21,
+         "schema-v1 migration did not publish version 21");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -3892,10 +4148,11 @@ begin
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
-         "'bucket_inventory_configurations')");
+         "'bucket_inventory_configurations','bucket_object_locks'," &
+         "'object_version_locks')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 27,
+         and then Databases.Column (Tables, 0) = 29,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -3961,8 +4218,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20,
-         "schema-v2 migration did not publish version 20");
+         and then Databases.Column (Version, 0) = 21,
+         "schema-v2 migration did not publish version 21");
    end;
    declare
       Tables : Databases.Statement;
@@ -3998,10 +4255,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 20 tables");
+         "schema-v3 migration did not publish schema 21 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4072,8 +4329,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 20,
-            "schema-v4 migration did not publish version 20");
+            and then Databases.Column (Version, 0) = 21,
+            "schema-v4 migration did not publish version 21");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -4140,7 +4397,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 20
+            and then Databases.Column (Version, 0) = 21
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -4218,8 +4475,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20,
-         "schema-v6 migration did not publish version 20");
+         and then Databases.Column (Version, 0) = 21,
+         "schema-v6 migration did not publish version 21");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -4350,7 +4607,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -4421,7 +4678,7 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 20
+         and then Databases.Column (Version, 0) = 21
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
          "schema-v8 migration did not atomically publish schema13 topology");

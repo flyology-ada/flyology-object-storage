@@ -6174,275 +6174,6 @@ def main() -> None:
         assert "do not share one qualification lane" in str(error)
     else:
         raise AssertionError("mixed GetBucketAcl lane accepted")
-    get_object_legal_hold_certainty = (
-        "read-only; only one complete validated 200 Object_Legal_Hold_Found "
-        "response observed exposes the presence-preserving legal-hold value; "
-        "every incomplete, invalid, or non-observed response exposes no "
-        "legal-hold state; the client performs no automatic retry"
-    )
-    get_object_legal_hold_reconciliation = (
-        "an explicit VersionId observes legal-hold state for that selected "
-        "object generation and an omitted VersionId observes the generation "
-        "current at read time; the modeled response does not echo a version "
-        "identifier and neither form proves that a prior mutation caused the "
-        "observed state"
-    )
-    get_object_legal_hold_symbols = [
-        "Prepare_Get_Object_Legal_Hold",
-        "Decode_Get_Object_Legal_Hold_Response",
-        "Execute_Get_Object_Legal_Hold",
-        "Get_Legal_Hold_Operation",
-        "Get_Legal_Hold",
-        "Finish",
-    ]
-
-    def assert_get_object_legal_hold_registry(candidate):
-        entry = candidate.operations["GetObjectLegalHold"]
-        assert entry.get("public_name") == "Get_Legal_Hold"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_object_legal_hold"
-        assert entry.get("certainty") == get_object_legal_hold_certainty
-        assert (
-            entry.get("reconciliation") == get_object_legal_hold_reconciliation
-        )
-        assert entry.get("ada_symbols") == get_object_legal_hold_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "NoSuchVersion" in entry["absence"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["get_object_legal_hold"][0][-1]
-            == "tools/verify-get-object-legal-hold-preparation.py"
-        )
-
-    def reject_get_object_legal_hold_registry(candidate, label):
-        try:
-            assert_get_object_legal_hold_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(f"{label} GetObjectLegalHold registry accepted")
-
-    assert_get_object_legal_hold_registry(registry)
-    missing_get_object_legal_hold_name = copy.deepcopy(registry)
-    del missing_get_object_legal_hold_name.operations["GetObjectLegalHold"][
-        "public_name"
-    ]
-    reject_get_object_legal_hold_registry(
-        missing_get_object_legal_hold_name, "missing name"
-    )
-    wrong_get_object_legal_hold_name = copy.deepcopy(registry)
-    wrong_get_object_legal_hold_name.operations["GetObjectLegalHold"][
-        "public_name"
-    ] = "Get_Retention"
-    reject_get_object_legal_hold_registry(
-        wrong_get_object_legal_hold_name, "wrong name"
-    )
-    retry_get_object_legal_hold = copy.deepcopy(registry)
-    retry_get_object_legal_hold.operations["GetObjectLegalHold"][
-        "certainty"
-    ] = "read-only; retry automatically"
-    reject_get_object_legal_hold_registry(
-        retry_get_object_legal_hold, "automatic retry"
-    )
-    server_get_object_legal_hold = copy.deepcopy(registry)
-    server_get_object_legal_hold.operations["GetObjectLegalHold"]["coverage"][
-        "server"
-    ] = "covered"
-    reject_get_object_legal_hold_registry(
-        server_get_object_legal_hold, "invented server coverage"
-    )
-    cross_get_object_legal_hold_symbol = copy.deepcopy(registry)
-    cross_get_object_legal_hold_symbol.operations["GetObjectLegalHold"][
-        "ada_symbols"
-    ][0] = "Prepare_Get_Object_Retention"
-    reject_get_object_legal_hold_registry(
-        cross_get_object_legal_hold_symbol, "cross-operation symbol"
-    )
-    get_object_legal_hold_qualification, get_object_legal_hold_commands = (
-        s3_operation.qualification_plan(registry, ["GetObjectLegalHold"])
-    )
-    assert get_object_legal_hold_qualification == "get_object_legal_hold"
-    assert get_object_legal_hold_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-object-legal-hold-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_object_legal_hold_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert get_object_legal_hold_commands[4] == ["./tools/verify-coverage.sh"]
-    assert get_object_legal_hold_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-object-legal-hold-gnatdoc",
-        "--operation",
-        "GetObjectLegalHold",
-    ]
-    assert get_object_legal_hold_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetObjectLegalHold", "GetObjectLegalHold"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate GetObjectLegalHold lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetObjectLegalHold", "PutObjectLegalHold"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed GetObjectLegalHold lane accepted")
-    put_object_legal_hold_certainty = (
-        "only a complete validated 200 reports "
-        "Legal_Hold_Mutation_Completed; an exact recognized S3 rejection or "
-        "definite non-admission reports "
-        "Legal_Hold_Mutation_Definitely_Not_Applied, pre-admission "
-        "cancellation reports "
-        "Legal_Hold_Mutation_Cancelled_Before_Admission, and every other "
-        "possibly admitted or incomplete outcome reports "
-        "Legal_Hold_Mutation_Outcome_Unknown; no automatic replay"
-    )
-    put_object_legal_hold_reconciliation = (
-        "an explicit VersionId permits a read-only GetObjectLegalHold "
-        "observation of that selected object generation and an omitted "
-        "VersionId permits only an observation of the generation current at "
-        "reconciliation time; neither observation proves that the lost "
-        "mutation caused the state or upgrades mutation certainty without "
-        "caller-supplied serialization authority"
-    )
-    put_object_legal_hold_symbols = [
-        "Prepare_Put_Object_Legal_Hold",
-        "Decode_Put_Object_Legal_Hold_Response",
-        "Execute_Put_Object_Legal_Hold",
-        "Put_Legal_Hold_Operation",
-        "Put_Legal_Hold",
-        "Finish",
-    ]
-
-    def assert_put_object_legal_hold_registry(candidate):
-        entry = candidate.operations["PutObjectLegalHold"]
-        assert entry.get("public_name") == "Put_Legal_Hold"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_object_legal_hold"
-        assert entry.get("certainty") == put_object_legal_hold_certainty
-        assert (
-            entry.get("reconciliation") == put_object_legal_hold_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_object_legal_hold_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "no automatic replay" in entry["certainty"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["put_object_legal_hold"][0][-1]
-            == "tools/verify-put-object-legal-hold-preparation.py"
-        )
-
-    def reject_put_object_legal_hold_registry(candidate, label):
-        try:
-            assert_put_object_legal_hold_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(f"{label} PutObjectLegalHold registry accepted")
-
-    assert_put_object_legal_hold_registry(registry)
-    missing_put_object_legal_hold_name = copy.deepcopy(registry)
-    del missing_put_object_legal_hold_name.operations["PutObjectLegalHold"][
-        "public_name"
-    ]
-    reject_put_object_legal_hold_registry(
-        missing_put_object_legal_hold_name, "missing name"
-    )
-    wrong_put_object_legal_hold_name = copy.deepcopy(registry)
-    wrong_put_object_legal_hold_name.operations["PutObjectLegalHold"][
-        "public_name"
-    ] = "Put_Retention"
-    reject_put_object_legal_hold_registry(
-        wrong_put_object_legal_hold_name, "wrong name"
-    )
-    retry_put_object_legal_hold = copy.deepcopy(registry)
-    retry_put_object_legal_hold.operations["PutObjectLegalHold"][
-        "certainty"
-    ] = "mutation; retry automatically after a lost response"
-    reject_put_object_legal_hold_registry(
-        retry_put_object_legal_hold, "automatic retry"
-    )
-    causal_put_object_legal_hold = copy.deepcopy(registry)
-    causal_put_object_legal_hold.operations["PutObjectLegalHold"][
-        "reconciliation"
-    ] = "GetObjectLegalHold proves the lost mutation caused the state"
-    reject_put_object_legal_hold_registry(
-        causal_put_object_legal_hold, "causal reconciliation"
-    )
-    server_put_object_legal_hold = copy.deepcopy(registry)
-    server_put_object_legal_hold.operations["PutObjectLegalHold"]["coverage"][
-        "server"
-    ] = "covered"
-    reject_put_object_legal_hold_registry(
-        server_put_object_legal_hold, "invented server coverage"
-    )
-    cross_put_object_legal_hold_symbol = copy.deepcopy(registry)
-    cross_put_object_legal_hold_symbol.operations["PutObjectLegalHold"][
-        "ada_symbols"
-    ][0] = "Prepare_Put_Object_Retention"
-    reject_put_object_legal_hold_registry(
-        cross_put_object_legal_hold_symbol, "cross-operation symbol"
-    )
-    put_object_legal_hold_qualification, put_object_legal_hold_commands = (
-        s3_operation.qualification_plan(registry, ["PutObjectLegalHold"])
-    )
-    assert put_object_legal_hold_qualification == "put_object_legal_hold"
-    assert put_object_legal_hold_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-object-legal-hold-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_object_legal_hold_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_object_legal_hold_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_object_legal_hold_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-object-legal-hold-gnatdoc",
-        "--operation",
-        "PutObjectLegalHold",
-    ]
-    assert put_object_legal_hold_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutObjectLegalHold", "PutObjectLegalHold"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate PutObjectLegalHold lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutObjectLegalHold", "GetObjectLegalHold"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutObjectLegalHold lane accepted")
     def assert_bucket_control_backend_server(entry):
         assert entry["coverage"]["backend"] == "covered"
         assert entry["coverage"]["server"] == "covered"
@@ -6457,2494 +6188,386 @@ def main() -> None:
             "tests/src/s3_server_application_corpus.adb",
         ]
 
-    for operation in (
-        "DeleteBucketLifecycle",
-        "GetBucketLifecycle",
-        "GetBucketLifecycleConfiguration",
-        "GetBucketLogging",
-        "PutBucketLifecycleConfiguration",
-        "PutBucketLogging",
-    ):
-        entry = registry.operations[operation]
-        assert_bucket_control_backend_server(entry)
-        assert "tests/src/s3_server_application_corpus.adb" in (
-            entry["evidence"]["corpus"]
-        )
-        missing_server = copy.deepcopy(entry)
-        missing_server["coverage"]["server"] = "missing"
+    object_lock_contracts = {
+        "GetObjectLegalHold": {
+            "public_name": "Get_Legal_Hold",
+            "lane": "get_object_legal_hold",
+            "verifier": "tools/verify-get-object-legal-hold-preparation.py",
+            "corpus": "s3_get_object_legal_hold_corpus",
+            "certainty": (
+                "read-only; only one complete validated 200 "
+                "Object_Legal_Hold_Found response observed exposes the "
+                "presence-preserving legal-hold value; every incomplete, "
+                "invalid, or non-observed response exposes no legal-hold "
+                "state; the client performs no automatic retry"
+            ),
+            "reconciliation": (
+                "an explicit VersionId observes legal-hold state for that "
+                "selected object generation and an omitted VersionId observes "
+                "the generation current at read time; the modeled response "
+                "does not echo a version identifier and neither form proves "
+                "that a prior mutation caused the observed state"
+            ),
+            "symbols": [
+                "Prepare_Get_Object_Legal_Hold",
+                "Decode_Get_Object_Legal_Hold_Response",
+                "Execute_Get_Object_Legal_Hold",
+                "Get_Legal_Hold_Operation",
+                "Get_Legal_Hold",
+                "Finish",
+            ],
+        },
+        "PutObjectLegalHold": {
+            "public_name": "Put_Legal_Hold",
+            "lane": "put_object_legal_hold",
+            "verifier": "tools/verify-put-object-legal-hold-preparation.py",
+            "corpus": "s3_put_object_legal_hold_corpus",
+            "certainty": (
+                "only a complete validated 200 reports "
+                "Legal_Hold_Mutation_Completed; an exact recognized S3 "
+                "rejection or definite non-admission reports "
+                "Legal_Hold_Mutation_Definitely_Not_Applied, pre-admission "
+                "cancellation reports "
+                "Legal_Hold_Mutation_Cancelled_Before_Admission, and every "
+                "other possibly admitted or incomplete outcome reports "
+                "Legal_Hold_Mutation_Outcome_Unknown; no automatic replay"
+            ),
+            "reconciliation": (
+                "an explicit VersionId permits a read-only "
+                "GetObjectLegalHold observation of that selected object "
+                "generation and an omitted VersionId permits only an "
+                "observation of the generation current at reconciliation "
+                "time; neither observation proves that the lost mutation "
+                "caused the state or upgrades mutation certainty without "
+                "caller-supplied serialization authority"
+            ),
+            "symbols": [
+                "Prepare_Put_Object_Legal_Hold",
+                "Decode_Put_Object_Legal_Hold_Response",
+                "Execute_Put_Object_Legal_Hold",
+                "Put_Legal_Hold_Operation",
+                "Put_Legal_Hold",
+                "Finish",
+            ],
+        },
+        "GetObjectRetention": {
+            "public_name": "Get_Retention",
+            "lane": "get_object_retention",
+            "verifier": "tools/verify-get-object-retention-preparation.py",
+            "corpus": "s3_get_object_retention_corpus",
+            "certainty": (
+                "read-only; only one complete validated 200 "
+                "Object_Retention_Found response observed exposes the "
+                "presence-preserving retention value; every incomplete, "
+                "invalid, or non-observed response exposes no retention "
+                "state; the client performs no automatic retry"
+            ),
+            "reconciliation": (
+                "an explicit VersionId observes retention for that selected "
+                "object generation and an omitted VersionId observes the "
+                "generation current at read time; the modeled response does "
+                "not echo a version identifier and neither form proves that "
+                "a prior mutation caused the observed retention state"
+            ),
+            "symbols": [
+                "Prepare_Get_Object_Retention",
+                "Decode_Get_Object_Retention_Response",
+                "Execute_Get_Object_Retention",
+                "Get_Retention_Operation",
+                "Get_Retention",
+                "Finish",
+            ],
+        },
+        "PutObjectRetention": {
+            "public_name": "Put_Retention",
+            "lane": "put_object_retention",
+            "verifier": "tools/verify-put-object-retention-preparation.py",
+            "corpus": "s3_put_object_retention_corpus",
+            "certainty": (
+                "only a complete validated 200 reports "
+                "Retention_Mutation_Completed; an exact recognized S3 "
+                "rejection or definite non-admission reports "
+                "Retention_Mutation_Definitely_Not_Applied, pre-admission "
+                "cancellation reports "
+                "Retention_Mutation_Cancelled_Before_Admission, and every "
+                "other possibly admitted or incomplete outcome reports "
+                "Retention_Mutation_Outcome_Unknown; no automatic replay"
+            ),
+            "reconciliation": (
+                "an explicit VersionId permits a read-only "
+                "GetObjectRetention observation of that selected object "
+                "generation and an omitted VersionId permits only an "
+                "observation of the generation current at reconciliation "
+                "time; neither observation proves that the lost mutation "
+                "caused the state or upgrades mutation certainty without "
+                "caller-supplied serialization authority"
+            ),
+            "symbols": [
+                "Prepare_Put_Object_Retention",
+                "Decode_Put_Object_Retention_Response",
+                "Execute_Put_Object_Retention",
+                "Put_Retention_Operation",
+                "Put_Retention",
+                "Finish",
+            ],
+        },
+        "GetObjectLockConfiguration": {
+            "public_name": "Get_Object_Lock_Configuration",
+            "lane": "get_object_lock_configuration",
+            "verifier": (
+                "tools/verify-get-object-lock-configuration-preparation.py"
+            ),
+            "corpus": "s3_get_object_lock_configuration_corpus",
+            "certainty": (
+                "read-only; only one complete validated 200 "
+                "Object_Lock_Configuration_Found response observed exposes "
+                "the presence-preserving configuration; every incomplete, "
+                "invalid, or non-observed response exposes no configuration "
+                "state; the client performs no automatic retry"
+            ),
+            "reconciliation": (
+                "a later GetObjectLockConfiguration observes only the bucket "
+                "configuration current at read time; it does not prove that "
+                "a prior mutation caused the observed state or authorize "
+                "automatic replay"
+            ),
+            "symbols": [
+                "Prepare_Get_Object_Lock_Configuration",
+                "Decode_Get_Object_Lock_Configuration_Response",
+                "Execute_Get_Object_Lock_Configuration",
+                "Get_Object_Lock_Configuration_Operation",
+                "Get_Object_Lock_Configuration",
+                "Finish",
+            ],
+        },
+        "PutObjectLockConfiguration": {
+            "public_name": "Put_Object_Lock_Configuration",
+            "lane": "put_object_lock_configuration",
+            "verifier": (
+                "tools/verify-put-object-lock-configuration-preparation.py"
+            ),
+            "corpus": "s3_put_object_lock_configuration_corpus",
+            "certainty": (
+                "only a complete validated 200 reports "
+                "Object_Lock_Configuration_Mutation_Completed; an exact "
+                "recognized S3 rejection or definite non-admission reports "
+                "Object_Lock_Configuration_Mutation_Definitely_Not_Applied, "
+                "pre-admission cancellation reports "
+                "Object_Lock_Configuration_Mutation_Cancelled_Before_"
+                "Admission, and every other possibly admitted or incomplete "
+                "outcome reports Object_Lock_Configuration_Mutation_Outcome_"
+                "Unknown; no automatic replay"
+            ),
+            "reconciliation": (
+                "a later GetObjectLockConfiguration may observe the bucket "
+                "configuration current at read time before a caller-selected "
+                "retry, but it neither proves that the lost mutation caused "
+                "the observed state nor upgrades mutation certainty; no "
+                "automatic replay"
+            ),
+            "symbols": [
+                "Prepare_Put_Object_Lock_Configuration",
+                "Decode_Put_Object_Lock_Configuration_Response",
+                "Execute_Put_Object_Lock_Configuration",
+                "Put_Object_Lock_Configuration_Operation",
+                "Put_Object_Lock_Configuration",
+                "Finish",
+            ],
+        },
+    }
+    object_lock_backend_evidence = [
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+    ]
+    object_lock_server_evidence = [
+        "src/flyology-object_storage-server-s3_applications.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ]
+    object_lock_shared_corpus = [
+        "tools/verify-object-lock-server.py",
+        "docs/qualification/object-lock-server.md",
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ]
+
+    def object_lock_lane(operation, contract):
+        slug = {
+            "GetObjectLegalHold": "get-object-legal-hold",
+            "PutObjectLegalHold": "put-object-legal-hold",
+            "GetObjectRetention": "get-object-retention",
+            "PutObjectRetention": "put-object-retention",
+            "GetObjectLockConfiguration":
+                "get-object-lock-configuration",
+            "PutObjectLockConfiguration":
+                "put-object-lock-configuration",
+        }[operation]
+        return [
+            [
+                "uv", "run", "--python", "3.13", "--",
+                contract["verifier"],
+            ],
+            [
+                "uv", "run", "--python", "3.13", "--",
+                "tools/verify-object-lock-server.py",
+            ],
+            ["@tests", "alr", "-n", "build"],
+            ["@tests", f"./bin/{contract['corpus']}"],
+            ["@tests", "./bin/s3_server_application_corpus"],
+            ["@tests", "./bin/s3_http_socket_corpus"],
+            ["./tools/verify-coverage.sh"],
+            [
+                "./tools/build-api-docs.sh",
+                f"{{repository}}/build/gnatdoc/{slug}",
+                "--operation",
+                operation,
+            ],
+            ["./tools/ci/check-repository.sh", "{model}"],
+            ["git", "diff", "--check"],
+        ]
+
+    def assert_object_lock_registry(candidate):
+        for operation, contract in object_lock_contracts.items():
+            entry = candidate.operations[operation]
+            assert entry.get("public_name") == contract["public_name"]
+            assert entry.get("decision_status") == "reviewed"
+            assert entry.get("human_decisions_resolved") is True
+            assert entry.get("qualification") == contract["lane"]
+            assert entry.get("certainty") == contract["certainty"]
+            assert entry.get("reconciliation") == contract["reconciliation"]
+            assert entry.get("ada_symbols") == contract["symbols"]
+            assert entry["coverage"] == {
+                "backend": "covered",
+                "client": "covered",
+                "server": "covered",
+                "corpus": "covered",
+            }
+            assert entry["provenance"] == {
+                "backend": "handwritten",
+                "client": "handwritten",
+                "server": "handwritten",
+                "tests": "handwritten",
+            }
+            assert entry["evidence"]["backend"] == (
+                object_lock_backend_evidence
+            )
+            assert entry["evidence"]["server"] == (
+                object_lock_server_evidence
+            )
+            for item in object_lock_shared_corpus:
+                assert entry["evidence"]["corpus"].count(item) == 1
+            exclusions = " ".join(entry["exclusions"])
+            assert "server route are absent" not in exclusions
+            assert "Object Lock persistence" not in exclusions
+            if operation == "PutObjectRetention":
+                assert (
+                    "governance-retention bypass is unsupported and rejected"
+                    in entry["exclusions"]
+                )
+            if operation.startswith("Put"):
+                assert "no automatic replay" in (
+                    entry["certainty"] + " " + entry["reconciliation"]
+                )
+            raw_lane = object_lock_lane(operation, contract)
+            raw_lane[7] = raw_lane[7][:-2]
+            assert candidate.qualification[contract["lane"]] == raw_lane
+
+    def reject_object_lock_registry(candidate, label):
         try:
-            assert_bucket_control_backend_server(missing_server)
-        except AssertionError:
-            pass
+            assert_object_lock_registry(candidate)
+        except (AssertionError, IndexError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} Object Lock registry accepted")
+
+    assert_object_lock_registry(registry)
+
+    missing_object_lock_verifier = copy.deepcopy(registry)
+    missing_object_lock_verifier.qualification[
+        "get_object_legal_hold"
+    ].pop(1)
+    reject_object_lock_registry(
+        missing_object_lock_verifier, "missing shared verifier"
+    )
+
+    missing_object_lock_server_corpus = copy.deepcopy(registry)
+    missing_object_lock_server_corpus.operations["PutObjectRetention"][
+        "evidence"
+    ]["server"].remove("tests/src/s3_server_application_corpus.adb")
+    reject_object_lock_registry(
+        missing_object_lock_server_corpus, "missing server corpus"
+    )
+
+    missing_object_lock_backend = copy.deepcopy(registry)
+    missing_object_lock_backend.operations["GetObjectRetention"]["coverage"][
+        "backend"
+    ] = "missing"
+    reject_object_lock_registry(
+        missing_object_lock_backend, "missing backend coverage"
+    )
+
+    missing_object_lock_server = copy.deepcopy(registry)
+    missing_object_lock_server.operations[
+        "PutObjectLockConfiguration"
+    ]["coverage"]["server"] = "missing"
+    reject_object_lock_registry(
+        missing_object_lock_server, "missing server coverage"
+    )
+
+    cross_object_lock_lane = copy.deepcopy(registry)
+    cross_object_lock_lane.operations["GetObjectLegalHold"][
+        "qualification"
+    ] = "put_object_legal_hold"
+    reject_object_lock_registry(cross_object_lock_lane, "cross lane")
+
+    replay_object_lock = copy.deepcopy(registry)
+    replay_object_lock.operations["PutObjectRetention"]["certainty"] = (
+        "retry automatically after a possibly admitted response failure"
+    )
+    reject_object_lock_registry(replay_object_lock, "automatic replay")
+
+    bypass_object_lock = copy.deepcopy(registry)
+    bypass_object_lock.operations["PutObjectRetention"]["exclusions"] = [
+        "governance bypass is fully supported"
+    ]
+    reject_object_lock_registry(bypass_object_lock, "bypass overclaim")
+
+    swapped_object_lock_names = copy.deepcopy(registry)
+    swapped_object_lock_names.operations["GetObjectLegalHold"][
+        "public_name"
+    ] = "Get_Retention"
+    reject_object_lock_registry(swapped_object_lock_names, "cross name")
+
+    for operation in object_lock_contracts:
+        qualification, commands = s3_operation.qualification_plan(
+            registry, [operation]
+        )
+        contract = object_lock_contracts[operation]
+        assert qualification == contract["lane"]
+        assert commands == object_lock_lane(operation, contract)
+        try:
+            s3_operation.qualification_plan(
+                registry, [operation, operation]
+            )
+        except s3_operation.Audit_Error as error:
+            assert "appears more than once" in str(error)
         else:
-            raise AssertionError(
-                f"{operation} missing server coverage was accepted"
+            raise AssertionError(f"duplicate {operation} lane accepted")
+
+    for left, right in (
+        ("GetObjectLegalHold", "PutObjectLegalHold"),
+        ("GetObjectRetention", "PutObjectRetention"),
+        ("GetObjectLockConfiguration", "PutObjectLockConfiguration"),
+    ):
+        try:
+            s3_operation.qualification_plan(registry, [left, right])
+        except s3_operation.Audit_Error as error:
+            assert (
+                "do not share one qualification lane" in str(error)
+                or "has no focused qualification lane" in str(error)
             )
+        else:
+            raise AssertionError(f"mixed {left}/{right} lane accepted")
 
-    for operation in (
-        "DeleteBucketReplication",
-        "GetBucketReplication",
-        "PutBucketReplication",
-        "DeleteBucketWebsite",
-        "GetBucketWebsite",
-        "PutBucketWebsite",
-    ):
-        entry = registry.operations[operation]
-        assert_bucket_control_backend_server(entry)
-        exclusions = " ".join(entry["exclusions"])
-        generation_exclusions = " ".join(
-            entry.get("generation", {}).get("intentional_exclusions", [])
-        )
-        assert "backend persistence" not in exclusions
-        assert "authenticated server routing" not in exclusions
-        assert "no backend or server compatibility claim" not in (
-            generation_exclusions
-        )
-        for label, mutate in (
-            (
-                "missing backend evidence",
-                lambda item: item["evidence"].update(backend=[]),
-            ),
-            (
-                "missing server evidence",
-                lambda item: item["evidence"].update(server=[]),
-            ),
-        ):
-            candidate = copy.deepcopy(entry)
-            mutate(candidate)
-            try:
-                assert_bucket_control_backend_server(candidate)
-            except AssertionError:
-                pass
-            else:
-                raise AssertionError(f"{operation} {label} was accepted")
-
-    for operation in ("GetBucketLogging", "PutBucketLogging"):
-        assert "log delivery" in (
-            " ".join(registry.operations[operation]["exclusions"])
-            + " "
-            + " ".join(
-                registry.operations[operation]
-                .get("generation", {})
-                .get("intentional_exclusions", [])
-            )
-        )
-
-    get_bucket_encryption_certainty = (
-        "read-only; only one complete validated exact 200 "
-        "Bucket_Control_Found response observed exposes the "
-        "presence-preserving encryption configuration; every incomplete, "
-        "invalid, or non-observed response exposes no configuration state; "
-        "the client performs no automatic retry"
-    )
-    get_bucket_encryption_reconciliation = (
-        "a later GetBucketEncryption observes only the bucket encryption "
-        "configuration current at read time; it does not prove that a prior "
-        "mutation caused the observed state or authorize automatic replay"
-    )
-    get_bucket_encryption_symbols = [
-        "Prepare_Get_Bucket_Encryption",
-        "Decode_Get_Bucket_Encryption_Response",
-        "Execute_Get_Bucket_Encryption",
-        "Get_Bucket_Encryption_Operation",
-        "Get_Encryption",
-        "Finish",
-    ]
-
-    def assert_get_bucket_encryption_registry(candidate):
-        entry = candidate.operations["GetBucketEncryption"]
-        assert entry.get("public_name") == "Get_Encryption"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_bucket_encryption"
-        assert entry.get("certainty") == get_bucket_encryption_certainty
-        assert entry.get("reconciliation") == (
-            get_bucket_encryption_reconciliation
-        )
-        assert entry.get("ada_symbols") == get_bucket_encryption_symbols
-        assert_bucket_control_backend_server(entry)
-        assert "absent optional" in entry["absence"]
-        assert "preserve the exact modeled encryption" in (
-            entry["exclusions"][0]
-        )
-        assert candidate.qualification["get_bucket_encryption"][0][-1] == (
-            "tools/verify-get-bucket-encryption-preparation.py"
-        )
-
-    def reject_get_bucket_encryption_registry(candidate, label):
-        try:
-            assert_get_bucket_encryption_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetBucketEncryption registry accepted"
-        )
-
-    assert_get_bucket_encryption_registry(registry)
-    missing_get_bucket_encryption_name = copy.deepcopy(registry)
-    del missing_get_bucket_encryption_name.operations[
-        "GetBucketEncryption"
-    ]["public_name"]
-    reject_get_bucket_encryption_registry(
-        missing_get_bucket_encryption_name, "missing name"
-    )
-    wrong_get_bucket_encryption_name = copy.deepcopy(registry)
-    wrong_get_bucket_encryption_name.operations[
-        "GetBucketEncryption"
-    ]["public_name"] = "Set_Encryption"
-    reject_get_bucket_encryption_registry(
-        wrong_get_bucket_encryption_name, "wrong name"
-    )
-    retry_get_bucket_encryption = copy.deepcopy(registry)
-    retry_get_bucket_encryption.operations[
-        "GetBucketEncryption"
-    ]["certainty"] = "read-only; retry automatically"
-    reject_get_bucket_encryption_registry(
-        retry_get_bucket_encryption, "automatic retry"
-    )
-    causal_get_bucket_encryption = copy.deepcopy(registry)
-    causal_get_bucket_encryption.operations[
-        "GetBucketEncryption"
-    ]["reconciliation"] = "the read proves the prior mutation caused state"
-    reject_get_bucket_encryption_registry(
-        causal_get_bucket_encryption, "causal reconciliation"
-    )
-    missing_server_get_bucket_encryption = copy.deepcopy(registry)
-    missing_server_get_bucket_encryption.operations[
-        "GetBucketEncryption"
-    ]["coverage"]["server"] = "missing"
-    reject_get_bucket_encryption_registry(
-        missing_server_get_bucket_encryption, "missing server coverage"
-    )
-    cross_get_bucket_encryption_symbol = copy.deepcopy(registry)
-    cross_get_bucket_encryption_symbol.operations[
-        "GetBucketEncryption"
-    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Encryption"
-    reject_get_bucket_encryption_registry(
-        cross_get_bucket_encryption_symbol, "cross-operation symbol"
-    )
-    get_bucket_encryption_qualification, encryption_commands = (
-        s3_operation.qualification_plan(registry, ["GetBucketEncryption"])
-    )
-    assert get_bucket_encryption_qualification == "get_bucket_encryption"
-    assert encryption_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-bucket-encryption-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_bucket_encryption_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert encryption_commands[4] == ["./tools/verify-coverage.sh"]
-    assert encryption_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-bucket-encryption-gnatdoc",
-        "--operation",
-        "GetBucketEncryption",
-    ]
-    assert encryption_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetBucketEncryption", "GetBucketEncryption"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate GetBucketEncryption lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetBucketEncryption", "PutBucketEncryption"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed BucketEncryption lane accepted")
-    put_bucket_encryption_certainty = (
-        "only a complete validated exact 200 Bucket_Control_Updated response "
-        "observed reports Bucket_Encryption_Mutation_Completed; a "
-        "response-observed exact recognized authentication, authorization, "
-        "not-found, invalid-request, checksum, malformed-XML, or "
-        "NotImplemented rejection or definite non-admission reports "
-        "Bucket_Encryption_Mutation_Definitely_Not_Applied; pre-admission "
-        "cancellation reports "
-        "Bucket_Encryption_Mutation_Cancelled_Before_Admission; every other "
-        "possibly admitted, incomplete, retryable, or corrupt outcome "
-        "reports Bucket_Encryption_Mutation_Outcome_Unknown; no automatic "
-        "replay"
-    )
-    put_bucket_encryption_reconciliation = (
-        "a later GetBucketEncryption may observe the bucket encryption "
-        "configuration current at read time before a caller-selected retry, "
-        "but it neither proves that the lost mutation caused the observed "
-        "state nor upgrades mutation certainty; no automatic replay"
-    )
-    put_bucket_encryption_symbols = [
-        "Prepare_Put_Bucket_Encryption",
-        "Execute_Put_Bucket_Encryption",
-        "Put_Bucket_Encryption_Operation",
-        "Set_Encryption",
-        "Finish",
-    ]
-
-    def assert_put_bucket_encryption_registry(candidate):
-        entry = candidate.operations["PutBucketEncryption"]
-        assert entry.get("public_name") == "Set_Encryption"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_bucket_encryption"
-        assert entry.get("certainty") == put_bucket_encryption_certainty
-        assert entry.get("reconciliation") == (
-            put_bucket_encryption_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_bucket_encryption_symbols
-        assert_bucket_control_backend_server(entry)
-        assert entry.get("absence") == "not_applicable"
-        assert "preserve caller-selected modeled algorithms" in (
-            entry["exclusions"][0]
-        )
-        assert "exact same immutable" in entry["exclusions"][1]
-        assert candidate.qualification["put_bucket_encryption"][0][-1] == (
-            "tools/verify-put-bucket-encryption-preparation.py"
-        )
-
-    def reject_put_bucket_encryption_registry(candidate, label):
-        try:
-            assert_put_bucket_encryption_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketEncryption registry accepted"
-        )
-
-    assert_put_bucket_encryption_registry(registry)
-    missing_put_bucket_encryption_name = copy.deepcopy(registry)
-    del missing_put_bucket_encryption_name.operations[
-        "PutBucketEncryption"
-    ]["public_name"]
-    reject_put_bucket_encryption_registry(
-        missing_put_bucket_encryption_name, "missing name"
-    )
-    wrong_put_bucket_encryption_name = copy.deepcopy(registry)
-    wrong_put_bucket_encryption_name.operations[
-        "PutBucketEncryption"
-    ]["public_name"] = "Get_Encryption"
-    reject_put_bucket_encryption_registry(
-        wrong_put_bucket_encryption_name, "wrong name"
-    )
-    replay_put_bucket_encryption = copy.deepcopy(registry)
-    replay_put_bucket_encryption.operations[
-        "PutBucketEncryption"
-    ]["certainty"] = "automatically replay PutBucketEncryption"
-    reject_put_bucket_encryption_registry(
-        replay_put_bucket_encryption, "automatic replay"
-    )
-    causal_put_bucket_encryption = copy.deepcopy(registry)
-    causal_put_bucket_encryption.operations[
-        "PutBucketEncryption"
-    ]["reconciliation"] = "the read proves the mutation caused state"
-    reject_put_bucket_encryption_registry(
-        causal_put_bucket_encryption, "causal reconciliation"
-    )
-    missing_server_put_bucket_encryption = copy.deepcopy(registry)
-    missing_server_put_bucket_encryption.operations[
-        "PutBucketEncryption"
-    ]["coverage"]["server"] = "missing"
-    reject_put_bucket_encryption_registry(
-        missing_server_put_bucket_encryption, "missing server coverage"
-    )
-    cross_put_bucket_encryption_symbol = copy.deepcopy(registry)
-    cross_put_bucket_encryption_symbol.operations[
-        "PutBucketEncryption"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Encryption"
-    reject_put_bucket_encryption_registry(
-        cross_put_bucket_encryption_symbol, "cross-operation symbol"
-    )
-    put_bucket_encryption_qualification, put_encryption_commands = (
-        s3_operation.qualification_plan(registry, ["PutBucketEncryption"])
-    )
-    assert put_bucket_encryption_qualification == "put_bucket_encryption"
-    assert put_encryption_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-bucket-encryption-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_bucket_encryption_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_encryption_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_encryption_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-encryption-gnatdoc",
-        "--operation",
-        "PutBucketEncryption",
-    ]
-    assert put_encryption_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutBucketEncryption", "PutBucketEncryption"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate PutBucketEncryption lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutBucketEncryption", "GetBucketEncryption"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutBucketEncryption lane accepted")
-    get_bucket_ownership_controls_certainty = (
-        "read-only; only one complete validated exact 200 "
-        "Bucket_Control_Found response observed exposes the "
-        "presence-preserving ownership-controls configuration; every "
-        "incomplete, invalid, or non-observed response exposes no "
-        "configuration state; the client performs no automatic retry"
-    )
-    get_bucket_ownership_controls_reconciliation = (
-        "a later GetBucketOwnershipControls observes only the bucket "
-        "ownership-controls configuration current at read time; it does not "
-        "prove that a prior mutation caused the observed state or authorize "
-        "automatic replay"
-    )
-    get_bucket_ownership_controls_symbols = [
-        "Prepare_Get_Bucket_Ownership_Controls",
-        "Decode_Get_Bucket_Ownership_Controls_Response",
-        "Execute_Get_Bucket_Ownership_Controls",
-        "Get_Bucket_Ownership_Controls_Operation",
-        "Get_Ownership_Controls",
-        "Finish",
-    ]
-
-    def assert_get_bucket_ownership_controls_registry(candidate):
-        entry = candidate.operations["GetBucketOwnershipControls"]
-        assert entry.get("public_name") == "Get_Ownership_Controls"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "get_bucket_ownership_controls"
-        )
-        assert entry.get("certainty") == (
-            get_bucket_ownership_controls_certainty
-        )
-        assert entry.get("reconciliation") == (
-            get_bucket_ownership_controls_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            get_bucket_ownership_controls_symbols
-        )
-        assert_bucket_control_backend_server(entry)
-        assert "OwnershipControlsNotFoundError" in entry["absence"]
-        assert "preserve caller-observed" in entry["exclusions"][0]
-        assert candidate.qualification[
-            "get_bucket_ownership_controls"
-        ][0][-1] == "tools/verify-get-bucket-ownership-controls-preparation.py"
-
-    def reject_get_bucket_ownership_controls_registry(candidate, label):
-        try:
-            assert_get_bucket_ownership_controls_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetBucketOwnershipControls registry accepted"
-        )
-
-    assert_get_bucket_ownership_controls_registry(registry)
-    missing_get_bucket_ownership_controls_name = copy.deepcopy(registry)
-    del missing_get_bucket_ownership_controls_name.operations[
-        "GetBucketOwnershipControls"
-    ]["public_name"]
-    reject_get_bucket_ownership_controls_registry(
-        missing_get_bucket_ownership_controls_name, "missing name"
-    )
-    wrong_get_bucket_ownership_controls_name = copy.deepcopy(registry)
-    wrong_get_bucket_ownership_controls_name.operations[
-        "GetBucketOwnershipControls"
-    ]["public_name"] = "Set_Ownership_Controls"
-    reject_get_bucket_ownership_controls_registry(
-        wrong_get_bucket_ownership_controls_name, "wrong name"
-    )
-    retry_get_bucket_ownership_controls = copy.deepcopy(registry)
-    retry_get_bucket_ownership_controls.operations[
-        "GetBucketOwnershipControls"
-    ]["certainty"] = "read-only; retry automatically"
-    reject_get_bucket_ownership_controls_registry(
-        retry_get_bucket_ownership_controls, "automatic retry"
-    )
-    causal_get_bucket_ownership_controls = copy.deepcopy(registry)
-    causal_get_bucket_ownership_controls.operations[
-        "GetBucketOwnershipControls"
-    ]["reconciliation"] = "the read proves the prior mutation caused state"
-    reject_get_bucket_ownership_controls_registry(
-        causal_get_bucket_ownership_controls, "causal reconciliation"
-    )
-    missing_server_get_bucket_ownership_controls = copy.deepcopy(registry)
-    missing_server_get_bucket_ownership_controls.operations[
-        "GetBucketOwnershipControls"
-    ]["coverage"]["server"] = "missing"
-    reject_get_bucket_ownership_controls_registry(
-        missing_server_get_bucket_ownership_controls,
-        "missing server coverage",
-    )
-    cross_get_bucket_ownership_controls_symbol = copy.deepcopy(registry)
-    cross_get_bucket_ownership_controls_symbol.operations[
-        "GetBucketOwnershipControls"
-    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Ownership_Controls"
-    reject_get_bucket_ownership_controls_registry(
-        cross_get_bucket_ownership_controls_symbol,
-        "cross-operation symbol",
-    )
-    ownership_qualification, ownership_commands = (
-        s3_operation.qualification_plan(
-            registry, ["GetBucketOwnershipControls"]
-        )
-    )
-    assert ownership_qualification == "get_bucket_ownership_controls"
-    assert ownership_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-bucket-ownership-controls-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_bucket_ownership_controls_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert ownership_commands[4] == ["./tools/verify-coverage.sh"]
-    assert ownership_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-bucket-ownership-controls-gnatdoc",
-        "--operation",
-        "GetBucketOwnershipControls",
-    ]
-    assert ownership_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetBucketOwnershipControls", "GetBucketOwnershipControls"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate GetBucketOwnershipControls lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetBucketOwnershipControls", "PutBucketOwnershipControls"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed OwnershipControls lane accepted")
-    put_bucket_ownership_controls_certainty = (
-        "only a complete validated exact 200 Bucket_Control_Updated response "
-        "observed reports Bucket_Ownership_Controls_Mutation_Completed; a "
-        "response-observed exact recognized authentication, authorization, "
-        "not-found, invalid-request, checksum, malformed-XML, or "
-        "NotImplemented rejection or definite non-admission reports "
-        "Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied; "
-        "pre-admission cancellation reports "
-        "Bucket_Ownership_Controls_Mutation_Cancelled_Before_Admission; every "
-        "other possibly admitted, incomplete, retryable, or corrupt outcome "
-        "reports Bucket_Ownership_Controls_Mutation_Outcome_Unknown; no "
-        "automatic replay"
-    )
-    put_bucket_ownership_controls_reconciliation = (
-        "a later GetBucketOwnershipControls may observe the bucket "
-        "ownership-controls configuration current at read time before a "
-        "caller-selected retry, but it neither proves that the lost mutation "
-        "caused the observed state nor upgrades mutation certainty; no "
-        "automatic replay"
-    )
-    put_bucket_ownership_controls_symbols = [
-        "Prepare_Put_Bucket_Ownership_Controls",
-        "Execute_Put_Bucket_Ownership_Controls",
-        "Put_Bucket_Ownership_Controls_Operation",
-        "Set_Ownership_Controls",
-        "Finish",
-    ]
-
-    def assert_put_bucket_ownership_controls_registry(candidate):
-        entry = candidate.operations["PutBucketOwnershipControls"]
-        assert entry.get("public_name") == "Set_Ownership_Controls"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "put_bucket_ownership_controls"
-        )
-        assert entry.get("certainty") == (
-            put_bucket_ownership_controls_certainty
-        )
-        assert entry.get("reconciliation") == (
-            put_bucket_ownership_controls_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            put_bucket_ownership_controls_symbols
-        )
-        assert_bucket_control_backend_server(entry)
-        assert entry.get("absence") == "not_applicable"
-        assert "preserve caller-selected modeled ownership rules" in (
-            entry["exclusions"][0]
-        )
-        assert "exact same immutable" in entry["exclusions"][1]
-        assert candidate.qualification[
-            "put_bucket_ownership_controls"
-        ][0][-1] == "tools/verify-put-bucket-ownership-controls-preparation.py"
-
-    def reject_put_bucket_ownership_controls_registry(candidate, label):
-        try:
-            assert_put_bucket_ownership_controls_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketOwnershipControls registry accepted"
-        )
-
-    assert_put_bucket_ownership_controls_registry(registry)
-    missing_put_bucket_ownership_controls_name = copy.deepcopy(registry)
-    del missing_put_bucket_ownership_controls_name.operations[
-        "PutBucketOwnershipControls"
-    ]["public_name"]
-    reject_put_bucket_ownership_controls_registry(
-        missing_put_bucket_ownership_controls_name, "missing name"
-    )
-    wrong_put_bucket_ownership_controls_name = copy.deepcopy(registry)
-    wrong_put_bucket_ownership_controls_name.operations[
-        "PutBucketOwnershipControls"
-    ]["public_name"] = "Get_Ownership_Controls"
-    reject_put_bucket_ownership_controls_registry(
-        wrong_put_bucket_ownership_controls_name, "wrong name"
-    )
-    replay_put_bucket_ownership_controls = copy.deepcopy(registry)
-    replay_put_bucket_ownership_controls.operations[
-        "PutBucketOwnershipControls"
-    ]["certainty"] = "automatically replay PutBucketOwnershipControls"
-    reject_put_bucket_ownership_controls_registry(
-        replay_put_bucket_ownership_controls, "automatic replay"
-    )
-    causal_put_bucket_ownership_controls = copy.deepcopy(registry)
-    causal_put_bucket_ownership_controls.operations[
-        "PutBucketOwnershipControls"
-    ]["reconciliation"] = "the read proves the mutation caused state"
-    reject_put_bucket_ownership_controls_registry(
-        causal_put_bucket_ownership_controls, "causal reconciliation"
-    )
-    missing_server_put_bucket_ownership_controls = copy.deepcopy(registry)
-    missing_server_put_bucket_ownership_controls.operations[
-        "PutBucketOwnershipControls"
-    ]["coverage"]["server"] = "missing"
-    reject_put_bucket_ownership_controls_registry(
-        missing_server_put_bucket_ownership_controls,
-        "missing server coverage",
-    )
-    cross_put_bucket_ownership_controls_symbol = copy.deepcopy(registry)
-    cross_put_bucket_ownership_controls_symbol.operations[
-        "PutBucketOwnershipControls"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Ownership_Controls"
-    reject_put_bucket_ownership_controls_registry(
-        cross_put_bucket_ownership_controls_symbol,
-        "cross-operation symbol",
-    )
-    put_ownership_qualification, put_ownership_commands = (
-        s3_operation.qualification_plan(
-            registry, ["PutBucketOwnershipControls"]
-        )
-    )
-    assert put_ownership_qualification == "put_bucket_ownership_controls"
-    assert put_ownership_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-bucket-ownership-controls-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_bucket_ownership_controls_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_ownership_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_ownership_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-ownership-controls-gnatdoc",
-        "--operation",
-        "PutBucketOwnershipControls",
-    ]
-    assert put_ownership_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["PutBucketOwnershipControls", "PutBucketOwnershipControls"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate PutBucketOwnershipControls lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["PutBucketOwnershipControls", "GetBucketOwnershipControls"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutBucketOwnershipControls lane accepted")
-    get_bucket_lifecycle_configuration_certainty = (
-        "read-only; only one complete validated exact 200 "
-        "Bucket_Control_Found response observed exposes the "
-        "presence-preserving lifecycle configuration and transition-minimum "
-        "header; every incomplete, invalid, or non-observed response exposes "
-        "no configuration state; the client performs no automatic retry"
-    )
-    get_bucket_lifecycle_configuration_reconciliation = (
-        "a later GetBucketLifecycleConfiguration observes only the bucket "
-        "lifecycle configuration current at read time; it does not prove "
-        "that a prior mutation caused the observed state or authorize "
-        "automatic replay"
-    )
-    get_bucket_lifecycle_configuration_symbols = [
-        "Prepare_Get_Bucket_Lifecycle_Configuration",
-        "Decode_Get_Bucket_Lifecycle_Configuration_Response",
-        "Execute_Get_Bucket_Lifecycle_Configuration",
-        "Get_Bucket_Lifecycle_Operation",
-        "Get_Lifecycle_Configuration",
-        "Finish",
-    ]
-
-    def assert_get_bucket_lifecycle_configuration_registry(candidate):
-        entry = candidate.operations["GetBucketLifecycleConfiguration"]
-        assert entry.get("public_name") == "Get_Lifecycle_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "get_bucket_lifecycle_configuration"
-        )
-        assert entry.get("certainty") == (
-            get_bucket_lifecycle_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            get_bucket_lifecycle_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            get_bucket_lifecycle_configuration_symbols
-        )
-        assert_bucket_control_backend_server(entry)
-        assert "NoSuchLifecycleConfiguration" in entry["absence"]
-        assert "lifecycle action execution" in entry["exclusions"][0]
-        assert "without inventing a public numeric" in entry["exclusions"][1]
-        assert candidate.qualification[
-            "get_bucket_lifecycle_configuration"
-        ][0][-1] == (
-            "tools/verify-get-bucket-lifecycle-configuration-preparation.py"
-        )
-
-    def reject_get_bucket_lifecycle_configuration_registry(candidate, label):
-        try:
-            assert_get_bucket_lifecycle_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetBucketLifecycleConfiguration registry accepted"
-        )
-
-    assert_get_bucket_lifecycle_configuration_registry(registry)
-    missing_get_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
-    del missing_get_bucket_lifecycle_configuration_name.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["public_name"]
-    reject_get_bucket_lifecycle_configuration_registry(
-        missing_get_bucket_lifecycle_configuration_name, "missing name"
-    )
-    wrong_get_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
-    wrong_get_bucket_lifecycle_configuration_name.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["public_name"] = "Get_Lifecycle"
-    reject_get_bucket_lifecycle_configuration_registry(
-        wrong_get_bucket_lifecycle_configuration_name, "deprecated name"
-    )
-    retry_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    retry_get_bucket_lifecycle_configuration.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["certainty"] = "read-only; retry automatically"
-    reject_get_bucket_lifecycle_configuration_registry(
-        retry_get_bucket_lifecycle_configuration, "automatic retry"
-    )
-    causal_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    causal_get_bucket_lifecycle_configuration.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["reconciliation"] = "the read proves the prior mutation caused state"
-    reject_get_bucket_lifecycle_configuration_registry(
-        causal_get_bucket_lifecycle_configuration, "causal reconciliation"
-    )
-    bounded_get_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    bounded_get_bucket_lifecycle_configuration.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["exclusions"][1] = "lifecycle numbers are limited to 32 bits"
-    reject_get_bucket_lifecycle_configuration_registry(
-        bounded_get_bucket_lifecycle_configuration, "invented numeric bound"
-    )
-    cross_get_bucket_lifecycle_configuration_symbol = copy.deepcopy(registry)
-    cross_get_bucket_lifecycle_configuration_symbol.operations[
-        "GetBucketLifecycleConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Lifecycle"
-    reject_get_bucket_lifecycle_configuration_registry(
-        cross_get_bucket_lifecycle_configuration_symbol,
-        "deprecated-operation symbol",
-    )
-    lifecycle_qualification, lifecycle_commands = (
-        s3_operation.qualification_plan(
-            registry, ["GetBucketLifecycleConfiguration"]
-        )
-    )
-    assert lifecycle_qualification == "get_bucket_lifecycle_configuration"
-    assert lifecycle_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-bucket-lifecycle-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_bucket_lifecycle_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert lifecycle_commands[4] == ["./tools/verify-coverage.sh"]
-    assert lifecycle_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-bucket-lifecycle-configuration-gnatdoc",
-        "--operation",
-        "GetBucketLifecycleConfiguration",
-    ]
-    assert lifecycle_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "GetBucketLifecycleConfiguration",
-                "GetBucketLifecycleConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate GetBucketLifecycleConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetBucketLifecycleConfiguration", "PutBucketLifecycleConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed LifecycleConfiguration lane accepted")
-    get_bucket_lifecycle_symbols = [
-        "Prepare_Get_Bucket_Lifecycle_Configuration",
-        "Decode_Get_Bucket_Lifecycle_Configuration_Response",
-        "Execute_Get_Bucket_Lifecycle_Configuration",
-        "Get_Bucket_Lifecycle_Operation",
-        "Get_Lifecycle_Configuration",
-        "Finish",
-    ]
-
-    def assert_get_bucket_lifecycle_registry(candidate):
-        entry = candidate.operations["GetBucketLifecycle"]
-        assert entry.get("public_name") == "Get_Lifecycle_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_bucket_lifecycle"
-        assert entry.get("codec") == (
-            "strict_rest_xml_request_and_bounded_response"
-        )
-        assert entry.get("ada_symbols") == get_bucket_lifecycle_symbols
-        assert entry["coverage"] == {
-            "backend": "covered",
-            "client": "covered",
-            "server": "covered",
-            "corpus": "covered",
-        }
-        assert_bucket_control_backend_server(entry)
-        assert entry["provenance"]["client"] == "handwritten"
-        assert entry["provenance"]["tests"] == "handwritten"
-        assert "structural subset" in entry["exclusions"][1]
-        assert "does not prove" in entry["reconciliation"]
-        commands = candidate.qualification["get_bucket_lifecycle"]
-        assert commands[0][-1] == (
-            "tools/verify-get-bucket-lifecycle-configuration-preparation.py"
-        )
-        assert commands[5][-2:] == ["--operation", "GetBucketLifecycle"]
-
-    def reject_get_bucket_lifecycle_registry(candidate, label):
-        try:
-            assert_get_bucket_lifecycle_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(f"{label} GetBucketLifecycle registry accepted")
-
-    assert_get_bucket_lifecycle_registry(registry)
-    missing_get_bucket_lifecycle_name = copy.deepcopy(registry)
-    del missing_get_bucket_lifecycle_name.operations["GetBucketLifecycle"][
-        "public_name"
-    ]
-    reject_get_bucket_lifecycle_registry(
-        missing_get_bucket_lifecycle_name, "missing compatibility name"
-    )
-    wrong_get_bucket_lifecycle_name = copy.deepcopy(registry)
-    wrong_get_bucket_lifecycle_name.operations["GetBucketLifecycle"][
-        "public_name"
-    ] = "Get_Lifecycle"
-    reject_get_bucket_lifecycle_registry(
-        wrong_get_bucket_lifecycle_name, "obsolete public name"
-    )
-    unresolved_get_bucket_lifecycle = copy.deepcopy(registry)
-    unresolved_get_bucket_lifecycle.operations["GetBucketLifecycle"][
-        "human_decisions_resolved"
-    ] = False
-    reject_get_bucket_lifecycle_registry(
-        unresolved_get_bucket_lifecycle, "unresolved alias"
-    )
-    cross_get_bucket_lifecycle_symbol = copy.deepcopy(registry)
-    cross_get_bucket_lifecycle_symbol.operations["GetBucketLifecycle"][
-        "ada_symbols"
-    ][0] = "Prepare_Get_Bucket_Lifecycle"
-    reject_get_bucket_lifecycle_registry(
-        cross_get_bucket_lifecycle_symbol, "obsolete symbol"
-    )
-    causal_get_bucket_lifecycle = copy.deepcopy(registry)
-    causal_get_bucket_lifecycle.operations["GetBucketLifecycle"][
-        "reconciliation"
-    ] = "the read proves the prior mutation caused state"
-    reject_get_bucket_lifecycle_registry(
-        causal_get_bucket_lifecycle, "causal observation"
-    )
-    malformed_get_bucket_lifecycle_lane = copy.deepcopy(registry)
-    malformed_get_bucket_lifecycle_lane.qualification[
-        "get_bucket_lifecycle"
-    ][5][-1] = "GetBucketLifecycleConfiguration"
-    reject_get_bucket_lifecycle_registry(
-        malformed_get_bucket_lifecycle_lane, "cross-operation lane"
-    )
-    legacy_lifecycle_qualification, legacy_lifecycle_commands = (
-        s3_operation.qualification_plan(registry, ["GetBucketLifecycle"])
-    )
-    assert legacy_lifecycle_qualification == "get_bucket_lifecycle"
-    assert legacy_lifecycle_commands[0][-1] == (
-        "tools/verify-get-bucket-lifecycle-configuration-preparation.py"
-    )
-    assert legacy_lifecycle_commands[2] == [
-        "@tests", "./bin/s3_get_bucket_lifecycle_configuration_corpus"
-    ]
-    assert legacy_lifecycle_commands[5][-2:] == [
-        "--operation", "GetBucketLifecycle"
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetBucketLifecycle", "GetBucketLifecycleConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed legacy lifecycle lane accepted")
-    put_bucket_lifecycle_configuration_certainty = (
-        "only a complete validated exact 200 Bucket_Control_Updated response "
-        "observed reports Bucket_Lifecycle_Mutation_Completed; a "
-        "response-observed exact recognized authentication, authorization, "
-        "not-found, invalid-request, checksum, malformed-XML, or "
-        "NotImplemented rejection or definite non-admission reports "
-        "Bucket_Lifecycle_Mutation_Definitely_Not_Applied; pre-admission "
-        "cancellation reports "
-        "Bucket_Lifecycle_Mutation_Cancelled_Before_Admission; every other "
-        "possibly admitted, incomplete, retryable, or corrupt outcome "
-        "reports Bucket_Lifecycle_Mutation_Outcome_Unknown; no automatic "
-        "replay"
-    )
-    put_bucket_lifecycle_configuration_reconciliation = (
-        "a later GetBucketLifecycleConfiguration may observe the bucket "
-        "lifecycle configuration current at read time before a "
-        "caller-selected retry, but it neither proves that the lost mutation "
-        "caused the observed state nor upgrades mutation certainty; no "
-        "automatic replay"
-    )
-    put_bucket_lifecycle_configuration_symbols = [
-        "Prepare_Put_Bucket_Lifecycle_Configuration",
-        "Decode_Put_Bucket_Lifecycle_Configuration_Response",
-        "Execute_Put_Bucket_Lifecycle_Configuration",
-        "Put_Bucket_Lifecycle_Operation",
-        "Set_Lifecycle_Configuration",
-        "Finish",
-    ]
-
-    def assert_put_bucket_lifecycle_configuration_registry(candidate):
-        entry = candidate.operations["PutBucketLifecycleConfiguration"]
-        assert entry.get("public_name") == "Set_Lifecycle_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "put_bucket_lifecycle_configuration"
-        )
-        assert entry.get("codec") == (
-            "strict_rest_xml_request_checksum_and_singleton_headers"
-        )
-        assert entry.get("certainty") == (
-            put_bucket_lifecycle_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            put_bucket_lifecycle_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            put_bucket_lifecycle_configuration_symbols
-        )
-        assert_bucket_control_backend_server(entry)
-        assert entry.get("absence") == "not_applicable"
-        assert "modeled optional body remains representable" in (
-            entry["exclusions"][0]
-        )
-        assert "rejects an absent document as MalformedXML" in (
-            entry["exclusions"][0]
-        )
-        assert "1,000-rule ceiling" in entry["exclusions"][1]
-        assert "ten modeled checksum algorithms" in entry["exclusions"][2]
-        assert candidate.qualification[
-            "put_bucket_lifecycle_configuration"
-        ][0][-1] == (
-            "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
-        )
-
-    def reject_put_bucket_lifecycle_configuration_registry(candidate, label):
-        try:
-            assert_put_bucket_lifecycle_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketLifecycleConfiguration registry accepted"
-        )
-
-    assert_put_bucket_lifecycle_configuration_registry(registry)
-    missing_put_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
-    del missing_put_bucket_lifecycle_configuration_name.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["public_name"]
-    reject_put_bucket_lifecycle_configuration_registry(
-        missing_put_bucket_lifecycle_configuration_name, "missing name"
-    )
-    wrong_put_bucket_lifecycle_configuration_name = copy.deepcopy(registry)
-    wrong_put_bucket_lifecycle_configuration_name.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["public_name"] = "Get_Lifecycle_Configuration"
-    reject_put_bucket_lifecycle_configuration_registry(
-        wrong_put_bucket_lifecycle_configuration_name, "wrong name"
-    )
-    replay_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    replay_put_bucket_lifecycle_configuration.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["certainty"] = "automatically replay PutBucketLifecycleConfiguration"
-    reject_put_bucket_lifecycle_configuration_registry(
-        replay_put_bucket_lifecycle_configuration, "automatic replay"
-    )
-    causal_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    causal_put_bucket_lifecycle_configuration.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["reconciliation"] = "the read proves the mutation caused state"
-    reject_put_bucket_lifecycle_configuration_registry(
-        causal_put_bucket_lifecycle_configuration, "causal reconciliation"
-    )
-    checksum_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    checksum_put_bucket_lifecycle_configuration.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["codec"] = "rest_xml_and_headers"
-    reject_put_bucket_lifecycle_configuration_registry(
-        checksum_put_bucket_lifecycle_configuration, "missing checksum"
-    )
-    bounded_put_bucket_lifecycle_configuration = copy.deepcopy(registry)
-    bounded_put_bucket_lifecycle_configuration.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["exclusions"][1] = "lifecycle rules are limited to 1,000"
-    reject_put_bucket_lifecycle_configuration_registry(
-        bounded_put_bucket_lifecycle_configuration, "invented policy bound"
-    )
-    cross_put_bucket_lifecycle_configuration_symbol = copy.deepcopy(registry)
-    cross_put_bucket_lifecycle_configuration_symbol.operations[
-        "PutBucketLifecycleConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Lifecycle_Configuration"
-    reject_put_bucket_lifecycle_configuration_registry(
-        cross_put_bucket_lifecycle_configuration_symbol,
-        "cross-operation symbol",
-    )
-    put_lifecycle_qualification, put_lifecycle_commands = (
-        s3_operation.qualification_plan(
-            registry, ["PutBucketLifecycleConfiguration"]
-        )
-    )
-    assert put_lifecycle_qualification == "put_bucket_lifecycle_configuration"
-    assert put_lifecycle_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-bucket-lifecycle-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_bucket_lifecycle_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_lifecycle_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_lifecycle_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-lifecycle-configuration-gnatdoc",
-        "--operation",
-        "PutBucketLifecycleConfiguration",
-    ]
-    assert put_lifecycle_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketLifecycleConfiguration",
-                "PutBucketLifecycleConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate PutBucketLifecycleConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketLifecycleConfiguration",
-                "GetBucketLifecycleConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError(
-            "mixed PutBucketLifecycleConfiguration lane accepted"
-        )
-    put_bucket_lifecycle_certainty = (
-        "mutation compatibility subset; "
-        + put_bucket_lifecycle_configuration_certainty
-    )
-    put_bucket_lifecycle_reconciliation = (
-        "a later GetBucketLifecycle or GetBucketLifecycleConfiguration may "
-        "observe the bucket lifecycle configuration current at read time "
-        "before a caller-selected retry, but it neither proves that the lost "
-        "mutation caused the observed state nor upgrades mutation certainty; "
-        "no automatic replay"
-    )
-    put_bucket_lifecycle_symbols = [
-        "Prepare_Put_Bucket_Lifecycle_Configuration",
-        "Decode_Put_Bucket_Lifecycle_Configuration_Response",
-        "Execute_Put_Bucket_Lifecycle_Configuration",
-        "Put_Bucket_Lifecycle_Operation",
-        "Set_Lifecycle_Configuration",
-        "Finish",
-    ]
-
-    def assert_put_bucket_lifecycle_registry(candidate):
-        entry = candidate.operations["PutBucketLifecycle"]
-        assert entry.get("public_name") == "Set_Lifecycle_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_bucket_lifecycle"
-        assert entry.get("codec") == (
-            "strict_current_rest_xml_mutation_compatibility_subset"
-        )
-        assert entry.get("certainty") == put_bucket_lifecycle_certainty
-        assert entry.get("reconciliation") == (
-            put_bucket_lifecycle_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_bucket_lifecycle_symbols
-        assert entry["coverage"]["backend"] == "covered"
-        assert entry["coverage"]["server"] == "covered"
-        assert entry["coverage"]["client"] == "partial"
-        assert entry["coverage"]["corpus"] == "covered"
-        assert entry["provenance"]["client"] == "handwritten"
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert entry["provenance"]["tests"] == "handwritten"
-        assert entry.get("absence") == "not_applicable"
-        assert "client coverage is deliberately partial" in (
-            entry["exclusions"][1]
-        )
-        assert "current operation identity" in entry["exclusions"][1]
-        assert "does not reject modern Filter-only rules" in (
-            entry["exclusions"][1]
-        )
-        assert "optional legacy ContentMD5 override is not surfaced" in (
-            entry["exclusions"][2]
-        )
-        assert "exact legacy identity" in entry["exclusions"][2]
-        assert "MD5 or generated-checksum transport" in (
-            entry["exclusions"][2]
-        )
-        assert "immutable body" in entry["exclusions"][2]
-        assert "rejects the current-only Filter member" in (
-            entry["exclusions"][3]
-        )
-        assert "absent lifecycle document as malformed input" in (
-            entry["exclusions"][3]
-        )
-        assert "lifecycle action execution is not claimed" in (
-            entry["exclusions"][3]
-        )
-        assert entry["evidence"]["backend"] == [
-            "src/flyology-object_storage-backends.ads",
-            "tests/src/object_storage_test_cases.adb",
-            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
-        ]
-        assert entry["evidence"]["server"] == [
-            "src/flyology-object_storage-server-s3_applications.adb",
-            "tests/src/s3_server_application_corpus.adb",
-        ]
-        assert candidate.qualification["put_bucket_lifecycle"][0][-1] == (
-            "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
-        )
-
-    def reject_put_bucket_lifecycle_registry(candidate, label):
-        try:
-            assert_put_bucket_lifecycle_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketLifecycle registry accepted"
-        )
-
-    assert_put_bucket_lifecycle_registry(registry)
-    missing_put_bucket_lifecycle_name = copy.deepcopy(registry)
-    del missing_put_bucket_lifecycle_name.operations[
-        "PutBucketLifecycle"
-    ]["public_name"]
-    reject_put_bucket_lifecycle_registry(
-        missing_put_bucket_lifecycle_name, "missing name"
-    )
-    wrong_put_bucket_lifecycle_name = copy.deepcopy(registry)
-    wrong_put_bucket_lifecycle_name.operations[
-        "PutBucketLifecycle"
-    ]["public_name"] = "Put_Bucket_Lifecycle"
-    reject_put_bucket_lifecycle_registry(
-        wrong_put_bucket_lifecycle_name, "wrong name"
-    )
-    replay_put_bucket_lifecycle = copy.deepcopy(registry)
-    replay_put_bucket_lifecycle.operations[
-        "PutBucketLifecycle"
-    ]["certainty"] = "automatically replay PutBucketLifecycle"
-    reject_put_bucket_lifecycle_registry(
-        replay_put_bucket_lifecycle, "automatic replay"
-    )
-    causal_put_bucket_lifecycle = copy.deepcopy(registry)
-    causal_put_bucket_lifecycle.operations[
-        "PutBucketLifecycle"
-    ]["reconciliation"] = "the later read proves the mutation caused state"
-    reject_put_bucket_lifecycle_registry(
-        causal_put_bucket_lifecycle, "causal reconciliation"
-    )
-    broad_put_bucket_lifecycle = copy.deepcopy(registry)
-    broad_put_bucket_lifecycle.operations[
-        "PutBucketLifecycle"
-    ]["exclusions"][1] = "all lifecycle payloads are compatible"
-    reject_put_bucket_lifecycle_registry(
-        broad_put_bucket_lifecycle, "hidden structural subset"
-    )
-    covered_put_bucket_lifecycle = copy.deepcopy(registry)
-    covered_put_bucket_lifecycle.operations[
-        "PutBucketLifecycle"
-    ]["coverage"]["client"] = "covered"
-    reject_put_bucket_lifecycle_registry(
-        covered_put_bucket_lifecycle, "full client coverage"
-    )
-    checksum_put_bucket_lifecycle = copy.deepcopy(registry)
-    checksum_put_bucket_lifecycle.operations[
-        "PutBucketLifecycle"
-    ]["exclusions"][2] = "the body is signed"
-    reject_put_bucket_lifecycle_registry(
-        checksum_put_bucket_lifecycle, "missing checksum binding"
-    )
-    cross_put_bucket_lifecycle_symbol = copy.deepcopy(registry)
-    cross_put_bucket_lifecycle_symbol.operations[
-        "PutBucketLifecycle"
-    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Notification_Configuration"
-    reject_put_bucket_lifecycle_registry(
-        cross_put_bucket_lifecycle_symbol, "cross-operation symbol"
-    )
-    legacy_put_lifecycle_qualification, legacy_put_lifecycle_commands = (
-        s3_operation.qualification_plan(registry, ["PutBucketLifecycle"])
-    )
-    assert legacy_put_lifecycle_qualification == "put_bucket_lifecycle"
-    assert legacy_put_lifecycle_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-bucket-lifecycle-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_bucket_lifecycle_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert legacy_put_lifecycle_commands[4] == [
-        "./tools/verify-coverage.sh"
-    ]
-    assert legacy_put_lifecycle_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "{repository}/build/gnatdoc/put-bucket-lifecycle",
-        "--operation",
-        "PutBucketLifecycle",
-    ]
-    assert legacy_put_lifecycle_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutBucketLifecycle", "PutBucketLifecycle"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate PutBucketLifecycle lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketLifecycle",
-                "PutBucketLifecycleConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutBucketLifecycle lane accepted")
-    get_bucket_notification_configuration_certainty = (
-        "read-only; only one complete validated exact 200 "
-        "Bucket_Control_Found response observed exposes the complete current "
-        "notification configuration; every incomplete, invalid, or "
-        "non-observed response exposes no configuration state; the client "
-        "performs no automatic retry"
-    )
-    get_bucket_notification_configuration_reconciliation = (
-        "a later GetBucketNotificationConfiguration observes only the bucket "
-        "notification configuration current at read time; it does not prove "
-        "that a prior mutation caused the observed state or authorize "
-        "automatic replay"
-    )
-    get_bucket_notification_configuration_symbols = [
-        "Prepare_Get_Bucket_Notification_Configuration",
-        "Decode_Get_Bucket_Notification_Configuration_Response",
-        "Execute_Get_Bucket_Notification_Configuration",
-        "Get_Bucket_Notification_Operation",
-        "Get_Notification_Configuration",
-        "Finish",
-    ]
-
-    def assert_get_bucket_notification_configuration_registry(candidate):
-        entry = candidate.operations["GetBucketNotificationConfiguration"]
-        assert entry.get("public_name") == "Get_Notification_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "get_bucket_notification_configuration"
-        )
-        assert entry.get("certainty") == (
-            get_bucket_notification_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            get_bucket_notification_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            get_bucket_notification_configuration_symbols
-        )
-        assert entry["coverage"]["backend"] == "covered"
-        assert entry["coverage"]["server"] == "covered"
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert "exact 200 empty notification document" in entry["absence"]
-        assert "30-event domains" in entry["exclusions"][1]
-        assert candidate.qualification[
-            "get_bucket_notification_configuration"
-        ][0][-1] == (
-            "tools/verify-bucket-notification-configuration-preparation.py"
-        )
-
-    def reject_get_bucket_notification_configuration_registry(
-        candidate, label
-    ):
-        try:
-            assert_get_bucket_notification_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetBucketNotificationConfiguration registry accepted"
-        )
-
-    assert_get_bucket_notification_configuration_registry(registry)
-    missing_get_bucket_notification_configuration_name = copy.deepcopy(
-        registry
-    )
-    del missing_get_bucket_notification_configuration_name.operations[
-        "GetBucketNotificationConfiguration"
-    ]["public_name"]
-    reject_get_bucket_notification_configuration_registry(
-        missing_get_bucket_notification_configuration_name, "missing name"
-    )
-    wrong_get_bucket_notification_configuration_name = copy.deepcopy(registry)
-    wrong_get_bucket_notification_configuration_name.operations[
-        "GetBucketNotificationConfiguration"
-    ]["public_name"] = "Get_Notification"
-    reject_get_bucket_notification_configuration_registry(
-        wrong_get_bucket_notification_configuration_name, "deprecated name"
-    )
-    retry_get_bucket_notification_configuration = copy.deepcopy(registry)
-    retry_get_bucket_notification_configuration.operations[
-        "GetBucketNotificationConfiguration"
-    ]["certainty"] = "read-only; retry automatically"
-    reject_get_bucket_notification_configuration_registry(
-        retry_get_bucket_notification_configuration, "automatic retry"
-    )
-    causal_get_bucket_notification_configuration = copy.deepcopy(registry)
-    causal_get_bucket_notification_configuration.operations[
-        "GetBucketNotificationConfiguration"
-    ]["reconciliation"] = "the read proves the mutation caused state"
-    reject_get_bucket_notification_configuration_registry(
-        causal_get_bucket_notification_configuration, "causal reconciliation"
-    )
-    absent_get_bucket_notification_configuration = copy.deepcopy(registry)
-    absent_get_bucket_notification_configuration.operations[
-        "GetBucketNotificationConfiguration"
-    ]["absence"] = "404 NoSuchNotificationConfiguration means absent"
-    reject_get_bucket_notification_configuration_registry(
-        absent_get_bucket_notification_configuration, "invented absence code"
-    )
-    cross_get_bucket_notification_configuration_symbol = copy.deepcopy(
-        registry
-    )
-    cross_get_bucket_notification_configuration_symbol.operations[
-        "GetBucketNotificationConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification"
-    reject_get_bucket_notification_configuration_registry(
-        cross_get_bucket_notification_configuration_symbol,
-        "deprecated-operation symbol",
-    )
-    get_notification_qualification, get_notification_commands = (
-        s3_operation.qualification_plan(
-            registry, ["GetBucketNotificationConfiguration"]
-        )
-    )
-    assert get_notification_qualification == (
-        "get_bucket_notification_configuration"
-    )
-    assert get_notification_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-bucket-notification-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert get_notification_commands[4] == ["./tools/verify-coverage.sh"]
-    assert get_notification_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "{repository}/build/gnatdoc/get-bucket-notification-configuration",
-        "--operation",
-        "GetBucketNotificationConfiguration",
-    ]
-    assert get_notification_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "GetBucketNotificationConfiguration",
-                "GetBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate GetBucketNotificationConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "GetBucketNotificationConfiguration",
-                "PutBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError(
-            "mixed BucketNotificationConfiguration lane accepted"
-        )
-    get_bucket_notification_symbols = [
-        "Prepare_Get_Bucket_Notification_Configuration",
-        "Decode_Get_Bucket_Notification_Configuration_Response",
-        "Execute_Get_Bucket_Notification_Configuration",
-        "Get_Bucket_Notification_Operation",
-        "Get_Notification_Configuration",
-        "Finish",
-    ]
-
-    def assert_get_bucket_notification_registry(candidate):
-        entry = candidate.operations["GetBucketNotification"]
-        assert entry.get("public_name") == "Get_Notification_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_bucket_notification"
-        assert entry.get("codec") == (
-            "strict_current_rest_xml_compatibility_subset"
-        )
-        assert entry.get("ada_symbols") == get_bucket_notification_symbols
-        assert entry["coverage"] == {
-            "backend": "covered",
-            "client": "partial",
-            "server": "covered",
-            "corpus": "covered",
-        }
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert entry["provenance"]["client"] == "handwritten"
-        assert entry["provenance"]["tests"] == "handwritten"
-        assert "current-shape compatibility subset" in entry["exclusions"][1]
-        assert "InvocationRole" in entry["exclusions"][1]
-        assert "legacy-only" in entry["certainty"]
-        assert "does not prove" in entry["reconciliation"]
-        commands = candidate.qualification["get_bucket_notification"]
-        assert commands[0][-1] == (
-            "tools/verify-bucket-notification-configuration-preparation.py"
-        )
-        assert commands[5] == [
-            "./tools/build-api-docs.sh",
-            "{repository}/build/gnatdoc/get-bucket-notification",
-        ]
-
-    def reject_get_bucket_notification_registry(candidate, label):
-        try:
-            assert_get_bucket_notification_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetBucketNotification registry accepted"
-        )
-
-    assert_get_bucket_notification_registry(registry)
-    missing_get_bucket_notification_name = copy.deepcopy(registry)
-    del missing_get_bucket_notification_name.operations[
-        "GetBucketNotification"
-    ]["public_name"]
-    reject_get_bucket_notification_registry(
-        missing_get_bucket_notification_name, "missing compatibility name"
-    )
-    full_get_bucket_notification = copy.deepcopy(registry)
-    full_get_bucket_notification.operations["GetBucketNotification"][
-        "coverage"
-    ]["client"] = "covered"
-    reject_get_bucket_notification_registry(
-        full_get_bucket_notification, "invented complete client coverage"
-    )
-    hidden_get_bucket_notification_gap = copy.deepcopy(registry)
-    hidden_get_bucket_notification_gap.operations[
-        "GetBucketNotification"
-    ]["exclusions"][1] = "all deprecated output shapes are accepted"
-    reject_get_bucket_notification_registry(
-        hidden_get_bucket_notification_gap, "hidden legacy gap"
-    )
-    cross_get_bucket_notification_symbol = copy.deepcopy(registry)
-    cross_get_bucket_notification_symbol.operations[
-        "GetBucketNotification"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification"
-    reject_get_bucket_notification_registry(
-        cross_get_bucket_notification_symbol, "obsolete symbol"
-    )
-    malformed_get_bucket_notification_lane = copy.deepcopy(registry)
-    malformed_get_bucket_notification_lane.qualification[
-        "get_bucket_notification"
-    ][5].extend(
-        ["--operation", "GetBucketNotificationConfiguration"]
-    )
-    reject_get_bucket_notification_registry(
-        malformed_get_bucket_notification_lane, "cross-operation lane"
-    )
-    legacy_notification_qualification, legacy_notification_commands = (
-        s3_operation.qualification_plan(registry, ["GetBucketNotification"])
-    )
-    assert legacy_notification_qualification == "get_bucket_notification"
-    assert legacy_notification_commands[0][-1] == (
-        "tools/verify-bucket-notification-configuration-preparation.py"
-    )
-    assert legacy_notification_commands[2] == [
-        "@tests", "./bin/s3_bucket_notification_configuration_corpus"
-    ]
-    assert legacy_notification_commands[5][-2:] == [
-        "--operation", "GetBucketNotification"
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "GetBucketNotification",
-                "GetBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed legacy notification lane accepted")
-    put_bucket_notification_configuration_certainty = (
-        "only a complete validated exact 200 Bucket_Control_Updated response "
-        "observed reports Bucket_Notification_Mutation_Completed; a "
-        "response-observed exact recognized authentication, authorization, "
-        "not-found, invalid-request, malformed-XML, MethodNotAllowed, or "
-        "NotImplemented rejection or definite non-admission reports "
-        "Bucket_Notification_Mutation_Definitely_Not_Applied; pre-admission "
-        "cancellation reports "
-        "Bucket_Notification_Mutation_Cancelled_Before_Admission; every "
-        "other possibly admitted, incomplete, retryable, or corrupt outcome "
-        "reports Bucket_Notification_Mutation_Outcome_Unknown; no automatic "
-        "replay"
-    )
-    put_bucket_notification_configuration_reconciliation = (
-        "a later GetBucketNotificationConfiguration may observe the bucket "
-        "notification configuration current at read time before a "
-        "caller-selected retry, but it neither proves that the lost mutation "
-        "caused the observed state nor upgrades mutation certainty; no "
-        "automatic replay"
-    )
-    put_bucket_notification_configuration_symbols = [
-        "Prepare_Put_Bucket_Notification_Configuration",
-        "Execute_Put_Bucket_Notification_Configuration",
-        "Put_Bucket_Notification_Operation",
-        "Set_Notification_Configuration",
-        "Finish",
-    ]
-
-    def assert_put_bucket_notification_configuration_registry(candidate):
-        entry = candidate.operations["PutBucketNotificationConfiguration"]
-        assert entry.get("public_name") == "Set_Notification_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == (
-            "put_bucket_notification_configuration"
-        )
-        assert entry.get("codec") == (
-            "strict_rest_xml_request_and_empty_response"
-        )
-        assert entry.get("certainty") == (
-            put_bucket_notification_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            put_bucket_notification_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == (
-            put_bucket_notification_configuration_symbols
-        )
-        assert entry["coverage"]["backend"] == "covered"
-        assert entry["coverage"]["server"] == "covered"
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert entry.get("absence") == "not_applicable"
-        assert "30-event domains" in entry["exclusions"][1]
-        assert "no SDK checksum or Content-MD5" in entry["exclusions"][2]
-        assert candidate.qualification[
-            "put_bucket_notification_configuration"
-        ][0][-1] == (
-            "tools/verify-bucket-notification-configuration-preparation.py"
-        )
-
-    def reject_put_bucket_notification_configuration_registry(
-        candidate, label
-    ):
-        try:
-            assert_put_bucket_notification_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketNotificationConfiguration registry accepted"
-        )
-
-    assert_put_bucket_notification_configuration_registry(registry)
-    missing_put_bucket_notification_configuration_name = copy.deepcopy(
-        registry
-    )
-    del missing_put_bucket_notification_configuration_name.operations[
-        "PutBucketNotificationConfiguration"
-    ]["public_name"]
-    reject_put_bucket_notification_configuration_registry(
-        missing_put_bucket_notification_configuration_name, "missing name"
-    )
-    wrong_put_bucket_notification_configuration_name = copy.deepcopy(registry)
-    wrong_put_bucket_notification_configuration_name.operations[
-        "PutBucketNotificationConfiguration"
-    ]["public_name"] = "Get_Notification_Configuration"
-    reject_put_bucket_notification_configuration_registry(
-        wrong_put_bucket_notification_configuration_name, "wrong name"
-    )
-    replay_put_bucket_notification_configuration = copy.deepcopy(registry)
-    replay_put_bucket_notification_configuration.operations[
-        "PutBucketNotificationConfiguration"
-    ]["certainty"] = "automatically replay PutBucketNotificationConfiguration"
-    reject_put_bucket_notification_configuration_registry(
-        replay_put_bucket_notification_configuration, "automatic replay"
-    )
-    causal_put_bucket_notification_configuration = copy.deepcopy(registry)
-    causal_put_bucket_notification_configuration.operations[
-        "PutBucketNotificationConfiguration"
-    ]["reconciliation"] = "the read proves the mutation caused state"
-    reject_put_bucket_notification_configuration_registry(
-        causal_put_bucket_notification_configuration, "causal reconciliation"
-    )
-    checksum_put_bucket_notification_configuration = copy.deepcopy(registry)
-    checksum_put_bucket_notification_configuration.operations[
-        "PutBucketNotificationConfiguration"
-    ]["exclusions"][2] = "the client adds Content-MD5"
-    reject_put_bucket_notification_configuration_registry(
-        checksum_put_bucket_notification_configuration, "invented checksum"
-    )
-    cross_put_bucket_notification_configuration_symbol = copy.deepcopy(
-        registry
-    )
-    cross_put_bucket_notification_configuration_symbol.operations[
-        "PutBucketNotificationConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Put_Bucket_Notification"
-    reject_put_bucket_notification_configuration_registry(
-        cross_put_bucket_notification_configuration_symbol,
-        "deprecated-operation symbol",
-    )
-    put_notification_qualification, put_notification_commands = (
-        s3_operation.qualification_plan(
-            registry, ["PutBucketNotificationConfiguration"]
-        )
-    )
-    assert put_notification_qualification == (
-        "put_bucket_notification_configuration"
-    )
-    assert put_notification_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-bucket-notification-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_notification_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_notification_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "{repository}/build/gnatdoc/put-bucket-notification-configuration",
-        "--operation",
-        "PutBucketNotificationConfiguration",
-    ]
-    assert put_notification_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketNotificationConfiguration",
-                "PutBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate PutBucketNotificationConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketNotificationConfiguration",
-                "GetBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError(
-            "mixed PutBucketNotificationConfiguration lane accepted"
-        )
-    put_bucket_notification_certainty = (
-        "mutation compatibility subset; "
-        + put_bucket_notification_configuration_certainty
-    )
-    put_bucket_notification_reconciliation = (
-        "a later GetBucketNotification or "
-        "GetBucketNotificationConfiguration may observe the bucket "
-        "notification configuration current at read time before a "
-        "caller-selected retry, but it neither proves that the lost mutation "
-        "caused the observed state nor upgrades mutation certainty; no "
-        "automatic replay"
-    )
-    put_bucket_notification_symbols = [
-        "Prepare_Put_Bucket_Notification_Configuration",
-        "Execute_Put_Bucket_Notification_Configuration",
-        "Put_Bucket_Notification_Operation",
-        "Set_Notification_Configuration",
-        "Finish",
-    ]
-
-    def assert_put_bucket_notification_registry(candidate):
-        entry = candidate.operations["PutBucketNotification"]
-        assert entry.get("public_name") == "Set_Notification_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_bucket_notification"
-        assert entry.get("codec") == (
-            "strict_current_rest_xml_mutation_compatibility_subset"
-        )
-        assert entry.get("certainty") == put_bucket_notification_certainty
-        assert entry.get("reconciliation") == (
-            put_bucket_notification_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_bucket_notification_symbols
-        assert entry["coverage"] == {
-            "backend": "covered",
-            "client": "partial",
-            "server": "covered",
-            "corpus": "covered",
-        }
-        assert entry["provenance"]["backend"] == "handwritten"
-        assert entry["provenance"]["server"] == "handwritten"
-        assert entry["provenance"]["client"] == "handwritten"
-        assert entry["provenance"]["tests"] == "handwritten"
-        assert (
-            "client coverage uses the current-shape compatibility subset"
-            in entry["exclusions"][1]
-        )
-        assert "legacy server recognizes bounded well-formed" in (
-            entry["exclusions"][1]
-        )
-        assert "only to return NotImplemented" in entry["exclusions"][1]
-        assert "InvocationRole" in entry["exclusions"][1]
-        assert "requires exact Content-MD5 or generated checksum" in (
-            entry["exclusions"][2]
-        )
-        assert "nonempty configuration is rejected as NotImplemented" in (
-            entry["exclusions"][2]
-        )
-        commands = candidate.qualification["put_bucket_notification"]
-        assert commands[0][-1] == (
-            "tools/verify-bucket-notification-configuration-preparation.py"
-        )
-
-    def reject_put_bucket_notification_registry(candidate, label):
-        try:
-            assert_put_bucket_notification_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutBucketNotification registry accepted"
-        )
-
-    assert_put_bucket_notification_registry(registry)
-    missing_put_bucket_notification_name = copy.deepcopy(registry)
-    del missing_put_bucket_notification_name.operations[
-        "PutBucketNotification"
-    ]["public_name"]
-    reject_put_bucket_notification_registry(
-        missing_put_bucket_notification_name, "missing compatibility name"
-    )
-    full_put_bucket_notification = copy.deepcopy(registry)
-    full_put_bucket_notification.operations[
-        "PutBucketNotification"
-    ]["coverage"]["client"] = "covered"
-    reject_put_bucket_notification_registry(
-        full_put_bucket_notification, "invented complete client coverage"
-    )
-    hidden_put_bucket_notification_gap = copy.deepcopy(registry)
-    hidden_put_bucket_notification_gap.operations[
-        "PutBucketNotification"
-    ]["exclusions"][1] = "all deprecated notification shapes are accepted"
-    reject_put_bucket_notification_registry(
-        hidden_put_bucket_notification_gap, "hidden legacy shape gap"
-    )
-    checksum_put_bucket_notification = copy.deepcopy(registry)
-    checksum_put_bucket_notification.operations[
-        "PutBucketNotification"
-    ]["exclusions"][2] = "the current client sends the legacy checksums"
-    reject_put_bucket_notification_registry(
-        checksum_put_bucket_notification, "invented checksum transport"
-    )
-    replay_put_bucket_notification = copy.deepcopy(registry)
-    replay_put_bucket_notification.operations[
-        "PutBucketNotification"
-    ]["certainty"] = "automatically replay PutBucketNotification"
-    reject_put_bucket_notification_registry(
-        replay_put_bucket_notification, "automatic replay"
-    )
-    causal_put_bucket_notification = copy.deepcopy(registry)
-    causal_put_bucket_notification.operations[
-        "PutBucketNotification"
-    ]["reconciliation"] = "the later read proves the mutation caused state"
-    reject_put_bucket_notification_registry(
-        causal_put_bucket_notification, "causal reconciliation"
-    )
-    cross_put_bucket_notification_symbol = copy.deepcopy(registry)
-    cross_put_bucket_notification_symbol.operations[
-        "PutBucketNotification"
-    ]["ada_symbols"][0] = "Prepare_Get_Bucket_Notification_Configuration"
-    reject_put_bucket_notification_registry(
-        cross_put_bucket_notification_symbol, "cross-operation symbol"
-    )
-    malformed_put_bucket_notification_lane = copy.deepcopy(registry)
-    malformed_put_bucket_notification_lane.qualification[
-        "put_bucket_notification"
-    ][0][-1] = "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
-    reject_put_bucket_notification_registry(
-        malformed_put_bucket_notification_lane, "cross-operation lane"
-    )
-    legacy_put_notification_qualification, legacy_put_notification_commands = (
-        s3_operation.qualification_plan(registry, ["PutBucketNotification"])
-    )
-    assert legacy_put_notification_qualification == "put_bucket_notification"
-    assert legacy_put_notification_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-bucket-notification-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_bucket_notification_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert legacy_put_notification_commands[4] == [
-        "./tools/verify-coverage.sh"
-    ]
-    assert legacy_put_notification_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "{repository}/build/gnatdoc/put-bucket-notification",
-        "--operation",
-        "PutBucketNotification",
-    ]
-    assert legacy_put_notification_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutBucketNotification", "PutBucketNotification"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate PutBucketNotification lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            [
-                "PutBucketNotification",
-                "PutBucketNotificationConfiguration",
-            ],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutBucketNotification lane accepted")
-    get_object_lock_configuration_certainty = (
-        "read-only; only one complete validated 200 "
-        "Object_Lock_Configuration_Found response observed exposes the "
-        "presence-preserving configuration; every incomplete, invalid, or "
-        "non-observed response exposes no configuration state; the client "
-        "performs no automatic retry"
-    )
-    get_object_lock_configuration_reconciliation = (
-        "a later GetObjectLockConfiguration observes only the bucket "
-        "configuration current at read time; it does not prove that a prior "
-        "mutation caused the observed state or authorize automatic replay"
-    )
-    get_object_lock_configuration_symbols = [
-        "Prepare_Get_Object_Lock_Configuration",
-        "Decode_Get_Object_Lock_Configuration_Response",
-        "Execute_Get_Object_Lock_Configuration",
-        "Get_Object_Lock_Configuration_Operation",
-        "Get_Object_Lock_Configuration",
-        "Finish",
-    ]
-
-    def assert_get_object_lock_configuration_registry(candidate):
-        entry = candidate.operations["GetObjectLockConfiguration"]
-        assert entry.get("public_name") == "Get_Object_Lock_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_object_lock_configuration"
-        assert (
-            entry.get("certainty") == get_object_lock_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            get_object_lock_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == get_object_lock_configuration_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "ObjectLockConfiguration" in entry["absence"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert candidate.qualification[
-            "get_object_lock_configuration"
-        ][0][-1] == "tools/verify-get-object-lock-configuration-preparation.py"
-
-    def reject_get_object_lock_configuration_registry(candidate, label):
-        try:
-            assert_get_object_lock_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} GetObjectLockConfiguration registry accepted"
-        )
-
-    assert_get_object_lock_configuration_registry(registry)
-    missing_get_object_lock_configuration_name = copy.deepcopy(registry)
-    del missing_get_object_lock_configuration_name.operations[
-        "GetObjectLockConfiguration"
-    ]["public_name"]
-    reject_get_object_lock_configuration_registry(
-        missing_get_object_lock_configuration_name, "missing name"
-    )
-    wrong_get_object_lock_configuration_name = copy.deepcopy(registry)
-    wrong_get_object_lock_configuration_name.operations[
-        "GetObjectLockConfiguration"
-    ]["public_name"] = "Get_Retention"
-    reject_get_object_lock_configuration_registry(
-        wrong_get_object_lock_configuration_name, "wrong name"
-    )
-    retry_get_object_lock_configuration = copy.deepcopy(registry)
-    retry_get_object_lock_configuration.operations[
-        "GetObjectLockConfiguration"
-    ]["certainty"] = "read-only; retry automatically"
-    reject_get_object_lock_configuration_registry(
-        retry_get_object_lock_configuration, "automatic retry"
-    )
-    causal_get_object_lock_configuration = copy.deepcopy(registry)
-    causal_get_object_lock_configuration.operations[
-        "GetObjectLockConfiguration"
-    ]["reconciliation"] = "the read proves the prior mutation caused state"
-    reject_get_object_lock_configuration_registry(
-        causal_get_object_lock_configuration, "causal reconciliation"
-    )
-    server_get_object_lock_configuration = copy.deepcopy(registry)
-    server_get_object_lock_configuration.operations[
-        "GetObjectLockConfiguration"
-    ]["coverage"]["server"] = "covered"
-    reject_get_object_lock_configuration_registry(
-        server_get_object_lock_configuration, "invented server coverage"
-    )
-    cross_get_object_lock_configuration_symbol = copy.deepcopy(registry)
-    cross_get_object_lock_configuration_symbol.operations[
-        "GetObjectLockConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Get_Object_Retention"
-    reject_get_object_lock_configuration_registry(
-        cross_get_object_lock_configuration_symbol, "cross-operation symbol"
-    )
-    get_object_lock_configuration_qualification, lock_commands = (
-        s3_operation.qualification_plan(
-            registry, ["GetObjectLockConfiguration"]
-        )
-    )
-    assert (
-        get_object_lock_configuration_qualification
-        == "get_object_lock_configuration"
-    )
-    assert lock_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-object-lock-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_object_lock_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert lock_commands[4] == ["./tools/verify-coverage.sh"]
-    assert lock_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-object-lock-configuration-gnatdoc",
-        "--operation",
-        "GetObjectLockConfiguration",
-    ]
-    assert lock_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetObjectLockConfiguration", "GetObjectLockConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate GetObjectLockConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["GetObjectLockConfiguration", "PutObjectLockConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed ObjectLockConfiguration lane accepted")
-    put_object_lock_configuration_certainty = (
-        "only a complete validated 200 reports "
-        "Object_Lock_Configuration_Mutation_Completed; an exact recognized "
-        "S3 rejection or definite non-admission reports "
-        "Object_Lock_Configuration_Mutation_Definitely_Not_Applied, "
-        "pre-admission cancellation reports "
-        "Object_Lock_Configuration_Mutation_Cancelled_Before_Admission, and "
-        "every other possibly admitted or incomplete outcome reports "
-        "Object_Lock_Configuration_Mutation_Outcome_Unknown; no automatic "
-        "replay"
-    )
-    put_object_lock_configuration_reconciliation = (
-        "a later GetObjectLockConfiguration may observe the bucket "
-        "configuration current at read time before a caller-selected retry, "
-        "but it neither proves that the lost mutation caused the observed "
-        "state nor upgrades mutation certainty; no automatic replay"
-    )
-    put_object_lock_configuration_symbols = [
-        "Prepare_Put_Object_Lock_Configuration",
-        "Decode_Put_Object_Lock_Configuration_Response",
-        "Execute_Put_Object_Lock_Configuration",
-        "Put_Object_Lock_Configuration_Operation",
-        "Put_Object_Lock_Configuration",
-        "Finish",
-    ]
-
-    def assert_put_object_lock_configuration_registry(candidate):
-        entry = candidate.operations["PutObjectLockConfiguration"]
-        assert entry.get("public_name") == "Put_Object_Lock_Configuration"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_object_lock_configuration"
-        assert (
-            entry.get("certainty") == put_object_lock_configuration_certainty
-        )
-        assert entry.get("reconciliation") == (
-            put_object_lock_configuration_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_object_lock_configuration_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "no automatic replay" in entry["certainty"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert candidate.qualification[
-            "put_object_lock_configuration"
-        ][0][-1] == "tools/verify-put-object-lock-configuration-preparation.py"
-
-    def reject_put_object_lock_configuration_registry(candidate, label):
-        try:
-            assert_put_object_lock_configuration_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(
-            f"{label} PutObjectLockConfiguration registry accepted"
-        )
-
-    assert_put_object_lock_configuration_registry(registry)
-    missing_put_object_lock_configuration_name = copy.deepcopy(registry)
-    del missing_put_object_lock_configuration_name.operations[
-        "PutObjectLockConfiguration"
-    ]["public_name"]
-    reject_put_object_lock_configuration_registry(
-        missing_put_object_lock_configuration_name, "missing name"
-    )
-    wrong_put_object_lock_configuration_name = copy.deepcopy(registry)
-    wrong_put_object_lock_configuration_name.operations[
-        "PutObjectLockConfiguration"
-    ]["public_name"] = "Put_Retention"
-    reject_put_object_lock_configuration_registry(
-        wrong_put_object_lock_configuration_name, "wrong name"
-    )
-    retry_put_object_lock_configuration = copy.deepcopy(registry)
-    retry_put_object_lock_configuration.operations[
-        "PutObjectLockConfiguration"
-    ]["certainty"] = "mutation; retry automatically after a lost response"
-    reject_put_object_lock_configuration_registry(
-        retry_put_object_lock_configuration, "automatic retry"
-    )
-    causal_put_object_lock_configuration = copy.deepcopy(registry)
-    causal_put_object_lock_configuration.operations[
-        "PutObjectLockConfiguration"
-    ]["reconciliation"] = "the read proves the prior mutation caused state"
-    reject_put_object_lock_configuration_registry(
-        causal_put_object_lock_configuration, "causal reconciliation"
-    )
-    server_put_object_lock_configuration = copy.deepcopy(registry)
-    server_put_object_lock_configuration.operations[
-        "PutObjectLockConfiguration"
-    ]["coverage"]["server"] = "covered"
-    reject_put_object_lock_configuration_registry(
-        server_put_object_lock_configuration, "invented server coverage"
-    )
-    cross_put_object_lock_configuration_symbol = copy.deepcopy(registry)
-    cross_put_object_lock_configuration_symbol.operations[
-        "PutObjectLockConfiguration"
-    ]["ada_symbols"][0] = "Prepare_Put_Object_Retention"
-    reject_put_object_lock_configuration_registry(
-        cross_put_object_lock_configuration_symbol, "cross-operation symbol"
-    )
-    put_object_lock_configuration_qualification, lock_commands = (
-        s3_operation.qualification_plan(
-            registry, ["PutObjectLockConfiguration"]
-        )
-    )
-    assert (
-        put_object_lock_configuration_qualification
-        == "put_object_lock_configuration"
-    )
-    assert lock_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-object-lock-configuration-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_object_lock_configuration_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert lock_commands[4] == ["./tools/verify-coverage.sh"]
-    assert lock_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-object-lock-configuration-gnatdoc",
-        "--operation",
-        "PutObjectLockConfiguration",
-    ]
-    assert lock_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["PutObjectLockConfiguration", "PutObjectLockConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError(
-            "duplicate PutObjectLockConfiguration lane accepted"
-        )
-    try:
-        s3_operation.qualification_plan(
-            registry,
-            ["PutObjectLockConfiguration", "GetObjectLockConfiguration"],
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutObjectLockConfiguration lane accepted")
-    get_object_retention_certainty = (
-        "read-only; only one complete validated 200 Object_Retention_Found "
-        "response observed exposes the presence-preserving retention value; "
-        "every incomplete, invalid, or non-observed response exposes no "
-        "retention state; the client performs no automatic retry"
-    )
-    get_object_retention_reconciliation = (
-        "an explicit VersionId observes retention for that selected object "
-        "generation and an omitted VersionId observes the generation current "
-        "at read time; the modeled response does not echo a version identifier "
-        "and neither form proves that a prior mutation caused the observed "
-        "retention state"
-    )
-    get_object_retention_symbols = [
-        "Prepare_Get_Object_Retention",
-        "Decode_Get_Object_Retention_Response",
-        "Execute_Get_Object_Retention",
-        "Get_Retention_Operation",
-        "Get_Retention",
-        "Finish",
-    ]
-
-    def assert_get_object_retention_registry(candidate):
-        entry = candidate.operations["GetObjectRetention"]
-        assert entry.get("public_name") == "Get_Retention"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "get_object_retention"
-        assert entry.get("certainty") == get_object_retention_certainty
-        assert (
-            entry.get("reconciliation") == get_object_retention_reconciliation
-        )
-        assert entry.get("ada_symbols") == get_object_retention_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "NoSuchVersion" in entry["absence"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["get_object_retention"][0][-1]
-            == "tools/verify-get-object-retention-preparation.py"
-        )
-
-    def reject_get_object_retention_registry(candidate, label):
-        try:
-            assert_get_object_retention_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(f"{label} GetObjectRetention registry accepted")
-
-    assert_get_object_retention_registry(registry)
-    missing_get_object_retention_name = copy.deepcopy(registry)
-    del missing_get_object_retention_name.operations["GetObjectRetention"][
-        "public_name"
-    ]
-    reject_get_object_retention_registry(
-        missing_get_object_retention_name, "missing name"
-    )
-    wrong_get_object_retention_name = copy.deepcopy(registry)
-    wrong_get_object_retention_name.operations["GetObjectRetention"][
-        "public_name"
-    ] = "Get_Legal_Hold"
-    reject_get_object_retention_registry(
-        wrong_get_object_retention_name, "wrong name"
-    )
-    retry_get_object_retention = copy.deepcopy(registry)
-    retry_get_object_retention.operations["GetObjectRetention"][
-        "certainty"
-    ] = "read-only; retry automatically"
-    reject_get_object_retention_registry(
-        retry_get_object_retention, "automatic retry"
-    )
-    server_get_object_retention = copy.deepcopy(registry)
-    server_get_object_retention.operations["GetObjectRetention"]["coverage"][
-        "server"
-    ] = "covered"
-    reject_get_object_retention_registry(
-        server_get_object_retention, "invented server coverage"
-    )
-    cross_get_object_retention_symbol = copy.deepcopy(registry)
-    cross_get_object_retention_symbol.operations["GetObjectRetention"][
-        "ada_symbols"
-    ][0] = "Prepare_Get_Object_Legal_Hold"
-    reject_get_object_retention_registry(
-        cross_get_object_retention_symbol, "cross-operation symbol"
-    )
-    get_object_retention_qualification, get_object_retention_commands = (
-        s3_operation.qualification_plan(registry, ["GetObjectRetention"])
-    )
-    assert get_object_retention_qualification == "get_object_retention"
-    assert get_object_retention_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-get-object-retention-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_get_object_retention_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert get_object_retention_commands[4] == ["./tools/verify-coverage.sh"]
-    assert get_object_retention_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-get-object-retention-gnatdoc",
-        "--operation",
-        "GetObjectRetention",
-    ]
-    assert get_object_retention_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetObjectRetention", "GetObjectRetention"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate GetObjectRetention lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["GetObjectRetention", "PutObjectRetention"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert (
-            "do not share one qualification lane" in str(error)
-            or "has no focused qualification lane" in str(error)
-        )
-    else:
-        raise AssertionError("mixed GetObjectRetention lane accepted")
-    put_object_retention_certainty = (
-        "only a complete validated 200 reports "
-        "Retention_Mutation_Completed; an exact recognized S3 rejection or "
-        "definite non-admission reports "
-        "Retention_Mutation_Definitely_Not_Applied, pre-admission "
-        "cancellation reports "
-        "Retention_Mutation_Cancelled_Before_Admission, and every other "
-        "possibly admitted or incomplete outcome reports "
-        "Retention_Mutation_Outcome_Unknown; no automatic replay"
-    )
-    put_object_retention_reconciliation = (
-        "an explicit VersionId permits a read-only GetObjectRetention "
-        "observation of that selected object generation and an omitted "
-        "VersionId permits only an observation of the generation current at "
-        "reconciliation time; neither observation proves that the lost "
-        "mutation caused the state or upgrades mutation certainty without "
-        "caller-supplied serialization authority"
-    )
-    put_object_retention_symbols = [
-        "Prepare_Put_Object_Retention",
-        "Decode_Put_Object_Retention_Response",
-        "Execute_Put_Object_Retention",
-        "Put_Retention_Operation",
-        "Put_Retention",
-        "Finish",
-    ]
-
-    def assert_put_object_retention_registry(candidate):
-        entry = candidate.operations["PutObjectRetention"]
-        assert entry.get("public_name") == "Put_Retention"
-        assert entry.get("decision_status") == "reviewed"
-        assert entry.get("human_decisions_resolved") is True
-        assert entry.get("qualification") == "put_object_retention"
-        assert entry.get("certainty") == put_object_retention_certainty
-        assert (
-            entry.get("reconciliation") == put_object_retention_reconciliation
-        )
-        assert entry.get("ada_symbols") == put_object_retention_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
-        assert entry["provenance"]["backend"] == "absent"
-        assert entry["provenance"]["server"] == "absent"
-        assert "no automatic replay" in entry["certainty"]
-        assert "server route are absent" in entry["exclusions"][0]
-        assert (
-            candidate.qualification["put_object_retention"][0][-1]
-            == "tools/verify-put-object-retention-preparation.py"
-        )
-
-    def reject_put_object_retention_registry(candidate, label):
-        try:
-            assert_put_object_retention_registry(candidate)
-        except (AssertionError, IndexError, KeyError, TypeError):
-            return
-        raise AssertionError(f"{label} PutObjectRetention registry accepted")
-
-    assert_put_object_retention_registry(registry)
-    missing_put_object_retention_name = copy.deepcopy(registry)
-    del missing_put_object_retention_name.operations["PutObjectRetention"][
-        "public_name"
-    ]
-    reject_put_object_retention_registry(
-        missing_put_object_retention_name, "missing name"
-    )
-    wrong_put_object_retention_name = copy.deepcopy(registry)
-    wrong_put_object_retention_name.operations["PutObjectRetention"][
-        "public_name"
-    ] = "Put_Legal_Hold"
-    reject_put_object_retention_registry(
-        wrong_put_object_retention_name, "wrong name"
-    )
-    retry_put_object_retention = copy.deepcopy(registry)
-    retry_put_object_retention.operations["PutObjectRetention"][
-        "certainty"
-    ] = "mutation; retry automatically after a lost response"
-    reject_put_object_retention_registry(
-        retry_put_object_retention, "automatic retry"
-    )
-    causal_put_object_retention = copy.deepcopy(registry)
-    causal_put_object_retention.operations["PutObjectRetention"][
-        "reconciliation"
-    ] = "GetObjectRetention proves the lost mutation caused the state"
-    reject_put_object_retention_registry(
-        causal_put_object_retention, "causal reconciliation"
-    )
-    server_put_object_retention = copy.deepcopy(registry)
-    server_put_object_retention.operations["PutObjectRetention"]["coverage"][
-        "server"
-    ] = "covered"
-    reject_put_object_retention_registry(
-        server_put_object_retention, "invented server coverage"
-    )
-    cross_put_object_retention_symbol = copy.deepcopy(registry)
-    cross_put_object_retention_symbol.operations["PutObjectRetention"][
-        "ada_symbols"
-    ][0] = "Prepare_Put_Object_Legal_Hold"
-    reject_put_object_retention_registry(
-        cross_put_object_retention_symbol, "cross-operation symbol"
-    )
-    put_object_retention_qualification, put_object_retention_commands = (
-        s3_operation.qualification_plan(registry, ["PutObjectRetention"])
-    )
-    assert put_object_retention_qualification == "put_object_retention"
-    assert put_object_retention_commands[:4] == [
-        [
-            "uv", "run", "--python", "3.13", "--",
-            "tools/verify-put-object-retention-preparation.py",
-        ],
-        ["@tests", "alr", "-n", "build"],
-        ["@tests", "./bin/s3_put_object_retention_corpus"],
-        ["@tests", "./bin/s3_http_socket_corpus"],
-    ]
-    assert put_object_retention_commands[4] == ["./tools/verify-coverage.sh"]
-    assert put_object_retention_commands[5] == [
-        "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-object-retention-gnatdoc",
-        "--operation",
-        "PutObjectRetention",
-    ]
-    assert put_object_retention_commands[6:] == [
-        ["./tools/ci/check-repository.sh", "{model}"],
-        ["git", "diff", "--check"],
-    ]
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutObjectRetention", "PutObjectRetention"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "appears more than once" in str(error)
-    else:
-        raise AssertionError("duplicate PutObjectRetention lane accepted")
-    try:
-        s3_operation.qualification_plan(
-            registry, ["PutObjectRetention", "GetObjectRetention"]
-        )
-    except s3_operation.Audit_Error as error:
-        assert "do not share one qualification lane" in str(error)
-    else:
-        raise AssertionError("mixed PutObjectRetention lane accepted")
     tagging_lanes = {
         "DeleteObjectTagging": (
             "delete_object_tagging",

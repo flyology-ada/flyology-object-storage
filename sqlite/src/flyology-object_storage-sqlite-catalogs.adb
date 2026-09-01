@@ -15,11 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 19 adds exact singleton replication and website
-   --  documents after schema 18 added query-keyed intelligent-tiering and
-   --  inventory documents. Changing this private value or table set requires
-   --  a transactional migration; never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 20;
+   --  Persisted schema 21 adds immutable bucket Object Lock enablement and
+   --  per-version legal-hold and retention state after schema 20 added exact
+   --  notification documents. Changing this private value or table set
+   --  requires a transactional migration; never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 21;
    --  The pinned S3 analytics, metrics, intelligent-tiering, and inventory
    --  contracts allow exactly 1,000 query-keyed configurations per bucket and
    --  family. This private mirror keeps catalog enforcement aligned.
@@ -132,6 +132,28 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "PRIMARY KEY(bucket_name,tag_key)," &
      "UNIQUE(bucket_name,ordinal)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Object_Lock_Schema : constant String :=
+     "CREATE TABLE bucket_object_locks (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "enabled INTEGER NOT NULL CHECK(enabled=1)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;" &
+     "CREATE TABLE object_version_locks (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "legal_hold INTEGER NOT NULL DEFAULT 0 CHECK(legal_hold IN (0,1))," &
+     "retention_mode INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(retention_mode BETWEEN 0 AND 2)," &
+     "retention_until INTEGER NOT NULL DEFAULT 0," &
+     "retention_text BLOB NOT NULL DEFAULT X''," &
+     "PRIMARY KEY(bucket_name,object_key,version_id)," &
+     "CHECK((retention_mode=0 AND retention_until=0 AND " &
+     "length(retention_text)=0) OR (retention_mode BETWEEN 1 AND 2 AND " &
+     "length(retention_text) BETWEEN 1 AND 35))," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    --  Persisted schema-11 table and column spelling for the independently
    --  optional S3 members.  Reordering or renaming fields changes catalog
@@ -1394,6 +1416,63 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
           (Item, "SELECT count(*) FROM pragma_foreign_key_check") = 0;
    end Valid_Generation_Schema;
 
+   function Valid_Object_Lock_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Table_Name, Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='" & Table_Name & "' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info(" &
+         "'bucket_object_locks')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info(" &
+           "'object_version_locks')") = 7
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'bucket_object_locks')") = 1
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_version_locks')") = 3
+        and then Has_SQL
+          ("bucket_object_locks", "check(enabled=1)")
+        and then Has_SQL
+          ("bucket_object_locks", "primarykey")
+        and then Has_SQL
+          ("bucket_object_locks",
+           "foreignkey(bucket_name)referencesbuckets(name)" &
+           "ondeletecascade")
+        and then Has_SQL
+          ("object_version_locks",
+           "primarykey(bucket_name,object_key,version_id)")
+        and then Has_SQL
+          ("object_version_locks", "check(legal_holdin(0,1))")
+        and then Has_SQL
+          ("object_version_locks",
+           "check(retention_modebetween0and2)")
+        and then Has_SQL
+          ("object_version_locks",
+           "check((retention_mode=0andretention_until=0and" &
+           "length(retention_text)=0)or(retention_modebetween1and2and" &
+           "length(retention_text)between1and35))")
+        and then Has_SQL
+          ("object_version_locks",
+           "foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeletecascade");
+   end Valid_Object_Lock_Schema;
+
    function Text_Scalar (Item : in out Catalog; SQL : String) return String is
       Query : DB.Statement;
    begin
@@ -1524,8 +1603,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Intelligent_Tiering_Schema &
          Bucket_Inventory_Schema &
          Generation_Schema &
+         Object_Lock_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=20;");
+         "PRAGMA user_version=21;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -2169,6 +2249,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V19;
 
+   procedure Upgrade_From_V20 (Item : in out Catalog) is
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('bucket_object_locks','object_version_locks')");
+      In_Transaction : Boolean := False;
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 20";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Object_Lock_Schema & "PRAGMA user_version=21;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V20;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -2219,6 +2325,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 18 => null;
             when 19 => null;
             when 20 => null;
+            when 21 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -2275,6 +2382,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V19 (Item);
             Version := 20;
          end if;
+         if Version = 20 then
+            Upgrade_From_V20 (Item);
+            Version := 21;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -2303,7 +2414,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_analytics_configurations'," &
          "'bucket_metrics_configurations'," &
          "'bucket_intelligent_tiering_configurations'," &
-         "'bucket_inventory_configurations')") /= 27
+         "'bucket_inventory_configurations','bucket_object_locks'," &
+         "'object_version_locks')") /= 29
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -2319,6 +2431,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Generation_Schema (Item)
       then
          raise Catalog_Error with "SQLite generation schema is incomplete";
+      elsif not Valid_Object_Lock_Schema (Item)
+      then
+         raise Catalog_Error with "SQLite Object Lock schema is incomplete";
       elsif not Valid_Public_Access_Block_Schema (Item)
       then
          raise Catalog_Error with
@@ -2540,12 +2655,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Locked : Boolean := False;
       Step   : DB.Step_Result;
       Current_MFA : Long_Long_Integer := 0;
+      Lock_Enabled : Boolean := False;
    begin
       Item.Gate.Acquire;
       Locked := True;
       DB.Prepare
         (Query, Item.Database,
-         "SELECT mfa_delete_status FROM buckets WHERE name=?1");
+         "SELECT mfa_delete_status," &
+         "EXISTS(SELECT 1 FROM bucket_object_locks l " &
+         "WHERE l.bucket_name=b.name) FROM buckets b WHERE b.name=?1");
       DB.Bind (Query, 1, Name);
       Step := DB.Step (Query);
       if Step /= DB.Row then
@@ -2555,9 +2673,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          return;
       end if;
       Current_MFA := DB.Column (Query, 0);
+      Lock_Enabled := DB.Column (Query, 1) = 1;
       if Current_MFA not in 0 .. 2 then
          raise Catalog_Error with
            "bucket MFA-delete catalog value is invalid";
+      elsif Lock_Enabled
+        and then Configuration.Status = Versioning_Suspended
+      then
+         Result := Invalid_Request;
+         Item.Gate.Release;
+         Locked := False;
+         return;
       elsif not MFA_Validated
         and then
           (Current_MFA =
@@ -2650,6 +2776,85 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Get_Bucket_Versioning;
+
+   procedure Enable_Bucket_Object_Lock
+     (Item : in out Catalog; Bucket : String; Result : out Status)
+   is
+      Query  : DB.Statement;
+      Insert : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT versioning_status FROM buckets WHERE name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) /= DB.Row then
+         Result := Not_Found;
+      elsif DB.Column (Query, 0) /=
+        Long_Long_Integer
+          (Bucket_Versioning_Status'Pos (Versioning_Enabled))
+      then
+         Result := Invalid_Request;
+      else
+         DB.Prepare
+           (Insert, Item.Database,
+            "INSERT OR IGNORE INTO bucket_object_locks" &
+            "(bucket_name,enabled) VALUES(?1,1)");
+         DB.Bind (Insert, 1, Bucket);
+         if DB.Step (Insert) /= DB.Done then
+            raise Catalog_Error with
+              "bucket Object Lock insert returned a row";
+         end if;
+         Result := Success;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Enable_Bucket_Object_Lock;
+
+   procedure Get_Bucket_Object_Lock
+     (Item   : in out Catalog;
+      Bucket : String;
+      State  : out Bucket_Object_Lock_Status;
+      Result : out Status)
+   is
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      State := Bucket_Object_Lock_Disabled;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM bucket_object_locks l " &
+         "WHERE l.bucket_name=b.name) FROM buckets b WHERE b.name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) /= DB.Row then
+         Result := Not_Found;
+      else
+         State :=
+           (if DB.Column (Query, 0) = 1
+            then Bucket_Object_Lock_Enabled
+            else Bucket_Object_Lock_Disabled);
+         Result := Success;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         State := Bucket_Object_Lock_Disabled;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Bucket_Object_Lock;
 
    procedure Put_Bucket_Control
      (Item   : in out Catalog;
@@ -5540,11 +5745,45 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end Read_Selected;
 
       procedure Remove_Selected is
+         Protection : DB.Statement;
+         Legal_Hold : Long_Long_Integer := 0;
+         Retention_Mode : Long_Long_Integer := 0;
+         Retention_Until : Long_Long_Integer := 0;
       begin
          if not Found then
             Outcome.Kind := Backends.No_Version_Removed;
             Result := Success;
             return;
+         end if;
+         if not Is_Marker then
+            DB.Prepare
+              (Protection, Item.Database,
+               "SELECT legal_hold,retention_mode,retention_until FROM " &
+               "object_version_locks WHERE bucket_name=?1 " &
+               "AND object_key=?2 AND version_id=?3");
+            DB.Bind (Protection, 1, Bucket);
+            DB.Bind_Bytes (Protection, 2, Key);
+            DB.Bind_Bytes (Protection, 3, US.To_String (Selected_ID));
+            if DB.Step (Protection) = DB.Row then
+               Legal_Hold := DB.Column (Protection, 0);
+               Retention_Mode := DB.Column (Protection, 1);
+               Retention_Until := DB.Column (Protection, 2);
+            end if;
+            if Legal_Hold not in 0 .. 1
+              or else Retention_Mode not in 0 .. 2
+              or else Retention_Until < 0
+            then
+               raise Catalog_Error with
+                 "invalid selected Object Lock state";
+            elsif Legal_Hold = 1
+              or else
+                (Retention_Mode /= 0
+                 and then Retention_Until > Long_Long_Integer (Modified))
+            then
+               Retired_Payload := US.Null_Unbounded_String;
+               Result := Access_Denied;
+               return;
+            end if;
          end if;
          DB.Prepare
            (Delete_Current, Item.Database,
@@ -6023,6 +6262,335 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Identity);
       end if;
    end Selected_Data_Version_Internal;
+
+   procedure Check_Object_Lock_Bucket_Internal
+     (Item               : in out Catalog;
+      Bucket             : String;
+      Require_Versioning : Boolean;
+      Result             : out Status)
+   is
+      Query : DB.Statement;
+      Versioning_Value : Long_Long_Integer;
+   begin
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT b.versioning_status," &
+         "EXISTS(SELECT 1 FROM bucket_object_locks l " &
+         "WHERE l.bucket_name=b.name) FROM buckets b WHERE b.name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) /= DB.Row then
+         Result := Bucket_Not_Found;
+         return;
+      end if;
+      Versioning_Value := DB.Column (Query, 0);
+      if Versioning_Value not in 0 .. 2 then
+         raise Catalog_Error with "invalid Object Lock versioning state";
+      elsif DB.Column (Query, 1) /= 1
+        or else
+          (Require_Versioning
+           and then Versioning_Value /=
+             Long_Long_Integer
+               (Bucket_Versioning_Status'Pos (Versioning_Enabled)))
+      then
+         Result := Invalid_Request;
+      else
+         Result := Success;
+      end if;
+   end Check_Object_Lock_Bucket_Internal;
+
+   procedure Put_Object_Legal_Hold
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : Object_Legal_Hold_Status;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Update : DB.Statement;
+      Locked : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Check_Object_Lock_Bucket_Internal
+        (Item, Bucket, Require_Versioning => True, Result => Result);
+      if Result = Success then
+         Selected_Data_Version_Internal
+           (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+            Result);
+      end if;
+      if Result = Success then
+         DB.Prepare
+           (Update, Item.Database,
+            "INSERT INTO object_version_locks(" &
+            "bucket_name,object_key,version_id,legal_hold) " &
+            "VALUES(?1,?2,?3,?4) " &
+            "ON CONFLICT(bucket_name,object_key,version_id) " &
+            "DO UPDATE SET legal_hold=excluded.legal_hold");
+         DB.Bind (Update, 1, Bucket);
+         DB.Bind_Bytes (Update, 2, Key);
+         DB.Bind_Bytes (Update, 3, US.To_String (Version_ID));
+         DB.Bind
+           (Update, 4,
+            Long_Long_Integer (Object_Legal_Hold_Status'Pos (Value)));
+         if DB.Step (Update) /= DB.Done then
+            raise Catalog_Error with "legal-hold update returned a row";
+         end if;
+         DB.Commit (Item.Database);
+      else
+         DB.Rollback (Item.Database);
+         Identity := (others => <>);
+      end if;
+      In_Transaction := False;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Identity := (others => <>);
+         raise;
+   end Put_Object_Legal_Hold;
+
+   procedure Get_Object_Legal_Hold
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : out Object_Legal_Hold_Status;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Query : DB.Statement;
+      Locked : Boolean := False;
+      Raw_Value : Long_Long_Integer := 0;
+   begin
+      Value := Object_Legal_Hold_Off;
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check_Object_Lock_Bucket_Internal
+        (Item, Bucket, Require_Versioning => False, Result => Result);
+      if Result = Success then
+         Selected_Data_Version_Internal
+           (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+            Result);
+      end if;
+      if Result = Success then
+         DB.Prepare
+           (Query, Item.Database,
+            "SELECT legal_hold FROM object_version_locks " &
+            "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3");
+         DB.Bind (Query, 1, Bucket);
+         DB.Bind_Bytes (Query, 2, Key);
+         DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+         if DB.Step (Query) = DB.Row then
+            Raw_Value := DB.Column (Query, 0);
+         end if;
+         if Raw_Value not in 0 .. 1 then
+            raise Catalog_Error with "invalid legal-hold catalog value";
+         end if;
+         Value := Object_Legal_Hold_Status'Val (Natural (Raw_Value));
+      else
+         Identity := (others => <>);
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         Value := Object_Legal_Hold_Off;
+         Identity := (others => <>);
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Object_Legal_Hold;
+
+   procedure Put_Object_Retention
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : Object_Retention;
+      Modified : Unix_Time;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Query  : DB.Statement;
+      Update : DB.Statement;
+      Locked : Boolean := False;
+      In_Transaction : Boolean := False;
+      Current_Mode : Long_Long_Integer := 0;
+      Current_Until : Long_Long_Integer := 0;
+   begin
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Check_Object_Lock_Bucket_Internal
+        (Item, Bucket, Require_Versioning => True, Result => Result);
+      if Result = Success then
+         Selected_Data_Version_Internal
+           (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+            Result);
+      end if;
+      if Result = Success then
+         DB.Prepare
+           (Query, Item.Database,
+            "SELECT retention_mode,retention_until FROM " &
+            "object_version_locks WHERE bucket_name=?1 AND object_key=?2 " &
+            "AND version_id=?3");
+         DB.Bind (Query, 1, Bucket);
+         DB.Bind_Bytes (Query, 2, Key);
+         DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+         if DB.Step (Query) = DB.Row then
+            Current_Mode := DB.Column (Query, 0);
+            Current_Until := DB.Column (Query, 1);
+         end if;
+         if Current_Mode not in 0 .. 2 or else Current_Until < 0 then
+            raise Catalog_Error with "invalid retention catalog value";
+         elsif Current_Mode /= 0
+           and then Current_Until > Long_Long_Integer (Modified)
+           and then
+             (Current_Mode /=
+                Long_Long_Integer (Object_Retention_Mode'Pos (Value.Mode))
+              or else Current_Until >
+                Long_Long_Integer (Value.Retain_Until))
+         then
+            Result := Access_Denied;
+         end if;
+      end if;
+      if Result = Success then
+         DB.Prepare
+           (Update, Item.Database,
+            "INSERT INTO object_version_locks(" &
+            "bucket_name,object_key,version_id,retention_mode," &
+            "retention_until,retention_text) VALUES(?1,?2,?3,?4,?5,?6) " &
+            "ON CONFLICT(bucket_name,object_key,version_id) DO UPDATE SET " &
+            "retention_mode=excluded.retention_mode," &
+            "retention_until=excluded.retention_until," &
+            "retention_text=excluded.retention_text");
+         DB.Bind (Update, 1, Bucket);
+         DB.Bind_Bytes (Update, 2, Key);
+         DB.Bind_Bytes (Update, 3, US.To_String (Version_ID));
+         DB.Bind
+           (Update, 4,
+            Long_Long_Integer (Object_Retention_Mode'Pos (Value.Mode)));
+         DB.Bind (Update, 5, Long_Long_Integer (Value.Retain_Until));
+         DB.Bind_Bytes (Update, 6, US.To_String (Value.Exact_Text));
+         if DB.Step (Update) /= DB.Done then
+            raise Catalog_Error with "retention update returned a row";
+         end if;
+         DB.Commit (Item.Database);
+      else
+         DB.Rollback (Item.Database);
+         Identity := (others => <>);
+      end if;
+      In_Transaction := False;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Identity := (others => <>);
+         raise;
+   end Put_Object_Retention;
+
+   procedure Get_Object_Retention
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : out Object_Retention;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Query : DB.Statement;
+      Locked : Boolean := False;
+      Raw_Mode : Long_Long_Integer := 0;
+      Raw_Until : Long_Long_Integer := 0;
+      Raw_Text : US.Unbounded_String;
+   begin
+      Value :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check_Object_Lock_Bucket_Internal
+        (Item, Bucket, Require_Versioning => False, Result => Result);
+      if Result = Success then
+         Selected_Data_Version_Internal
+           (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+            Result);
+      end if;
+      if Result = Success then
+         DB.Prepare
+           (Query, Item.Database,
+            "SELECT retention_mode,retention_until,retention_text FROM " &
+            "object_version_locks WHERE bucket_name=?1 AND object_key=?2 " &
+            "AND version_id=?3");
+         DB.Bind (Query, 1, Bucket);
+         DB.Bind_Bytes (Query, 2, Key);
+         DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
+         if DB.Step (Query) = DB.Row then
+            Raw_Mode := DB.Column (Query, 0);
+            Raw_Until := DB.Column (Query, 1);
+            Raw_Text := US.To_Unbounded_String (DB.Column_Bytes (Query, 2));
+         end if;
+         if Raw_Mode not in 0 .. 2
+           or else Raw_Until < 0
+           or else US.Length (Raw_Text) > 35
+           or else
+             ((Raw_Mode = 0)
+              /= (Raw_Until = 0 and then US.Length (Raw_Text) = 0))
+         then
+            raise Catalog_Error with "invalid retention catalog value";
+         end if;
+         Value :=
+           (Mode => Object_Retention_Mode'Val (Natural (Raw_Mode)),
+            Retain_Until => Unix_Time (Raw_Until),
+            Exact_Text => Raw_Text);
+      else
+         Identity := (others => <>);
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         Value :=
+           (Mode         => No_Object_Retention,
+            Retain_Until => 0,
+            Exact_Text   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Object_Retention;
 
    procedure Find_Selected_Object
      (Item     : in out Catalog;

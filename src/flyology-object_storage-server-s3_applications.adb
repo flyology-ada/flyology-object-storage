@@ -37,6 +37,7 @@ with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Notifications;
+with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.Replication;
@@ -81,6 +82,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Metrics renames S3.Metrics;
    package Model renames S3.Model;
    package Notifications renames S3.Notifications;
+   package Object_Lock renames S3.Object_Lock;
    package Object_Reads renames S3.Object_Reads;
    package Replication renames S3.Replication;
    package Tagging renames S3.Tagging;
@@ -100,6 +102,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
    use type Multipart.Multipart_Query_Kind;
+   use type Object_Lock.Legal_Hold_Status;
+   use type Object_Lock.Object_Lock_Enabled_Status;
+   use type Object_Lock.Retention_Mode;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
    use type S3.Core.Range_Parse_Status;
@@ -443,6 +448,74 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Image (Image'First + 11 .. Image'First + 18) & ".000Z";
    end Last_Modified;
 
+   function Retention_Deadline (Value : String) return Unix_Time is
+      Text : constant String (1 .. Value'Length) := Value;
+
+      function Decimal (First, Last : Positive) return Long_Long_Integer is
+         Result : Long_Long_Integer := 0;
+      begin
+         for Index in First .. Last loop
+            Result := Result * 10 +
+              Character'Pos (Text (Index)) - Character'Pos ('0');
+         end loop;
+         return Result;
+      end Decimal;
+
+      Year   : Long_Long_Integer := Decimal (1, 4);
+      Month  : constant Long_Long_Integer := Decimal (6, 7);
+      Day    : constant Long_Long_Integer := Decimal (9, 10);
+      Hour   : constant Long_Long_Integer := Decimal (12, 13);
+      Minute : constant Long_Long_Integer := Decimal (15, 16);
+      Second : constant Long_Long_Integer := Decimal (18, 19);
+      Zone   : Positive := 20;
+      Fractional : Boolean := False;
+      Offset_Minutes : Long_Long_Integer := 0;
+      Era : Long_Long_Integer;
+      Year_Of_Era : Long_Long_Integer;
+      Day_Of_Year : Long_Long_Integer;
+      Day_Of_Era : Long_Long_Integer;
+      Days : Long_Long_Integer;
+      Seconds : Long_Long_Integer;
+   begin
+      if Text (Zone) = '.' then
+         Zone := Zone + 1;
+         while Zone <= Text'Last and then Text (Zone) in '0' .. '9' loop
+            Fractional := Fractional or else Text (Zone) /= '0';
+            Zone := Zone + 1;
+         end loop;
+      end if;
+      if Text (Zone) /= 'Z' then
+         Offset_Minutes :=
+           Decimal (Zone + 1, Zone + 2) * 60 +
+           Decimal (Zone + 4, Zone + 5);
+         if Text (Zone) = '-' then
+            Offset_Minutes := -Offset_Minutes;
+         end if;
+      end if;
+
+      if Month <= 2 then
+         Year := Year - 1;
+      end if;
+      Era := Year / 400;
+      Year_Of_Era := Year - Era * 400;
+      Day_Of_Year :=
+        (153 * (Month + (if Month > 2 then -3 else 9)) + 2) / 5 +
+        Day - 1;
+      Day_Of_Era :=
+        Year_Of_Era * 365 + Year_Of_Era / 4 - Year_Of_Era / 100 +
+        Day_Of_Year;
+      Days := Era * 146_097 + Day_Of_Era - 719_468;
+      --  Unix_Time has one-second precision. Round any nonzero fractional
+      --  timestamp upward so protection cannot end before the requested
+      --  retain-until instant.
+      Seconds := Days * 86_400 + Hour * 3_600 + Minute * 60 + Second -
+        Offset_Minutes * 60 + Boolean'Pos (Fractional);
+      if Seconds < 0 then
+         raise Constraint_Error with "retention precedes Unix epoch";
+      end if;
+      return Unix_Time (Seconds);
+   end Retention_Deadline;
+
    function HTTP_Last_Modified (Value : Unix_Time) return String is
       type Short_Name is new String (1 .. 3);
       Weekdays : constant array (Natural range 0 .. 6) of Short_Name :=
@@ -664,9 +737,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Website, Get_Bucket_Website, Delete_Bucket_Website,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
+         Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_ACL, Get_Object_ACL,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
+         Put_Object_Legal_Hold, Get_Object_Legal_Hold,
+         Put_Object_Retention, Get_Object_Retention,
          Get_Object_Attributes,
          Delete_Objects,
          List_Objects, List_Objects_V2, List_Object_Versions,
@@ -1529,6 +1605,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else
           (Parsed.Kind = Requests.Object_Target
            and then Is_Valid_Tagging_Query (Query_Text, Method));
+      Has_Bucket_Object_Lock_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&object-lock&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&object-lock=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutObjectLockConfiguration&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetObjectLockConfiguration&") /= 0;
+      Has_Legal_Hold_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&legal-hold&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&legal-hold=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutObjectLegalHold&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetObjectLegalHold&") /= 0;
+      Has_Retention_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&retention&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&retention=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutObjectRetention&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetObjectRetention&") /= 0;
       Is_Bucket_Versioning_Query : constant Boolean :=
         Query_Text = "versioning"
         or else Query_Text = "versioning="
@@ -1666,10 +1766,116 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             return (others => <>);
       end Parse_ACL_Query;
 
+      type Object_Lock_Query_Result is record
+         Valid          : Boolean := False;
+         Has_Version_ID : Boolean := False;
+         Version_ID     : US.Unbounded_String;
+      end record;
+
+      function Parse_Object_Lock_Query
+        (Query          : String;
+         Subresource    : String;
+         Operation_ID   : String;
+         Allow_Version  : Boolean) return Object_Lock_Query_Result
+      is
+         Result       : Object_Lock_Query_Result;
+         Seen_Resource : Boolean := False;
+         Seen_Version : Boolean := False;
+         Seen_X_ID    : Boolean := False;
+         Count        : Natural := 1;
+      begin
+         if Query'Length = 0
+           or else Query'Length > Requests.Maximum_Target_Length
+         then
+            return Result;
+         end if;
+         for Item of Query loop
+            if Item = '&' then
+               Count := Count + 1;
+            end if;
+         end loop;
+         if Count > (if Allow_Version then 3 else 2) then
+            return Result;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index = First then
+                     return Result;
+                  end if;
+                  declare
+                     Pair_Text : constant String := Raw (First .. Index - 1);
+                     Equals : constant Natural :=
+                       Ada.Strings.Fixed.Index (Pair_Text, "=");
+                     Name : constant String := Decode_ACL_Query_Component
+                       ((if Equals = 0 then Pair_Text
+                         elsif Equals = Pair_Text'First then ""
+                         else Pair_Text (Pair_Text'First .. Equals - 1)));
+                     Value : constant String := Decode_ACL_Query_Component
+                       ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                         else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  begin
+                     if Name = Subresource then
+                        if Seen_Resource or else Value'Length /= 0 then
+                           return Result;
+                        end if;
+                        Seen_Resource := True;
+                     elsif Name = "versionId" then
+                        if not Allow_Version or else Seen_Version
+                          or else Value'Length = 0
+                          or else not Deletions.Valid_Version_ID (Value)
+                        then
+                           return Result;
+                        end if;
+                        Seen_Version := True;
+                        Result.Has_Version_ID := True;
+                        Result.Version_ID := US.To_Unbounded_String (Value);
+                     elsif Name = "x-id" then
+                        if Seen_X_ID or else Value /= Operation_ID then
+                           return Result;
+                        end if;
+                        Seen_X_ID := True;
+                     else
+                        return Result;
+                     end if;
+                  end;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         Result.Valid := Seen_Resource;
+         return Result;
+      exception
+         when Constraint_Error =>
+            return (others => <>);
+      end Parse_Object_Lock_Query;
+
       ACL_Request : constant ACL_Query_Result :=
         Parse_ACL_Query
           (Query_Text, Parsed.Kind = Requests.Object_Target, Method);
+      Bucket_Object_Lock_Request : constant Object_Lock_Query_Result :=
+        Parse_Object_Lock_Query
+          (Query_Text, "object-lock",
+           (if Method = "PUT" then "PutObjectLockConfiguration"
+            else "GetObjectLockConfiguration"),
+           Allow_Version => False);
+      Legal_Hold_Request : constant Object_Lock_Query_Result :=
+        Parse_Object_Lock_Query
+          (Query_Text, "legal-hold",
+           (if Method = "PUT" then "PutObjectLegalHold"
+            else "GetObjectLegalHold"),
+           Allow_Version => True);
+      Retention_Request : constant Object_Lock_Query_Result :=
+        Parse_Object_Lock_Query
+          (Query_Text, "retention",
+           (if Method = "PUT" then "PutObjectRetention"
+            else "GetObjectRetention"),
+           Allow_Version => True);
       ACL_Query_Invalid : Boolean := False;
+      Object_Lock_Query_Invalid : Boolean := False;
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
       Delete_Request : Deletions.Delete_Object_Request;
@@ -1716,6 +1922,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       function Tagging_Version_Selector return Backends.Version_Selector is
         (To_Version_Selector
            (Tagging_Request.Has_Version_ID, Tagging_Request.Version_ID));
+
+      function Legal_Hold_Version_Selector return
+        Backends.Version_Selector is
+        (To_Version_Selector
+           (Legal_Hold_Request.Has_Version_ID,
+            Legal_Hold_Request.Version_ID));
+
+      function Retention_Version_Selector return
+        Backends.Version_Selector is
+        (To_Version_Selector
+           (Retention_Request.Has_Version_ID,
+            Retention_Request.Version_ID));
 
       function Attributes_Version_Selector return Backends.Version_Selector is
         (To_Version_Selector
@@ -2717,6 +2935,88 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end if;
       end Read_Bucket_Scalar_Control;
 
+      procedure Read_Object_Lock_Document
+        (Operation_Name : String;
+         Auth_Value     : Authentication.Outcome;
+         Length_Value   : Backends.Source_Length;
+         Document       : out US.Unbounded_String;
+         Accepted       : out Boolean)
+      is
+         MD5_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "content-md5");
+         SDK_Count : constant Natural := Apps.Request_Header_Count
+           (X, "x-amz-sdk-checksum-algorithm");
+      begin
+         Document := US.Null_Unbounded_String;
+         Accepted := False;
+         if MD5_Count /= 1 or else SDK_Count > 1
+           or else Apps.Request_Header_Count (X, "content-type") > 1
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " requires one Content-MD5",
+               Target_Text);
+         elsif not S3.Wire_Core.Valid_Base64
+           (Apps.Request_Header (X, "content-md5"), 16)
+         then
+            Send_Error
+              (X, 400, "InvalidDigest",
+               "The Content-MD5 header is invalid", Target_Text);
+         elsif Length_Value.Kind = Backends.Known
+           and then Length_Value.Bytes > Maximum_Bucket_Configuration_Body
+         then
+            Send_Error
+              (X, 400, "EntityTooLarge",
+               "The Object Lock document exceeds the maximum size",
+               Target_Text);
+         else
+            declare
+               Source : Request_IO.Request_Source :=
+                 (Checksum_Kind => S3.Core.CRC64NVME,
+                  Length_Value  => Length_Value,
+                  Expected_Hash => Auth_Value.Payload_Hash,
+                  Check_Hash    =>
+                    US.To_String (Auth_Value.Payload_Hash) /=
+                      S3.SigV4.Unsigned_Payload,
+                  Hash          => GNAT.SHA256.Initial_Context,
+                  Check_Content_MD5 => True,
+                  Expected_Content_MD5 => US.To_Unbounded_String
+                    (Apps.Request_Header (X, "content-md5")),
+                  Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                  Check_Body_Checksum => False,
+                  Checksum_From_Trailer => False,
+                  Reject_Unexpected_Trailers => False,
+                  Expected_Body_Checksum => US.Null_Unbounded_String,
+                  Observed      => 0,
+                  Maximum       => Maximum_Bucket_Configuration_Body,
+                  Completed     => False,
+                  others        => <>);
+               Value : constant String := Read_Document (Source);
+            begin
+               case Verify_Document_Checksum (Value) is
+                  when Document_Checksum_OK =>
+                     Document := US.To_Unbounded_String (Value);
+                     Accepted := True;
+                  when Document_Checksum_Group_Invalid =>
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The Object Lock checksum group is invalid",
+                        Target_Text);
+                  when Document_Checksum_Value_Invalid =>
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The Object Lock checksum value is invalid",
+                        Target_Text);
+                  when Document_Checksum_Mismatch =>
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The checksum does not match the Object Lock body",
+                        Target_Text);
+               end case;
+            end;
+         end if;
+      end Read_Object_Lock_Document;
+
       function Verify_MFA_Credential
         (Principal, Credential : String) return MFA.Authorization_Status
       is
@@ -2850,6 +3150,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Parsed.Kind = Requests.Bucket_Target
            and then Method = "PUT"
            and then Has_Bucket_Versioning_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET"
+           and then Has_Bucket_Object_Lock_Query)
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -2874,6 +3178,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "GET" | "PUT"
            and then Has_Bucket_Versioning_Query
            and then not Is_Bucket_Versioning_Query;
+         Object_Lock_Query_Invalid :=
+           Method in "GET" | "PUT"
+           and then Has_Bucket_Object_Lock_Query
+           and then not Bucket_Object_Lock_Request.Valid;
          Public_Access_Block_Query_Invalid :=
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Public_Access_Block_Query
@@ -3140,6 +3448,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Versioning
             elsif Method = "GET" and then Has_Bucket_Versioning_Query
             then Get_Bucket_Versioning
+            elsif Method = "PUT" and then Has_Bucket_Object_Lock_Query
+            then Put_Object_Lock_Configuration
+            elsif Method = "GET" and then Has_Bucket_Object_Lock_Query
+            then Get_Object_Lock_Configuration
             elsif Method = "GET" and then Is_List_Objects_V2_Query
             then List_Objects_V2
             elsif Method = "GET" and then Is_List_Object_Versions_Query
@@ -3152,11 +3464,25 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          ACL_Query_Invalid :=
            Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
+         Object_Lock_Query_Invalid :=
+           (Method in "GET" | "PUT" and then Has_Legal_Hold_Query
+            and then not Legal_Hold_Request.Valid)
+           or else
+             (Method in "GET" | "PUT" and then Has_Retention_Query
+              and then not Retention_Request.Valid);
          if Looks_Like_ACL_Query then
             Operation :=
               (if Method = "GET" then Get_Object_ACL
                elsif Method = "PUT" then Put_Object_ACL
                else Unsupported_ACL);
+         elsif Method = "PUT" and then Has_Legal_Hold_Query then
+            Operation := Put_Object_Legal_Hold;
+         elsif Method = "GET" and then Has_Legal_Hold_Query then
+            Operation := Get_Object_Legal_Hold;
+         elsif Method = "PUT" and then Has_Retention_Query then
+            Operation := Put_Object_Retention;
+         elsif Method = "GET" and then Has_Retention_Query then
+            Operation := Get_Object_Retention;
          elsif Parsed.Has_Query and then Has_Tagging_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
@@ -3308,8 +3634,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
          Put_Bucket_Inventory | Put_Bucket_Replication |
          Put_Bucket_Website | Put_Bucket_Policy |
-         Put_Bucket_Versioning | Put_Object |
+         Put_Bucket_Versioning | Put_Object_Lock_Configuration |
+         Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
+         Put_Object_Legal_Hold | Put_Object_Retention |
          Complete_Multipart
           then Apps.Stream_Body else Apps.Reject_Body),
          Apps.Required_Authentication, 0, 0, 0, Apps.No_Upgrade);
@@ -3394,6 +3722,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The access-control request query is invalid", Target_Text);
          return;
+      elsif Object_Lock_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The Object Lock request query is invalid", Target_Text);
+         return;
       elsif Bucket_Versioning_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -3463,8 +3796,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
         Put_Bucket_Inventory | Put_Bucket_Replication |
         Put_Bucket_Website | Put_Bucket_Policy |
-        Put_Bucket_Versioning | Put_Object |
-        Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
+        Put_Bucket_Versioning | Put_Object_Lock_Configuration |
+        Put_Object | Put_Object_Tagging | Put_Object_Legal_Hold |
+        Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
       then
          if not Apps.Body_Complete (X) then
@@ -6672,6 +7006,126 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Send_Backend_Error
                           (X, Result, True, Target_Text);
                      end if;
+                  end if;
+               end;
+
+            when Put_Object_Lock_Configuration |
+                 Get_Object_Lock_Configuration =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Token_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bucket-object-lock-token");
+               begin
+                  if Payer_Count > 1 or else Token_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An Object Lock configuration header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if not Owner_Accepted then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Token_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object Lock tokens are not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if Operation = Put_Object_Lock_Configuration then
+                     declare
+                        Document : US.Unbounded_String;
+                        Body_Accepted : Boolean;
+                     begin
+                        Read_Object_Lock_Document
+                          ("PutObjectLockConfiguration", Auth, Length,
+                           Document, Body_Accepted);
+                        if not Body_Accepted then
+                           return;
+                        end if;
+                        declare
+                           Configuration : constant
+                             Object_Lock.Object_Lock_Configuration :=
+                               Object_Lock.Parse_Configuration
+                                 (US.To_String (Document));
+                        begin
+                           if Configuration.Rule.Is_Set then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Default retention rules are not " &
+                                 "implemented", Target_Text);
+                           elsif not Configuration.Is_Set
+                             or else Configuration.Enabled /=
+                               Object_Lock.Object_Lock_Enabled
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "Object Lock can only be enabled",
+                                 Target_Text);
+                           else
+                              Store.Enable_Bucket_Object_Lock
+                                (Bucket, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                              if Result = Success then
+                                 Apps.Respond (X, 200, "", "");
+                              else
+                                 Send_Backend_Error
+                                   (X, Result, True, Target_Text);
+                              end if;
+                           end if;
+                        end;
+                     exception
+                        when Object_Lock.Malformed_Object_Lock =>
+                           Send_Error
+                             (X, 400, "MalformedXML",
+                              "The Object Lock configuration is invalid",
+                              Target_Text);
+                     end;
+                  else
+                     declare
+                        State : Bucket_Object_Lock_Status;
+                     begin
+                        Store.Get_Bucket_Object_Lock
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           State, Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif State = Bucket_Object_Lock_Disabled then
+                           Send_Error
+                             (X, 404,
+                              "ObjectLockConfigurationNotFoundError",
+                              "Object Lock is not enabled for this bucket",
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Object_Lock.Serialize_Configuration
+                                ((Is_Set  => True,
+                                  Enabled =>
+                                    Object_Lock.Object_Lock_Enabled,
+                                  Rule    => (others => <>))));
+                        end if;
+                     end;
                   end if;
                end;
 
@@ -10677,6 +11131,249 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   --  the destination key need not exist before a PUT.
                   Send_Backend_Error (X, Result, True, Target_Text);
                end if;
+
+            when Put_Object_Legal_Hold | Get_Object_Legal_Hold |
+                 Put_Object_Retention | Get_Object_Retention =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Bypass_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bypass-governance-retention");
+                  Identity : Backends.Version_Identity;
+               begin
+                  if Payer_Count > 1 or else Bypass_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An Object Lock request header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if not Owner_Accepted then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Operation /= Put_Object_Retention
+                    and then Bypass_Count /= 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "Governance bypass only applies to retention updates",
+                        Target_Text);
+                     return;
+                  elsif Bypass_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-bypass-governance-retention") not in
+                        "true" | "false"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The governance bypass value is invalid",
+                        Target_Text);
+                     return;
+                  elsif Bypass_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-bypass-governance-retention") = "true"
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Governance bypass authorization is not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  case Operation is
+                     when Put_Object_Legal_Hold =>
+                        declare
+                           Document : US.Unbounded_String;
+                           Body_Accepted : Boolean;
+                        begin
+                           Read_Object_Lock_Document
+                             ("PutObjectLegalHold", Auth, Length, Document,
+                              Body_Accepted);
+                           if not Body_Accepted then
+                              return;
+                           end if;
+                           declare
+                              Value : constant Object_Lock.Legal_Hold :=
+                                Object_Lock.Parse_Legal_Hold
+                                  (US.To_String (Document));
+                              Storage_Value : Object_Legal_Hold_Status;
+                           begin
+                              if not Value.Is_Set
+                                or else Value.Status =
+                                  Object_Lock.Legal_Hold_Status_Absent
+                              then
+                                 Send_Error
+                                   (X, 400, "InvalidRequest",
+                                    "Legal hold Status is required",
+                                    Target_Text);
+                                 return;
+                              end if;
+                              Storage_Value :=
+                                (if Value.Status = Object_Lock.Legal_Hold_On
+                                 then Object_Legal_Hold_On
+                                 else Object_Legal_Hold_Off);
+                              Store.Put_Object_Legal_Hold
+                                (Bucket, Key, Storage_Value,
+                                 Apps.Cancellation (X), Apps.Deadline (X),
+                                 Identity, Result,
+                                 Selector => Legal_Hold_Version_Selector);
+                           end;
+                        exception
+                           when Object_Lock.Malformed_Object_Lock =>
+                              Send_Error
+                                (X, 400, "MalformedXML",
+                                 "The legal-hold document is invalid",
+                                 Target_Text);
+                              return;
+                        end;
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
+
+                     when Get_Object_Legal_Hold =>
+                        declare
+                           Value : Object_Legal_Hold_Status;
+                        begin
+                           Store.Get_Object_Legal_Hold
+                             (Bucket, Key, Apps.Cancellation (X),
+                              Apps.Deadline (X), Value, Identity, Result,
+                              Selector => Legal_Hold_Version_Selector);
+                           if Result = Success then
+                              Apps.Respond
+                                (X, 200, "application/xml",
+                                 Object_Lock.Serialize_Legal_Hold
+                                   ((Is_Set => True,
+                                     Status =>
+                                       (if Value = Object_Legal_Hold_On
+                                        then Object_Lock.Legal_Hold_On
+                                        else Object_Lock.Legal_Hold_Off))));
+                           else
+                              Send_Backend_Error
+                                (X, Result, False, Target_Text);
+                           end if;
+                        end;
+
+                     when Put_Object_Retention =>
+                        declare
+                           Document : US.Unbounded_String;
+                           Body_Accepted : Boolean;
+                        begin
+                           Read_Object_Lock_Document
+                             ("PutObjectRetention", Auth, Length, Document,
+                              Body_Accepted);
+                           if not Body_Accepted then
+                              return;
+                           end if;
+                           declare
+                              Value : constant Object_Lock.Retention :=
+                                Object_Lock.Parse_Retention
+                                  (US.To_String (Document));
+                              Date : constant String :=
+                                US.To_String (Value.Retain_Until_Date);
+                              Storage_Value : Object_Retention;
+                           begin
+                              if not Value.Is_Set
+                                or else Value.Mode =
+                                  Object_Lock.Retention_Mode_Absent
+                                or else Date'Length = 0
+                              then
+                                 Send_Error
+                                   (X, 400, "InvalidRequest",
+                                    "Retention Mode and RetainUntilDate " &
+                                    "are required", Target_Text);
+                                 return;
+                              end if;
+                              Storage_Value :=
+                                (Mode =>
+                                   (if Value.Mode =
+                                      Object_Lock.Governance_Retention
+                                    then Governance_Object_Retention
+                                    else Compliance_Object_Retention),
+                                 Retain_Until => Retention_Deadline (Date),
+                                 Exact_Text   => Value.Retain_Until_Date);
+                              Store.Put_Object_Retention
+                                (Bucket, Key, Storage_Value,
+                                 Apps.Cancellation (X), Apps.Deadline (X),
+                                 Identity, Result,
+                                 Selector => Retention_Version_Selector);
+                           end;
+                        exception
+                           when Object_Lock.Malformed_Object_Lock =>
+                              Send_Error
+                                (X, 400, "MalformedXML",
+                                 "The retention document is invalid",
+                                 Target_Text);
+                              return;
+                           when Constraint_Error =>
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The retention date cannot be represented",
+                                 Target_Text);
+                              return;
+                        end;
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
+
+                     when Get_Object_Retention =>
+                        declare
+                           Value : Object_Retention;
+                        begin
+                           Store.Get_Object_Retention
+                             (Bucket, Key, Apps.Cancellation (X),
+                              Apps.Deadline (X), Value, Identity, Result,
+                              Selector => Retention_Version_Selector);
+                           if Result = Success then
+                              Apps.Respond
+                                (X, 200, "application/xml",
+                                 Object_Lock.Serialize_Retention
+                                   ((Is_Set => True,
+                                     Mode =>
+                                       (case Value.Mode is
+                                           when No_Object_Retention =>
+                                             Object_Lock.
+                                               Retention_Mode_Absent,
+                                           when Governance_Object_Retention =>
+                                             Object_Lock.
+                                               Governance_Retention,
+                                           when
+                                             Compliance_Object_Retention =>
+                                               Object_Lock.
+                                                 Compliance_Retention),
+                                     Retain_Until_Date => Value.Exact_Text)));
+                           else
+                              Send_Backend_Error
+                                (X, Result, False, Target_Text);
+                           end if;
+                        end;
+
+                     when others =>
+                        raise Program_Error with
+                          "unexpected Object Lock object operation";
+                  end case;
+               end;
 
             when Put_Object_Tagging | Get_Object_Tagging |
                  Delete_Object_Tagging =>

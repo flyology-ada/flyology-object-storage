@@ -1,9 +1,9 @@
 # GetObjectLegalHold client qualification
 
-This record qualifies the strict bounded composable and synchronous client and
-corpus for `GetObjectLegalHold`. It does not claim Object Lock persistence in
-a Flyology backend, an authenticated Flyology server route, or external-server
-interoperability.
+This record covers the strict bounded composable and synchronous client and
+corpus for `GetObjectLegalHold`. Shared Flyology backend persistence and
+authenticated server-route evidence is recorded separately in
+`object-lock-server.md`; external-server interoperability is not claimed.
 
 ## Pinned authority and inventory
 
@@ -75,11 +75,10 @@ normalization corpus crosses every HTTP failure kind with every
 admission-certainty state. The root gate repeats the deterministic and socket
 paths three times.
 
-The machine ledger records `GetObjectLegalHold` as `missing / covered / missing
-/ covered`. Client and corpus evidence do not manufacture backend Object Lock
-state or a server route. Promoting either remaining cell requires a separately
-approved persistence contract, authenticated routing, and independent
-black-box tests.
+The machine ledger records `GetObjectLegalHold` as `covered / covered / covered
+/ covered`. This client record remains operation-specific; the shared Object
+Lock record owns backend persistence, authenticated routing, and black-box
+server evidence.
 
 ## Formal boundary
 

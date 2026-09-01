@@ -2,10 +2,10 @@
 
 ## Scope
 
-This qualification covers the backend-independent provider-owned composable
-and synchronous `PutObjectRetention` client contract. It makes no claim that
-the Flyology memory, files, SQLite, or S3 server applications implement object
-retention, and it makes no external-provider interoperability claim.
+This record covers the provider-owned composable and synchronous
+`PutObjectRetention` client contract. Shared Flyology memory, files, SQLite,
+and authenticated server evidence is recorded in `object-lock-server.md`; it
+makes no external-provider interoperability claim.
 
 The source model is the locked botocore S3 service graph at revision
 `36c34f15391da01cd717c73c0fffa747c9889768`, whose recorded service-model
@@ -92,9 +92,10 @@ The direct normalization oracle crosses every terminal HTTP failure with every
 admission certainty. The root gate drives this sequence under native and
 Flyology lightweight task owners.
 
-The machine ledger records the operation as `missing / covered / missing /
-covered`: backend and server support remain absent, while the complete typed
-client and independent deterministic and signed-wire corpora are covered.
+The machine ledger records the operation as `covered / covered / covered /
+covered`. This client record remains operation-specific; the shared Object
+Lock record owns backend persistence, authenticated routing, and black-box
+server evidence.
 
 ## Verification
 

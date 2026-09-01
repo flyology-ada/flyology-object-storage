@@ -44,6 +44,15 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   procedure Enable_Bucket_Object_Lock
+     (Item : in out Catalog; Bucket : String; Result : out Status);
+
+   procedure Get_Bucket_Object_Lock
+     (Item   : in out Catalog;
+      Bucket : String;
+      State  : out Bucket_Object_Lock_Status;
+      Result : out Status);
+
    --  Replace the ABAC state in one catalog transaction.
    --  @param Item Open catalog
    --  @param Bucket Existing bucket name
@@ -791,6 +800,43 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector);
+
+   procedure Put_Object_Legal_Hold
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : Object_Legal_Hold_Status;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status);
+
+   procedure Get_Object_Legal_Hold
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : out Object_Legal_Hold_Status;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status);
+
+   procedure Put_Object_Retention
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : Object_Retention;
+      Modified : Unix_Time;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status);
+
+   procedure Get_Object_Retention
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Value    : out Object_Retention;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status);
 
    --  Compatibility form when the selected identity is not needed.
    procedure Get_Object_Tags

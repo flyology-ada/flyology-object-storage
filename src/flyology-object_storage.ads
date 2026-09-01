@@ -250,6 +250,47 @@ is
       MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;
    end record;
 
+   --  Persisted bucket Object Lock state. Disabled is the state of a bucket
+   --  that has not received an accepted enablement request. Once enabled,
+   --  the backend contract does not permit a transition back to Disabled.
+   --  @enum Bucket_Object_Lock_Disabled Object Lock is not enabled
+   --  @enum Bucket_Object_Lock_Enabled Object Lock is enabled
+   type Bucket_Object_Lock_Status is
+     (Bucket_Object_Lock_Disabled, Bucket_Object_Lock_Enabled);
+
+   --  Persisted legal-hold state for one exact object generation. New object
+   --  generations begin Off unless a separately implemented publication path
+   --  supplies another protocol state.
+   --  @enum Object_Legal_Hold_Off The generation has no active legal hold
+   --  @enum Object_Legal_Hold_On The generation has an active legal hold
+   type Object_Legal_Hold_Status is
+     (Object_Legal_Hold_Off, Object_Legal_Hold_On);
+
+   --  Persisted retention mode for one exact object generation.
+   --  @enum No_Object_Retention The generation has no retention deadline
+   --  @enum Governance_Object_Retention Governance retention is active until
+   --    its deadline
+   --  @enum Compliance_Object_Retention Compliance retention is active until
+   --    its deadline
+   type Object_Retention_Mode is
+     (No_Object_Retention,
+      Governance_Object_Retention,
+      Compliance_Object_Retention);
+
+   --  Persisted retention state for one exact object generation. Exact_Text
+   --  preserves the validated external timestamp for a later S3 response;
+   --  Retain_Until is the corresponding UTC Unix time used for atomic delete
+   --  and replacement enforcement. Both are empty or zero when Mode is
+   --  No_Object_Retention.
+   --  @field Mode Retention mode or absence
+   --  @field Retain_Until Parsed UTC deadline
+   --  @field Exact_Text Exact validated external timestamp
+   type Object_Retention is record
+      Mode         : Object_Retention_Mode;
+      Retain_Until : Unix_Time;
+      Exact_Text   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Persisted attribute-based access-control state for a general purpose
    --  bucket. AWS defines newly created general purpose buckets as disabled;
    --  HTTP and XML spelling remain at the S3 boundary.

@@ -739,6 +739,21 @@ package Flyology.Object_Storage.Backends.Files is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   overriding procedure Enable_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status);
+
    --  Replace the persisted ABAC state through one crash-atomic publication.
    --  @param Item Filesystem store
    --  @param Bucket Existing bucket name
@@ -973,6 +988,42 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
+
+   overriding procedure Put_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Legal_Hold_Status;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Get_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Put_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Get_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Retention;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    --  Replace tags on the current, null, or opaque exact filesystem
    --  generation without changing its version identity.

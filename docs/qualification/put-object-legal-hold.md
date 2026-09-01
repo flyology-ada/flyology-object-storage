@@ -1,9 +1,9 @@
 # PutObjectLegalHold client qualification
 
-This record qualifies the bounded composable and synchronous one-shot client
-and corpus for `PutObjectLegalHold`. It does not claim legal-hold persistence
-in a Flyology backend, an authenticated Flyology server route, or external
-provider interoperability.
+This record covers the bounded composable and synchronous one-shot client and
+corpus for `PutObjectLegalHold`. Shared Flyology backend persistence and
+authenticated server-route evidence is recorded separately in
+`object-lock-server.md`; external-provider interoperability is not claimed.
 
 ## Pinned authority and inventory
 
@@ -101,9 +101,9 @@ response. The next server oracle proves that no automatic replay occurs. The
 root gate drives the sequence under native and Flyology lightweight task
 owners.
 
-The machine ledger records the operation as `missing / covered / missing /
-covered`. Client and corpus qualification do not manufacture backend state or
-a server route; those require separate persistence, routing, and independent
+The machine ledger records the operation as `covered / covered / covered /
+covered`. This client record remains operation-specific; the shared Object
+Lock record owns backend persistence, authenticated routing, and independent
 black-box evidence.
 
 ## Formal boundary

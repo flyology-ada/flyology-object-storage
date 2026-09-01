@@ -407,7 +407,7 @@ def main() -> int:
         (
             "Catalogs.Put_Bucket_Notification",
             "Catalogs.Get_Bucket_Notification",
-            'Schema_Version : constant Long_Long_Integer := 20',
+            'Schema_Version : constant Long_Long_Integer := 21',
             '"CREATE TABLE bucket_notification_documents ("',
             "procedure Upgrade_From_V19",
         ),
@@ -454,7 +454,7 @@ def main() -> int:
         "notification backend corpora",
         (
             '"bucket notification configuration did not round trip"',
-            '"schema-v19 migration did not publish schema 20 atomically"',
+            '"schema-v19 migration did not publish schema 21 atomically"',
         ),
     )
     print(

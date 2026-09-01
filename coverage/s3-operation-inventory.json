@@ -2643,13 +2643,16 @@
     },
     "GetObjectLegalHold": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2664,35 +2667,46 @@
         "corpus": [
           "tools/verify-get-object-legal-hold-preparation.py",
           "docs/qualification/get-object-legal-hold.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/get-object-legal-hold/members.tsv",
           "tests/corpora/get-object-legal-hold/vectors.tsv",
           "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_get_object_legal_hold_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"
     },
     "GetObjectLockConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2707,35 +2721,46 @@
         "corpus": [
           "tools/verify-get-object-lock-configuration-preparation.py",
           "docs/qualification/get-object-lock-configuration.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/get-object-lock-configuration/members.tsv",
           "tests/corpora/get-object-lock-configuration/vectors.tsv",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_get_object_lock_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "GetObjectRetention": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2750,23 +2775,31 @@
         "corpus": [
           "tools/verify-get-object-retention-preparation.py",
           "docs/qualification/get-object-retention.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/get-object-retention/members.tsv",
           "tests/corpora/get-object-retention/vectors.tsv",
           "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_get_object_retention_corpus.adb",
           "tests/src/s3_http_socket_corpus.adb",
-          "tests/src/s3_put_object_retention_corpus.adb"
+          "tests/src/s3_put_object_retention_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"
@@ -4644,13 +4677,16 @@
     },
     "PutObjectLegalHold": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -4665,35 +4701,46 @@
         "corpus": [
           "tools/verify-put-object-legal-hold-preparation.py",
           "docs/qualification/put-object-legal-hold.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/put-object-legal-hold/members.tsv",
           "tests/corpora/put-object-legal-hold/vectors.tsv",
           "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_put_object_legal_hold_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"
     },
     "PutObjectLockConfiguration": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -4708,35 +4755,46 @@
         "corpus": [
           "tools/verify-put-object-lock-configuration-preparation.py",
           "docs/qualification/put-object-lock-configuration.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/put-object-lock-configuration/members.tsv",
           "tests/corpora/put-object-lock-configuration/vectors.tsv",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_put_object_lock_configuration_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"
     },
     "PutObjectRetention": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -4751,22 +4809,30 @@
         "corpus": [
           "tools/verify-put-object-retention-preparation.py",
           "docs/qualification/put-object-retention.md",
+          "tools/verify-object-lock-server.py",
+          "docs/qualification/object-lock-server.md",
           "tests/corpora/put-object-retention/members.tsv",
           "tests/corpora/put-object-retention/vectors.tsv",
           "tests/src/flyology-object_storage-client-objects-testing.adb",
           "tests/src/s3_put_object_retention_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"

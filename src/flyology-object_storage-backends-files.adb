@@ -39,7 +39,8 @@ package body Flyology.Object_Storage.Backends.Files is
    Tag_Magic : constant String := "FOSOBJ02";
    Part_Magic : constant String := "FOSOBJ03";
    Checksum_Magic : constant String := "FOSOBJ04";
-   Magic : constant String := "FOSOBJ05";
+   Metadata_Magic : constant String := "FOSOBJ05";
+   Magic : constant String := "FOSOBJ06";
    Generation_File_Suffix : constant String := ".fos";
    Generation_Order_Width : constant Positive := 19;
    --  Generation filenames use the full decimal width of a nonnegative
@@ -93,8 +94,13 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one bucket acceleration state.
    Bucket_Request_Payment_Magic : constant String := "FOSPAY01";
    --  Persisted-format discriminator for one bucket request-payment state.
+   Bucket_Object_Lock_Magic : constant String := "FOSLCK01";
+   --  Persisted-format discriminator for immutable bucket Object Lock state.
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
    Maximum_Checksum_Length : constant Natural := 96;
+   Maximum_Retention_Timestamp_Length : constant Natural := 35;
+   --  The bound is the externally fixed maximum accepted ISO-8601 Object
+   --  Lock timestamp width, not a backend retention-policy limit.
    Maximum_Tag_Key_Bytes : constant Natural :=
      4 * Tags.Maximum_Key_Characters;
    Maximum_Tag_Value_Bytes : constant Natural :=
@@ -103,6 +109,13 @@ package body Flyology.Object_Storage.Backends.Files is
    Body_Size_Position : constant SIO.Positive_Count := 29;
    Metadata_Position  : constant SIO.Positive_Count := 37;
    Empty_Info : constant Object_Information := (others => <>);
+   type Persisted_Object_Lock_State is record
+      Legal_Hold : Object_Legal_Hold_Status := Object_Legal_Hold_Off;
+      Retention  : Object_Retention :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => US.Null_Unbounded_String);
+   end record;
 
    protected body Sequence is
       procedure Next (Value : out Long_Long_Integer) is
@@ -467,6 +480,10 @@ package body Flyology.Object_Storage.Backends.Files is
    function Bucket_Request_Payment_Path
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "request-payment.fos"));
+
+   function Bucket_Object_Lock_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "object-lock.fos"));
 
    function Upload_Path
      (Item : Store; Bucket : String; Upload_ID : String) return String is
@@ -2042,6 +2059,44 @@ package body Flyology.Object_Storage.Backends.Files is
          raise;
    end Read_Versioning;
 
+   function Read_Bucket_Object_Lock
+     (Item : Store; Bucket : String) return Bucket_Object_Lock_Status
+   is
+      Path : constant String := Bucket_Object_Lock_Path (Item, Bucket);
+      File : SIO.File_Type;
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Path) then
+         return Bucket_Object_Lock_Disabled;
+      elsif Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      SIO.Open (File, SIO.In_File, Path);
+      if SIO.Size (File) /= SIO.Count (Bucket_Object_Lock_Magic'Length + 1)
+        or else Read_String (File, Bucket_Object_Lock_Magic'Length) /=
+          Bucket_Object_Lock_Magic
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      declare
+         Encoded : constant Character := Read_String (File, 1) (1);
+      begin
+         SIO.Close (File);
+         return
+           (case Encoded is
+              when 'D' => Bucket_Object_Lock_Disabled,
+              when 'E' => Bucket_Object_Lock_Enabled,
+              when others => raise Ada.IO_Exceptions.Data_Error);
+      end;
+   exception
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+   end Read_Bucket_Object_Lock;
+
    function Unix_Seconds
      (Value : Ada.Calendar.Time) return Long_Long_Integer is
      (Long_Long_Integer (Value - Epoch));
@@ -2053,6 +2108,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Tags : Object_Tag_Set := Empty_Object_Tags;
       Parts : Completed_Object_Part_List :=
         Completed_Object_Part_Vectors.Empty_Vector;
+      Object_Lock : Persisted_Object_Lock_State := (others => <>);
       Checksum_Value_At : access SIO.Positive_Count := null)
    is
       ETag : constant String := US.To_String (Info.Entity_Tag);
@@ -2120,6 +2176,12 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       if not Valid_Object_Metadata (Info.Metadata, Kind)
         or else not Valid_Object_Tag_Set (Tags)
+        or else US.Length (Object_Lock.Retention.Exact_Text) >
+          Maximum_Retention_Timestamp_Length
+        or else
+          ((Object_Lock.Retention.Mode = No_Object_Retention)
+           /= (Object_Lock.Retention.Retain_Until = 0
+               and then US.Length (Object_Lock.Retention.Exact_Text) = 0))
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
@@ -2172,6 +2234,21 @@ package body Flyology.Object_Storage.Backends.Files is
             Write_String (File, User_Value);
          end;
       end loop;
+      Write_String
+        (File,
+         String'(1 =>
+           (if Object_Lock.Legal_Hold = Object_Legal_Hold_On
+            then 'O' else 'F')));
+      Write_String
+        (File,
+         String'(1 =>
+           (case Object_Lock.Retention.Mode is
+              when No_Object_Retention => 'N',
+              when Governance_Object_Retention => 'G',
+              when Compliance_Object_Retention => 'C')));
+      Write_U64 (File, Long_Long_Integer (Object_Lock.Retention.Retain_Until));
+      Write_U32 (File, US.Length (Object_Lock.Retention.Exact_Text));
+      Write_String (File, US.To_String (Object_Lock.Retention.Exact_Text));
    end Write_Header;
 
    procedure Read_Header_Any_With_Metadata
@@ -2180,6 +2257,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Info      : out Object_Information;
       Tags      : out Object_Tag_Set;
       Parts     : out Completed_Object_Part_List;
+      Object_Lock : out Persisted_Object_Lock_State;
       Body_At   : out SIO.Positive_Count;
       Allow_Staged_Part : Boolean := False)
    is
@@ -2267,8 +2345,10 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       Tags := Empty_Object_Tags;
       Parts.Clear;
+      Object_Lock := (others => <>);
       if File_Magic not in
-          Magic | Checksum_Magic | Part_Magic | Tag_Magic | Legacy_Magic
+          Magic | Metadata_Magic | Checksum_Magic | Part_Magic | Tag_Magic |
+            Legacy_Magic
         or else Key_Length not in 1 .. 1_024
         or else ETag_Length > Maximum_Metadata_Length
         or else Kind_Length > Maximum_Metadata_Length
@@ -2319,7 +2399,9 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
-         if File_Magic in Magic | Checksum_Magic | Part_Magic then
+         if File_Magic in
+             Magic | Metadata_Magic | Checksum_Magic | Part_Magic
+         then
             declare
                Count : constant Natural := Read_U32 (File);
                Previous : Multipart_Part_Marker := 0;
@@ -2344,7 +2426,8 @@ package body Flyology.Object_Storage.Backends.Files is
                      end if;
                      declare
                         Checksum : constant Checksum_Information :=
-                          (if File_Magic in Magic | Checksum_Magic
+                          (if File_Magic in
+                                Magic | Metadata_Magic | Checksum_Magic
                            then Read_Checksum
                            else No_Checksum_Information);
                      begin
@@ -2372,7 +2455,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
-         if File_Magic in Magic | Checksum_Magic then
+         if File_Magic in Magic | Metadata_Magic | Checksum_Magic then
             Info.Checksum := Read_Checksum;
             if Info.Checksum.Algorithm /= No_Checksum then
                if Parts.Length > 0 then
@@ -2413,7 +2496,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end loop;
          end if;
-         if File_Magic = Magic then
+         if File_Magic in Magic | Metadata_Magic then
             Info.Metadata.Cache_Control := Read_Optional;
             Info.Metadata.Content_Disposition := Read_Optional;
             Info.Metadata.Content_Encoding := Read_Optional;
@@ -2446,6 +2529,38 @@ package body Flyology.Object_Storage.Backends.Files is
                end loop;
             end;
          end if;
+         if File_Magic = Magic then
+            declare
+               Hold_Code : constant Character := Read_String (File, 1) (1);
+               Mode_Code : constant Character := Read_String (File, 1) (1);
+               Retain_Until : constant Long_Long_Integer := Read_U64 (File);
+               Text_Length : constant Natural := Read_U32 (File);
+            begin
+               if Hold_Code not in 'F' | 'O'
+                 or else Mode_Code not in 'N' | 'G' | 'C'
+                 or else Retain_Until < 0
+                 or else Text_Length > Maximum_Retention_Timestamp_Length
+                 or else
+                   ((Mode_Code = 'N') /=
+                      (Retain_Until = 0 and then Text_Length = 0))
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Object_Lock.Legal_Hold :=
+                 (if Hold_Code = 'O'
+                  then Object_Legal_Hold_On else Object_Legal_Hold_Off);
+               Object_Lock.Retention :=
+                 (Mode =>
+                    (case Mode_Code is
+                       when 'N' => No_Object_Retention,
+                       when 'G' => Governance_Object_Retention,
+                       when 'C' => Compliance_Object_Retention,
+                       when others => raise Program_Error),
+                  Retain_Until => Unix_Time (Retain_Until),
+                  Exact_Text => US.To_Unbounded_String
+                    (Read_String (File, Text_Length)));
+            end;
+         end if;
          if not Valid_Object_Metadata
            (Info.Metadata, US.To_String (Info.Content_Type))
          then
@@ -2460,6 +2575,22 @@ package body Flyology.Object_Storage.Backends.Files is
       end;
    end Read_Header_Any_With_Metadata;
 
+   procedure Read_Header_Any_With_Metadata
+     (File      : in out SIO.File_Type;
+      Key       : out US.Unbounded_String;
+      Info      : out Object_Information;
+      Tags      : out Object_Tag_Set;
+      Parts     : out Completed_Object_Part_List;
+      Body_At   : out SIO.Positive_Count;
+      Allow_Staged_Part : Boolean := False)
+   is
+      Object_Lock : Persisted_Object_Lock_State;
+   begin
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Object_Lock, Body_At,
+         Allow_Staged_Part);
+   end Read_Header_Any_With_Metadata;
+
    procedure Read_Header_Any
      (File      : in out SIO.File_Type;
       Key       : out US.Unbounded_String;
@@ -2472,23 +2603,6 @@ package body Flyology.Object_Storage.Backends.Files is
       Read_Header_Any_With_Metadata
         (File, Key, Info, Tags, Parts, Body_At);
    end Read_Header_Any;
-
-   procedure Read_Header_With_Tags
-     (File      : in out SIO.File_Type;
-      Expected  : String;
-      Info      : out Object_Information;
-      Tags      : out Object_Tag_Set;
-      Parts     : out Completed_Object_Part_List;
-      Body_At   : out SIO.Positive_Count)
-   is
-      Key : US.Unbounded_String;
-   begin
-      Read_Header_Any_With_Metadata
-        (File, Key, Info, Tags, Parts, Body_At);
-      if US.To_String (Key) /= Expected then
-         raise Ada.IO_Exceptions.Data_Error;
-      end if;
-   end Read_Header_With_Tags;
 
    procedure Read_Header
      (File      : in out SIO.File_Type;
@@ -2517,13 +2631,22 @@ package body Flyology.Object_Storage.Backends.Files is
       Info     : out Object_Information;
       Tags     : out Object_Tag_Set;
       Parts    : out Completed_Object_Part_List;
+      Object_Lock : out Persisted_Object_Lock_State;
       Body_At  : out SIO.Positive_Count)
    is
    begin
       if not Selected.Present then
          raise Ada.IO_Exceptions.Name_Error;
       end if;
-      Read_Header_With_Tags (File, Key, Info, Tags, Parts, Body_At);
+      declare
+         Stored_Key : US.Unbounded_String;
+      begin
+         Read_Header_Any_With_Metadata
+           (File, Stored_Key, Info, Tags, Parts, Object_Lock, Body_At);
+         if US.To_String (Stored_Key) /= Key then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      end;
       if Selected.Is_Delete_Marker then
          if Info.Size /= 0 then
             raise Ada.IO_Exceptions.Data_Error;
@@ -2533,6 +2656,21 @@ package body Flyology.Object_Storage.Backends.Files is
       else
          Info.Version := Selected.Version_ID;
       end if;
+   end Read_Selected_Header;
+
+   procedure Read_Selected_Header
+     (File     : in out SIO.File_Type;
+      Key      : String;
+      Selected : Selected_Generation;
+      Info     : out Object_Information;
+      Tags     : out Object_Tag_Set;
+      Parts    : out Completed_Object_Part_List;
+      Body_At  : out SIO.Positive_Count)
+   is
+      Object_Lock : Persisted_Object_Lock_State;
+   begin
+      Read_Selected_Header
+        (File, Key, Selected, Info, Tags, Parts, Object_Lock, Body_At);
    end Read_Selected_Header;
 
    function Identity_Of
@@ -5744,7 +5882,15 @@ package body Flyology.Object_Storage.Backends.Files is
             Value : Bucket_Versioning_Configuration :=
               Read_Versioning (Item, Bucket);
          begin
-            if not MFA_Validated
+            if Read_Bucket_Object_Lock (Item, Bucket) =
+                Bucket_Object_Lock_Enabled
+              and then Configuration.Status = Versioning_Suspended
+            then
+               Result := Invalid_Request;
+               Item.Publication.Release;
+               Locked := False;
+               return;
+            elsif not MFA_Validated
               and then
                 (Value.MFA_Delete = MFA_Delete_Enabled
                  or else
@@ -5884,6 +6030,144 @@ package body Flyology.Object_Storage.Backends.Files is
          Configuration := (others => <>);
          Result := Backend_Unavailable;
    end Get_Bucket_Versioning;
+
+   overriding procedure Enable_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
+      Target : constant String := Bucket_Object_Lock_Path (Item, Bucket);
+      Temp : US.Unbounded_String;
+      Number : Long_Long_Integer;
+      File : SIO.File_Type;
+      Locked : Boolean := False;
+      Published : Boolean := False;
+      Renamed : Boolean := False;
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Directory) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Directory) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif Read_Versioning (Item, Bucket).Status /= Versioning_Enabled then
+         Result := Invalid_Request;
+      elsif Read_Bucket_Object_Lock (Item, Bucket) =
+        Bucket_Object_Lock_Enabled
+      then
+         Result := Success;
+      else
+         Item.Temp_Sequence.Next (Number);
+         Temp := US.To_Unbounded_String
+           (Join
+              (Temp_Path (Item),
+               "object-lock-" & GNAT.SHA256.Digest
+                 (Bucket & Long_Long_Integer'Image (Number) &
+                  Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+         Validate_New_Temp_Target (Item, US.To_String (Temp));
+         SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+         Write_String (File, Bucket_Object_Lock_Magic);
+         Write_String (File, "E");
+         SIO.Close (File);
+         Sync_File (Item, US.To_String (Temp));
+         GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
+         if not Renamed then
+            raise Ada.IO_Exceptions.Use_Error;
+         end if;
+         Published := True;
+         Sync_Directory (Item, Configuration_Path (Item, Bucket));
+         Sync_Directory (Item, Temp_Path (Item));
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Result := Backend_Unavailable;
+   end Enable_Bucket_Object_Lock;
+
+   overriding procedure Get_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status)
+   is
+      Path : constant String := Bucket_Path (Item, Bucket);
+      Locked : Boolean := False;
+   begin
+      State := Bucket_Object_Lock_Disabled;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Path) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Path) /= Ada.Directories.Directory then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         State := Read_Bucket_Object_Lock (Item, Bucket);
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         State := Bucket_Object_Lock_Disabled;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Object_Lock;
 
    overriding procedure Put_Object
      (Item     : in out Store;
@@ -7028,6 +7312,7 @@ package body Flyology.Object_Storage.Backends.Files is
          Body_At : SIO.Positive_Count;
          Tags : Object_Tag_Set;
          Parts : Completed_Object_Part_List;
+         Object_Lock : Persisted_Object_Lock_State;
 
          procedure Remove_Path (Path : String) is
          begin
@@ -7071,12 +7356,27 @@ package body Flyology.Object_Storage.Backends.Files is
          if Selected.Present then
             SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
             Read_Selected_Header
-              (File, Key, Selected, Info, Tags, Parts, Body_At);
+              (File, Key, Selected, Info, Tags, Parts, Object_Lock, Body_At);
             SIO.Close (File);
          end if;
          Outcome.Result := Evaluate_Delete_Object_Conditions
            (Request_Entry.Conditions, Condition_Exists, Info);
          if Outcome.Result /= Success then
+            return;
+         end if;
+
+         if Selected.Present and then not Selected.Is_Delete_Marker
+           and then
+             (Request_Entry.Selector.Kind /= Current_Version
+              or else Configuration.Status = Versioning_Unconfigured)
+           and then
+             (Object_Lock.Legal_Hold = Object_Legal_Hold_On
+              or else
+                (Object_Lock.Retention.Mode /= No_Object_Retention
+                 and then Object_Lock.Retention.Retain_Until >
+                   Unix_Time (Unix_Seconds (Ada.Calendar.Clock))))
+         then
+            Outcome.Result := Access_Denied;
             return;
          end if;
 
@@ -7233,6 +7533,386 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Backend_Unavailable;
    end Delete_Objects;
 
+   procedure Update_Selected_Object_Lock
+     (Item : in out Store;
+      Bucket, Key : String;
+      Selector : Version_Selector;
+      Change_Legal_Hold : Boolean;
+      Legal_Hold : Object_Legal_Hold_Status;
+      Change_Retention : Boolean;
+      Retention : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status)
+   is
+      Path : US.Unbounded_String;
+      Source : SIO.File_Type;
+      Staged : SIO.File_Type;
+      Source_Open : Boolean := False;
+      Staged_Open : Boolean := False;
+      Locked : Boolean := False;
+      Published : Boolean := False;
+      Temp : US.Unbounded_String;
+      Number : Long_Long_Integer;
+      Info : Object_Information;
+      Tags : Object_Tag_Set;
+      Parts : Completed_Object_Part_List;
+      Object_Lock : Persisted_Object_Lock_State;
+      Body_At : SIO.Positive_Count;
+      Remaining : Byte_Count;
+      Buffer : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+      Last : Ada.Streams.Stream_Element_Offset;
+      Renamed : Boolean;
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Current : constant Unix_Time :=
+        Unix_Time (Unix_Seconds (Ada.Calendar.Clock));
+   begin
+      Identity := (others => <>);
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
+      if Configuration.Status /= Versioning_Enabled
+        or else Read_Bucket_Object_Lock (Item, Bucket) /=
+          Bucket_Object_Lock_Enabled
+      then
+         Result := Invalid_Request;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
+         Result := Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
+      Path := Selected.Path;
+      SIO.Open (Source, SIO.In_File, US.To_String (Path));
+      Source_Open := True;
+      Read_Selected_Header
+        (Source, Key, Selected, Info, Tags, Parts, Object_Lock, Body_At);
+      if Change_Retention
+        and then Object_Lock.Retention.Mode /= No_Object_Retention
+        and then Object_Lock.Retention.Retain_Until > Current
+        and then
+          (Retention.Mode /= Object_Lock.Retention.Mode
+           or else Retention.Retain_Until <
+             Object_Lock.Retention.Retain_Until)
+      then
+         SIO.Close (Source);
+         Source_Open := False;
+         Item.Publication.Release;
+         Locked := False;
+         Result := Access_Denied;
+         return;
+      end if;
+      if Change_Legal_Hold then
+         Object_Lock.Legal_Hold := Legal_Hold;
+      end if;
+      if Change_Retention then
+         Object_Lock.Retention := Retention;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            GNAT.SHA256.Digest
+              (Bucket & Character'Val (0) & Key & ".object-lock" &
+               Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock)) & ".tmp"));
+      Validate_New_Temp_Target (Item, US.To_String (Temp));
+      SIO.Create (Staged, SIO.Out_File, US.To_String (Temp));
+      Staged_Open := True;
+      Write_Header
+        (Staged, Key, Info, Tags => Tags, Parts => Parts,
+         Object_Lock => Object_Lock);
+      SIO.Set_Index (Source, Body_At);
+      Remaining := Info.Size;
+      while Remaining > 0 loop
+         Check_Context (Token, Deadline);
+         declare
+            Count : constant Ada.Streams.Stream_Element_Offset :=
+              Ada.Streams.Stream_Element_Offset
+                (Byte_Count'Min (Remaining, Byte_Count (Buffer'Length)));
+         begin
+            SIO.Read (Source, Buffer (1 .. Count), Last);
+            if Last /= Count then
+               raise Ada.IO_Exceptions.End_Error;
+            end if;
+            SIO.Write (Staged, Buffer (1 .. Count));
+            Remaining := Remaining - Byte_Count (Count);
+         end;
+      end loop;
+      SIO.Close (Source);
+      Source_Open := False;
+      SIO.Close (Staged);
+      Staged_Open := False;
+      Sync_File (Item, US.To_String (Temp));
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Temp), US.To_String (Path), Renamed);
+      if not Renamed then
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Item.Publication.Release;
+         Locked := False;
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      Published := True;
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Path)));
+      Sync_Directory (Item, Temp_Path (Item));
+      Item.Publication.Release;
+      Locked := False;
+      Identity := Identity_Of
+        (Selected, Configuration,
+         Explicit => Selector.Kind /= Current_Version);
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Source_Open then
+            SIO.Close (Source);
+         end if;
+         if Staged_Open then
+            SIO.Close (Staged);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if Source_Open then
+            SIO.Close (Source);
+         end if;
+         if Staged_Open then
+            SIO.Close (Staged);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Update_Selected_Object_Lock;
+
+   procedure Read_Selected_Object_Lock
+     (Item : in out Store;
+      Bucket, Key : String;
+      Selector : Version_Selector;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Object_Lock : out Persisted_Object_Lock_State;
+      Identity : out Version_Identity;
+      Result : out Status)
+   is
+      File : SIO.File_Type;
+      Locked : Boolean := False;
+      Selected : Selected_Generation;
+      Info : Object_Information;
+      Tags : Object_Tag_Set;
+      Parts : Completed_Object_Part_List;
+      Body_At : SIO.Positive_Count;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+   begin
+      Object_Lock := (others => <>);
+      Identity := (others => <>);
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         Configuration := Read_Versioning (Item, Bucket);
+         if Read_Bucket_Object_Lock (Item, Bucket) /=
+           Bucket_Object_Lock_Enabled
+         then
+            Result := Invalid_Request;
+         else
+            Selected := Select_Generation (Item, Bucket, Key, Selector);
+            if not Selected.Present or else Selected.Is_Delete_Marker then
+               Result := Not_Found;
+            else
+               SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+               Read_Selected_Header
+                 (File, Key, Selected, Info, Tags, Parts, Object_Lock,
+                  Body_At);
+               SIO.Close (File);
+               Identity := Identity_Of
+                 (Selected, Configuration,
+                  Explicit => Selector.Kind /= Current_Version);
+               Result := Success;
+            end if;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Object_Lock := (others => <>);
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Read_Selected_Object_Lock;
+
+   overriding procedure Put_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Legal_Hold_Status;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Update_Selected_Object_Lock
+           (Item, Bucket, Key, Selector, True, Value, False,
+            (Mode         => No_Object_Retention,
+             Retain_Until => 0,
+             Exact_Text   => US.Null_Unbounded_String),
+            Token, Deadline, Identity, Result);
+      end if;
+   end Put_Object_Legal_Hold;
+
+   overriding procedure Get_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Object_Lock : Persisted_Object_Lock_State;
+   begin
+      Value := Object_Legal_Hold_Off;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Read_Selected_Object_Lock
+           (Item, Bucket, Key, Selector, Token, Deadline, Object_Lock,
+            Identity, Result);
+         if Result = Success then
+            Value := Object_Lock.Legal_Hold;
+         end if;
+      end if;
+   end Get_Object_Legal_Hold;
+
+   overriding procedure Put_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Has_Text : constant Boolean := US.Length (Value.Exact_Text) > 0;
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else US.Length (Value.Exact_Text) >
+          Maximum_Retention_Timestamp_Length
+        or else
+          ((Value.Mode = No_Object_Retention)
+           /= (not Has_Text and then Value.Retain_Until = 0))
+      then
+         Result := Invalid_Request;
+      else
+         Update_Selected_Object_Lock
+           (Item, Bucket, Key, Selector, False, Object_Legal_Hold_Off,
+            True, Value, Token, Deadline, Identity, Result);
+      end if;
+   end Put_Object_Retention;
+
+   overriding procedure Get_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Retention;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Object_Lock : Persisted_Object_Lock_State;
+   begin
+      Value :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Read_Selected_Object_Lock
+           (Item, Bucket, Key, Selector, Token, Deadline, Object_Lock,
+            Identity, Result);
+         if Result = Success then
+            Value := Object_Lock.Retention;
+         end if;
+      end if;
+   end Get_Object_Retention;
+
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
@@ -7260,6 +7940,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Renamed   : Boolean;
       Selected  : Selected_Generation;
       Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Object_Lock : Persisted_Object_Lock_State;
    begin
       Identity := (others => <>);
       Check_Context (Token, Deadline);
@@ -7298,7 +7979,8 @@ package body Flyology.Object_Storage.Backends.Files is
       SIO.Open (Source, SIO.In_File, US.To_String (Path));
       Source_Open := True;
       Read_Selected_Header
-        (Source, Key, Selected, Info, Old_Tags, Completed_Parts, Body_At);
+        (Source, Key, Selected, Info, Old_Tags, Completed_Parts,
+         Object_Lock, Body_At);
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join
@@ -7311,7 +7993,8 @@ package body Flyology.Object_Storage.Backends.Files is
       SIO.Create (Staged, SIO.Out_File, US.To_String (Temp));
       Staged_Open := True;
       Write_Header
-        (Staged, Key, Info, Tags => Tags, Parts => Completed_Parts);
+        (Staged, Key, Info, Tags => Tags, Parts => Completed_Parts,
+         Object_Lock => Object_Lock);
       SIO.Set_Index (Source, Body_At);
       Remaining := Info.Size;
       while Remaining > 0 loop

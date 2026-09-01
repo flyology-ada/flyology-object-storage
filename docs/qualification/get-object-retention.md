@@ -1,9 +1,9 @@
 # GetObjectRetention client qualification
 
-This record qualifies the strict bounded provider-owned composable and
-synchronous client plus corpus for `GetObjectRetention`. It does not claim
-Object Lock persistence in a Flyology backend, an authenticated Flyology
-server route, or external-server interoperability.
+This record covers the strict bounded provider-owned composable and
+synchronous client plus corpus for `GetObjectRetention`. Shared Flyology
+backend persistence and authenticated server-route evidence is recorded in
+`object-lock-server.md`; external-server interoperability is not claimed.
 
 ## Pinned authority and inventory
 
@@ -87,10 +87,9 @@ normalization oracle crosses every terminal HTTP failure with every admission
 certainty. The root gate repeats the deterministic and socket paths three
 times.
 
-The machine ledger records `GetObjectRetention` as `missing / covered / missing
-/ covered`. Client and corpus evidence do not manufacture backend Object Lock
-state or a server route. Promoting either remaining cell requires a separately
-approved persistence contract, authenticated routing, and independent
+The machine ledger records `GetObjectRetention` as `covered / covered / covered
+/ covered`. This client record remains operation-specific; the shared Object
+Lock record owns backend persistence, authenticated routing, and independent
 black-box tests.
 
 ## Formal boundary

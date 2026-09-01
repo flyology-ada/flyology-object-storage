@@ -19423,6 +19423,516 @@ package body Object_Storage_Test_Cases is
       Ada.Directories.Delete_Tree (Root);
    end Check_Backend_Object_Tagging;
 
+   procedure Exercise_Object_Lock
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String;
+      Locked_Version : out Ada.Strings.Unbounded.Unbounded_String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Source : Buffer_Source :=
+        (Data     => Flyology.Bytes.From_Byte_String ("locked body"),
+         Position => 0,
+         Length   => (Kind => Known, Bytes => 11),
+         Bad_Last => False);
+      Info : Object_Information;
+      Identity : Version_Identity;
+      Result : Status;
+      Lock_State : Bucket_Object_Lock_Status;
+      Hold : Object_Legal_Hold_Status;
+      Retention : Object_Retention;
+      Delete_Outcome : Version_Delete_Outcome;
+   begin
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "Object Lock bucket create failed");
+      Store.Get_Bucket_Object_Lock
+        (Bucket, null, Ada.Real_Time.Time_Last, Lock_State, Result);
+      Assert
+        (Result = Success and then Lock_State = Bucket_Object_Lock_Disabled,
+         "new bucket did not expose disabled Object Lock state");
+      Store.Enable_Bucket_Object_Lock
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Invalid_Request,
+         "Object Lock was enabled before bucket versioning");
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Versioning_Enabled,
+          MFA_Delete => MFA_Delete_Unconfigured),
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "Object Lock versioning enable failed");
+      Store.Put_Object
+        (Bucket, "retained", Source, Default_Put_Options, null,
+         Ada.Real_Time.Time_Last, Info, Identity, Result);
+      Assert
+         (Result = Success and then Identity.Has_Version_ID
+         and then not Identity.Is_Null_Version,
+         "Object Lock fixture did not publish an exact version");
+      Locked_Version := Identity.Version_ID;
+      declare
+         Selector : constant Version_Selector :=
+           (Kind => Exact_Version, ID => Identity.Version_ID);
+      begin
+         Store.Put_Object_Legal_Hold
+           (Bucket, "retained", Object_Legal_Hold_On, null,
+            Ada.Real_Time.Time_Last, Identity, Result,
+            Selector => Selector);
+         Assert
+           (Result = Invalid_Request,
+            "legal hold was accepted before Object Lock enablement");
+         Store.Enable_Bucket_Object_Lock
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "PutObjectLockConfiguration backend enablement failed");
+         Store.Enable_Bucket_Object_Lock
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "Object Lock enablement was not idempotent");
+         Store.Get_Bucket_Object_Lock
+           (Bucket, null, Ada.Real_Time.Time_Last, Lock_State, Result);
+         Assert
+           (Result = Success and then Lock_State = Bucket_Object_Lock_Enabled,
+            "GetObjectLockConfiguration backend state did not round trip");
+         Store.Put_Bucket_Versioning
+           (Bucket,
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "Object Lock bucket accepted versioning suspension");
+
+         Store.Get_Object_Legal_Hold
+           (Bucket, "retained", null, Ada.Real_Time.Time_Last,
+            Hold, Identity, Result, Selector => Selector);
+         Assert
+           (Result = Success and then Hold = Object_Legal_Hold_Off,
+            "new generation did not expose legal hold OFF");
+         Store.Put_Object_Legal_Hold
+           (Bucket, "retained", Object_Legal_Hold_On, null,
+            Ada.Real_Time.Time_Last, Identity, Result,
+            Selector => Selector);
+         Store.Get_Object_Legal_Hold
+           (Bucket, "retained", null, Ada.Real_Time.Time_Last,
+            Hold, Identity, Result, Selector => Selector);
+         Assert
+           (Result = Success and then Hold = Object_Legal_Hold_On,
+            "PutObjectLegalHold/GetObjectLegalHold state did not round trip");
+         Store.Delete_Selected_Object
+           (Bucket, "retained", Selector, No_Delete_Object_Conditions,
+            MFA_Validated => False, Token => null,
+            Deadline => Ada.Real_Time.Time_Last,
+            Outcome => Delete_Outcome, Result => Result);
+         Assert
+           (Result = Access_Denied,
+            "legal hold did not protect the selected generation");
+         Store.Put_Object_Legal_Hold
+           (Bucket, "retained", Object_Legal_Hold_Off, null,
+            Ada.Real_Time.Time_Last, Identity, Result,
+            Selector => Selector);
+         Assert (Result = Success, "legal hold OFF update failed");
+
+         Retention :=
+           (Mode         => Governance_Object_Retention,
+            Retain_Until => Unix_Time'Last,
+            Exact_Text   =>
+              US.To_Unbounded_String ("9999-12-31T23:59:59Z"));
+         Store.Put_Object_Retention
+           (Bucket, "retained", Retention, null,
+            Ada.Real_Time.Time_Last, Identity, Result,
+            Selector => Selector);
+         Assert (Result = Success, "governance retention update failed");
+         Store.Get_Object_Retention
+           (Bucket, "retained", null, Ada.Real_Time.Time_Last,
+            Retention, Identity, Result, Selector => Selector);
+         Assert
+           (Result = Success
+            and then Retention.Mode = Governance_Object_Retention
+            and then Retention.Retain_Until = Unix_Time'Last
+            and then US.To_String (Retention.Exact_Text) =
+              "9999-12-31T23:59:59Z",
+            "PutObjectRetention/GetObjectRetention did not round trip");
+         Store.Put_Object_Retention
+           (Bucket, "retained",
+            (Mode         => Governance_Object_Retention,
+             Retain_Until => Unix_Time'Last - 1,
+             Exact_Text   =>
+               US.To_Unbounded_String ("9999-12-31T23:59:58Z")),
+            null, Ada.Real_Time.Time_Last, Identity, Result,
+            Selector => Selector);
+         Assert
+           (Result = Access_Denied,
+            "active governance retention was shortened without bypass");
+         Store.Delete_Selected_Object
+           (Bucket, "retained", Selector, No_Delete_Object_Conditions,
+            MFA_Validated => False, Token => null,
+            Deadline => Ada.Real_Time.Time_Last,
+            Outcome => Delete_Outcome, Result => Result);
+         Assert
+           (Result = Access_Denied,
+            "active governance retention did not protect exact deletion");
+         Store.Delete_Selected_Object
+           (Bucket, "retained", Current_Version_Selector,
+            No_Delete_Object_Conditions, MFA_Validated => False,
+            Token => null, Deadline => Ada.Real_Time.Time_Last,
+            Outcome => Delete_Outcome, Result => Result);
+         Assert
+           (Result = Success
+            and then Delete_Outcome.Kind = Delete_Marker_Created,
+            "protected current delete did not publish a delete marker");
+         Store.Get_Object_Retention
+           (Bucket, "retained", null, Ada.Real_Time.Time_Last,
+            Retention, Identity, Result, Selector => Selector);
+         Assert
+           (Result = Success
+            and then Retention.Mode = Governance_Object_Retention,
+            "delete marker publication lost retained-version policy");
+      end;
+   end Exercise_Object_Lock;
+
+   procedure Check_Backend_Object_Lock (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package US renames Ada.Strings.Unbounded;
+      Root : constant String := Ada.Directories.Compose
+        (Ada.Directories.Compose (Ada.Directories.Current_Directory, "obj"),
+         "files-object-lock");
+      Files_Locked_Version : Ada.Strings.Unbounded.Unbounded_String;
+
+      procedure Install_Legacy_Object is
+         package SIO renames Ada.Streams.Stream_IO;
+         Path : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"),
+                  "files-lock-bucket"),
+               "objects"),
+            "6C656761637935.fos");
+         File : SIO.File_Type;
+
+         procedure Write_String (Value : String) is
+            Data : Ada.Streams.Stream_Element_Array
+              (1 .. Ada.Streams.Stream_Element_Offset (Value'Length));
+         begin
+            for Index in Value'Range loop
+               Data
+                 (Ada.Streams.Stream_Element_Offset
+                    (Index - Value'First + 1)) :=
+                   Ada.Streams.Stream_Element
+                     (Character'Pos (Value (Index)));
+            end loop;
+            SIO.Write (File, Data);
+         end Write_String;
+
+         procedure Write_U32 (Value : Natural) is
+            Data : Ada.Streams.Stream_Element_Array (1 .. 4);
+            Work : Natural := Value;
+         begin
+            for Index in reverse Data'Range loop
+               Data (Index) := Ada.Streams.Stream_Element (Work mod 256);
+               Work := Work / 256;
+            end loop;
+            SIO.Write (File, Data);
+         end Write_U32;
+
+         procedure Write_U64 (Value : Long_Long_Integer) is
+            Data : Ada.Streams.Stream_Element_Array (1 .. 8);
+            Work : Long_Long_Integer := Value;
+         begin
+            for Index in reverse Data'Range loop
+               Data (Index) := Ada.Streams.Stream_Element (Work mod 256);
+               Work := Work / 256;
+            end loop;
+            SIO.Write (File, Data);
+         end Write_U64;
+      begin
+         SIO.Create (File, SIO.Out_File, Path);
+         Write_String ("FOSOBJ05");
+         Write_U32 (7);
+         Write_U32 (32);
+         Write_U32 (10);
+         Write_U64 (126);
+         Write_U64 (7);
+         Write_String ("legacy5");
+         Write_String (String'(1 .. 32 => '5'));
+         Write_String ("text/plain");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("NN");
+         Write_U32 (0);
+         for Field in 1 .. 4 loop
+            pragma Unreferenced (Field);
+            Write_String ("A");
+            Write_U32 (0);
+         end loop;
+         Write_String ("A");
+         Write_U64 (62_135_596_800);
+         Write_String ("A");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("legacy5");
+         SIO.Close (File);
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Install_Legacy_Object;
+
+      procedure Corrupt_Selected_Object_Lock_Record is
+         package SIO renames Ada.Streams.Stream_IO;
+         use type Ada.Streams.Stream_Element;
+         Directory : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"),
+                  "files-lock-bucket"),
+               "versions"),
+            "72657461696E6564.versions");
+         Search : Ada.Directories.Search_Type;
+         Found  : Ada.Directories.Directory_Entry_Type;
+         Target : US.Unbounded_String;
+         File   : SIO.File_Type;
+
+         function Matches
+           (Data  : Ada.Streams.Stream_Element_Array;
+            First : Ada.Streams.Stream_Element_Offset;
+            Value : String) return Boolean
+         is
+         begin
+            if First < Data'First
+              or else Data'Last - First + 1 < Value'Length
+            then
+               return False;
+            end if;
+            for Index in Value'Range loop
+               if Data
+                    (First + Ada.Streams.Stream_Element_Offset
+                       (Index - Value'First)) /=
+                  Ada.Streams.Stream_Element
+                    (Character'Pos (Value (Index)))
+               then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end Matches;
+      begin
+         Ada.Directories.Start_Search
+           (Search, Directory, "*",
+            (Ada.Directories.Ordinary_File => True, others => False));
+         while Ada.Directories.More_Entries (Search) loop
+            Ada.Directories.Get_Next_Entry (Search, Found);
+            if Ada.Strings.Fixed.Index
+                 (Ada.Directories.Simple_Name (Found),
+                  US.To_String (Files_Locked_Version)) /= 0
+            then
+               Target := US.To_Unbounded_String
+                 (Ada.Directories.Full_Name (Found));
+            end if;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Assert
+           (US.Length (Target) > 0,
+            "filesystem Object Lock generation was not found");
+
+         SIO.Open (File, SIO.In_File, US.To_String (Target));
+         declare
+            Data : Ada.Streams.Stream_Element_Array
+              (1 .. Ada.Streams.Stream_Element_Offset (SIO.Size (File)));
+            Last : Ada.Streams.Stream_Element_Offset;
+            Lock_Bytes : constant Ada.Streams.Stream_Element_Offset :=
+              1 + 1 + 8 + 4 + 20;
+            Body_Bytes : constant Ada.Streams.Stream_Element_Offset := 11;
+            Hold_At : constant Ada.Streams.Stream_Element_Offset :=
+              Data'Last - Body_Bytes - Lock_Bytes + 1;
+         begin
+            SIO.Read (File, Data, Last);
+            SIO.Close (File);
+            Assert
+              (Last = Data'Last
+               and then Matches (Data, Data'First, "FOSOBJ06")
+               and then Matches
+                 (Data, Data'Last - Body_Bytes + 1, "locked body"),
+               "filesystem Object Lock generation was not FOSOBJ06");
+            Assert
+              (Data (Hold_At) =
+                 Ada.Streams.Stream_Element (Character'Pos ('F')),
+               "filesystem Object Lock legal-hold byte was not canonical");
+            Data (Hold_At) :=
+              Ada.Streams.Stream_Element (Character'Pos ('X'));
+            Assert
+              (Data (Hold_At) /=
+                 Ada.Streams.Stream_Element (Character'Pos ('F')),
+               "filesystem Object Lock legal-hold corruption was inert");
+            SIO.Create (File, SIO.Out_File, US.To_String (Target));
+            SIO.Write (File, Data);
+            SIO.Close (File);
+         end;
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Corrupt_Selected_Object_Lock_Record;
+   begin
+      declare
+         Store : Memory.Store (1, 4, 128);
+         Locked_Version : Ada.Strings.Unbounded.Unbounded_String;
+      begin
+         Exercise_Object_Lock
+           (Store, "memory-lock-bucket", Locked_Version);
+      end;
+      if Ada.Directories.Exists (Root) then
+         Ada.Directories.Delete_Tree (Root);
+      end if;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+         Tags : Object_Tag_Set;
+         Identity : Version_Identity;
+         Result : Status;
+      begin
+         Exercise_Object_Lock
+           (Store, "files-lock-bucket", Files_Locked_Version);
+         Tags.Length := 1;
+         Tags.Items (1) :=
+           (Key   => Ada.Strings.Unbounded.To_Unbounded_String ("owner"),
+            Value => Ada.Strings.Unbounded.To_Unbounded_String ("storage"));
+         Store.Put_Object_Tags
+           ("files-lock-bucket", "retained", Tags, null,
+            Ada.Real_Time.Time_Last, Identity, Result,
+            Selector =>
+              (Kind => Exact_Version, ID => Files_Locked_Version));
+         Assert
+           (Result = Success,
+            "tag rewrite did not preserve the selected locked generation");
+      end;
+      Install_Legacy_Object;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+         Lock_State : Bucket_Object_Lock_Status;
+         Hold : Object_Legal_Hold_Status;
+         Retention : Object_Retention;
+         Tags : Object_Tag_Set;
+         Identity : Version_Identity;
+         Result : Status;
+      begin
+         Store.Get_Bucket_Object_Lock
+           ("files-lock-bucket", null, Ada.Real_Time.Time_Last,
+            Lock_State, Result);
+         Assert
+           (Result = Success
+            and then Lock_State = Bucket_Object_Lock_Enabled,
+            "filesystem reopen lost bucket Object Lock state");
+         Store.Get_Object_Legal_Hold
+           ("files-lock-bucket", "retained", null,
+            Ada.Real_Time.Time_Last, Hold, Identity, Result,
+            Selector =>
+              (Kind => Exact_Version, ID => Files_Locked_Version));
+         Assert
+           (Result = Success and then Hold = Object_Legal_Hold_Off,
+            "filesystem reopen lost exact legal-hold state");
+         Store.Get_Object_Retention
+           ("files-lock-bucket", "retained", null,
+            Ada.Real_Time.Time_Last, Retention, Identity, Result,
+            Selector =>
+              (Kind => Exact_Version, ID => Files_Locked_Version));
+         Assert
+           (Result = Success
+            and then Retention.Mode = Governance_Object_Retention
+            and then Retention.Retain_Until = Unix_Time'Last
+            and then Ada.Strings.Unbounded.To_String
+              (Retention.Exact_Text) = "9999-12-31T23:59:59Z",
+            "filesystem reopen lost exact retention state");
+         Store.Get_Object_Tags
+           ("files-lock-bucket", "retained", null,
+            Ada.Real_Time.Time_Last, Tags, Identity, Result,
+            Selector =>
+              (Kind => Exact_Version, ID => Files_Locked_Version));
+         Assert
+           (Result = Success and then Tags.Length = 1
+            and then Ada.Strings.Unbounded.To_String
+              (Tags.Items (1).Key) = "owner",
+            "tag rewrite or reopen lost locked-generation metadata");
+         Store.Get_Object_Legal_Hold
+           ("files-lock-bucket", "legacy5", null,
+            Ada.Real_Time.Time_Last, Hold, Identity, Result);
+         Assert
+           (Result = Success and then Hold = Object_Legal_Hold_Off,
+            "FOSOBJ05 did not default legal hold to OFF");
+         Store.Get_Object_Retention
+           ("files-lock-bucket", "legacy5", null,
+            Ada.Real_Time.Time_Last, Retention, Identity, Result);
+         Assert
+           (Result = Success
+            and then Retention.Mode = No_Object_Retention
+            and then Retention.Retain_Until = 0
+            and then Ada.Strings.Unbounded.Length
+              (Retention.Exact_Text) = 0,
+            "FOSOBJ05 did not default retention to absent");
+      end;
+      Corrupt_Selected_Object_Lock_Record;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+         Hold : Object_Legal_Hold_Status;
+         Identity : Version_Identity;
+         Result : Status;
+      begin
+         Store.Get_Object_Legal_Hold
+           ("files-lock-bucket", "retained", null,
+            Ada.Real_Time.Time_Last, Hold, Identity, Result,
+            Selector =>
+              (Kind => Exact_Version, ID => Files_Locked_Version));
+         Assert
+           (Result = Backend_Unavailable,
+            "filesystem backend accepted corrupt FOSOBJ06 legal hold");
+      end;
+      declare
+         package SIO renames Ada.Streams.Stream_IO;
+         Path : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"),
+                  "files-lock-bucket"),
+               "configuration"),
+            "object-lock.fos");
+         File : SIO.File_Type;
+         Data : constant Ada.Streams.Stream_Element_Array := [16#00#];
+      begin
+         SIO.Create (File, SIO.Out_File, Path);
+         SIO.Write (File, Data);
+         SIO.Close (File);
+      end;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+         State : Bucket_Object_Lock_Status;
+         Result : Status;
+      begin
+         Store.Get_Bucket_Object_Lock
+           ("files-lock-bucket", null, Ada.Real_Time.Time_Last,
+            State, Result);
+         Assert
+           (Result = Backend_Unavailable,
+            "filesystem backend did not reject corrupt Object Lock state");
+      end;
+      Ada.Directories.Delete_Tree (Root);
+   end Check_Backend_Object_Lock;
+
    procedure Check_Object_Tagging_Codec (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -20598,6 +21108,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.object-tagging-conformance",
             Check_Backend_Object_Tagging'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("backends.object-lock-conformance",
+            Check_Backend_Object_Lock'Access));
       Result.Add_Test
         (Caller.Create ("s3.core-rules", Check_S3_Core_Rules'Access));
       Result.Add_Test

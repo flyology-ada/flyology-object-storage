@@ -369,6 +369,10 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          if Index = 0 then
             Result := Not_Found;
+         elsif Buckets (Index).Object_Lock = Bucket_Object_Lock_Enabled
+           and then Configuration.Status = Versioning_Suspended
+         then
+            Result := Invalid_Request;
          elsif not MFA_Validated
            and then
              (Buckets (Index).Versioning.MFA_Delete = MFA_Delete_Enabled
@@ -398,6 +402,37 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Get_Bucket_Versioning;
+
+      procedure Enable_Bucket_Object_Lock
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         elsif Buckets (Index).Versioning.Status /= Versioning_Enabled then
+            Result := Invalid_Request;
+         else
+            Buckets (Index).Object_Lock := Bucket_Object_Lock_Enabled;
+            Result := Success;
+         end if;
+      end Enable_Bucket_Object_Lock;
+
+      procedure Get_Bucket_Object_Lock
+        (Name : String;
+         State : out Bucket_Object_Lock_Status;
+         Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         State := Bucket_Object_Lock_Disabled;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            State := Buckets (Index).Object_Lock;
+            Result := Success;
+         end if;
+      end Get_Bucket_Object_Lock;
 
       procedure Put_Bucket_ABAC
         (Name : String; Value : Bucket_ABAC_Status; Result : out Status)
@@ -1607,6 +1642,18 @@ package body Flyology.Object_Storage.Backends.Memory is
                Result := Success;
                return;
             end if;
+            if not Objects (Target_At).Is_Delete_Marker
+              and then
+                (Objects (Target_At).Legal_Hold = Object_Legal_Hold_On
+                 or else
+                   (Objects (Target_At).Retention.Mode /=
+                      No_Object_Retention
+                    and then Objects (Target_At).Retention.Retain_Until >
+                      Modified))
+            then
+               Result := Access_Denied;
+               return;
+            end if;
             Outcome.Kind :=
               (if Objects (Target_At).Is_Delete_Marker
                then Delete_Marker_Removed else Object_Version_Removed);
@@ -1728,6 +1775,140 @@ package body Flyology.Object_Storage.Backends.Memory is
             end case;
          end if;
       end Delete_Selected;
+
+      procedure Put_Legal_Hold
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : Object_Legal_Hold_Status;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+      begin
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+         elsif Buckets (Bucket_Position).Object_Lock /=
+             Bucket_Object_Lock_Enabled
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Enabled
+         then
+            Result := Invalid_Request;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Objects (Index).Legal_Hold := Value;
+            Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => Objects (Index).Is_Null_Version,
+               Version_ID      => Objects (Index).Info.Version);
+            Result := Success;
+         end if;
+      end Put_Legal_Hold;
+
+      procedure Get_Legal_Hold
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : out Object_Legal_Hold_Status;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+      begin
+         Value := Object_Legal_Hold_Off;
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+         elsif Buckets (Bucket_Position).Object_Lock /=
+             Bucket_Object_Lock_Enabled
+         then
+            Result := Invalid_Request;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Objects (Index).Legal_Hold;
+            Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => Objects (Index).Is_Null_Version,
+               Version_ID      => Objects (Index).Info.Version);
+            Result := Success;
+         end if;
+      end Get_Legal_Hold;
+
+      procedure Put_Retention
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : Object_Retention; Modified : Unix_Time;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+      begin
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+         elsif Buckets (Bucket_Position).Object_Lock /=
+             Bucket_Object_Lock_Enabled
+           or else Buckets (Bucket_Position).Versioning.Status /=
+             Versioning_Enabled
+         then
+            Result := Invalid_Request;
+         elsif Index = 0 then
+            Result := Not_Found;
+         elsif Objects (Index).Retention.Mode /= No_Object_Retention
+           and then Objects (Index).Retention.Retain_Until > Modified
+           and then
+             (Value.Mode /= Objects (Index).Retention.Mode
+              or else Value.Retain_Until <
+                Objects (Index).Retention.Retain_Until)
+         then
+            Result := Access_Denied;
+         else
+            Objects (Index).Retention := Value;
+            Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => Objects (Index).Is_Null_Version,
+               Version_ID      => Objects (Index).Info.Version);
+            Result := Success;
+         end if;
+      end Put_Retention;
+
+      procedure Get_Retention
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : out Object_Retention;
+         Identity : out Version_Identity;
+         Result : out Status)
+      is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
+      begin
+         Value :=
+           (Mode         => No_Object_Retention,
+            Retain_Until => 0,
+            Exact_Text   =>
+              Ada.Strings.Unbounded.Null_Unbounded_String);
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+         elsif Buckets (Bucket_Position).Object_Lock /=
+             Bucket_Object_Lock_Enabled
+         then
+            Result := Invalid_Request;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Value := Objects (Index).Retention;
+            Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => Objects (Index).Is_Null_Version,
+               Version_ID      => Objects (Index).Info.Version);
+            Result := Success;
+         end if;
+      end Get_Retention;
 
       procedure Put_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
@@ -3889,6 +4070,40 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
    end Get_Bucket_Versioning;
 
+   overriding procedure Enable_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Enable_Bucket_Object_Lock (Bucket, Result);
+      end if;
+   end Enable_Bucket_Object_Lock;
+
+   overriding procedure Get_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status)
+   is
+   begin
+      State := Bucket_Object_Lock_Disabled;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Object_Lock (Bucket, State, Result);
+      end if;
+   end Get_Bucket_Object_Lock;
+
    overriding procedure Put_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -4493,6 +4708,105 @@ package body Flyology.Object_Storage.Backends.Memory is
       Item.State.Delete_Many
         (Bucket, Entries, Requirements, Current_Unix_Time, Outcomes, Result);
    end Delete_Objects;
+
+   overriding procedure Put_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Legal_Hold_Status;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Legal_Hold
+           (Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   end Put_Object_Legal_Hold;
+
+   overriding procedure Get_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Value := Object_Legal_Hold_Off;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Legal_Hold
+           (Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   end Get_Object_Legal_Hold;
+
+   overriding procedure Put_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Has_Text : constant Boolean :=
+        Ada.Strings.Unbounded.Length (Value.Exact_Text) > 0;
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((Value.Mode = No_Object_Retention)
+           /= (not Has_Text and then Value.Retain_Until = 0))
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Retention
+           (Bucket, Key, Selector, Value, Current_Unix_Time,
+            Identity, Result);
+      end if;
+   end Put_Object_Retention;
+
+   overriding procedure Get_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Retention;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Value :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => Ada.Strings.Unbounded.Null_Unbounded_String);
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Retention
+           (Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   end Get_Object_Retention;
 
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;

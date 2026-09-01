@@ -56,9 +56,9 @@ GetObject	core	covered	covered	covered	covered
 GetObjectAcl	extended	covered	covered	covered	covered
 GetObjectAnnotation	extended	missing	partial	missing	covered
 GetObjectAttributes	core	covered	covered	covered	covered
-GetObjectLegalHold	extended	missing	covered	missing	covered
-GetObjectLockConfiguration	extended	missing	covered	missing	covered
-GetObjectRetention	extended	missing	covered	missing	covered
+GetObjectLegalHold	extended	covered	covered	covered	covered
+GetObjectLockConfiguration	extended	covered	covered	covered	covered
+GetObjectRetention	extended	covered	covered	covered	covered
 GetObjectTagging	core	covered	covered	covered	covered
 GetObjectTorrent	extended	missing	covered	missing	covered
 GetPublicAccessBlock	extended	covered	covered	covered	covered
@@ -100,9 +100,9 @@ PutBucketWebsite	extended	covered	covered	covered	covered
 PutObject	core	covered	covered	covered	covered
 PutObjectAcl	extended	missing	partial	covered	covered
 PutObjectAnnotation	extended	missing	partial	missing	covered
-PutObjectLegalHold	extended	missing	covered	missing	covered
-PutObjectLockConfiguration	extended	missing	covered	missing	covered
-PutObjectRetention	extended	missing	covered	missing	covered
+PutObjectLegalHold	extended	covered	covered	covered	covered
+PutObjectLockConfiguration	extended	covered	covered	covered	covered
+PutObjectRetention	extended	covered	covered	covered	covered
 PutObjectTagging	core	covered	covered	covered	covered
 PutPublicAccessBlock	extended	covered	covered	covered	covered
 RenameObject	extended	missing	partial	missing	covered

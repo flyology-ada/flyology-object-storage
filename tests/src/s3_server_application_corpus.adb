@@ -39,6 +39,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Notifications;
+with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
@@ -87,6 +88,7 @@ procedure S3_Server_Application_Corpus is
      Flyology.Object_Storage.S3.Multipart_Uploads;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
    package Notifications renames Flyology.Object_Storage.S3.Notifications;
+   package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
    package Replication renames Flyology.Object_Storage.S3.Replication;
    package XML renames Flyology.Object_Storage.S3.XML;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -112,6 +114,9 @@ procedure S3_Server_Application_Corpus is
    use type Bucket_Controls.Accelerate_Status;
    use type Bucket_Controls.Payer;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Object_Lock.Legal_Hold_Status;
+   use type Object_Lock.Object_Lock_Enabled_Status;
+   use type Object_Lock.Retention_Mode;
    use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
@@ -14969,6 +14974,594 @@ begin
         (Run (Signed_Bucket_Request ("DELETE", "/test-bucket")),
          "404 Not Found"),
       "DeleteBucket absent-bucket mismatch");
+
+   declare
+      Bucket : constant String := "object-lock-server-bucket";
+      Key : constant String := "retained-object";
+      Target : constant String := "/" & Bucket & "/" & Key;
+      Configuration_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("object-lock", ""));
+      Duplicate_Configuration_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("object-lock", ""),
+         SigV4.Pair ("object-lock", ""));
+      Configuration_Document : constant String :=
+        Object_Lock.Serialize_Configuration
+          ((Is_Set  => True,
+            Enabled => Object_Lock.Object_Lock_Enabled,
+            Rule    => (others => <>)));
+      Rule_Document : constant String :=
+        Object_Lock.Serialize_Configuration
+          ((Is_Set  => True,
+            Enabled => Object_Lock.Object_Lock_Enabled,
+            Rule    =>
+              (Is_Set => True,
+               Default_Value => (others => <>))));
+      Hold_On_Document : constant String :=
+        Object_Lock.Serialize_Legal_Hold
+          ((Is_Set => True, Status => Object_Lock.Legal_Hold_On));
+      Hold_Off_Document : constant String :=
+        Object_Lock.Serialize_Legal_Hold
+          ((Is_Set => True, Status => Object_Lock.Legal_Hold_Off));
+      Retention_Document : constant String :=
+        Object_Lock.Serialize_Retention
+          ((Is_Set            => True,
+            Mode              => Object_Lock.Governance_Retention,
+            Retain_Until_Date =>
+              US.To_Unbounded_String
+                ("2099-01-01T01:00:00.500+01:00")));
+      Zero_Fraction_Retention_Document : constant String :=
+        Object_Lock.Serialize_Retention
+          ((Is_Set            => True,
+            Mode              => Object_Lock.Governance_Retention,
+            Retain_Until_Date =>
+              US.To_Unbounded_String
+                ("2000-01-01T00:00:00.000Z")));
+      Negative_Offset_Retention_Document : constant String :=
+        Object_Lock.Serialize_Retention
+          ((Is_Set            => True,
+            Mode              => Object_Lock.Governance_Retention,
+            Retain_Until_Date =>
+              US.To_Unbounded_String
+                ("1999-12-31T23:00:00.500-01:00")));
+      Backend_Result : Flyology.Object_Storage.Status;
+      First_Info : Flyology.Object_Storage.Object_Information;
+      Second_Info : Flyology.Object_Storage.Object_Information;
+   begin
+      Require
+        (Has
+           (Run (Signed_Create_Bucket_Request ("/" & Bucket, "")),
+            "200 OK"),
+         "Object Lock bucket setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/" & Bucket, Configuration_Query)),
+            "<Code>ObjectLockConfigurationNotFoundError</Code>"),
+         "GetObjectLockConfiguration did not preserve initial absence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 (Configuration_Document) &
+                  CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectLockConfiguration enabled an unversioned bucket");
+
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          others => <>),
+         null, Ada.Real_Time.Time_Last, Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success,
+         "Object Lock versioning prerequisite setup failed");
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectLockConfiguration accepted a missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 ("different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutObjectLockConfiguration accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 (Configuration_Document) &
+                  CRLF & "Content-MD5: " &
+                  Content_MD5 (Configuration_Document) & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectLockConfiguration accepted duplicate Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 (Configuration_Document) &
+                  CRLF & "x-amz-bucket-object-lock-token: first" & CRLF &
+                  "x-amz-bucket-object-lock-token: second" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectLockConfiguration accepted duplicate lock tokens");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Duplicate_Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 (Configuration_Document) &
+                  CRLF)),
+            "<Code>InvalidArgument</Code>"),
+         "PutObjectLockConfiguration accepted a duplicate subresource");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  "<ObjectLockConfiguration>",
+                  "Content-MD5: " &
+                  Content_MD5 ("<ObjectLockConfiguration>") & CRLF)),
+            "<Code>MalformedXML</Code>"),
+         "PutObjectLockConfiguration accepted malformed XML");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Rule_Document,
+                  "Content-MD5: " & Content_MD5 (Rule_Document) & CRLF)),
+            "<Code>NotImplemented</Code>"),
+         "PutObjectLockConfiguration accepted a default retention rule");
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/" & Bucket, Configuration_Query,
+                  Configuration_Document,
+                  "Content-MD5: " & Content_MD5 (Configuration_Document) &
+                  CRLF & "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, Configuration_Document) &
+                  CRLF)),
+            "200 OK"),
+         "PutObjectLockConfiguration rejected verified checksums");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/" & Bucket,
+                 (SigV4.Pair ("object-lock", ""),
+                  SigV4.Pair
+                    ("x-id", "GetObjectLockConfiguration"))));
+         Configuration : constant
+           Object_Lock.Object_Lock_Configuration :=
+             Object_Lock.Parse_Configuration (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Configuration.Is_Set
+            and then Configuration.Enabled =
+              Object_Lock.Object_Lock_Enabled
+            and then not Configuration.Rule.Is_Set,
+            "GetObjectLockConfiguration response mismatch");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/" & Bucket,
+                  (SigV4.Pair ("object-lock", ""),
+                   SigV4.Pair
+                     ("x-id", "PutObjectLockConfiguration")))),
+            "<Code>InvalidArgument</Code>"),
+         "GetObjectLockConfiguration accepted a mismatched operation ID");
+
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Suspended,
+          others => <>),
+         null, Ada.Real_Time.Time_Last, Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Invalid_Request,
+         "enabled Object Lock allowed versioning suspension");
+
+      Require
+        (Has
+           (Run (Signed_Request ("PUT", Target, "first generation")),
+            "200 OK"),
+         "Object Lock first version setup failed");
+      Store.Head_Object
+        (Bucket, Key, null, Ada.Real_Time.Time_Last, First_Info,
+         Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success
+         and then US.Length (First_Info.Version) > 0,
+         "Object Lock first version identity was not retained");
+      Require
+        (Has
+           (Run (Signed_Request ("PUT", Target, "second generation")),
+            "200 OK"),
+         "Object Lock second version setup failed");
+      Store.Head_Object
+        (Bucket, Key, null, Ada.Real_Time.Time_Last, Second_Info,
+         Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success
+         and then US.Length (Second_Info.Version) > 0
+         and then US.To_String (First_Info.Version) /=
+           US.To_String (Second_Info.Version),
+         "Object Lock second version identity was not distinct");
+
+      declare
+         First_ID : constant String := US.To_String (First_Info.Version);
+         Second_ID : constant String := US.To_String (Second_Info.Version);
+         First_Hold_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("legal-hold", ""),
+            SigV4.Pair ("versionId", First_ID));
+         Second_Hold_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("legal-hold", ""),
+            SigV4.Pair ("versionId", Second_ID));
+         First_Retention_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("retention", ""),
+            SigV4.Pair ("versionId", First_ID));
+         Second_Retention_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("retention", ""),
+            SigV4.Pair ("versionId", Second_ID));
+      begin
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, First_Hold_Query));
+            Value : constant Object_Lock.Legal_Hold :=
+              Object_Lock.Parse_Legal_Hold (Response_Body (Response));
+         begin
+            Require
+              (Has (Response, "200 OK")
+               and then Value.Is_Set
+               and then Value.Status = Object_Lock.Legal_Hold_Off,
+               "GetObjectLegalHold did not preserve initial OFF state");
+         end;
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, First_Retention_Query));
+            Value : constant Object_Lock.Retention :=
+              Object_Lock.Parse_Retention (Response_Body (Response));
+         begin
+            Require
+              (Has (Response, "200 OK")
+               and then Value.Is_Set
+               and then Value.Mode = Object_Lock.Retention_Mode_Absent
+               and then US.Length (Value.Retain_Until_Date) = 0,
+               "GetObjectRetention did not preserve initial absence");
+         end;
+
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, First_Hold_Query, Hold_On_Document,
+                     "Content-MD5: " & Content_MD5 (Hold_On_Document) &
+                     CRLF)),
+               "200 OK"),
+            "PutObjectLegalHold rejected an exact selected version");
+         declare
+            First_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, First_Hold_Query));
+            Second_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, Second_Hold_Query));
+            First_Value : constant Object_Lock.Legal_Hold :=
+              Object_Lock.Parse_Legal_Hold
+                (Response_Body (First_Response));
+            Second_Value : constant Object_Lock.Legal_Hold :=
+              Object_Lock.Parse_Legal_Hold
+                (Response_Body (Second_Response));
+         begin
+            Require
+              (First_Value.Status = Object_Lock.Legal_Hold_On
+               and then Second_Value.Status = Object_Lock.Legal_Hold_Off,
+               "legal-hold exact-version selection leaked across versions");
+         end;
+
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target,
+                     (SigV4.Pair ("legal-hold", ""),
+                      SigV4.Pair ("legal-hold", "")),
+                     Hold_On_Document,
+                     "Content-MD5: " & Content_MD5 (Hold_On_Document) &
+                     CRLF)),
+               "<Code>InvalidArgument</Code>"),
+            "PutObjectLegalHold accepted a duplicate subresource");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Second_Hold_Query, "<LegalHold>",
+                     "Content-MD5: " & Content_MD5 ("<LegalHold>") &
+                     CRLF)),
+               "<Code>MalformedXML</Code>"),
+            "PutObjectLegalHold accepted malformed XML");
+
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Second_Retention_Query,
+                     Retention_Document,
+                     "Content-MD5: " & Content_MD5 (Retention_Document) &
+                     CRLF &
+                     "x-amz-bypass-governance-retention: true" & CRLF)),
+               "<Code>NotImplemented</Code>"),
+            "PutObjectRetention accepted governance bypass");
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, Second_Retention_Query));
+            Value : constant Object_Lock.Retention :=
+              Object_Lock.Parse_Retention (Response_Body (Response));
+         begin
+            Require
+              (Value.Mode = Object_Lock.Retention_Mode_Absent,
+               "rejected governance bypass changed retained state");
+         end;
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Second_Retention_Query,
+                     Retention_Document,
+                     "Content-MD5: " & Content_MD5 (Retention_Document) &
+                     CRLF & "x-amz-checksum-sha256: " &
+                     Checksum_Value (Core.SHA256, "different") & CRLF)),
+               "<Code>BadDigest</Code>"),
+            "PutObjectRetention accepted a mismatched checksum");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Second_Retention_Query,
+                     Retention_Document,
+                     "Content-MD5: " & Content_MD5 (Retention_Document) &
+                     CRLF & "x-amz-checksum-sha256: not-base64" & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutObjectRetention accepted malformed checksum syntax");
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, Second_Retention_Query));
+            Value : constant Object_Lock.Retention :=
+              Object_Lock.Parse_Retention (Response_Body (Response));
+         begin
+            Require
+              (Value.Mode = Object_Lock.Retention_Mode_Absent,
+               "rejected retention checksum changed retained state");
+         end;
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Second_Retention_Query,
+                     Retention_Document,
+                     "Content-MD5: " & Content_MD5 (Retention_Document) &
+                     CRLF &
+                     "x-amz-bypass-governance-retention: false" & CRLF &
+                     "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                     "x-amz-checksum-sha256: " &
+                     Checksum_Value (Core.SHA256, Retention_Document) &
+                     CRLF)),
+               "200 OK"),
+            "PutObjectRetention rejected verified exact-version state");
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target,
+                    (SigV4.Pair ("retention", ""),
+                     SigV4.Pair ("versionId", Second_ID),
+                     SigV4.Pair ("x-id", "GetObjectRetention"))));
+            Value : constant Object_Lock.Retention :=
+              Object_Lock.Parse_Retention (Response_Body (Response));
+         begin
+            Require
+              (Has (Response, "200 OK")
+               and then Value.Mode = Object_Lock.Governance_Retention
+               and then US.To_String (Value.Retain_Until_Date) =
+                 "2099-01-01T01:00:00.500+01:00",
+               "GetObjectRetention lost exact retained state");
+         end;
+         declare
+            Retention : Flyology.Object_Storage.Object_Retention;
+            Identity : Backends.Version_Identity;
+         begin
+            Store.Get_Object_Retention
+              (Bucket, Key, null, Ada.Real_Time.Time_Last,
+               Retention, Identity, Backend_Result,
+               Selector =>
+                 (Kind => Backends.Exact_Version,
+                  ID => Second_Info.Version));
+            Require
+              (Backend_Result = Flyology.Object_Storage.Success
+               and then Retention.Retain_Until = 4_070_908_801
+               and then US.To_String (Retention.Exact_Text) =
+                 "2099-01-01T01:00:00.500+01:00",
+               "fractional retention deadline was not rounded upward");
+         end;
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", Target, First_Retention_Query));
+            Value : constant Object_Lock.Retention :=
+              Object_Lock.Parse_Retention (Response_Body (Response));
+         begin
+            Require
+              (Value.Mode = Object_Lock.Retention_Mode_Absent,
+               "retention exact-version selection leaked across versions");
+         end;
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, First_Retention_Query,
+                     Zero_Fraction_Retention_Document,
+                     "Content-MD5: " &
+                     Content_MD5 (Zero_Fraction_Retention_Document) &
+                     CRLF)),
+               "200 OK"),
+            "PutObjectRetention rejected an all-zero fraction");
+         declare
+            Retention : Flyology.Object_Storage.Object_Retention;
+            Identity : Backends.Version_Identity;
+         begin
+            Store.Get_Object_Retention
+              (Bucket, Key, null, Ada.Real_Time.Time_Last,
+               Retention, Identity, Backend_Result,
+               Selector =>
+                 (Kind => Backends.Exact_Version,
+                  ID => First_Info.Version));
+            Require
+              (Backend_Result = Flyology.Object_Storage.Success
+               and then Retention.Retain_Until = 946_684_800
+               and then US.To_String (Retention.Exact_Text) =
+                 "2000-01-01T00:00:00.000Z",
+               "all-zero retention fraction changed the deadline");
+         end;
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, First_Retention_Query,
+                     Negative_Offset_Retention_Document,
+                     "Content-MD5: " &
+                     Content_MD5 (Negative_Offset_Retention_Document) &
+                     CRLF)),
+               "200 OK"),
+            "PutObjectRetention rejected a negative offset");
+         declare
+            Retention : Flyology.Object_Storage.Object_Retention;
+            Identity : Backends.Version_Identity;
+         begin
+            Store.Get_Object_Retention
+              (Bucket, Key, null, Ada.Real_Time.Time_Last,
+               Retention, Identity, Backend_Result,
+               Selector =>
+                 (Kind => Backends.Exact_Version,
+                  ID => First_Info.Version));
+            Require
+              (Backend_Result = Flyology.Object_Storage.Success
+               and then Retention.Retain_Until = 946_684_801
+               and then US.To_String (Retention.Exact_Text) =
+                 "1999-12-31T23:00:00.500-01:00",
+               "negative-offset retention deadline was not normalized");
+         end;
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", Target,
+                     (SigV4.Pair ("retention", ""),
+                      SigV4.Pair ("versionId", "")))),
+               "<Code>InvalidArgument</Code>"),
+            "GetObjectRetention accepted an empty version selector");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", Target,
+                     (SigV4.Pair ("retention", ""),
+                      SigV4.Pair ("versionId", Second_ID),
+                      SigV4.Pair ("x-id", "PutObjectRetention")))),
+               "<Code>InvalidArgument</Code>"),
+            "GetObjectRetention accepted a mismatched operation ID");
+
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    (Target,
+                     (1 => SigV4.Pair ("versionId", First_ID)))),
+               "403 Forbidden"),
+            "DeleteObject removed a version under legal hold");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    (Target,
+                     (1 => SigV4.Pair ("versionId", Second_ID)),
+                     Header_Name => "x-amz-mfa",
+                     Header_Value => "device 123456")),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObject admitted an MFA credential over cleartext");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    (Target,
+                     (1 => SigV4.Pair ("versionId", Second_ID)),
+                     Header_Name => "x-amz-mfa",
+                     Header_Value => "device 123456"),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "403 Forbidden"),
+            "MFA authorization bypassed active retention");
+         Require
+           (Has
+              (Run (Signed_Delete_Object_Request (Target)),
+               "204 No Content"),
+            "current DeleteObject did not publish a protected marker");
+         Require
+           (Has
+               (Run
+                 (Signed_Query_Request
+                    ("GET", Target, Second_Retention_Query)),
+               "2099-01-01T01:00:00.500+01:00"),
+            "current deletion changed the retained exact version");
+
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, First_Hold_Query, Hold_Off_Document,
+                     "Content-MD5: " & Content_MD5 (Hold_Off_Document) &
+                     CRLF)),
+               "200 OK"),
+            "PutObjectLegalHold did not clear the selected hold");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    (Target,
+                     (1 => SigV4.Pair ("versionId", First_ID)))),
+               "204 No Content"),
+            "cleared legal hold still prevented exact deletion");
+      end;
+   end;
 
    Ada.Text_IO.Put_Line ("S3 server application corpus: OK");
 end S3_Server_Application_Corpus;

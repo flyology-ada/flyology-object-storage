@@ -1692,6 +1692,55 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Get_Bucket_Versioning;
 
+   overriding procedure Enable_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Enable_Bucket_Object_Lock
+           (Item.Catalog, Bucket, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Enable_Bucket_Object_Lock;
+
+   overriding procedure Get_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status)
+   is
+   begin
+      State := Bucket_Object_Lock_Disabled;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Object_Lock
+           (Item.Catalog, Bucket, State, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         State := Bucket_Object_Lock_Disabled;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Object_Lock;
+
    overriding procedure Put_Bucket_ABAC
      (Item     : in out Store;
       Bucket   : String;
@@ -2649,6 +2698,139 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Outcomes.Clear;
          Result := Backend_Unavailable;
    end Delete_Objects;
+
+   overriding procedure Put_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Legal_Hold_Status;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Object_Legal_Hold
+           (Item.Catalog, Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Put_Object_Legal_Hold;
+
+   overriding procedure Get_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Value := Object_Legal_Hold_Off;
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Object_Legal_Hold
+           (Item.Catalog, Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value := Object_Legal_Hold_Off;
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Get_Object_Legal_Hold;
+
+   overriding procedure Put_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Has_Text : constant Boolean :=
+        US.Length (Value.Exact_Text) > 0;
+   begin
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else US.Length (Value.Exact_Text) > 35
+        or else
+          ((Value.Mode = No_Object_Retention)
+           /= (not Has_Text and then Value.Retain_Until = 0))
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Object_Retention
+           (Item.Catalog, Bucket, Key, Selector, Value,
+            Unix_Seconds (Ada.Calendar.Clock), Identity, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Put_Object_Retention;
+
+   overriding procedure Get_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Retention;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+   begin
+      Value :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => US.Null_Unbounded_String);
+      Identity := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Object_Retention
+           (Item.Catalog, Bucket, Key, Selector, Value, Identity, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Value :=
+           (Mode         => No_Object_Retention,
+            Retain_Until => 0,
+            Exact_Text   => US.Null_Unbounded_String);
+         Identity := (others => <>);
+         Result := Backend_Unavailable;
+   end Get_Object_Retention;
 
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;

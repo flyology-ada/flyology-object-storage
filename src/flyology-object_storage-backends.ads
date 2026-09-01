@@ -658,6 +658,37 @@ package Flyology.Object_Storage.Backends is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status) is abstract;
 
+   --  Atomically enable Object Lock for an existing versioning-enabled
+   --  bucket. Repeated enablement is idempotent. A backend never disables an
+   --  enabled bucket through this surface and rejects enablement unless
+   --  bucket versioning is currently enabled.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage-domain outcome
+   procedure Enable_Bucket_Object_Lock
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic bucket Object Lock snapshot.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param State Persisted enabled or disabled state
+   --  @param Result Storage-domain outcome
+   procedure Get_Bucket_Object_Lock
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status) is abstract;
+
    --  Atomically replace the ABAC state of an existing bucket.
    --  @param Item Backend that owns the bucket
    --  @param Bucket Existing bucket name
@@ -1889,6 +1920,95 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status) is abstract;
+
+   --  Atomically replace legal-hold state on one selected object generation.
+   --  The bucket must have Object Lock and versioning enabled. The returned
+   --  identity is selected from the same mutation snapshot.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Value Complete replacement legal-hold state
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Identity Selected generation identity
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Put_Object_Legal_Hold
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Value    : Object_Legal_Hold_Status;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Return legal-hold state for one selected object generation.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Selected legal-hold state
+   --  @param Identity Selected generation identity
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Get_Object_Legal_Hold
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Atomically replace retention on one selected object generation. Active
+   --  governance or compliance retention may only be extended in the same
+   --  mode through this no-bypass surface. Expired retention may be replaced
+   --  or removed. The bucket must have Object Lock and versioning enabled.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Value Complete replacement retention state
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Identity Selected generation identity
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Put_Object_Retention
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Value    : Object_Retention;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Return retention for one selected object generation.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Selected retention state
+   --  @param Identity Selected generation identity
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Get_Object_Retention
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Object_Retention;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
 
    --  Atomically replace the complete tag set associated with one selected
    --  object generation. Missing buckets and objects remain distinguishable.

@@ -737,6 +737,21 @@ package Flyology.Object_Storage.Backends.Memory is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   overriding procedure Enable_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Object_Lock
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      State    : out Bucket_Object_Lock_Status;
+      Result   : out Status);
+
    --  Replace the ABAC state in the protected in-memory catalog.
    --  @param Item In-memory store
    --  @param Bucket Existing bucket name
@@ -967,6 +982,42 @@ package Flyology.Object_Storage.Backends.Memory is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
 
+   overriding procedure Put_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Legal_Hold_Status;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Get_Object_Legal_Hold
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Legal_Hold_Status;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Put_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Value : Object_Retention;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
+   overriding procedure Get_Object_Retention
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value : out Object_Retention;
+      Identity : out Version_Identity;
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
+
    --  Replace tags on one selected in-memory generation.
    --  @param Identity Selected generation from the mutation snapshot
    --  @param Selector Current, null, or exact generation selection
@@ -1163,6 +1214,7 @@ private
       Created : Unix_Time := 0;
       Tags    : Flyology.Object_Storage.Tags.Tag_Set;
       Versioning : Bucket_Versioning_Configuration := (others => <>);
+      Object_Lock : Bucket_Object_Lock_Status := Bucket_Object_Lock_Disabled;
       ABAC : Bucket_ABAC_Status := Bucket_ABAC_Disabled;
       Acceleration : Bucket_Acceleration_Status :=
         Bucket_Acceleration_Unconfigured;
@@ -1199,6 +1251,11 @@ private
       Publication : Version_Publication_Order := 0;
       Info   : Object_Information;
       Tags   : Object_Tag_Set;
+      Legal_Hold : Object_Legal_Hold_Status := Object_Legal_Hold_Off;
+      Retention  : Object_Retention :=
+        (Mode         => No_Object_Retention,
+         Retain_Until => 0,
+         Exact_Text   => Ada.Strings.Unbounded.Null_Unbounded_String);
       Completed_Parts : Completed_Object_Part_List;
       Data   : Owned_Bytes;
    end record;
@@ -1244,6 +1301,12 @@ private
         (Name          : String;
          Configuration : out Bucket_Versioning_Configuration;
          Result        : out Status);
+      procedure Enable_Bucket_Object_Lock
+        (Name : String; Result : out Status);
+      procedure Get_Bucket_Object_Lock
+        (Name : String;
+         State : out Bucket_Object_Lock_Status;
+         Result : out Status);
       procedure Put_Bucket_ABAC
         (Name : String; Value : Bucket_ABAC_Status; Result : out Status);
       procedure Get_Bucket_ABAC
@@ -1392,6 +1455,26 @@ private
          Key    : String;
          Selector : Version_Selector;
          Info   : out Object_Information;
+         Result : out Status);
+      procedure Put_Legal_Hold
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : Object_Legal_Hold_Status;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Get_Legal_Hold
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : out Object_Legal_Hold_Status;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Put_Retention
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : Object_Retention; Modified : Unix_Time;
+         Identity : out Version_Identity;
+         Result : out Status);
+      procedure Get_Retention
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Value : out Object_Retention;
+         Identity : out Version_Identity;
          Result : out Status);
       procedure Attributes
         (Bucket   : String;
