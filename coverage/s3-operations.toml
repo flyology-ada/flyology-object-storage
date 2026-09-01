@@ -658,7 +658,10 @@ rename_object = [
   ["git", "diff", "--check"],
 ]
 restore_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-restore-object-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-restore-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["./tests/scripts/test.sh"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -5182,20 +5185,21 @@ provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 public_name = "Not_Exposed"
-codec = "generated_model_only_restore_xml_and_headers"
+codec = "private_strict_restore_xml_active_tier_only"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "mutation model coverage only; no public restore request, XML serializer, checksum binding, response decoder, or runtime evidence exists, so this review reports no accepted or completed restore, no admission certainty, and no automatic replay"
-reconciliation = "the model carries an optional VersionId and documents later HeadObject restore-state observation, but neither request binding nor restore-state decoding is implemented; explicit or omitted version selection, later observation, causal proof, certainty upgrade, and automatic replay are not claimed"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RestoreObject API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled RestoreRequest XML, optional checksum algorithm, VersionId, requester-pays controls, response headers, and active-tier error are inventory only; no XML serialization, cross-field validation, digest generation, signing binding, version binding, response validation, or error decoding is implemented", "regular restore, speed upgrade, and deprecated Select restore shapes are structural inventory only; no Days or tier policy, Select support, output-location policy, ACL, tag, metadata, encryption, SQL, body-size, or collection bound is claimed", "only ObjectAlreadyInActiveTierError is a modeled operation error shape; documentation-only RestoreAlreadyInProgress and GlacierExpeditedRetrievalNotAvailable codes and modeled HTTP 200 versus documented 202 behavior are not normalized or qualified", "later HeadObject x-amz-restore observation cannot prove that a lost request caused the observed state, upgrade mutation certainty, or authorize automatic replay", "directory buckets are documented as unsupported; access-point behavior and conflicting inherited Outposts routing prose are not implemented or resolved"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "the authenticated local server validates and drains one supported RestoreRequest, binds the optional version selector, and returns only the modeled 403 ObjectAlreadyInActiveTierError for an existing maintained active-tier object; no restore is accepted or completed, no archival state exists, and no automatic replay is authorized"
+reconciliation = "current, null, and exact Head_Object selection identifies only the active-tier object inspected by this request; later HeadObject observation does not prove restore causation, upgrade mutation certainty, or authorize automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RestoreObject API, composable operation, synchronous wrapper, Finish path, or public client GNATdoc qualification is claimed", "the private server validates exact restore, optional VersionId, expected-owner, requester-pays, Content-MD5, checksum transport with individual-header precedence, and a bounded entity-safe RestoreRequest; it does not expose a serializer, digest generator, response decoder, or public request type", "empty and direct Tier-only speed-up requests are accepted and validated; regular restore requires a caller-supplied positive lexical Days value and accepts only the modeled Standard, Bulk, or Expedited tier when supplied; Select, OutputLocation, Description, and every unknown or duplicated XML shape are rejected without inventing a Days or Tier default or operational bound", "every maintained local object is active-tier, so the server returns only 403 ObjectAlreadyInActiveTierError after exact bucket and current, null, or exact-version lookup; no archived state, restore scheduling, 200 or 202 success, RestoreAlreadyInProgress, or GlacierExpeditedRetrievalNotAvailable behavior is implemented", "later HeadObject observation cannot prove that a lost request caused state, upgrade mutation certainty, or authorize automatic replay", "directory buckets, access points, Object Lambda, and S3 on Outposts routing are not implemented or qualified"]
+evidence_tokens = ["Versioned_Object_Conformance"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "restore_object"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-restore-object-model.py"], server = [], corpus = ["tests/scripts/verify-restore-object-model.py"] }
+evidence = { backend = ["tests/src/versioned_object_conformance.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-restore-object-model.py"], server = ["src/flyology-object_storage-server-s3_applications.adb"], corpus = ["tests/src/s3_server_application_corpus.adb", "tests/scripts/verify-restore-object-model.py", "tools/verify-restore-object-preparation.py"] }
 
 [[operation]]
 name = "SelectObjectContent"

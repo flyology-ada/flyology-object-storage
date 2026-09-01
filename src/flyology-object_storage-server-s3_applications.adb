@@ -181,6 +181,182 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Derived from the established caller-overridable document resource
    --  policy already used by Put/GetBucketPolicy; changing that source changes
    --  server admission and backend persistence compatibility together.
+   Maximum_Restore_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared entity-safe XML parser limits. RestoreObject
+   --  only validates a bounded document before reporting maintained active
+   --  storage; it does not introduce archival-state policy.
+
+   type Restore_XML_Field is
+     (No_Restore_Field, Restore_Days_Field, Restore_Tier_Field,
+      Restore_Job_Field, Restore_Job_Tier_Field);
+   type Restore_XML_Validator is new XML.Event_Handler with record
+      Depth     : Natural := 0;
+      Field     : Restore_XML_Field := No_Restore_Field;
+      Root_Seen : Boolean := False;
+      Days_Seen : Boolean := False;
+      Job_Seen  : Boolean := False;
+      Tier_Seen : Boolean := False;
+      Value     : US.Unbounded_String;
+      Namespace : US.Unbounded_String;
+   end record;
+   overriding procedure Start_Element
+     (Item : in out Restore_XML_Validator; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Restore_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Restore_XML_Validator; Value : String);
+   overriding procedure End_Element
+     (Item : in out Restore_XML_Validator; Local_Name : String);
+
+   procedure Require_Restore_Whitespace (Value : String) is
+   begin
+      for Element of Value loop
+         if Element not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+            raise XML.XML_Error with "text outside RestoreRequest members";
+         end if;
+      end loop;
+   end Require_Restore_Whitespace;
+
+   function Restore_Positive_Days (Value : String) return Boolean is
+      Seen_Nonzero : Boolean := False;
+   begin
+      if Value'Length = 0 then
+         return False;
+      end if;
+      for Element of Value loop
+         if Element not in '0' .. '9' then
+            return False;
+         end if;
+         Seen_Nonzero := Seen_Nonzero or else Element /= '0';
+      end loop;
+      return Seen_Nonzero;
+   end Restore_Positive_Days;
+
+   function Restore_Tier (Value : String) return Boolean is
+     (Value in "Standard" | "Bulk" | "Expedited");
+
+   overriding procedure Start_Element
+     (Item : in out Restore_XML_Validator; Local_Name : String) is
+   begin
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen or else Local_Name /= "RestoreRequest" then
+            raise XML.XML_Error with "invalid RestoreRequest root";
+         end if;
+         Item.Root_Seen := True;
+      elsif Item.Depth = 2 then
+         Item.Value := US.Null_Unbounded_String;
+         if Local_Name = "Days" and then not Item.Days_Seen then
+            Item.Days_Seen := True;
+            Item.Field := Restore_Days_Field;
+         elsif Local_Name = "Tier" and then not Item.Tier_Seen
+           and then not Item.Job_Seen
+         then
+            Item.Tier_Seen := True;
+            Item.Field := Restore_Tier_Field;
+         elsif Local_Name = "GlacierJobParameters"
+           and then not Item.Job_Seen and then not Item.Tier_Seen
+         then
+            Item.Job_Seen := True;
+            Item.Field := Restore_Job_Field;
+         else
+            raise XML.XML_Error with "unsupported RestoreRequest member";
+         end if;
+      elsif Item.Depth = 3
+        and then Item.Field = Restore_Job_Field
+        and then Local_Name = "Tier"
+        and then not Item.Tier_Seen
+      then
+         Item.Tier_Seen := True;
+         Item.Field := Restore_Job_Tier_Field;
+         Item.Value := US.Null_Unbounded_String;
+      else
+         raise XML.XML_Error with "invalid RestoreRequest nesting";
+      end if;
+   end Start_Element;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Restore_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+   begin
+      if Attribute_Count /= 0 then
+         raise XML.XML_Error with "invalid RestoreRequest namespace";
+      elsif Item.Depth = 1 then
+         if Namespace_URI'Length > 0
+           and then Namespace_URI /=
+             "http://s3.amazonaws.com/doc/2006-03-01/"
+         then
+            raise XML.XML_Error with "invalid RestoreRequest namespace";
+         end if;
+         Item.Namespace := US.To_Unbounded_String (Namespace_URI);
+      elsif Namespace_URI /= US.To_String (Item.Namespace) then
+         raise XML.XML_Error with "mixed RestoreRequest namespace";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure Text
+     (Item : in out Restore_XML_Validator; Value : String) is
+   begin
+      if Item.Field in Restore_Days_Field | Restore_Tier_Field |
+        Restore_Job_Tier_Field
+      then
+         US.Append (Item.Value, Value);
+      else
+         Require_Restore_Whitespace (Value);
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Restore_XML_Validator; Local_Name : String)
+   is
+      Value : constant String := US.To_String (Item.Value);
+   begin
+      if Item.Depth = 3 then
+         if Local_Name /= "Tier" or else not Restore_Tier (Value) then
+            raise XML.XML_Error with "invalid restore tier";
+         end if;
+         Item.Field := Restore_Job_Field;
+      elsif Item.Depth = 2 then
+         case Item.Field is
+            when Restore_Days_Field =>
+               if Local_Name /= "Days"
+                 or else not Restore_Positive_Days (Value)
+               then
+                  raise XML.XML_Error with "invalid restore days";
+               end if;
+            when Restore_Tier_Field =>
+               if Local_Name /= "Tier" or else not Restore_Tier (Value) then
+                  raise XML.XML_Error with "invalid restore tier";
+               end if;
+            when Restore_Job_Field =>
+               if Local_Name /= "GlacierJobParameters"
+                 or else not Item.Tier_Seen
+               then
+                  raise XML.XML_Error with
+                    "invalid GlacierJobParameters";
+               end if;
+            when others =>
+               raise XML.XML_Error with "invalid RestoreRequest member";
+         end case;
+         Item.Field := No_Restore_Field;
+         Item.Value := US.Null_Unbounded_String;
+      elsif Item.Depth = 1 then
+         if Local_Name /= "RestoreRequest" then
+            raise XML.XML_Error with "invalid RestoreRequest closure";
+         elsif Item.Job_Seen and then not Item.Days_Seen then
+            raise XML.XML_Error with
+              "GlacierJobParameters requires restore days";
+         end if;
+      else
+         raise XML.XML_Error with "invalid RestoreRequest closure";
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
 
    type Bucket_Policy_Assessment is
      (Malformed_Bucket_Policy, Non_Public_Bucket_Policy,
@@ -1594,6 +1770,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
+         Restore_Object,
          Put_Object_ACL, Get_Object_ACL,
          Put_Object_Annotation, Get_Object_Annotation,
          List_Object_Annotations, Delete_Object_Annotation,
@@ -2580,6 +2757,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=PutObjectRetention&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetObjectRetention&") /= 0;
+      Has_Restore_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&restore&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&restore=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=RestoreObject&") /= 0;
       Is_Bucket_Versioning_Query : constant Boolean :=
         Query_Text = "versioning"
         or else Query_Text = "versioning="
@@ -2825,12 +3007,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (if Method = "PUT" then "PutObjectRetention"
             else "GetObjectRetention"),
            Allow_Version => True);
+      Restore_Request : constant Object_Lock_Query_Result :=
+        Parse_Object_Lock_Query
+          (Query_Text, "restore", "RestoreObject", Allow_Version => True);
       ACL_Query_Invalid : Boolean := False;
       Object_Lock_Query_Invalid : Boolean := False;
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
       Delete_Request : Deletions.Delete_Object_Request;
       Object_Read_Query_Invalid : Boolean := False;
+      Restore_Query_Invalid : Boolean := False;
       Bucket_Versioning_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
@@ -5140,6 +5326,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            or else
              (Method in "GET" | "PUT" and then Has_Retention_Query
               and then not Retention_Request.Valid);
+         Restore_Query_Invalid :=
+           Method = "POST" and then Has_Restore_Query
+           and then not Restore_Request.Valid;
          if Looks_Like_ACL_Query then
             Operation :=
               (if Method = "GET" then Get_Object_ACL
@@ -5153,6 +5342,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Operation := Put_Object_Retention;
          elsif Method = "GET" and then Has_Retention_Query then
             Operation := Get_Object_Retention;
+         elsif Method = "POST" and then Has_Restore_Query then
+            Operation := Restore_Object;
          elsif Parsed.Has_Query and then Has_Annotation_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
@@ -5346,6 +5537,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration |
          Update_Bucket_Metadata_Annotation_Table_Configuration |
          Put_Object |
+         Restore_Object |
          Put_Object_Annotation | Put_Object_Tagging |
          Delete_Objects | Put_Multipart_Part |
          Put_Object_Legal_Hold | Put_Object_Retention |
@@ -5438,6 +5630,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The Object Lock request query is invalid", Target_Text);
          return;
+      elsif Restore_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The RestoreObject request query is invalid", Target_Text);
+         return;
       elsif Bucket_Versioning_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -5529,7 +5726,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Update_Bucket_Metadata_Inventory_Table_Configuration |
         Update_Bucket_Metadata_Journal_Table_Configuration |
         Update_Bucket_Metadata_Annotation_Table_Configuration |
-        Put_Object | Put_Object_Annotation | Put_Object_Tagging |
+        Put_Object | Restore_Object |
+        Put_Object_Annotation | Put_Object_Tagging |
         Put_Object_Legal_Hold |
         Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -14130,6 +14328,165 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 200, "application/xml",
                         Attributes.Serialize_Result (Response));
                   end;
+               end;
+
+            when Restore_Object =>
+               declare
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Value_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Selected_Info : Object_Information;
+                  Selector : constant Backends.Version_Selector :=
+                    To_Version_Selector
+                      (Restore_Request.Has_Version_ID,
+                       Restore_Request.Version_ID);
+               begin
+                  if Payer_Count > 1 or else MD5_Count > 1
+                    or else SDK_Count > 1 or else Value_Count > 1
+                    or else Checksum_Header_Count /= Value_Count
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                    or else
+                      (Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A RestoreObject request header is invalid or " &
+                        "duplicated", Target_Text);
+                     return;
+                  elsif MD5_Count = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidDigest",
+                        "The Content-MD5 header is invalid", Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then
+                      (Length.Bytes = 0
+                       or else Length.Bytes >
+                         Maximum_Restore_Body)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "RestoreObject requires one bounded XML body",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  declare
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => S3.Core.CRC64NVME,
+                        Length_Value => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => MD5_Count = 1,
+                        Expected_Content_MD5 =>
+                          (if MD5_Count = 1 then
+                             US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                           else US.Null_Unbounded_String),
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => False,
+                        Checksum_From_Trailer => False,
+                        Reject_Unexpected_Trailers => False,
+                        Expected_Body_Checksum => US.Null_Unbounded_String,
+                        Observed => 0,
+                        Maximum => Maximum_Restore_Body,
+                        Completed => False,
+                        others => <>);
+                     Document : constant String := Read_Document (Source);
+                  begin
+                     if Document'Length = 0 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "RestoreObject requires one bounded XML body",
+                           Target_Text);
+                        return;
+                     end if;
+                     case Verify_Document_Checksum (Document) is
+                        when Document_Checksum_OK =>
+                           null;
+                        when Document_Checksum_Group_Invalid =>
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The RestoreObject checksum group is invalid",
+                              Target_Text);
+                           return;
+                        when Document_Checksum_Value_Invalid =>
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The RestoreObject checksum value is invalid",
+                              Target_Text);
+                           return;
+                        when Document_Checksum_Mismatch =>
+                           Send_Error
+                             (X, 400, "BadDigest",
+                              "The RestoreObject checksum does not match",
+                              Target_Text);
+                           return;
+                     end case;
+                     declare
+                        Validator : aliased Restore_XML_Validator;
+                     begin
+                        XML.Parse
+                          (Document, Validator, XML.Default_Limits);
+                     exception
+                        when XML.XML_Error =>
+                           Send_Error
+                             (X, 400, "MalformedXML",
+                              "The RestoreObject XML body is malformed",
+                              Target_Text);
+                           return;
+                     end;
+                  end;
+
+                  Store.Head_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                     Result);
+                  if Result /= Success then
+                     Send_Backend_Error (X, Result, True, Target_Text);
+                     return;
+                  end if;
+                  Store.Head_Object
+                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                     Selected_Info, Result, Selector => Selector);
+                  if Result = Success then
+                     Send_Error
+                       (X, 403, "ObjectAlreadyInActiveTierError",
+                        "The object is already in the active tier",
+                        Target_Text);
+                  elsif Result = Not_Found then
+                     if Restore_Request.Has_Version_ID then
+                        Send_Error
+                          (X, 404, "NoSuchVersion",
+                           "The specified version does not exist",
+                           Target_Text);
+                     else
+                        Send_Backend_Error
+                          (X, Not_Found, False, Target_Text);
+                     end if;
+                  else
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                  end if;
                end;
 
             when Head_Object =>

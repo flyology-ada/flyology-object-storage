@@ -5123,30 +5123,38 @@
     },
     "RestoreObject": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/versioned_object_conformance.adb",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-restore-object-model.py"
         ],
         "corpus": [
-          "tests/scripts/verify-restore-object-model.py"
+          "tests/src/s3_server_application_corpus.adb",
+          "tests/scripts/verify-restore-object-model.py",
+          "tools/verify-restore-object-preparation.py"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb"
+        ]
       },
       "family": "rest_xml_mutation",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"

@@ -11010,6 +11010,197 @@ begin
    end;
 
    declare
+      Document : constant String :=
+        "<RestoreRequest><Days>1</Days></RestoreRequest>";
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("restore", ""),
+         SigV4.Pair ("x-id", "RestoreObject"));
+
+      function Restore
+        (Target : String := "/test-bucket/object";
+         Request_Query : SigV4.Name_Value_Array := Query;
+         Payload : String := Document;
+         Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("POST", Target, Request_Query, Payload, Extra)));
+   begin
+      declare
+         Response : constant String := Restore;
+      begin
+         Require
+           (Has (Response, "403 Forbidden")
+            and then Has
+              (Response, "<Code>ObjectAlreadyInActiveTierError</Code>"),
+            "RestoreObject did not reject an active-tier object");
+      end;
+      Require
+        (Has
+           (Restore
+              (Request_Query =>
+                 (SigV4.Pair ("restore", ""),
+                  SigV4.Pair ("versionId", "null"),
+                  SigV4.Pair ("x-id", "RestoreObject"))),
+            "<Code>ObjectAlreadyInActiveTierError</Code>"),
+         "RestoreObject did not bind the selected null generation");
+      declare
+         Response : constant String :=
+           Restore
+             (Request_Query =>
+                (SigV4.Pair ("restore", ""),
+                 SigV4.Pair ("versionId", "missing-version"),
+                 SigV4.Pair ("x-id", "RestoreObject")));
+      begin
+         Require
+           (Has (Response, "404 Not Found")
+            and then Has (Response, "<Code>NoSuchVersion</Code>"),
+            "RestoreObject did not distinguish a missing version");
+      end;
+      Require
+        (Has
+           (Restore (Target => "/test-bucket/missing-object"),
+            "<Code>NoSuchKey</Code>"),
+         "RestoreObject did not distinguish a missing key");
+      Require
+        (Has
+           (Restore (Target => "/absent-bucket/object"),
+            "<Code>NoSuchBucket</Code>"),
+         "RestoreObject did not distinguish a missing bucket");
+      declare
+         Response : constant String :=
+           Restore
+             (Extra =>
+                "x-amz-expected-bucket-owner: different-owner" & CRLF);
+      begin
+         Require
+           (Has (Response, "<Code>AccessDenied</Code>")
+            and then not Has
+              (Response, "<Code>ObjectAlreadyInActiveTierError</Code>"),
+            "RestoreObject ignored the expected bucket owner");
+      end;
+      Require
+        (Has
+           (Restore
+              (Extra => "x-amz-request-payer: invalid" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "RestoreObject accepted an invalid request payer");
+      declare
+         Response : constant String :=
+           Restore (Extra => "x-amz-request-payer: requester" & CRLF);
+      begin
+         Require
+           (Has (Response, "<Code>ObjectAlreadyInActiveTierError</Code>")
+            and then not Has (Response, "x-amz-request-charged:"),
+            "RestoreObject emitted a success-only charged header on " &
+            "rejection");
+      end;
+      Require
+        (Has
+           (Restore
+              (Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, Document) & CRLF),
+            "<Code>ObjectAlreadyInActiveTierError</Code>"),
+         "RestoreObject rejected a matching request checksum");
+      Require
+        (Has
+           (Restore
+              (Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA1" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, Document) & CRLF),
+            "<Code>ObjectAlreadyInActiveTierError</Code>"),
+         "RestoreObject did not prefer the individual checksum");
+      Require
+        (Has
+           (Restore
+              (Extra =>
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, "different") & CRLF),
+            "<Code>BadDigest</Code>"),
+         "RestoreObject accepted a mismatched individual checksum");
+      Require
+        (Has
+           (Restore (Extra => "content-md5: malformed" & CRLF),
+            "<Code>InvalidDigest</Code>"),
+         "RestoreObject accepted a malformed Content-MD5");
+      Require
+        (Has
+           (Restore
+              (Extra =>
+                 "content-md5: " & Content_MD5 ("different") & CRLF),
+            "<Code>BadDigest</Code>"),
+         "RestoreObject accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Restore (Payload => "<"),
+            "<Code>MalformedXML</Code>"),
+         "RestoreObject accepted malformed XML");
+      Require
+        (Has
+           (Restore
+              (Payload =>
+                 "<RestoreRequest><Type>SELECT</Type>" &
+                 "<Days>1</Days></RestoreRequest>"),
+            "<Code>MalformedXML</Code>"),
+         "RestoreObject accepted an unsupported Select request");
+      Require
+        (Has
+           (Restore
+              (Payload =>
+                 "<RestoreRequest xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""><Days xmlns="""">1</Days>" &
+                 "</RestoreRequest>"),
+            "<Code>MalformedXML</Code>"),
+         "RestoreObject accepted mixed XML namespaces");
+      Require
+        (Has
+           (Restore
+              (Payload =>
+                 "<RestoreRequest><GlacierJobParameters>" &
+                 "<Tier>Standard</Tier></GlacierJobParameters>" &
+                 "</RestoreRequest>"),
+            "<Code>MalformedXML</Code>"),
+         "RestoreObject accepted GlacierJobParameters without Days");
+      Require
+        (Has
+           (Restore
+              (Payload =>
+                 "<RestoreRequest><Tier>Standard</Tier></RestoreRequest>"),
+            "<Code>ObjectAlreadyInActiveTierError</Code>"),
+         "RestoreObject rejected a valid Tier-only request");
+      Require
+        (Has
+           (Restore (Payload => "<RestoreRequest/>"),
+            "<Code>ObjectAlreadyInActiveTierError</Code>"),
+         "RestoreObject rejected a valid empty request");
+      Require
+        (Has
+           (Restore
+              (Extra =>
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF &
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "RestoreObject accepted duplicate expected-owner headers");
+      Require
+        (Has
+           (Restore
+              (Request_Query =>
+                 (SigV4.Pair ("restore", ""),
+                  SigV4.Pair ("restore", ""))),
+            "<Code>InvalidArgument</Code>"),
+         "RestoreObject accepted a duplicate restore query");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("POST", "/test-bucket/object", Query, "")),
+            "<Code>InvalidRequest</Code>"),
+         "RestoreObject accepted an empty request body");
+   end;
+
+   declare
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("attributes", ""),
          SigV4.Pair ("x-id", "GetObjectAttributes"));
