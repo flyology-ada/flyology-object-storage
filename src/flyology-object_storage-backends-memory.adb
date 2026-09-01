@@ -34,7 +34,6 @@ package body Flyology.Object_Storage.Backends.Memory is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Strings.Unbounded.Unbounded_String;
-   use type Bucket_Metadata_State;
    package Checksum_Engine renames
      Flyology.Object_Storage.Checksum_Engine;
 
