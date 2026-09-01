@@ -84,6 +84,8 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Put_Tags_Outcome_Kind;
    use type Client_Buckets.Get_Tags_Outcome_Kind;
    use type Client_Buckets.Delete_Tags_Outcome_Kind;
+   use type Client_Buckets.Put_Bucket_Policy_Result_Kind;
+   use type Client_Buckets.Delete_Bucket_Policy_Result_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
    use type Delete_Result_Kind;
@@ -113,6 +115,8 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Get_Versioning_Outcome_Kind;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Low_Level.Get_Bucket_Control_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Control_Outcome_Kind;
+   use type Low_Level.Delete_Bucket_Configuration_Outcome_Kind;
    use type Low_Level.Get_Object_ACL_Outcome_Kind;
    use type ACL.Grantee_Type;
    use type ACL.Permission;
@@ -623,6 +627,101 @@ procedure S3_Implementation_Corpus is
             end if;
          end;
       end Check_Bucket_Tags;
+
+      procedure Check_Bucket_Policy_Status is
+         Public_Policy : constant String :=
+           "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+           """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+           Bucket & "/*""}}";
+         Fixed_Policy : constant String :=
+           "{""Statement"":{""Effect"":""Allow"",""Principal"":{" &
+           """AWS"":""arn:aws:iam::123456789012:role/reader""}," &
+           """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+           Bucket & "/*""}}";
+
+         procedure Set_And_Require
+           (Policy : String; Expected_Public : Boolean)
+         is
+            Parameters : Low_Level.Put_Bucket_Policy_Parameters;
+            Put_Result : constant Client_Buckets.Put_Bucket_Policy_Result :=
+              Client_Buckets.Set_Policy
+                (HTTP, Origin, Bucket, Policy, Parameters, Identity,
+                 Timeout => 30.0);
+            Status : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
+              Client_Buckets.Get_Policy_Status
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Put_Result.Kind /=
+                Client_Buckets.Put_Bucket_Policy_Response_Available
+              or else Put_Result.Response.Kind /=
+                Low_Level.Bucket_Control_Updated
+              or else Status.Kind /= Low_Level.Bucket_Control_Found
+              or else not Status.Is_Public.Is_Set
+              or else Status.Is_Public.Value /= Expected_Public
+            then
+               raise Program_Error with
+                 "S3 implementation returned the wrong bucket policy status";
+            end if;
+         end Set_And_Require;
+
+         procedure Delete_Stored_Policy is
+            Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+            Deleted : constant Client_Buckets.Delete_Bucket_Policy_Result :=
+              Client_Buckets.Delete_Policy
+                (HTTP, Origin, Bucket, Parameters, Identity, Timeout => 30.0);
+         begin
+            if Deleted.Kind /=
+                Client_Buckets.Delete_Bucket_Policy_Response_Available
+              or else Deleted.Response.Kind /=
+                Low_Level.Configuration_Deleted
+            then
+               raise Program_Error with
+                 "S3 implementation could not delete the policy fixture";
+            end if;
+         end Delete_Stored_Policy;
+      begin
+         declare
+            Missing : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
+              Client_Buckets.Get_Policy_Status
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Missing.Kind /= Low_Level.Get_Bucket_Control_Rejected
+              or else US.To_String (Missing.Error.Code) /=
+                "NoSuchBucketPolicy"
+            then
+               raise Program_Error with
+                 "S3 implementation did not preserve missing policy status";
+            end if;
+         end;
+         Set_And_Require (Public_Policy, True);
+         Set_And_Require (Fixed_Policy, False);
+         declare
+            Parameters : Low_Level.Put_Bucket_Policy_Parameters;
+            Put_Result : constant Client_Buckets.Put_Bucket_Policy_Result :=
+              Client_Buckets.Set_Policy
+                (HTTP, Origin, Bucket, "{", Parameters, Identity,
+                 Timeout => 30.0);
+            Status : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
+              Client_Buckets.Get_Policy_Status
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Put_Result.Kind /=
+                Client_Buckets.Put_Bucket_Policy_Response_Available
+              or else Put_Result.Response.Kind /=
+                Low_Level.Bucket_Control_Updated
+              or else Status.Kind /= Low_Level.Get_Bucket_Control_Rejected
+              or else US.To_String (Status.Error.Code) /= "InternalError"
+            then
+               raise Program_Error with
+                 "S3 implementation accepted malformed stored policy bytes";
+            end if;
+         end;
+         Delete_Stored_Policy;
+      exception
+         when others =>
+            Delete_Stored_Policy;
+            raise;
+      end Check_Bucket_Policy_Status;
 
       procedure Upload_High_Level_File is
          Local_Path : constant String :=
@@ -2915,6 +3014,7 @@ procedure S3_Implementation_Corpus is
       Require_Head_Object;
       if Is_Flyology_Server then
          Require_Private_ACL;
+         Check_Bucket_Policy_Status;
       end if;
       if Check_Get_Object_Attributes then
          Require_Get_Object_Attributes;

@@ -11600,10 +11600,22 @@ def main() -> None:
         assert entry.get("certainty") == policy_status_certainty
         assert entry.get("reconciliation") == policy_status_reconciliation
         assert entry.get("ada_symbols") == policy_status_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
+        assert entry["evidence"]["backend"] == [
+            "tests/src/s3_implementation_corpus.adb",
+        ]
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
+        assert "NoSuchBucketPolicy" in entry["absence"]
         assert "absent, false, or true" in entry["absence"]
-        assert "authorization enforcement" in entry["exclusions"][3]
+        assert "fixed-principal" in entry["exclusions"][3]
+        assert "malformed stored JSON" in entry["exclusions"][3]
+        assert "effective-access analysis" in entry["exclusions"][4]
         assert candidate.qualification["get_bucket_policy_status"][0][
             -1
         ] == "tools/verify-get-bucket-controls-preparation.py"
@@ -11628,6 +11640,11 @@ def main() -> None:
             "the read proves the prior policy mutation",
         ),
         ("collapsed absence", "absence", "missing IsPublic means false"),
+        (
+            "missing evaluator boundary",
+            "exclusions",
+            ["server policy interpretation is not pinned"],
+        ),
     ]
     for label, key, value in policy_status_mutations:
         candidate = copy.deepcopy(registry)
@@ -11646,6 +11663,22 @@ def main() -> None:
     reject_policy_status_registry(
         cross_policy_status_symbol, "cross-operation"
     )
+    missing_policy_status_backend = copy.deepcopy(registry)
+    missing_policy_status_backend.operations["GetBucketPolicyStatus"][
+        "coverage"
+    ]["backend"] = "missing"
+    assert missing_policy_status_backend != registry
+    reject_policy_status_registry(
+        missing_policy_status_backend, "missing backend coverage"
+    )
+    missing_policy_status_server = copy.deepcopy(registry)
+    missing_policy_status_server.operations["GetBucketPolicyStatus"][
+        "evidence"
+    ]["server"] = []
+    assert missing_policy_status_server != registry
+    reject_policy_status_registry(
+        missing_policy_status_server, "missing server evidence"
+    )
     missing_policy_status_lane = copy.deepcopy(registry)
     del missing_policy_status_lane.qualification["get_bucket_policy_status"]
     assert missing_policy_status_lane != registry
@@ -11654,7 +11687,7 @@ def main() -> None:
         s3_operation.qualification_plan(registry, ["GetBucketPolicyStatus"])
     )
     assert policy_status_qualification == "get_bucket_policy_status"
-    assert policy_status_commands[:5] == [
+    assert policy_status_commands[:6] == [
         [
             "uv", "run", "--python", "3.13", "--",
             "tools/verify-get-bucket-controls-preparation.py",
@@ -11662,15 +11695,16 @@ def main() -> None:
         ["@tests", "alr", "-n", "build"],
         ["@tests", "./bin/s3_get_bucket_controls_corpus"],
         ["@tests", "./bin/s3_http_socket_corpus"],
+        ["@tests", "./bin/s3_server_application_corpus"],
         ["./tools/verify-coverage.sh"],
     ]
-    assert policy_status_commands[5] == [
+    assert policy_status_commands[6] == [
         "./tools/build-api-docs.sh",
         "/private/tmp/fos-get-bucket-policy-status-gnatdoc",
         "--operation",
         "GetBucketPolicyStatus",
     ]
-    assert policy_status_commands[6:] == [
+    assert policy_status_commands[7:] == [
         ["./tools/ci/check-repository.sh", "{model}"],
         ["git", "diff", "--check"],
     ]

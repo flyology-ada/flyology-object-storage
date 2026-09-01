@@ -1,9 +1,11 @@
 with Ada.Calendar.Formatting;
 with Ada.Characters.Handling;
+with Ada.Containers.Indefinite_Hashed_Sets;
 with Ada.Real_Time;
 with Ada.Streams;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+with Ada.Strings.Hash;
 with Ada.Strings.Unbounded;
 with GNAT.MD5;
 with GNAT.SHA256;
@@ -53,6 +55,7 @@ with Flyology.Object_Storage.S3.Website;
 with Flyology.Object_Storage.S3.Wire_Core;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
+with GNAT.Sockets;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
 
@@ -107,6 +110,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Backends.Bucket_Metadata_Configuration_Kind;
    use type Backends.Version_Delete_Kind;
    use type Flyology.HTTP.Origin_Scheme;
+   use type GNAT.Sockets.Family_Type;
    use type Metadata_Results.Provider_Access;
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
@@ -177,6 +181,818 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Derived from the established caller-overridable document resource
    --  policy already used by Put/GetBucketPolicy; changing that source changes
    --  server admission and backend persistence compatibility together.
+
+   type Bucket_Policy_Assessment is
+     (Malformed_Bucket_Policy, Non_Public_Bucket_Policy,
+      Public_Bucket_Policy);
+
+   function Assess_Bucket_Policy
+     (Document : String) return Bucket_Policy_Assessment
+   is
+      package String_Sets is new Ada.Containers.Indefinite_Hashed_Sets
+        (Element_Type        => String,
+         Hash                => Ada.Strings.Hash,
+         Equivalent_Elements => "=");
+
+      Malformed : exception;
+      Position  : Natural := Document'First;
+      Depth     : Natural := 0;
+      Has_Public_Grant : Boolean := False;
+
+      function At_End return Boolean is (Position > Document'Last);
+
+      procedure Skip_Whitespace is
+      begin
+         while not At_End
+           and then Document (Position) in ' ' | ASCII.HT | ASCII.LF | ASCII.CR
+         loop
+            Position := Position + 1;
+         end loop;
+      end Skip_Whitespace;
+
+      procedure Enter_Container is
+      begin
+         if Depth = XML.Default_Limits.Maximum_Depth then
+            raise Malformed;
+         end if;
+         Depth := Depth + 1;
+      end Enter_Container;
+
+      procedure Leave_Container is
+      begin
+         Depth := Depth - 1;
+      end Leave_Container;
+
+      procedure Require_Character (Value : Character) is
+      begin
+         Skip_Whitespace;
+         if At_End or else Document (Position) /= Value then
+            raise Malformed;
+         end if;
+         Position := Position + 1;
+      end Require_Character;
+
+      function Hex_Value (Value : Character) return Natural is
+      begin
+         if Value in '0' .. '9' then
+            return Character'Pos (Value) - Character'Pos ('0');
+         elsif Value in 'a' .. 'f' then
+            return 10 + Character'Pos (Value) - Character'Pos ('a');
+         elsif Value in 'A' .. 'F' then
+            return 10 + Character'Pos (Value) - Character'Pos ('A');
+         else
+            raise Malformed;
+         end if;
+      end Hex_Value;
+
+      function Parse_Hex_Quad return Natural is
+         Result : Natural := 0;
+      begin
+         for Index in 1 .. 4 loop
+            if At_End then
+               raise Malformed;
+            end if;
+            Result := Result * 16 + Hex_Value (Document (Position));
+            Position := Position + 1;
+         end loop;
+         return Result;
+      end Parse_Hex_Quad;
+
+      function Parse_String return US.Unbounded_String is
+         Result : US.Unbounded_String;
+         Value  : Natural;
+      begin
+         Skip_Whitespace;
+         if At_End or else Document (Position) /= '"' then
+            raise Malformed;
+         end if;
+         Position := Position + 1;
+         while not At_End loop
+            declare
+               Item : constant Character := Document (Position);
+            begin
+               Position := Position + 1;
+               if Item = '"' then
+                  return Result;
+               elsif Character'Pos (Item) < 32 then
+                  raise Malformed;
+               elsif Item = Character'Val (16#5C#) then
+                  if At_End then
+                     raise Malformed;
+                  end if;
+                  declare
+                     Escape : constant Character := Document (Position);
+                  begin
+                     Position := Position + 1;
+                     case Escape is
+                        when '"' | '/' | Character'Val (16#5C#) =>
+                           US.Append (Result, Escape);
+                        when 'b' => US.Append (Result, ASCII.BS);
+                        when 'f' => US.Append (Result, ASCII.FF);
+                        when 'n' => US.Append (Result, ASCII.LF);
+                        when 'r' => US.Append (Result, ASCII.CR);
+                        when 't' => US.Append (Result, ASCII.HT);
+                        when 'u' =>
+                           Value := Parse_Hex_Quad;
+                           if Value in 16#D800# .. 16#DBFF# then
+                              if Position + 5 > Document'Last
+                                or else Document (Position) /=
+                                  Character'Val (16#5C#)
+                                or else Document (Position + 1) /= 'u'
+                              then
+                                 raise Malformed;
+                              end if;
+                              Position := Position + 2;
+                              declare
+                                 Low : constant Natural := Parse_Hex_Quad;
+                              begin
+                                 if Low not in 16#DC00# .. 16#DFFF# then
+                                    raise Malformed;
+                                 end if;
+                              end;
+                              US.Append (Result, '?');
+                           elsif Value in 16#DC00# .. 16#DFFF# then
+                              raise Malformed;
+                           elsif Value <= Character'Pos (Character'Last) then
+                              US.Append (Result, Character'Val (Value));
+                           else
+                              US.Append (Result, '?');
+                           end if;
+                        when others => raise Malformed;
+                     end case;
+                  end;
+               else
+                  US.Append (Result, Item);
+               end if;
+            end;
+         end loop;
+         raise Malformed;
+      end Parse_String;
+
+      procedure Skip_Value;
+
+      procedure Skip_Array is
+      begin
+         Require_Character ('[');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = ']' then
+            Position := Position + 1;
+            Leave_Container;
+            return;
+         end if;
+         loop
+            Skip_Value;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = ']' then
+               Position := Position + 1;
+               Leave_Container;
+               return;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+      end Skip_Array;
+
+      procedure Skip_Object is
+      begin
+         Require_Character ('{');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = '}' then
+            Position := Position + 1;
+            Leave_Container;
+            return;
+         end if;
+         loop
+            declare
+               Ignored : constant US.Unbounded_String := Parse_String;
+               pragma Unreferenced (Ignored);
+            begin
+               Require_Character (':');
+               Skip_Value;
+            end;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = '}' then
+               Position := Position + 1;
+               Leave_Container;
+               return;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+      end Skip_Object;
+
+      procedure Skip_Number is
+      begin
+         if Document (Position) = '-' then
+            Position := Position + 1;
+            if At_End then
+               raise Malformed;
+            end if;
+         end if;
+         if Document (Position) = '0' then
+            Position := Position + 1;
+            if not At_End and then Document (Position) in '0' .. '9' then
+               raise Malformed;
+            end if;
+         elsif Document (Position) in '1' .. '9' then
+            while not At_End and then Document (Position) in '0' .. '9' loop
+               Position := Position + 1;
+            end loop;
+         else
+            raise Malformed;
+         end if;
+         if not At_End and then Document (Position) = '.' then
+            Position := Position + 1;
+            if At_End or else Document (Position) not in '0' .. '9' then
+               raise Malformed;
+            end if;
+            while not At_End and then Document (Position) in '0' .. '9' loop
+               Position := Position + 1;
+            end loop;
+         end if;
+         if not At_End and then Document (Position) in 'e' | 'E' then
+            Position := Position + 1;
+            if not At_End and then Document (Position) in '+' | '-' then
+               Position := Position + 1;
+            end if;
+            if At_End or else Document (Position) not in '0' .. '9' then
+               raise Malformed;
+            end if;
+            while not At_End and then Document (Position) in '0' .. '9' loop
+               Position := Position + 1;
+            end loop;
+         end if;
+      end Skip_Number;
+
+      procedure Skip_Literal (Value : String) is
+      begin
+         if Position + Value'Length - 1 > Document'Last
+           or else
+             Document (Position .. Position + Value'Length - 1) /= Value
+         then
+            raise Malformed;
+         end if;
+         Position := Position + Value'Length;
+      end Skip_Literal;
+
+      procedure Skip_Value is
+      begin
+         Skip_Whitespace;
+         if At_End then
+            raise Malformed;
+         end if;
+         case Document (Position) is
+            when '{' => Skip_Object;
+            when '[' => Skip_Array;
+            when '"' =>
+               declare
+                  Ignored : constant US.Unbounded_String := Parse_String;
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            when '-' | '0' .. '9' => Skip_Number;
+            when 't' => Skip_Literal ("true");
+            when 'f' => Skip_Literal ("false");
+            when 'n' => Skip_Literal ("null");
+            when others => raise Malformed;
+         end case;
+      end Skip_Value;
+
+      function Contains_Open_Value (Value : String) return Boolean is
+        (Ada.Strings.Fixed.Index (Value, "*") /= 0
+         or else Ada.Strings.Fixed.Index (Value, "?") /= 0
+         or else Ada.Strings.Fixed.Index (Value, "${") /= 0);
+
+      function Decimal_Value (Value : String; Result : out Natural)
+         return Boolean
+      is
+      begin
+         Result := 0;
+         if Value'Length = 0 then
+            return False;
+         end if;
+         for Item of Value loop
+            if Item not in '0' .. '9'
+              or else Result > (Natural'Last - 9) / 10
+            then
+               return False;
+            end if;
+            Result := Result * 10
+              + Character'Pos (Item) - Character'Pos ('0');
+         end loop;
+         return True;
+      end Decimal_Value;
+
+      function Narrow_Source_IP (Value : String) return Boolean is
+         Slash  : constant Natural := Ada.Strings.Fixed.Index (Value, "/");
+         Prefix : Natural;
+         Address_Last : constant Natural :=
+           (if Slash = 0 then Value'Last else Slash - 1);
+      begin
+         if Value'Length = 0 or else Contains_Open_Value (Value) then
+            return False;
+         elsif Slash /= 0
+           and then
+             (Slash = Value'First
+              or else not Decimal_Value
+                (Value (Slash + 1 .. Value'Last), Prefix))
+         then
+            return False;
+         end if;
+         declare
+            Address : constant GNAT.Sockets.Inet_Addr_Type :=
+              GNAT.Sockets.Inet_Addr
+                (Value (Value'First .. Address_Last));
+         begin
+            if Address.Family = GNAT.Sockets.Family_Inet6 then
+               if Slash = 0 then
+                  Prefix := 128;
+               end if;
+               return Prefix in 32 .. 128;
+            else
+               if Slash = 0 then
+                  Prefix := 32;
+               end if;
+               return Prefix in 8 .. 32;
+            end if;
+         end;
+      exception
+         when Constraint_Error | GNAT.Sockets.Socket_Error => return False;
+      end Narrow_Source_IP;
+
+      function Fixed_User_ID (Value : String) return Boolean is
+      begin
+         return not Contains_Open_Value (Value);
+      end Fixed_User_ID;
+
+      function Fixed_Data_Access_Point_ARN
+        (Value : String) return Boolean
+      is
+         Separators : array (1 .. 5) of Natural := (others => 0);
+         Separator_Count : Natural := 0;
+      begin
+         if Value'Length < 4 or else Value (Value'First .. Value'First + 3) /=
+           "arn:"
+         then
+            return False;
+         end if;
+         for Index in Value'Range loop
+            if Value (Index) = ':' then
+               Separator_Count := Separator_Count + 1;
+               if Separator_Count > Separators'Last then
+                  return False;
+               end if;
+               Separators (Separator_Count) := Index;
+            end if;
+         end loop;
+         if Separator_Count /= Separators'Last
+           or else Separators (1) /= Value'First + 3
+           or else Separators (2) <= Separators (1) + 1
+           or else Separators (3) <= Separators (2) + 1
+           or else Separators (4) <= Separators (3) + 1
+           or else Separators (5) - Separators (4) /= 13
+           or else Separators (5) = Value'Last
+           or else Value (Separators (2) + 1 .. Separators (3) - 1) /= "s3"
+         then
+            return False;
+         end if;
+         for Index in Separators (1) + 1 .. Separators (2) - 1 loop
+            if Value (Index) not in 'a' .. 'z' | '0' .. '9' | '-' then
+               return False;
+            end if;
+         end loop;
+         for Index in Separators (3) + 1 .. Separators (4) - 1 loop
+            if Value (Index) not in 'a' .. 'z' | '0' .. '9' | '-' then
+               return False;
+            end if;
+         end loop;
+         for Index in Separators (4) + 1 .. Separators (5) - 1 loop
+            if Value (Index) not in '0' .. '9' then
+               return False;
+            end if;
+         end loop;
+         declare
+            Resource : constant String :=
+              Value (Separators (5) + 1 .. Value'Last);
+         begin
+            if Resource'Length <= 12
+              or else Resource
+                (Resource'First .. Resource'First + 11) /= "accesspoint/"
+            then
+               return False;
+            end if;
+            for Index in Resource'First + 12 .. Resource'Last loop
+               if Resource (Index) not in
+                   'a' .. 'z' | '0' .. '9' | '-' | '*'
+               then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end;
+      exception
+         when Constraint_Error => return False;
+      end Fixed_Data_Access_Point_ARN;
+
+      function Trusted_Condition_Value
+        (Key, Value : String) return Boolean
+      is
+         Name : constant String := Ada.Characters.Handling.To_Lower (Key);
+      begin
+         if Name = "aws:sourceip" then
+            return Narrow_Source_IP (Value);
+         elsif Name = "aws:userid" then
+            return Fixed_User_ID (Value);
+         elsif Name = "s3:dataaccesspointarn" then
+            return Fixed_Data_Access_Point_ARN (Value);
+         elsif Name in "aws:principalorgid" | "aws:sourcearn" |
+             "aws:sourcevpc" | "aws:sourcevpce" | "aws:sourceowner" |
+             "aws:sourceaccount" | "s3:dataaccesspointaccount"
+         then
+            return not Contains_Open_Value (Value);
+         else
+            return False;
+         end if;
+      end Trusted_Condition_Value;
+
+      procedure Parse_String_Or_Array
+        (Trusted : out Boolean;
+         Key     : String := "";
+         Principal_Value : Boolean := False)
+      is
+         Seen : Boolean := False;
+
+         procedure Include_Value is
+            Item : constant String := US.To_String (Parse_String);
+            Accepted : constant Boolean :=
+              (if Principal_Value
+               then Item'Length > 0 and then not Contains_Open_Value (Item)
+               else Trusted_Condition_Value (Key, Item));
+         begin
+            Seen := True;
+            Trusted := Trusted and Accepted;
+         end Include_Value;
+      begin
+         Skip_Whitespace;
+         Trusted := True;
+         if not At_End and then Document (Position) = '"' then
+            Include_Value;
+         elsif not At_End and then Document (Position) = '[' then
+            Require_Character ('[');
+            Enter_Container;
+            Skip_Whitespace;
+            if not At_End and then Document (Position) = ']' then
+               raise Malformed;
+            end if;
+            loop
+               Include_Value;
+               Skip_Whitespace;
+               if At_End then
+                  raise Malformed;
+               elsif Document (Position) = ']' then
+                  Position := Position + 1;
+                  Leave_Container;
+                  exit;
+               elsif Document (Position) /= ',' then
+                  raise Malformed;
+               end if;
+               Position := Position + 1;
+            end loop;
+         else
+            raise Malformed;
+         end if;
+         Trusted := Trusted and Seen;
+      end Parse_String_Or_Array;
+
+      procedure Parse_Principal (Trusted : out Boolean) is
+         Seen_AWS       : Boolean := False;
+         Seen_Canonical : Boolean := False;
+         Seen_Federated : Boolean := False;
+         Seen_Service   : Boolean := False;
+         Seen_Any       : Boolean := False;
+      begin
+         Skip_Whitespace;
+         Trusted := True;
+         if not At_End and then Document (Position) in '"' | '[' then
+            Parse_String_Or_Array (Trusted, Principal_Value => True);
+            return;
+         end if;
+         Require_Character ('{');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = '}' then
+            raise Malformed;
+         end if;
+         loop
+            declare
+               Name : constant String := US.To_String (Parse_String);
+               Duplicate : Boolean := False;
+               Item_Trusted : Boolean;
+            begin
+               if Name = "AWS" then
+                  Duplicate := Seen_AWS;
+                  Seen_AWS := True;
+               elsif Name = "CanonicalUser" then
+                  Duplicate := Seen_Canonical;
+                  Seen_Canonical := True;
+               elsif Name = "Federated" then
+                  Duplicate := Seen_Federated;
+                  Seen_Federated := True;
+               elsif Name = "Service" then
+                  Duplicate := Seen_Service;
+                  Seen_Service := True;
+               else
+                  raise Malformed;
+               end if;
+               if Duplicate then
+                  raise Malformed;
+               end if;
+               Require_Character (':');
+               Parse_String_Or_Array
+                 (Item_Trusted, Principal_Value => True);
+               Seen_Any := True;
+               Trusted := Trusted and Item_Trusted;
+            end;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = '}' then
+               Position := Position + 1;
+               Leave_Container;
+               exit;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+         Trusted := Trusted and Seen_Any;
+      end Parse_Principal;
+
+      function Trusted_Operator (Name : String) return Boolean is
+         Base : constant String :=
+           (if Name'Length > 13
+              and then Name (Name'First .. Name'First + 12) = "ForAllValues:"
+            then Name (Name'First + 13 .. Name'Last)
+            elsif Name'Length > 13
+              and then Name (Name'First .. Name'First + 12) = "ForAnyValue:"
+            then Name (Name'First + 13 .. Name'Last)
+            else Name);
+      begin
+         return Base in "StringEquals" | "StringEqualsIgnoreCase" |
+           "StringLike" | "ArnEquals" | "ArnLike" | "IpAddress";
+      end Trusted_Operator;
+
+      procedure Parse_Condition (Trusted : out Boolean) is
+         Operators : String_Sets.Set;
+      begin
+         Trusted := False;
+         Require_Character ('{');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = '}' then
+            Position := Position + 1;
+            Leave_Container;
+            return;
+         end if;
+         loop
+            declare
+               Operator : constant String := US.To_String (Parse_String);
+               Operator_Trusted : constant Boolean :=
+                 Trusted_Operator (Operator);
+               Keys : String_Sets.Set;
+            begin
+               if Operators.Contains (Operator) then
+                  raise Malformed;
+               end if;
+               Operators.Insert (Operator);
+               Require_Character (':');
+               Require_Character ('{');
+               Enter_Container;
+               Skip_Whitespace;
+               if not At_End and then Document (Position) = '}' then
+                  raise Malformed;
+               end if;
+               loop
+                  declare
+                     Key : constant String := US.To_String (Parse_String);
+                     Item_Trusted : Boolean;
+                  begin
+                     if Keys.Contains (Key) then
+                        raise Malformed;
+                     end if;
+                     Keys.Insert (Key);
+                     Require_Character (':');
+                     if Operator_Trusted then
+                        Parse_String_Or_Array (Item_Trusted, Key);
+                        Trusted := Trusted or Item_Trusted;
+                     else
+                        Skip_Value;
+                     end if;
+                  end;
+                  Skip_Whitespace;
+                  if At_End then
+                     raise Malformed;
+                  elsif Document (Position) = '}' then
+                     Position := Position + 1;
+                     Leave_Container;
+                     exit;
+                  elsif Document (Position) /= ',' then
+                     raise Malformed;
+                  end if;
+                  Position := Position + 1;
+               end loop;
+            end;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = '}' then
+               Position := Position + 1;
+               Leave_Container;
+               return;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+      end Parse_Condition;
+
+      procedure Parse_Statement is
+         Effect_Seen       : Boolean := False;
+         Principal_Seen    : Boolean := False;
+         Not_Principal_Seen : Boolean := False;
+         Condition_Seen    : Boolean := False;
+         Allow             : Boolean := False;
+         Principal_Trusted : Boolean := False;
+         Condition_Trusted : Boolean := False;
+      begin
+         Require_Character ('{');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = '}' then
+            raise Malformed;
+         end if;
+         loop
+            declare
+               Name : constant String := US.To_String (Parse_String);
+            begin
+               Require_Character (':');
+               if Name = "Effect" then
+                  if Effect_Seen then
+                     raise Malformed;
+                  end if;
+                  Effect_Seen := True;
+                  declare
+                     Value : constant String := US.To_String (Parse_String);
+                  begin
+                     if Value = "Allow" then
+                        Allow := True;
+                     elsif Value /= "Deny" then
+                        raise Malformed;
+                     end if;
+                  end;
+               elsif Name = "Principal" then
+                  if Principal_Seen or else Not_Principal_Seen then
+                     raise Malformed;
+                  end if;
+                  Principal_Seen := True;
+                  Parse_Principal (Principal_Trusted);
+               elsif Name = "NotPrincipal" then
+                  if Principal_Seen or else Not_Principal_Seen then
+                     raise Malformed;
+                  end if;
+                  Not_Principal_Seen := True;
+                  declare
+                     Ignored : Boolean;
+                  begin
+                     Parse_Principal (Ignored);
+                  end;
+               elsif Name = "Condition" then
+                  if Condition_Seen then
+                     raise Malformed;
+                  end if;
+                  Condition_Seen := True;
+                  Parse_Condition (Condition_Trusted);
+               else
+                  Skip_Value;
+               end if;
+            end;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = '}' then
+               Position := Position + 1;
+               Leave_Container;
+               exit;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+         if not Effect_Seen
+           or else not (Principal_Seen or else Not_Principal_Seen)
+         then
+            raise Malformed;
+         end if;
+         if Allow
+           and then not (Principal_Trusted or else Condition_Trusted)
+         then
+            Has_Public_Grant := True;
+         end if;
+      end Parse_Statement;
+
+      procedure Parse_Statements is
+      begin
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = '{' then
+            Parse_Statement;
+            return;
+         end if;
+         Require_Character ('[');
+         Enter_Container;
+         Skip_Whitespace;
+         if not At_End and then Document (Position) = ']' then
+            Position := Position + 1;
+            Leave_Container;
+            return;
+         end if;
+         loop
+            Parse_Statement;
+            Skip_Whitespace;
+            if At_End then
+               raise Malformed;
+            elsif Document (Position) = ']' then
+               Position := Position + 1;
+               Leave_Container;
+               return;
+            elsif Document (Position) /= ',' then
+               raise Malformed;
+            end if;
+            Position := Position + 1;
+         end loop;
+      end Parse_Statements;
+
+      Statement_Seen : Boolean := False;
+   begin
+      --  AWS S3's documented public-policy rule starts from public and proves
+      --  each Allow grant non-public only through fixed principals or fixed
+      --  values of the documented trust keys. The parser remains private and
+      --  inherits the maintained document and nesting ceilings.
+      if Byte_Count (Document'Length) > Maximum_Bucket_Policy_Body then
+         return Malformed_Bucket_Policy;
+      end if;
+      Require_Character ('{');
+      Enter_Container;
+      Skip_Whitespace;
+      if not At_End and then Document (Position) = '}' then
+         raise Malformed;
+      end if;
+      loop
+         declare
+            Name : constant String := US.To_String (Parse_String);
+         begin
+            Require_Character (':');
+            if Name = "Statement" then
+               if Statement_Seen then
+                  raise Malformed;
+               end if;
+               Statement_Seen := True;
+               Parse_Statements;
+            else
+               Skip_Value;
+            end if;
+         end;
+         Skip_Whitespace;
+         if At_End then
+            raise Malformed;
+         elsif Document (Position) = '}' then
+            Position := Position + 1;
+            Leave_Container;
+            exit;
+         elsif Document (Position) /= ',' then
+            raise Malformed;
+         end if;
+         Position := Position + 1;
+      end loop;
+      Skip_Whitespace;
+      if not Statement_Seen or else not At_End then
+         raise Malformed;
+      end if;
+      return
+        (if Has_Public_Grant
+         then Public_Bucket_Policy else Non_Public_Bucket_Policy);
+   exception
+      when Malformed | Constraint_Error =>
+         return Malformed_Bucket_Policy;
+   end Assess_Bucket_Policy;
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
@@ -764,7 +1580,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Replication, Get_Bucket_Replication,
          Delete_Bucket_Replication,
          Put_Bucket_Website, Get_Bucket_Website, Delete_Bucket_Website,
-         Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
+         Put_Bucket_Policy, Get_Bucket_Policy, Get_Bucket_Policy_Status,
+         Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Create_Bucket_Metadata_Configuration,
          Create_Bucket_Metadata_Table_Configuration,
@@ -1248,6 +2065,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              elsif Method = "GET" then "GetBucketPolicy"
              else "DeleteBucketPolicy") &
           "&policy=";
+      Is_Bucket_Policy_Status_Query : constant Boolean :=
+        Method = "GET"
+        and then Is_Exact_Bucket_Control_Query
+          ("policyStatus", "GetBucketPolicyStatus");
       Is_Bucket_CORS_Query : constant Boolean :=
         Query_Text = "cors"
         or else Query_Text = "cors="
@@ -1495,6 +2316,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=DeleteBucketPolicy&") /= 0;
       Looks_Like_Bucket_Policy_Query : constant Boolean :=
         Has_Bucket_Policy_Query or else Has_Bucket_Policy_Operation_ID;
+      Has_Bucket_Policy_Status_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&policyStatus&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&policyStatus=") /= 0;
+      Has_Bucket_Policy_Status_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketPolicyStatus&") /= 0;
+      Looks_Like_Bucket_Policy_Status_Query : constant Boolean :=
+        Has_Bucket_Policy_Status_Query
+        or else Has_Bucket_Policy_Status_Operation_ID;
       Has_Bucket_CORS_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&cors&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&cors=") /= 0;
@@ -2004,6 +2835,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
+      Bucket_Policy_Status_Query_Invalid : Boolean := False;
       Bucket_CORS_Query_Invalid : Boolean := False;
       Bucket_Configuration_Query_Invalid : Boolean := False;
       Metadata_Query_Invalid : Boolean := False;
@@ -3909,6 +4741,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Looks_Like_Bucket_Policy_Query)
         and then not
           (Parsed.Kind = Requests.Bucket_Target
+           and then Method = "GET"
+           and then Looks_Like_Bucket_Policy_Status_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query)
         and then not
@@ -3995,6 +4831,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_Policy_Query
            and then not Is_Bucket_Policy_Query;
+         Bucket_Policy_Status_Query_Invalid :=
+           Method = "GET"
+           and then Looks_Like_Bucket_Policy_Status_Query
+           and then not Is_Bucket_Policy_Status_Query;
          Bucket_CORS_Query_Invalid :=
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query
@@ -4235,6 +5075,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Policy
             elsif Method = "GET" and then Looks_Like_Bucket_Policy_Query
             then Get_Bucket_Policy
+            elsif Method = "GET"
+              and then Looks_Like_Bucket_Policy_Status_Query
+            then Get_Bucket_Policy_Status
             elsif Method = "DELETE" and then Looks_Like_Bucket_Policy_Query
             then Delete_Bucket_Policy
             elsif Method = "PUT"
@@ -4614,6 +5457,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The bucket policy request query is invalid", Target_Text);
+         return;
+      elsif Bucket_Policy_Status_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket policy-status request query is invalid",
+            Target_Text);
          return;
       elsif Bucket_CORS_Query_Invalid then
          Send_Error
@@ -7726,6 +8575,62 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Apps.Respond
                              (X, 200, "application/json",
                               US.To_String (Policy));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Policy_Status =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Policy : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketPolicyStatus does not define " &
+                        "RequestPayer", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Policy
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Policy, Configured, Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404, "NoSuchBucketPolicy",
+                              "The bucket policy does not exist",
+                              Target_Text);
+                        else
+                           declare
+                              Assessment : constant Bucket_Policy_Assessment :=
+                                Assess_Bucket_Policy (US.To_String (Policy));
+                           begin
+                              case Assessment is
+                                 when Malformed_Bucket_Policy =>
+                                    Send_Error
+                                      (X, 500, "InternalError",
+                                       "The stored bucket policy is invalid",
+                                       Target_Text);
+                                 when Non_Public_Bucket_Policy |
+                                      Public_Bucket_Policy =>
+                                    Apps.Respond
+                                      (X, 200, "application/xml",
+                                       "<PolicyStatus xmlns=""http://s3." &
+                                       "amazonaws.com/doc/2006-03-01/"">" &
+                                       "<IsPublic>" &
+                                       (if Assessment = Public_Bucket_Policy
+                                        then "true" else "false") &
+                                       "</IsPublic></PolicyStatus>");
+                              end case;
+                           end;
                         end if;
                      end if;
                   end if;

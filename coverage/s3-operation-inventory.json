@@ -2290,13 +2290,15 @@
     },
     "GetBucketPolicyStatus": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "covered",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "tests/src/s3_implementation_corpus.adb"
+        ],
         "client": [
           "src/flyology-object_storage-client-low_level.ads",
           "src/flyology-object_storage-client-low_level.adb",
@@ -2314,18 +2316,23 @@
           "tests/corpora/get-bucket-controls/vectors.tsv",
           "tests/src/flyology-object_storage-client-buckets-testing.adb",
           "tests/src/s3_get_bucket_controls_corpus.adb",
-          "tests/src/s3_http_socket_corpus.adb"
+          "tests/src/s3_http_socket_corpus.adb",
+          "tests/src/s3_implementation_corpus.adb",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "bounded_rest_xml_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "handwritten",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "handwritten",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "buckets"

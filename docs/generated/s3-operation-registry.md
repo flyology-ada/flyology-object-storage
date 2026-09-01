@@ -56,7 +56,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketNotificationConfiguration | Get_Notification_Configuration | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketOwnershipControls | Get_Ownership_Controls | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketPolicy | Get_Policy | buckets | bounded_document_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketPolicyStatus | Get_Policy_Status | buckets | bounded_rest_xml_read | handwritten | false | true | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketPolicyStatus | Get_Policy_Status | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
 | GetBucketRequestPayment | Get_Request_Payment | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketTagging | Get_Tags | buckets | bounded_rest_xml_read | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |

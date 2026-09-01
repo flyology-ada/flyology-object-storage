@@ -10,7 +10,9 @@ provider interoperability is claimed here. `GetBucketPolicy` has independent
 backend and server coverage in [bucket-policy.md](bucket-policy.md).
 `GetBucketPolicyStatus` additionally has a provider-owned limited constructor,
 operation-last reusable initiation, typed Finish, and typed synchronous wait;
-its established convenience overload waits on that same state machine.
+its established convenience overload waits on that same state machine. The
+Flyology server now evaluates the exact persisted policy document and exposes
+the resulting status through the same strict client decoder.
 `GetBucketRequestPayment` now has the same provider-owned forms and uses its
 exact prepared operation and strict payer decoder without interpreting billing
 policy locally. `GetBucketAbac` has the same forms, preserves its
@@ -91,11 +93,35 @@ restart, exact prepared-operation mismatch, malformed singleton headers,
 response overflow, and every normalized HTTP terminal kind; the root gate
 repeats that corpus three times.
 
-The machine ledger records `GetBucketPolicy` and `GetPublicAccessBlock` as
-`covered / covered / covered / covered` using their independent backend and
-server evidence in dedicated qualification records. The other four operations
-remain `missing / covered / missing / covered`; this client corpus does not
+The machine ledger records `GetBucketPolicy`, `GetBucketPolicyStatus`, and
+`GetPublicAccessBlock` as `covered / covered / covered / covered` using their
+independent backend and server evidence. The other three operations remain
+`missing / covered / missing / covered`; this client corpus does not
 manufacture their backend persistence or server routes.
+
+## Policy-status server boundary
+
+The authenticated general-purpose-bucket route reads the exact bucket policy
+already persisted by the shared backend contract. No configured policy returns
+the distinct `NoSuchBucketPolicy` error. Malformed stored JSON fails closed as
+`InternalError`; it is never reported as non-public.
+
+For a valid policy document, the private evaluator follows S3's documented
+public-policy rule: an Allow grant is non-public only when it is restricted by
+a fixed principal or by fixed values for the documented trust keys. Source-IP
+conditions additionally enforce valid IP syntax and the documented IPv4 `/8`
+and IPv6 `/32` breadth thresholds. Wildcard role-session user IDs remain
+public, duplicate condition members are rejected, and a public Allow remains
+public even when another statement is fixed. Deny statements do not create a
+public grant. This assessment reports policy status only; it does not enforce
+the policy or claim a complete effective-access analysis.
+
+The server corpus pins missing and malformed policy responses, public and
+non-public grants, fixed-condition cases, mixed statements, Deny behavior,
+expected-owner enforcement, exact query geometry, body rejection, and the
+unsupported requester-pays header. The implementation corpus exercises the
+same route over every maintained Flyology server/backend lane and restores the
+policy fixture on both normal and exceptional exits.
 
 ## Gate evidence
 
@@ -110,8 +136,8 @@ whitespace gates passed. GNATdoc produced a nonempty 430-file HTML API index;
 none of the new typed or composable public declarations appears in its
 undocumented-entity warnings.
 
-This slice changes only non-SPARK client, corpus, verifier, and documentation
-units, not any of the nine `tools/prove.sh` manifest units. Formal tools also
-remain serialized behind DB's current campaign, so no redundant proof run was
-performed. The client-only change alters no backend or SQLite behavior and
-therefore does not require a new backend/provider matrix or SQLite gate.
+The original client slice changed no SPARK proof unit. The later policy-status
+server slice changes only the non-SPARK server application and shared
+implementation/server corpora; its backend matrix is exercised through the
+maintained root wrapper. Neither slice changes a public API profile or claims
+directory-bucket or external-provider interoperability.

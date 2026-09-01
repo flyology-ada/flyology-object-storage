@@ -9856,9 +9856,85 @@ begin
       Delete_Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("policy", ""),
          SigV4.Pair ("x-id", "DeleteBucketPolicy"));
+      Status_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("policyStatus", ""),
+         SigV4.Pair ("x-id", "GetBucketPolicyStatus"));
       First : constant String :=
         "{""Version"":""2012-10-17"",""Statement"":[]}";
       Second : constant String := "{""Statement"":[]}";
+      Public_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*""}}";
+      Fixed_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":{" &
+        """AWS"":""arn:aws:iam::123456789012:role/reader""}," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*""}}";
+      Conditioned_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""StringEquals"":{" &
+        """aws:SourceVpc"":""vpc-12345678""}}}}";
+      Role_Session_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""StringLike"":{" &
+        """aws:userid"":""AROA12345678901234567:*""}}}}";
+      Open_User_ID_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""StringLike"":{" &
+        """aws:userid"":""user:*""}}}}";
+      Invalid_IP_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""IpAddress"":{" &
+        """aws:SourceIp"":""::::/32""}}}}";
+      Mixed_Policy : constant String :=
+        "{""Statement"":[{""Effect"":""Allow"",""Principal"":{" &
+        """AWS"":""arn:aws:iam::123456789012:role/reader""}," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*""},{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/public/*""}]}";
+      Wildcard_Deny_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Deny"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/private/*""}}";
+      Duplicate_Condition_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""StringEquals"":{" &
+        """aws:SourceVpc"":""vpc-12345678""},""StringEquals"":{" &
+        """aws:SourceVpc"":""*""}}}}";
+      Duplicate_Condition_Key_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""StringEquals"":{" &
+        """aws:SourceVpc"":""vpc-12345678"",""aws:SourceVpc"":""*""}}}}";
+      Narrow_IP_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""IpAddress"":{" &
+        """aws:SourceIp"":""203.0.113.0/24""}}}}";
+      Broad_IP_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""IpAddress"":{" &
+        """aws:SourceIp"":""0.0.0.0/1""}}}}";
+      Fixed_Access_Point_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""ArnLike"":{" &
+        """s3:DataAccessPointArn"":""arn:aws:s3:us-west-2:" &
+        "123456789012:accesspoint/*""}}}}";
+      Open_Access_Point_Account_Policy : constant String :=
+        "{""Statement"":{""Effect"":""Allow"",""Principal"":""*""," &
+        """Action"":""s3:GetObject"",""Resource"":""arn:aws:s3:::" &
+        "test-bucket/*"",""Condition"":{""ArnLike"":{" &
+        """s3:DataAccessPointArn"":""arn:aws:s3:us-west-2:" &
+        "*:accesspoint/*""}}}}";
 
       function Put
         (Document : String; Extra : String := "") return String is
@@ -9866,6 +9942,38 @@ begin
            (Signed_Query_Body_Request
               ("PUT", "/test-bucket", Put_Query, Document,
                "content-md5: " & Content_MD5 (Document) & CRLF & Extra)));
+
+      procedure Require_Status
+        (Policy : String; Expected_Public : Boolean)
+      is
+         Response : constant String :=
+           (if Has (Put (Policy), "200 OK")
+            then Run
+              (Signed_Query_Request ("GET", "/test-bucket", Status_Query))
+            else "");
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Type: application/xml")
+            and then Has
+              (Response,
+               "<IsPublic>" &
+               (if Expected_Public then "true" else "false") &
+               "</IsPublic>"),
+            "GetBucketPolicyStatus returned the wrong assessment");
+      end Require_Status;
+
+      procedure Require_Malformed_Status (Policy : String) is
+         Response : constant String :=
+           (if Has (Put (Policy), "200 OK")
+            then Run
+              (Signed_Query_Request ("GET", "/test-bucket", Status_Query))
+            else "");
+      begin
+         Require
+           (Has (Response, "<Code>InternalError</Code>"),
+            "GetBucketPolicyStatus accepted ambiguous policy members");
+      end Require_Malformed_Status;
    begin
       Require
         (Has
@@ -9873,8 +9981,18 @@ begin
             "<Code>NoSuchBucketPolicy</Code>"),
          "GetBucketPolicy did not distinguish an absent policy");
       Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Status_Query)),
+            "<Code>NoSuchBucketPolicy</Code>"),
+         "GetBucketPolicyStatus did not distinguish an absent policy");
+      Require
         (Has (Put (""), "200 OK"),
          "PutBucketPolicy rejected a present empty policy");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Status_Query)),
+            "<Code>InternalError</Code>"),
+         "GetBucketPolicyStatus accepted malformed persisted bytes");
       declare
          Response : constant String :=
            Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
@@ -9901,6 +10019,55 @@ begin
             and then Response_Body (Response) = First,
             "GetBucketPolicy did not preserve exact policy bytes");
       end;
+      Require_Status (Public_Policy, True);
+      Require_Status (Fixed_Policy, False);
+      Require_Status (Conditioned_Policy, False);
+      Require_Status (Role_Session_Policy, True);
+      Require_Status (Open_User_ID_Policy, True);
+      Require_Status (Invalid_IP_Policy, True);
+      Require_Status (Narrow_IP_Policy, False);
+      Require_Status (Broad_IP_Policy, True);
+      Require_Status (Fixed_Access_Point_Policy, False);
+      Require_Status (Open_Access_Point_Account_Policy, True);
+      Require_Status (Mixed_Policy, True);
+      Require_Status (Wildcard_Deny_Policy, False);
+      Require_Malformed_Status (Duplicate_Condition_Policy);
+      Require_Malformed_Status (Duplicate_Condition_Key_Policy);
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Status_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketPolicyStatus ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("policyStatus", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketPolicyStatus accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Status_Query, "unexpected")),
+            "400 Bad Request"),
+         "GetBucketPolicyStatus accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Status_Query,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketPolicyStatus accepted non-modeled RequestPayer");
+      Require
+        (Has (Put (First), "200 OK"),
+         "PutBucketPolicy did not restore the policy fixture");
       for Algorithm in Checksum_Policy.Algorithm loop
          declare
             Response : constant String :=

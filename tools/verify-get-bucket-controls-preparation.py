@@ -16,6 +16,11 @@ LOW_SPEC = ROOT / "src" / "flyology-object_storage-client-low_level.ads"
 LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
 HIGH_SPEC = ROOT / "src" / "flyology-object_storage-client-buckets.ads"
 HIGH_BODY = ROOT / "src" / "flyology-object_storage-client-buckets.adb"
+SERVER_BODY = (
+    ROOT / "src" / "flyology-object_storage-server-s3_applications.adb"
+)
+SERVER_CORPUS = ROOT / "tests" / "src" / "s3_server_application_corpus.adb"
+IMPLEMENTATION = ROOT / "tests" / "src" / "s3_implementation_corpus.adb"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 
 # These are the stable source revision and content digest recorded by the
@@ -132,6 +137,27 @@ def fail(message: str) -> None:
     raise ValueError(message)
 
 
+def source_region(text: str, start: str, end: str, label: str) -> str:
+    if text.count(start) != 1:
+        fail(f"{label}: start boundary is not unique")
+    first = text.index(start)
+    last = text.find(end, first + len(start))
+    if last < 0:
+        fail(f"{label}: end boundary is absent")
+    return text[first:last + len(end)]
+
+
+def require_in_order(
+    text: str, fragments: tuple[str, ...], label: str
+) -> None:
+    position = 0
+    for fragment in fragments:
+        found = text.find(fragment, position)
+        if found < 0:
+            fail(f"{label}: missing ordered fragment {fragment!r}")
+        position = found + len(fragment)
+
+
 def read_tsv(path: Path, header: list[str]) -> list[dict[str, str]]:
     if b"\r" in path.read_bytes():
         fail(f"{path}: CR characters are not canonical")
@@ -246,6 +272,9 @@ def main() -> int:
         "high-level specification": HIGH_SPEC.read_text(encoding="utf-8"),
         "high-level body": HIGH_BODY.read_text(encoding="utf-8"),
     }
+    server_body = SERVER_BODY.read_text(encoding="utf-8")
+    server_corpus = SERVER_CORPUS.read_text(encoding="utf-8")
+    implementation_corpus = IMPLEMENTATION.read_text(encoding="utf-8")
     expected_rows = [tuple(str(value) for value in row) for row in EXPECTED_MEMBERS]
     actual_rows = [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members]
     if actual_rows != expected_rows:
@@ -364,6 +393,96 @@ def main() -> int:
             if vector is None or member["operation"] not in comma_values(
                     vector["operation_refs"]):
                 fail(f"{member['operation']}:{member['member']}: bad vector {vector_id}")
+
+    assessment = source_region(
+        server_body,
+        "   function Assess_Bucket_Policy\n",
+        "   end Assess_Bucket_Policy;",
+        "bucket policy assessment",
+    )
+    require_in_order(
+        assessment,
+        (
+            "GNAT.Sockets.Inet_Addr",
+            "return Prefix in 32 .. 128;",
+            "return Prefix in 8 .. 32;",
+            "return not Contains_Open_Value (Value);",
+            "function Fixed_Data_Access_Point_ARN",
+            "Operators.Contains (Operator)",
+            "Keys.Contains (Key)",
+            "Has_Public_Grant := True;",
+            "when Malformed | Constraint_Error =>",
+        ),
+        "bucket policy assessment",
+    )
+    route = source_region(
+        server_body,
+        "            when Get_Bucket_Policy_Status =>",
+        "            when Delete_Bucket_Policy =>",
+        "bucket policy status route",
+    )
+    require_in_order(
+        route,
+        (
+            "Store.Get_Bucket_Policy",
+            '"NoSuchBucketPolicy"',
+            "Assess_Bucket_Policy",
+            "when Malformed_Bucket_Policy =>",
+            '"InternalError"',
+            '"<PolicyStatus xmlns=""http://s3."',
+            '"<IsPublic>"',
+        ),
+        "bucket policy status route",
+    )
+    implementation = source_region(
+        implementation_corpus,
+        "      procedure Check_Bucket_Policy_Status is",
+        "      end Check_Bucket_Policy_Status;",
+        "bucket policy implementation corpus",
+    )
+    require_in_order(
+        implementation,
+        (
+            '"NoSuchBucketPolicy"',
+            "Set_And_Require (Public_Policy, True);",
+            "Set_And_Require (Fixed_Policy, False);",
+            '"InternalError"',
+            "Delete_Stored_Policy;",
+            "when others =>",
+            "Delete_Stored_Policy;",
+        ),
+        "bucket policy implementation corpus",
+    )
+    server_cases = source_region(
+        server_corpus,
+        "      Status_Query : constant SigV4.Name_Value_Array :=",
+        "      for Algorithm in Checksum_Policy.Algorithm loop",
+        "bucket policy status server corpus",
+    )
+    require_in_order(
+        server_cases,
+        (
+            "Require_Status (Public_Policy, True);",
+            "Require_Status (Fixed_Policy, False);",
+            "Require_Status (Conditioned_Policy, False);",
+            "Require_Status (Role_Session_Policy, True);",
+            "Require_Status (Open_User_ID_Policy, True);",
+            "Require_Status (Invalid_IP_Policy, True);",
+            "Require_Status (Narrow_IP_Policy, False);",
+            "Require_Status (Broad_IP_Policy, True);",
+            "Require_Status (Fixed_Access_Point_Policy, False);",
+            "Require_Status (Open_Access_Point_Account_Policy, True);",
+            "Require_Status (Mixed_Policy, True);",
+            "Require_Status (Wildcard_Deny_Policy, False);",
+            "Require_Malformed_Status (Duplicate_Condition_Policy);",
+            "Require_Malformed_Status (Duplicate_Condition_Key_Policy);",
+            '"GetBucketPolicyStatus ignored expected owner"',
+            '"GetBucketPolicyStatus accepted an extra query member"',
+            '"GetBucketPolicyStatus accepted a request body"',
+            '"GetBucketPolicyStatus accepted non-modeled RequestPayer"',
+        ),
+        "bucket policy status server corpus",
+    )
 
     print(
         "bucket-control GET preparation: 6 operations, 26 request/output/nested "

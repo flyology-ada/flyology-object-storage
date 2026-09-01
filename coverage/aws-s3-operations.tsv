@@ -46,7 +46,7 @@ GetBucketNotification	extended	covered	partial	covered	covered
 GetBucketNotificationConfiguration	extended	covered	covered	covered	covered
 GetBucketOwnershipControls	extended	covered	covered	covered	covered
 GetBucketPolicy	extended	covered	covered	covered	covered
-GetBucketPolicyStatus	extended	missing	covered	missing	covered
+GetBucketPolicyStatus	extended	covered	covered	covered	covered
 GetBucketReplication	extended	covered	covered	covered	covered
 GetBucketRequestPayment	extended	covered	covered	covered	covered
 GetBucketTagging	core	covered	covered	covered	covered
