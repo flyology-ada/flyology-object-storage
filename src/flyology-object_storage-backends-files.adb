@@ -76,6 +76,10 @@ package body Flyology.Object_Storage.Backends.Files is
    --  Persisted-format discriminator for one canonical logging document.
    Bucket_Notification_Magic : constant String := "FOSNOT01";
    --  Persisted discriminator for one canonical notification document.
+   Bucket_Metadata_Magic : constant String := "FOSBMD01";
+   --  Persisted discriminator for one complete provider-resolved bucket
+   --  metadata state. The file is private backend storage, not a public wire
+   --  format.
    Bucket_Replication_Magic : constant String := "FOSREP01";
    --  Persisted-format discriminator for one canonical replication document.
    Bucket_Website_Magic : constant String := "FOSWEB01";
@@ -434,6 +438,10 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "notification.fos"));
    --  Persisted files-layout name paired with FOSNOT01.
+
+   function Bucket_Metadata_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "metadata.fos"));
 
    function Bucket_Replication_Path
      (Item : Store; Bucket : String) return String is
@@ -1834,6 +1842,79 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Document := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Notification;
+
+   procedure Write_Bucket_Metadata_State
+     (File : in out SIO.File_Type; Value : Bucket_Metadata_State)
+   is
+      Configuration : constant String :=
+        US.To_String (Value.Current_Configuration_Document);
+      Current_Result : constant String :=
+        US.To_String (Value.Current_Result_Document);
+      Legacy_Result : constant String :=
+        US.To_String (Value.Legacy_Result_Document);
+   begin
+      if not Valid_Bucket_Metadata_State (Value) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_Metadata_Magic);
+      Write_String
+        (File,
+         (case Value.Kind is
+             when Legacy_Metadata_Table_Configuration => "L",
+             when Current_Metadata_Configuration      => "C"));
+      Write_U32 (File, Configuration'Length);
+      Write_U32 (File, Current_Result'Length);
+      Write_U32 (File, Legacy_Result'Length);
+      Write_String (File, Configuration);
+      Write_String (File, Current_Result);
+      Write_String (File, Legacy_Result);
+   end Write_Bucket_Metadata_State;
+
+   procedure Read_Bucket_Metadata_State
+     (File : in out SIO.File_Type; Value : out Bucket_Metadata_State)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Metadata_Magic'Length);
+      Kind : constant String := Read_String (File, 1);
+      Configuration_Length : constant Natural := Read_U32 (File);
+      Current_Result_Length : constant Natural := Read_U32 (File);
+      Legacy_Result_Length : constant Natural := Read_U32 (File);
+      Expected_Size : constant SIO.Count :=
+        SIO.Count
+          (Bucket_Metadata_Magic'Length + 13 + Configuration_Length +
+           Current_Result_Length + Legacy_Result_Length);
+   begin
+      Value :=
+        (Kind                           => Current_Metadata_Configuration,
+         Current_Configuration_Document => US.Null_Unbounded_String,
+         Current_Result_Document        => US.Null_Unbounded_String,
+         Legacy_Result_Document         => US.Null_Unbounded_String);
+      if File_Magic /= Bucket_Metadata_Magic
+        or else (Kind /= "L" and then Kind /= "C")
+        or else Byte_Count (Configuration_Length) >
+          Maximum_Bucket_Configuration_Bytes
+        or else Byte_Count (Current_Result_Length) >
+          Maximum_Bucket_Configuration_Bytes
+        or else Byte_Count (Legacy_Result_Length) >
+          Maximum_Bucket_Configuration_Bytes
+        or else SIO.Size (File) /= Expected_Size
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Value.Kind :=
+        (if Kind = "L" then Legacy_Metadata_Table_Configuration
+         else Current_Metadata_Configuration);
+      Read_Unbounded_String
+        (File, Configuration_Length,
+         Value.Current_Configuration_Document);
+      Read_Unbounded_String
+        (File, Current_Result_Length, Value.Current_Result_Document);
+      Read_Unbounded_String
+        (File, Legacy_Result_Length, Value.Legacy_Result_Document);
+      if not Valid_Bucket_Metadata_State (Value) then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   end Read_Bucket_Metadata_State;
 
    procedure Write_Bucket_Replication
      (File : in out SIO.File_Type; Document : String; Metadata : String) is
@@ -4664,6 +4745,344 @@ package body Flyology.Object_Storage.Backends.Files is
          Read_Bucket_Notification'Access, Document, Ignored_Metadata,
          Configured, Result);
    end Get_Bucket_Notification;
+
+   procedure Publish_Bucket_Metadata_State
+     (Item        : in out Store;
+      Bucket      : String;
+      Value       : Bucket_Metadata_State;
+      Expected    : Bucket_Metadata_State;
+      Create_Only : Boolean;
+      Token       : access Flyology.Cancellation.Token;
+      Deadline    : Ada.Real_Time.Time;
+      Result      : out Status)
+   is
+      Target    : constant String := Bucket_Metadata_Path (Item, Bucket);
+      Temp      : US.Unbounded_String;
+      Number    : Long_Long_Integer;
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Locked    : Boolean := False;
+      Published : Boolean := False;
+      Renamed   : Boolean := False;
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Value)
+        or else
+          (not Create_Only
+           and then not Valid_Bucket_Metadata_State (Expected))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            "bucket-metadata-" & GNAT.SHA256.Digest
+              (Bucket & Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+      Validate_New_Temp_Target (Item, US.To_String (Temp));
+      SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+      Opened := True;
+      Write_Bucket_Metadata_State (File, Value);
+      SIO.Close (File);
+      Opened := False;
+      Sync_File (Item, US.To_String (Temp));
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif Ada.Directories.Exists (Target)
+           and then Ada.Directories.Kind (Target) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Create_Only and then not Ada.Directories.Exists (Target)
+         then
+            Result := Not_Found;
+         else
+            if Create_Only and then Ada.Directories.Exists (Target) then
+               declare
+                  Existing : Bucket_Metadata_State;
+               begin
+                  SIO.Open (File, SIO.In_File, Target);
+                  Opened := True;
+                  Read_Bucket_Metadata_State (File, Existing);
+                  SIO.Close (File);
+                  Opened := False;
+                  Result := Already_Exists;
+               end;
+            elsif not Create_Only then
+               declare
+                  Existing : Bucket_Metadata_State;
+               begin
+                  SIO.Open (File, SIO.In_File, Target);
+                  Opened := True;
+                  Read_Bucket_Metadata_State (File, Existing);
+                  SIO.Close (File);
+                  Opened := False;
+                  if Existing /= Expected then
+                     Result := Conflict;
+                     Item.Publication.Release;
+                     Locked := False;
+                     Ada.Directories.Delete_File (US.To_String (Temp));
+                     Temp := US.Null_Unbounded_String;
+                     return;
+                  end if;
+               end;
+            end if;
+            if not
+              (Create_Only and then Ada.Directories.Exists (Target))
+            then
+               GNAT.OS_Lib.Rename_File
+                 (US.To_String (Temp), Target, Renamed);
+               if not Renamed then
+                  raise Ada.IO_Exceptions.Use_Error;
+               end if;
+               Published := True;
+               Sync_Directory (Item, Configuration_Path (Item, Bucket));
+               Sync_Directory (Item, Temp_Path (Item));
+               Result := Success;
+            end if;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+      if not Published and then US.Length (Temp) > 0
+        and then Ada.Directories.Exists (US.To_String (Temp))
+      then
+         Ada.Directories.Delete_File (US.To_String (Temp));
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Result := Backend_Unavailable;
+   end Publish_Bucket_Metadata_State;
+
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Publish_Bucket_Metadata_State
+        (Item, Bucket, Value, Value, True, Token, Deadline, Result);
+   end Create_Bucket_Metadata_State;
+
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Target : constant String := Bucket_Metadata_Path (Item, Bucket);
+      File   : SIO.File_Type;
+      Opened : Boolean := False;
+      Locked : Boolean := False;
+   begin
+      Value :=
+        (Kind                           => Current_Metadata_Configuration,
+         Current_Configuration_Document => US.Null_Unbounded_String,
+         Current_Result_Document        => US.Null_Unbounded_String,
+         Legacy_Result_Document         => US.Null_Unbounded_String);
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Ada.Directories.Exists (Target) then
+            Result := Success;
+         elsif Ada.Directories.Kind (Target) /=
+           Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         else
+            SIO.Open (File, SIO.In_File, Target);
+            Opened := True;
+            Read_Bucket_Metadata_State (File, Value);
+            SIO.Close (File);
+            Opened := False;
+            Configured := True;
+            Result := Success;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Value :=
+           (Kind                           => Current_Metadata_Configuration,
+            Current_Configuration_Document => US.Null_Unbounded_String,
+            Current_Result_Document        => US.Null_Unbounded_String,
+            Legacy_Result_Document         => US.Null_Unbounded_String);
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Metadata_State;
+
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is
+   begin
+      Publish_Bucket_Metadata_State
+        (Item, Bucket, Value, Expected, False, Token, Deadline, Result);
+   end Replace_Bucket_Metadata_State;
+
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      Target : constant String := Bucket_Metadata_Path (Item, Bucket);
+      File   : SIO.File_Type;
+      Opened : Boolean := False;
+      Locked : Boolean := False;
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Bucket_Metadata_State (Expected)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Ada.Directories.Exists (Target) then
+            Result := Success;
+         elsif Ada.Directories.Kind (Target) /=
+           Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         else
+            declare
+               Existing : Bucket_Metadata_State;
+            begin
+               SIO.Open (File, SIO.In_File, Target);
+               Opened := True;
+               Read_Bucket_Metadata_State (File, Existing);
+               SIO.Close (File);
+               Opened := False;
+               if Existing /= Expected then
+                  Result := Conflict;
+               else
+                  Ada.Directories.Delete_File (Target);
+                  Sync_Directory (Item, Configuration_Path (Item, Bucket));
+                  Result := Success;
+               end if;
+            end;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Metadata_State;
 
    overriding procedure Put_Bucket_Replication
      (Item     : in out Store;

@@ -20834,6 +20834,379 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Metadata_Configuration_Codecs;
 
+   procedure Check_Files_Bucket_Metadata (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package Backends renames Flyology.Object_Storage.Backends;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package SIO renames Ada.Streams.Stream_IO;
+      package US renames Ada.Strings.Unbounded;
+      use type Backends.Bucket_Metadata_State;
+      Root : constant String :=
+        Ada.Directories.Compose
+          (Ada.Directories.Compose
+             (Ada.Directories.Current_Directory, "obj"),
+           "files-metadata-state");
+      Bucket : constant String := "files-metadata-bucket";
+      Original : constant Backends.Bucket_Metadata_State :=
+        (Kind => Backends.Legacy_Metadata_Table_Configuration,
+         Current_Configuration_Document =>
+           US.To_Unbounded_String ("configuration"),
+         Current_Result_Document =>
+           US.To_Unbounded_String ("current-result"),
+         Legacy_Result_Document =>
+           US.To_Unbounded_String ("legacy-result"));
+      Replacement : constant Backends.Bucket_Metadata_State :=
+        (Kind => Backends.Legacy_Metadata_Table_Configuration,
+         Current_Configuration_Document =>
+           US.To_Unbounded_String ("replacement-configuration"),
+         Current_Result_Document =>
+           US.To_Unbounded_String ("replacement-current-result"),
+         Legacy_Result_Document =>
+           US.To_Unbounded_String ("legacy-result"));
+
+      protected type Race_Control is
+         procedure Ready;
+         entry Start;
+         procedure Record_Result (First : Boolean; Value : Status);
+         entry Wait_Complete;
+         function Outcome (First : Boolean) return Status;
+      private
+         Ready_Count    : Natural range 0 .. 2 := 0;
+         Complete_Count : Natural range 0 .. 2 := 0;
+         First_Result   : Status := Backend_Unavailable;
+         Second_Result  : Status := Backend_Unavailable;
+      end Race_Control;
+
+      protected body Race_Control is
+         procedure Ready is
+         begin
+            Ready_Count := Ready_Count + 1;
+         end Ready;
+
+         entry Start when Ready_Count = 2 is
+         begin
+            null;
+         end Start;
+
+         procedure Record_Result (First : Boolean; Value : Status) is
+         begin
+            if First then
+               First_Result := Value;
+            else
+               Second_Result := Value;
+            end if;
+            Complete_Count := Complete_Count + 1;
+         end Record_Result;
+
+         entry Wait_Complete when Complete_Count = 2 is
+         begin
+            null;
+         end Wait_Complete;
+
+         function Outcome (First : Boolean) return Status is
+           (if First then First_Result else Second_Result);
+      end Race_Control;
+
+      function Metadata_Path return String is
+        (Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"), Bucket),
+               "configuration"),
+            "metadata.fos"));
+
+      procedure Clean is
+      begin
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+
+      procedure Exchange_Byte
+        (Position : SIO.Positive_Count;
+         Value    : Ada.Streams.Stream_Element;
+         Previous : out Ada.Streams.Stream_Element)
+      is
+         File : SIO.File_Type;
+         Data : Ada.Streams.Stream_Element_Array (1 .. 1);
+         Last : Ada.Streams.Stream_Element_Offset;
+      begin
+         SIO.Open (File, SIO.In_File, Metadata_Path);
+         SIO.Set_Index (File, Position);
+         SIO.Read (File, Data, Last);
+         if Last /= Data'Last then
+            raise Program_Error with "metadata fixture byte was absent";
+         end if;
+         Previous := Data (Data'First);
+         SIO.Close (File);
+         Data (Data'First) := Value;
+         SIO.Open (File, SIO.Out_File, Metadata_Path);
+         SIO.Set_Index (File, Position);
+         SIO.Write (File, Data);
+         SIO.Close (File);
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Exchange_Byte;
+   begin
+      Clean;
+      declare
+         Store : Files.Store :=
+           Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+         Loaded : Backends.Bucket_Metadata_State;
+         Configured : Boolean;
+         Result : Status;
+      begin
+         Store.Create_Bucket
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata bucket create failed");
+         Store.Create_Bucket_Metadata_State
+           (Bucket, Original, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata create failed");
+         Store.Create_Bucket_Metadata_State
+           (Bucket, Replacement, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Already_Exists,
+            "files metadata duplicate create was not rejected");
+         Store.Get_Bucket_Metadata_State
+           (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+            Result);
+         Assert
+           (Result = Success and then Configured and then Loaded = Original,
+            "files metadata create did not retain one exact snapshot");
+         Store.Replace_Bucket_Metadata_State
+           (Bucket, Original, Replacement, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata exact replace failed");
+         Store.Replace_Bucket_Metadata_State
+           (Bucket, Original, Replacement, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Conflict,
+            "files metadata stale replace did not conflict");
+      end;
+
+      declare
+         Store : Files.Store :=
+           Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+         Loaded : Backends.Bucket_Metadata_State;
+         Configured : Boolean;
+         Result : Status;
+      begin
+         Store.Get_Bucket_Metadata_State
+           (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+            Result);
+         Assert
+           (Result = Success and then Configured
+            and then Loaded = Replacement,
+            "files metadata state did not survive reopen");
+         Store.Delete_Bucket_Metadata_State
+           (Bucket, Original, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Conflict,
+            "files metadata stale delete did not conflict");
+         Store.Delete_Bucket_Metadata_State
+           (Bucket, Replacement, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata exact delete failed");
+         Store.Delete_Bucket_Metadata_State
+           (Bucket, Replacement, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "files metadata absent delete was not idempotent");
+         Store.Replace_Bucket_Metadata_State
+           (Bucket, Replacement, Original, null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "files metadata absent replace was not NotFound");
+         Store.Create_Bucket_Metadata_State
+           (Bucket, Original, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "files metadata corruption fixture create failed");
+      end;
+
+      declare
+         Previous : Ada.Streams.Stream_Element;
+      begin
+         Exchange_Byte
+           (9, Ada.Streams.Stream_Element (Character'Pos ('X')), Previous);
+         declare
+            Store : Files.Store :=
+              Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+            Loaded : Backends.Bucket_Metadata_State := Replacement;
+            Configured : Boolean := True;
+            Result : Status;
+         begin
+            Store.Get_Bucket_Metadata_State
+              (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+               Result);
+            Assert
+              (Result = Backend_Unavailable and then not Configured
+               and then US.Length
+                 (Loaded.Current_Configuration_Document) = 0
+               and then US.Length (Loaded.Current_Result_Document) = 0
+               and then US.Length (Loaded.Legacy_Result_Document) = 0,
+               "files metadata malformed kind was not rejected/reset");
+         end;
+         declare
+            Ignored : Ada.Streams.Stream_Element;
+         begin
+            Exchange_Byte (9, Previous, Ignored);
+         end;
+      end;
+
+      declare
+         File : SIO.File_Type;
+         Extra : constant Ada.Streams.Stream_Element_Array (1 .. 1) :=
+           (1 => 0);
+      begin
+         SIO.Open (File, SIO.Append_File, Metadata_Path);
+         SIO.Write (File, Extra);
+         SIO.Close (File);
+         declare
+            Store : Files.Store :=
+              Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+            Loaded : Backends.Bucket_Metadata_State;
+            Configured : Boolean;
+            Result : Status;
+         begin
+            Store.Get_Bucket_Metadata_State
+              (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+               Result);
+            Assert
+              (Result = Backend_Unavailable and then not Configured,
+               "files metadata accepted trailing persisted bytes");
+         end;
+      end;
+
+      Ada.Directories.Delete_File (Metadata_Path);
+      declare
+         Store : Files.Store :=
+           Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+         Loaded : Backends.Bucket_Metadata_State;
+         Configured : Boolean;
+         Result : Status;
+      begin
+         Store.Create_Bucket_Metadata_State
+           (Bucket, Replacement, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata cascade setup failed");
+         Store.Delete_Bucket
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata bucket delete failed");
+         Store.Create_Bucket
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata bucket recreate failed");
+         Store.Get_Bucket_Metadata_State
+           (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+            Result);
+         Assert
+           (Result = Success and then not Configured,
+            "bucket deletion did not cascade files metadata state");
+
+         declare
+            Control : Race_Control;
+            task type Creator (First : Boolean);
+
+            task body Creator is
+               Worker_Result : Status := Backend_Unavailable;
+            begin
+               Control.Ready;
+               Control.Start;
+               Store.Create_Bucket_Metadata_State
+                 (Bucket, (if First then Original else Replacement), null,
+                  Ada.Real_Time.Time_Last, Worker_Result);
+               Control.Record_Result (First, Worker_Result);
+            exception
+               when others =>
+                  Control.Record_Result (First, Backend_Unavailable);
+            end Creator;
+
+            First_Task  : Creator (True);
+            Second_Task : Creator (False);
+         begin
+            Control.Wait_Complete;
+            Assert
+              ((Control.Outcome (True) = Success
+                and then Control.Outcome (False) = Already_Exists)
+               or else
+               (Control.Outcome (True) = Already_Exists
+                and then Control.Outcome (False) = Success),
+               "files metadata create race was not one-winner");
+         end;
+         Store.Get_Bucket_Metadata_State
+           (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+            Result);
+         Assert
+           (Result = Success and then Configured
+            and then Loaded in Original | Replacement,
+            "files metadata create race retained a partial state");
+         Store.Delete_Bucket_Metadata_State
+           (Bucket, Loaded, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata race cleanup failed");
+
+         Store.Create_Bucket_Metadata_State
+           (Bucket, Original, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files metadata CAS race setup failed");
+         declare
+            Control : Race_Control;
+            task type Mutator (Delete_Worker : Boolean);
+
+            task body Mutator is
+               Worker_Result : Status := Backend_Unavailable;
+            begin
+               Control.Ready;
+               Control.Start;
+               if Delete_Worker then
+                  Store.Delete_Bucket_Metadata_State
+                    (Bucket, Original, null, Ada.Real_Time.Time_Last,
+                     Worker_Result);
+               else
+                  Store.Replace_Bucket_Metadata_State
+                    (Bucket, Original, Replacement, null,
+                     Ada.Real_Time.Time_Last, Worker_Result);
+               end if;
+               Control.Record_Result (Delete_Worker, Worker_Result);
+            exception
+               when others =>
+                  Control.Record_Result
+                    (Delete_Worker, Backend_Unavailable);
+            end Mutator;
+
+            Delete_Task  : Mutator (True);
+            Replace_Task : Mutator (False);
+         begin
+            Control.Wait_Complete;
+            Assert
+              ((Control.Outcome (True) = Success
+                and then Control.Outcome (False) = Not_Found)
+               or else
+               (Control.Outcome (True) = Conflict
+                and then Control.Outcome (False) = Success),
+               "files metadata replace/delete race was not linearizable");
+         end;
+         Store.Get_Bucket_Metadata_State
+           (Bucket, null, Ada.Real_Time.Time_Last, Loaded, Configured,
+            Result);
+         Assert
+           (Result = Success
+            and then
+              ((not Configured)
+               or else (Configured and then Loaded = Replacement)),
+            "files metadata race retained a non-linearizable state");
+      end;
+      Clean;
+   exception
+      when others =>
+         Clean;
+         raise;
+   end Check_Files_Bucket_Metadata;
+
    procedure Check_Bucket_Versioning (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -21632,6 +22005,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("files.durability-fault-barriers",
             Check_Filesystem_Durability_Faults'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("files.bucket-metadata-state",
+            Check_Files_Bucket_Metadata'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.listing-conformance",

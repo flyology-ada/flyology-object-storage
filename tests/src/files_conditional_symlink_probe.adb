@@ -205,6 +205,21 @@ procedure Files_Conditional_Symlink_Probe is
      Ada.Directories.Compose (Configuration_Path, "policy.fos");
    CORS_Path : constant String :=
      Ada.Directories.Compose (Configuration_Path, "cors.fos");
+   Metadata_Path : constant String :=
+     Ada.Directories.Compose (Configuration_Path, "metadata.fos");
+   Metadata_State : constant Backends.Bucket_Metadata_State :=
+     (Kind => Backends.Current_Metadata_Configuration,
+      Current_Configuration_Document =>
+        US.To_Unbounded_String ("configuration"),
+      Current_Result_Document => US.To_Unbounded_String ("result"),
+      Legacy_Result_Document => US.Null_Unbounded_String);
+   Replacement_Metadata_State : constant Backends.Bucket_Metadata_State :=
+     (Kind => Backends.Current_Metadata_Configuration,
+      Current_Configuration_Document =>
+        US.To_Unbounded_String ("replacement-configuration"),
+      Current_Result_Document =>
+        US.To_Unbounded_String ("replacement-result"),
+      Legacy_Result_Document => US.Null_Unbounded_String);
    Bucket_Link_Path : constant String :=
      Ada.Directories.Compose
        (Ada.Directories.Compose (Root, "buckets"), "root-link-bucket");
@@ -552,6 +567,36 @@ begin
            (Result = Storage.Backend_Unavailable,
             "Get_Bucket_Tags accepted a configuration symlink");
       end;
+      declare
+         Observed   : Backends.Bucket_Metadata_State;
+         Configured : Boolean;
+      begin
+         Store.Create_Bucket_Metadata_State
+           ("symlink-bucket", Metadata_State, null,
+            Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "metadata create accepted a configuration symlink");
+         Store.Get_Bucket_Metadata_State
+           ("symlink-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Require
+           (Result = Storage.Backend_Unavailable and then not Configured,
+            "metadata get accepted a configuration symlink");
+         Store.Replace_Bucket_Metadata_State
+           ("symlink-bucket", Metadata_State,
+            Replacement_Metadata_State, null, Ada.Real_Time.Time_Last,
+            Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "metadata replace accepted a configuration symlink");
+         Store.Delete_Bucket_Metadata_State
+           ("symlink-bucket", Metadata_State, null,
+            Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "metadata delete accepted a configuration symlink");
+      end;
    end;
    Require
      (GNAT.OS_Lib.Is_Symbolic_Link (Configuration_Path),
@@ -788,6 +833,56 @@ begin
       Require
         (not Ada.Directories.Exists (Missing),
          "bucket CORS operations created a dangling file target");
+   end if;
+
+   Ada.Directories.Delete_File (CORS_Path);
+   Create_Symlink (Link_Target, Metadata_Path, "bucket-metadata-file");
+   declare
+      Observed   : Backends.Bucket_Metadata_State;
+      Configured : Boolean;
+   begin
+      Store.Create_Bucket_Metadata_State
+        ("symlink-bucket", Metadata_State, null,
+         Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "metadata create accepted a file symlink");
+      Store.Get_Bucket_Metadata_State
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Require
+        (Result = Storage.Backend_Unavailable and then not Configured,
+         "metadata get accepted a file symlink");
+      Store.Replace_Bucket_Metadata_State
+        ("symlink-bucket", Metadata_State, Replacement_Metadata_State,
+         null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "metadata replace accepted a file symlink");
+      Store.Delete_Bucket_Metadata_State
+        ("symlink-bucket", Metadata_State, null,
+         Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "metadata delete accepted a file symlink");
+   end;
+   Require
+     (GNAT.OS_Lib.Is_Symbolic_Link (Metadata_Path),
+      "metadata operations replaced the file symlink");
+   if Mode = "live" then
+      declare
+         File : Ada.Text_IO.File_Type;
+      begin
+         Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Sentinel);
+         Require
+           (Ada.Text_IO.Get_Line (File) = "outside-sentinel",
+            "metadata operations modified the external file");
+         Ada.Text_IO.Close (File);
+      end;
+   else
+      Require
+        (not Ada.Directories.Exists (Missing),
+         "metadata operations created a dangling file target");
    end if;
 
    --  A fresh long key spans multiple encoded directories. It must remain a

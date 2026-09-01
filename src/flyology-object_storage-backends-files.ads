@@ -11,7 +11,8 @@ package Flyology.Object_Storage.Backends.Files is
 
    type Commit_Policy is (Power_Loss_Durable, Process_Crash_Atomic);
 
-   type Store is limited new Backend and Bucket_Notification_Backend
+   type Store is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend
      with private;
 
    --  Open or create a backend rooted at Root. Power_Loss_Durable is the
@@ -311,6 +312,74 @@ package Flyology.Object_Storage.Backends.Files is
       Document   : out Ada.Strings.Unbounded.Unbounded_String;
       Configured : out Boolean;
       Result     : out Status);
+
+   --  Atomically create one provider-resolved metadata state according to
+   --  the Store commit policy.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Value Complete provider-resolved state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Create_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Read one atomic metadata-state snapshot retained according to the
+   --  Store commit policy.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Value Complete retained state when configured
+   --  @param Configured Whether metadata state is retained
+   --  @param Result Storage outcome
+   overriding procedure Get_Bucket_Metadata_State
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Value      : out Bucket_Metadata_State;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   --  Atomically replace one exact metadata-state snapshot according to the
+   --  Store commit policy.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Value Complete replacement state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Replace_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Value    : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   --  Atomically delete one exact metadata-state snapshot according to the
+   --  Store commit policy.
+   --  @param Item Files backend
+   --  @param Bucket Existing bucket name
+   --  @param Expected Exact previously read state
+   --  @param Token Optional cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage outcome
+   overriding procedure Delete_Bucket_Metadata_State
+     (Item     : in out Store;
+      Bucket   : String;
+      Expected : Bucket_Metadata_State;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
 
    --  Durably retain one bounded replication document.
    --  @param Item Files backend
@@ -1184,7 +1253,8 @@ private
       Held : Boolean := False;
    end Publication_Gate;
 
-   type Store is limited new Backend and Bucket_Notification_Backend
+   type Store is limited new Backend and Bucket_Notification_Backend and
+     Bucket_Metadata_Backend
      with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;

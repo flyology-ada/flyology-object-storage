@@ -18,6 +18,7 @@ procedure Files_Crash_Probe is
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Flyology.Object_Storage.Checksum_Algorithm;
    use type Flyology.Object_Storage.MFA_Delete_Status;
+   use type Flyology.Object_Storage.Backends.Bucket_Metadata_State;
    package US renames Ada.Strings.Unbounded;
    package Storage renames Flyology.Object_Storage;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -216,6 +217,15 @@ procedure Files_Crash_Probe is
       return Natural (Page.Uploads.Length);
    end Upload_Count;
 
+   function Metadata_State
+     (Label : String) return Backends.Bucket_Metadata_State is
+     ((Kind => Backends.Current_Metadata_Configuration,
+       Current_Configuration_Document =>
+         US.To_Unbounded_String (Label & "-configuration"),
+       Current_Result_Document =>
+         US.To_Unbounded_String (Label & "-result"),
+       Legacy_Result_Document => US.Null_Unbounded_String));
+
    procedure Put_Part
      (Store : in out Files.Store; Upload_ID, Payload : String)
    is
@@ -254,6 +264,13 @@ procedure Files_Crash_Probe is
             Put_Bucket_Tags (Store, "old");
          elsif Scenario = "bucket-cors" then
             Put_Bucket_CORS (Store, "old");
+         elsif Scenario in "metadata-replace" | "metadata-delete" then
+            Store.Create_Bucket_Metadata_State
+              (Bucket, Metadata_State ("old"), null,
+               Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Storage.Success,
+               "could not prepare metadata state");
          elsif Scenario in "part" | "abort" | "complete" then
             Create_Upload (Store, Upload_ID);
             if Scenario in "part" | "complete" then
@@ -371,6 +388,14 @@ procedure Files_Crash_Probe is
       elsif Scenario = "bucket-cors" then
          Put_Bucket_CORS (Store, "replacement");
          Result := Storage.Success;
+      elsif Scenario = "metadata-replace" then
+         Store.Replace_Bucket_Metadata_State
+           (Bucket, Metadata_State ("old"), Metadata_State ("replacement"),
+            null, Ada.Real_Time.Time_Last, Result);
+      elsif Scenario = "metadata-delete" then
+         Store.Delete_Bucket_Metadata_State
+           (Bucket, Metadata_State ("old"), null,
+            Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "delete" then
          Store.Head_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -455,7 +480,10 @@ procedure Files_Crash_Probe is
       raise Program_Error with "configured crash barrier was not reached";
    end Mutate;
 
-   procedure Verify (Scenario, Root : String) is
+   procedure Verify
+     (Scenario, Root : String;
+      Barrier        : Natural;
+      After_Sync     : Boolean) is
       Store  : Files.Store := Files.Open (Root);
       Info   : Storage.Object_Information;
       Result : Storage.Status;
@@ -667,6 +695,47 @@ procedure Files_Crash_Probe is
                and then US.To_String (Document) in "old" | "replacement",
                "crash exposed a partial bucket CORS replacement");
          end;
+      elsif Scenario in "metadata-replace" | "metadata-delete" then
+         declare
+            Value      : Backends.Bucket_Metadata_State;
+            Configured : Boolean;
+            Committed  : constant Boolean :=
+              (if Scenario = "metadata-replace" then
+                 Barrier > 1 or else (Barrier = 1 and then After_Sync)
+               else Barrier = 0 and then After_Sync);
+         begin
+            Store.Get_Bucket_Metadata_State
+              (Bucket, null, Ada.Real_Time.Time_Last, Value, Configured,
+               Result);
+            if Scenario = "metadata-replace" then
+               if Committed then
+                  Require
+                    (Result = Storage.Success and then Configured
+                     and then Value = Metadata_State ("replacement"),
+                     "metadata replacement was not durable after sync");
+               else
+                  Require
+                    (Result = Storage.Success and then Configured
+                     and then Value in
+                       Metadata_State ("old") |
+                         Metadata_State ("replacement"),
+                     "crash exposed a partial metadata-state replacement");
+               end if;
+            else
+               if Committed then
+                  Require
+                    (Result = Storage.Success and then not Configured,
+                     "metadata deletion was not durable after sync");
+               else
+                  Require
+                    (Result = Storage.Success
+                     and then
+                       ((Configured and then Value = Metadata_State ("old"))
+                        or else not Configured),
+                     "crash exposed a partial metadata-state deletion");
+               end if;
+            end if;
+         end;
       elsif Scenario in "initiate" | "abort" then
          Require
            (Upload_Count (Store) in 0 .. 1,
@@ -740,7 +809,11 @@ begin
       if Action = "prepare" then
          Prepare (Scenario, Root);
       elsif Action = "verify" then
-         Verify (Scenario, Root);
+         Require (Ada.Command_Line.Argument_Count = 5, "missing verify args");
+         Verify
+           (Scenario, Root,
+            Natural'Value (Ada.Command_Line.Argument (4)),
+            Ada.Command_Line.Argument (5) = "after");
       elsif Action = "crash" then
          Require (Ada.Command_Line.Argument_Count = 5, "missing crash args");
          Mutate
