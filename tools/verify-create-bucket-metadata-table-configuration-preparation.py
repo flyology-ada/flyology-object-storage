@@ -168,9 +168,9 @@ def verify_registry(data: dict[str, object]) -> None:
         "certainty": CERTAINTY,
         "reconciliation": RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [

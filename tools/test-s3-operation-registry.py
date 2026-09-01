@@ -8479,9 +8479,9 @@ def main() -> None:
         assert entry.get("certainty") == delete_metadata_certainty
         assert entry.get("reconciliation") == delete_metadata_reconciliation
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -8644,9 +8644,9 @@ def main() -> None:
             == delete_metadata_table_reconciliation
         )
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -10167,6 +10167,137 @@ def main() -> None:
         "UpdateBucketMetadataJournalTableConfiguration",
         "UpdateBucketMetadataAnnotationTableConfiguration",
     }
+    expected_metadata_server_operations = (
+        "CreateBucketMetadataConfiguration",
+        "CreateBucketMetadataTableConfiguration",
+        "DeleteBucketMetadataConfiguration",
+        "DeleteBucketMetadataTableConfiguration",
+        "GetBucketMetadataConfiguration",
+        "GetBucketMetadataTableConfiguration",
+        "UpdateBucketMetadataAnnotationTableConfiguration",
+        "UpdateBucketMetadataInventoryTableConfiguration",
+        "UpdateBucketMetadataJournalTableConfiguration",
+    )
+    metadata_server_operations = tuple(expected_metadata_server_operations)
+    metadata_backend_evidence = [
+        "src/flyology-object_storage-backends.ads",
+        "src/flyology-object_storage-backends-memory.adb",
+        "src/flyology-object_storage-backends-files.adb",
+        "sqlite/src/flyology-object_storage-backends-sqlite.adb",
+        "tests/src/object_storage_test_cases.adb",
+        "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ]
+    metadata_server_evidence = [
+        "src/flyology-object_storage-server-metadata_results.ads",
+        "src/flyology-object_storage-server-s3_applications.adb",
+        "tests/src/s3_server_application_corpus.adb",
+    ]
+
+    def assert_metadata_server_inventory(names):
+        assert tuple(names) == expected_metadata_server_operations
+        assert len(names) == len(set(names)) == 9
+
+    def reject_metadata_server_inventory(names, label):
+        assert tuple(names) != expected_metadata_server_operations
+        try:
+            assert_metadata_server_inventory(names)
+        except AssertionError:
+            return
+        raise AssertionError(f"{label} metadata inventory was accepted")
+
+    assert_metadata_server_inventory(metadata_server_operations)
+    reject_metadata_server_inventory(
+        metadata_server_operations[:-1], "omitted operation"
+    )
+    reject_metadata_server_inventory(
+        metadata_server_operations + (metadata_server_operations[-1],),
+        "duplicated operation",
+    )
+    substituted_metadata_operations = list(metadata_server_operations)
+    substituted_metadata_operations[-1] = "GetBucketReplication"
+    reject_metadata_server_inventory(
+        substituted_metadata_operations, "substituted operation"
+    )
+
+    def assert_metadata_server_coverage(candidate):
+        assert_metadata_server_inventory(metadata_server_operations)
+        for name in metadata_server_operations:
+            entry = candidate.operations[name]
+            assert entry["coverage"] == {
+                "backend": "covered",
+                "client": "covered",
+                "server": "covered",
+                "corpus": "covered",
+            }
+            assert entry["provenance"]["backend"] == "handwritten"
+            assert entry["provenance"]["server"] == "handwritten"
+            assert entry["evidence"]["backend"] == metadata_backend_evidence
+            assert entry["evidence"]["server"] == metadata_server_evidence
+            assert not any(
+                "server route are absent" in exclusion
+                or "server routing" in exclusion
+                for exclusion in entry["exclusions"]
+            )
+
+    def reject_metadata_server_coverage(candidate, label):
+        assert candidate != registry
+        try:
+            assert_metadata_server_coverage(candidate)
+        except (AssertionError, KeyError, TypeError):
+            return
+        raise AssertionError(f"{label} metadata server coverage was accepted")
+
+    assert_metadata_server_coverage(registry)
+    stale_metadata_backend = copy.deepcopy(registry)
+    stale_metadata_backend.operations[metadata_server_operations[0]][
+        "coverage"
+    ]["backend"] = "missing"
+    reject_metadata_server_coverage(
+        stale_metadata_backend, "missing backend coverage"
+    )
+    stale_metadata_server = copy.deepcopy(registry)
+    stale_metadata_server.operations[metadata_server_operations[0]][
+        "coverage"
+    ]["server"] = "missing"
+    reject_metadata_server_coverage(
+        stale_metadata_server, "missing server coverage"
+    )
+    stale_metadata_backend_provenance = copy.deepcopy(registry)
+    stale_metadata_backend_provenance.operations[
+        metadata_server_operations[1]
+    ]["provenance"]["backend"] = "absent"
+    reject_metadata_server_coverage(
+        stale_metadata_backend_provenance, "absent backend provenance"
+    )
+    stale_metadata_server_provenance = copy.deepcopy(registry)
+    stale_metadata_server_provenance.operations[
+        metadata_server_operations[1]
+    ]["provenance"]["server"] = "absent"
+    reject_metadata_server_coverage(
+        stale_metadata_server_provenance, "absent server provenance"
+    )
+    missing_metadata_backend_evidence = copy.deepcopy(registry)
+    missing_metadata_backend_evidence.operations[
+        metadata_server_operations[2]
+    ]["evidence"]["backend"].pop()
+    reject_metadata_server_coverage(
+        missing_metadata_backend_evidence, "missing backend evidence"
+    )
+    missing_metadata_server_evidence = copy.deepcopy(registry)
+    missing_metadata_server_evidence.operations[
+        metadata_server_operations[3]
+    ]["evidence"]["server"].pop()
+    reject_metadata_server_coverage(
+        missing_metadata_server_evidence, "missing server evidence"
+    )
+    stale_metadata_route_exclusion = copy.deepcopy(registry)
+    stale_metadata_route_exclusion.operations[
+        metadata_server_operations[4]
+    ]["exclusions"].append("authenticated server routing is absent")
+    reject_metadata_server_coverage(
+        stale_metadata_route_exclusion, "stale route exclusion"
+    )
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(
         canary, include_partial=False
@@ -10878,9 +11009,9 @@ def main() -> None:
             create_metadata_table_reconciliation
         )
         assert entry.get("coverage") == {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         }
         assert entry.get("ada_symbols") == [
@@ -12240,8 +12371,8 @@ def main() -> None:
             entry["absence"]
         )
         assert "no non-200 response" in entry["absence"]
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
         assert "V1 API" in entry["exclusions"][0]
         assert "exact 405" in entry["exclusions"][0]
         assert "S3 Express control-endpoint" in entry["exclusions"][1]

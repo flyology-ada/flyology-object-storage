@@ -3,8 +3,8 @@ AbortMultipartUpload	core	covered	covered	covered	covered
 CompleteMultipartUpload	core	covered	covered	covered	covered
 CopyObject	core	covered	covered	covered	covered
 CreateBucket	core	covered	covered	covered	covered
-CreateBucketMetadataConfiguration	extended	missing	covered	missing	covered
-CreateBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
+CreateBucketMetadataConfiguration	extended	covered	covered	covered	covered
+CreateBucketMetadataTableConfiguration	extended	covered	covered	covered	covered
 CreateMultipartUpload	core	covered	covered	covered	covered
 CreateSession	extended	missing	covered	missing	covered
 DeleteBucket	core	covered	covered	covered	covered
@@ -14,8 +14,8 @@ DeleteBucketEncryption	extended	covered	covered	covered	covered
 DeleteBucketIntelligentTieringConfiguration	extended	covered	covered	covered	covered
 DeleteBucketInventoryConfiguration	extended	covered	covered	covered	covered
 DeleteBucketLifecycle	extended	covered	covered	covered	covered
-DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
-DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
+DeleteBucketMetadataConfiguration	extended	covered	covered	covered	covered
+DeleteBucketMetadataTableConfiguration	extended	covered	covered	covered	covered
 DeleteBucketMetricsConfiguration	extended	covered	covered	covered	covered
 DeleteBucketOwnershipControls	extended	covered	covered	covered	covered
 DeleteBucketPolicy	extended	covered	covered	covered	covered
@@ -39,8 +39,8 @@ GetBucketLifecycle	extended	covered	covered	covered	covered
 GetBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 GetBucketLocation	core	covered	covered	covered	covered
 GetBucketLogging	extended	covered	covered	covered	covered
-GetBucketMetadataConfiguration	extended	missing	covered	missing	covered
-GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
+GetBucketMetadataConfiguration	extended	covered	covered	covered	covered
+GetBucketMetadataTableConfiguration	extended	covered	covered	covered	covered
 GetBucketMetricsConfiguration	extended	covered	covered	covered	covered
 GetBucketNotification	extended	covered	partial	covered	covered
 GetBucketNotificationConfiguration	extended	covered	covered	covered	covered
@@ -108,9 +108,9 @@ PutPublicAccessBlock	extended	covered	covered	covered	covered
 RenameObject	extended	missing	partial	missing	covered
 RestoreObject	extended	missing	partial	missing	covered
 SelectObjectContent	extended	missing	partial	missing	covered
-UpdateBucketMetadataAnnotationTableConfiguration	extended	missing	covered	missing	covered
-UpdateBucketMetadataInventoryTableConfiguration	extended	missing	covered	missing	covered
-UpdateBucketMetadataJournalTableConfiguration	extended	missing	covered	missing	covered
+UpdateBucketMetadataAnnotationTableConfiguration	extended	covered	covered	covered	covered
+UpdateBucketMetadataInventoryTableConfiguration	extended	covered	covered	covered	covered
+UpdateBucketMetadataJournalTableConfiguration	extended	covered	covered	covered	covered
 UpdateObjectEncryption	extended	missing	partial	missing	covered
 UploadPart	core	covered	covered	covered	covered
 UploadPartCopy	core	covered	covered	covered	covered

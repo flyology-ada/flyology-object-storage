@@ -1436,9 +1436,9 @@ def verify_metadata_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_METADATA_CERTAINTY,
         "reconciliation": DELETE_METADATA_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
@@ -1529,9 +1529,9 @@ def verify_metadata_table_registry(data: dict[str, object]) -> None:
         "certainty": DELETE_METADATA_TABLE_CERTAINTY,
         "reconciliation": DELETE_METADATA_TABLE_RECONCILIATION,
         "coverage": {
-            "backend": "missing",
+            "backend": "covered",
             "client": "covered",
-            "server": "missing",
+            "server": "covered",
             "corpus": "covered",
         },
         "ada_symbols": [
