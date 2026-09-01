@@ -7235,6 +7235,12 @@ def main() -> None:
         )
         assert_bucket_control_backend_server(entry)
         assert entry.get("absence") == "not_applicable"
+        assert "modeled optional body remains representable" in (
+            entry["exclusions"][0]
+        )
+        assert "rejects an absent document as MalformedXML" in (
+            entry["exclusions"][0]
+        )
         assert "1,000-rule ceiling" in entry["exclusions"][1]
         assert "ten modeled checksum algorithms" in entry["exclusions"][2]
         assert candidate.qualification[
@@ -7391,11 +7397,13 @@ def main() -> None:
             put_bucket_lifecycle_reconciliation
         )
         assert entry.get("ada_symbols") == put_bucket_lifecycle_symbols
-        assert entry["coverage"]["backend"] == "missing"
-        assert entry["coverage"]["server"] == "missing"
+        assert entry["coverage"]["backend"] == "covered"
+        assert entry["coverage"]["server"] == "covered"
         assert entry["coverage"]["client"] == "partial"
         assert entry["coverage"]["corpus"] == "covered"
         assert entry["provenance"]["client"] == "handwritten"
+        assert entry["provenance"]["backend"] == "handwritten"
+        assert entry["provenance"]["server"] == "handwritten"
         assert entry["provenance"]["tests"] == "handwritten"
         assert entry.get("absence") == "not_applicable"
         assert "client coverage is deliberately partial" in (
@@ -7408,8 +7416,29 @@ def main() -> None:
         assert "optional legacy ContentMD5 override is not surfaced" in (
             entry["exclusions"][2]
         )
-        assert "caller-selected generated checksum" in entry["exclusions"][2]
-        assert "exact immutable serialized body" in entry["exclusions"][2]
+        assert "exact legacy identity" in entry["exclusions"][2]
+        assert "MD5 or generated-checksum transport" in (
+            entry["exclusions"][2]
+        )
+        assert "immutable body" in entry["exclusions"][2]
+        assert "rejects the current-only Filter member" in (
+            entry["exclusions"][3]
+        )
+        assert "absent lifecycle document as malformed input" in (
+            entry["exclusions"][3]
+        )
+        assert "lifecycle action execution is not claimed" in (
+            entry["exclusions"][3]
+        )
+        assert entry["evidence"]["backend"] == [
+            "src/flyology-object_storage-backends.ads",
+            "tests/src/object_storage_test_cases.adb",
+            "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+        ]
+        assert entry["evidence"]["server"] == [
+            "src/flyology-object_storage-server-s3_applications.adb",
+            "tests/src/s3_server_application_corpus.adb",
+        ]
         assert candidate.qualification["put_bucket_lifecycle"][0][-1] == (
             "tools/verify-put-bucket-lifecycle-configuration-preparation.py"
         )
@@ -7498,7 +7527,7 @@ def main() -> None:
     ]
     assert legacy_put_lifecycle_commands[5] == [
         "./tools/build-api-docs.sh",
-        "/private/tmp/fos-put-bucket-lifecycle-gnatdoc",
+        "{repository}/build/gnatdoc/put-bucket-lifecycle",
         "--operation",
         "PutBucketLifecycle",
     ]

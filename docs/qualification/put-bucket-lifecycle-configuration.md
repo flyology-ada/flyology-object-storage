@@ -35,6 +35,12 @@ noncurrent-transition, and tag projections remain exact. Enum domains,
 timestamps, Booleans, optional structures, arbitrary-precision decimal text,
 and XML namespace behavior are identical in both directions.
 
+The maintained client preserves modeled absence as an empty serialized body.
+The maintained Flyology server does not interpret that omission as a state
+change: it rejects an absent lifecycle document as `MalformedXML`. This is an
+explicit server-admission restriction, not a claim that the model requires the
+body member.
+
 The maintained verifier gates the exact operation scalars, five request
 members, one output member, required flattened Rules projection, checksum and
 transition enum domains, implementation vocabulary, and shared nested graph:
@@ -47,13 +53,15 @@ uv run python \
 ## Serialization and request contract
 
 `S3.Lifecycle.Serialize` emits an empty body for exact configuration absence
-and requires at least one rule when the configuration is present. A present
-document uses the exact S3 namespace, direct flattened lists, required
-members, exact enums and timestamps, lowercase Booleans, validated decimal
-text, and escaped strings in caller order. The caller's shared XML limits
-bound document bytes, depth, elements, and decoded text. Inconsistent presence
-state, absent or empty required rules, malformed values, and one-past limits
-fail before HTTP admission.
+and requires at least one rule when the configuration is present. The client
+may send that modeled absence; the maintained server returns `MalformedXML`
+instead of persisting empty lifecycle state. A present document uses the exact
+S3 namespace, direct flattened lists, required members, exact enums and
+timestamps, lowercase Booleans, validated decimal text, and escaped strings in
+caller order. The caller's shared XML limits bound document bytes, depth,
+elements, and decoded text. Inconsistent presence state, absent or empty
+required rules, malformed values, and one-past limits fail before HTTP
+admission.
 
 The pinned shapes do not encode the prose-only 1,000-rule ceiling or every
 documented one-of/action combination. The codec therefore does not invent

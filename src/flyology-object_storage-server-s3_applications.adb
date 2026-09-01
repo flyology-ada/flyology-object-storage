@@ -533,7 +533,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Delete_Bucket_Encryption,
          Put_Bucket_Ownership_Controls, Get_Bucket_Ownership_Controls,
          Delete_Bucket_Ownership_Controls,
-         Put_Bucket_Lifecycle, Get_Bucket_Lifecycle,
+         Put_Bucket_Lifecycle, Put_Bucket_Lifecycle_Legacy,
+         Get_Bucket_Lifecycle,
          Get_Bucket_Lifecycle_Configuration,
          Delete_Bucket_Lifecycle,
          Put_Bucket_Logging, Get_Bucket_Logging,
@@ -1055,7 +1056,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              (Query_Text =
                 "lifecycle=&x-id=PutBucketLifecycleConfiguration"
               or else Query_Text =
-                "x-id=PutBucketLifecycleConfiguration&lifecycle="))
+                "x-id=PutBucketLifecycleConfiguration&lifecycle="
+              or else Query_Text =
+                "lifecycle=&x-id=PutBucketLifecycle"
+              or else Query_Text =
+                "x-id=PutBucketLifecycle&lifecycle="))
         or else
           (Method = "GET"
            and then
@@ -2694,7 +2699,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               and then Is_Bucket_Ownership_Controls_Query
             then Delete_Bucket_Ownership_Controls
             elsif Method = "PUT" and then Is_Bucket_Lifecycle_Query
-            then Put_Bucket_Lifecycle
+            then
+              (if Query_Text = "lifecycle=&x-id=PutBucketLifecycle"
+                 or else Query_Text = "x-id=PutBucketLifecycle&lifecycle="
+               then Put_Bucket_Lifecycle_Legacy
+               else Put_Bucket_Lifecycle)
             elsif Method = "GET" and then Is_Bucket_Lifecycle_Query
             then
               (if Is_Legacy_Bucket_Lifecycle_Get_Query then
@@ -3027,6 +3036,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Request_Payment | Put_Public_Access_Block |
          Put_Bucket_CORS | Put_Bucket_Encryption |
          Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
+         Put_Bucket_Lifecycle_Legacy |
          Put_Bucket_Logging | Put_Bucket_Analytics |
          Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
          Put_Bucket_Inventory | Put_Bucket_Replication |
@@ -3180,6 +3190,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_Request_Payment | Put_Public_Access_Block |
         Put_Bucket_CORS | Put_Bucket_Encryption |
         Put_Bucket_Ownership_Controls | Put_Bucket_Lifecycle |
+        Put_Bucket_Lifecycle_Legacy |
         Put_Bucket_Logging | Put_Bucket_Analytics |
         Put_Bucket_Metrics | Put_Bucket_Intelligent_Tiering |
         Put_Bucket_Inventory | Put_Bucket_Replication |
@@ -4730,6 +4741,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             when Put_Bucket_Encryption |
                  Put_Bucket_Ownership_Controls |
                  Put_Bucket_Lifecycle |
+                 Put_Bucket_Lifecycle_Legacy |
                  Put_Bucket_Logging =>
                declare
                   Is_Encryption : constant Boolean :=
@@ -4737,17 +4749,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Is_Ownership : constant Boolean :=
                     Operation = Put_Bucket_Ownership_Controls;
                   Is_Lifecycle : constant Boolean :=
-                    Operation = Put_Bucket_Lifecycle;
+                    Operation in
+                      Put_Bucket_Lifecycle | Put_Bucket_Lifecycle_Legacy;
+                  Is_Legacy_Lifecycle : constant Boolean :=
+                    Operation = Put_Bucket_Lifecycle_Legacy;
                   Requires_Content_MD5 : constant Boolean :=
                     Is_Encryption or else Is_Ownership;
                   Allows_Content_MD5 : constant Boolean :=
-                    not Is_Lifecycle;
+                    not Is_Lifecycle or else Is_Legacy_Lifecycle;
                   Needs_Checksum : constant Boolean :=
-                    Operation in Put_Bucket_Lifecycle | Put_Bucket_Logging;
+                    Operation in
+                      Put_Bucket_Lifecycle | Put_Bucket_Lifecycle_Legacy |
+                      Put_Bucket_Logging;
                   Operation_Name : constant String :=
                     (if Is_Encryption then "PutBucketEncryption"
                      elsif Is_Ownership then
                        "PutBucketOwnershipControls"
+                     elsif Is_Legacy_Lifecycle then
+                       "PutBucketLifecycle"
                      elsif Is_Lifecycle then
                        "PutBucketLifecycleConfiguration"
                      else "PutBucketLogging");
@@ -4829,10 +4848,26 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           (Bucket, US.To_String (Canonical),
                            Apps.Cancellation (X), Apps.Deadline (X), Result);
                      elsif Is_Lifecycle then
-                        Canonical := US.To_Unbounded_String
-                          (Lifecycle.Serialize
-                             (Lifecycle.Parse (Document),
-                              XML.Default_Limits));
+                        declare
+                           Value : constant
+                             Lifecycle.Lifecycle_Configuration :=
+                               Lifecycle.Parse (Document);
+                        begin
+                           if Is_Legacy_Lifecycle then
+                              for Rule of Value.Rules loop
+                                 if Rule.Filter.Is_Set
+                                   or else not Rule.Prefix.Is_Set
+                                 then
+                                    raise Lifecycle.Malformed_Lifecycle with
+                                      "legacy lifecycle rules require Prefix " &
+                                      "and exclude Filter";
+                                 end if;
+                              end loop;
+                           end if;
+                           Canonical := US.To_Unbounded_String
+                             (Lifecycle.Serialize
+                                (Value, XML.Default_Limits));
+                        end;
                         Store.Put_Bucket_Lifecycle
                           (Bucket, US.To_String (Canonical),
                            Transition_Value,
@@ -4899,7 +4934,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidRequest",
                         Operation_Name & " does not define RequestPayer",
                         Target_Text);
-                  elsif Needs_Checksum and then SDK_Count /= 1 then
+                  elsif Needs_Checksum
+                    and then SDK_Count /= 1
+                    and then
+                      (not Is_Legacy_Lifecycle or else MD5_Count /= 1)
+                  then
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "The " & Operation_Name &
@@ -4907,6 +4946,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   elsif Transition_Count = 1
                     and then
                       (not Is_Lifecycle
+                       or else Is_Legacy_Lifecycle
                        or else Apps.Request_Header
                          (X,
                           "x-amz-transition-default-minimum-object-size")

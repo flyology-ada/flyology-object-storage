@@ -6797,6 +6797,9 @@ begin
       Lifecycle_Put : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("lifecycle", ""),
          SigV4.Pair ("x-id", "PutBucketLifecycleConfiguration"));
+      Legacy_Lifecycle_Put : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("lifecycle", ""),
+         SigV4.Pair ("x-id", "PutBucketLifecycle"));
       Lifecycle_Get : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("lifecycle", ""),
          SigV4.Pair ("x-id", "GetBucketLifecycleConfiguration"));
@@ -6816,8 +6819,19 @@ begin
         "http://s3.amazonaws.com/doc/2006-03-01/";
       Lifecycle_Document : constant String :=
         "<LifecycleConfiguration xmlns=""" & Namespace & """>" &
+        "<Rule><Prefix>legacy/</Prefix><Status>Enabled</Status></Rule>" &
+        "</LifecycleConfiguration>";
+      Legacy_Lifecycle_Document : constant String :=
+        Lifecycle_Document;
+      Missing_Prefix_Lifecycle_Document : constant String :=
+        "<LifecycleConfiguration xmlns=""" & Namespace & """>" &
         "<Rule><Status>Enabled</Status></Rule>" &
         "</LifecycleConfiguration>";
+      Filter_Lifecycle_Document : constant String :=
+        "<LifecycleConfiguration xmlns=""" & Namespace & """>" &
+        "<Rule><Prefix>legacy/</Prefix>" &
+        "<Filter><Prefix>current/</Prefix></Filter>" &
+        "<Status>Enabled</Status></Rule></LifecycleConfiguration>";
       Logging_Document : constant String :=
         "<BucketLoggingStatus xmlns=""" & Namespace & """>" &
         "<LoggingEnabled><TargetBucket>log-target</TargetBucket>" &
@@ -6853,6 +6867,14 @@ begin
                "x-amz-checksum-sha256: " &
                Checksum_Value (Core.SHA256, Document) & CRLF & Extra)));
 
+      function Put_Legacy_Lifecycle
+        (Document : String;
+         Extra    : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Legacy_Lifecycle_Put, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF & Extra)));
+
       function Put_Logging
         (Document : String;
          Extra    : String := "") return String is
@@ -6883,6 +6905,57 @@ begin
         (Has (Put_Lifecycle (Lifecycle_Document), "200 OK"),
          "PutBucketLifecycleConfiguration rejected an absent transition " &
          "minimum");
+      Require
+        (Has (Put_Legacy_Lifecycle (Legacy_Lifecycle_Document), "200 OK"),
+         "PutBucketLifecycle rejected valid legacy checksum transport");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Lifecycle_Put,
+                  Legacy_Lifecycle_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value
+                    (Core.SHA256, Legacy_Lifecycle_Document) & CRLF)),
+            "200 OK"),
+         "PutBucketLifecycle rejected generated checksum transport");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Lifecycle_Put,
+                  Legacy_Lifecycle_Document,
+                  "content-md5: " & Content_MD5 ("different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketLifecycle accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Lifecycle_Put,
+                  Legacy_Lifecycle_Document,
+                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                  "x-amz-checksum-sha256: " &
+                  Checksum_Value (Core.SHA256, "different") & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketLifecycle accepted a generated checksum mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Legacy_Lifecycle_Put,
+                  Legacy_Lifecycle_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycle accepted missing checksum transport");
+      Require
+        (Has
+           (Put_Legacy_Lifecycle
+              (Legacy_Lifecycle_Document,
+               "x-amz-transition-default-minimum-object-size: " &
+               "varies_by_storage_class" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketLifecycle accepted a current-only transition header");
       declare
          Response : constant String :=
            Run
@@ -7038,6 +7111,25 @@ begin
                "x-amz-request-payer: requester" & CRLF),
             "<Code>InvalidRequest</Code>"),
          "PutBucketLifecycleConfiguration accepted RequestPayer");
+      Require
+        (Has
+           (Put_Legacy_Lifecycle (Filter_Lifecycle_Document),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketLifecycle accepted a current-only Filter");
+      Require
+        (Has
+           (Put_Legacy_Lifecycle (Missing_Prefix_Lifecycle_Document),
+            "<Code>MalformedXML</Code>"),
+         "PutBucketLifecycle accepted a lifecycle rule without Prefix");
+      Require
+        (Has (Put_Lifecycle (Filter_Lifecycle_Document), "200 OK"),
+         "PutBucketLifecycleConfiguration rejected its Filter member");
+      Require
+        (Has (Put_Legacy_Lifecycle (""), "<Code>MalformedXML</Code>"),
+         "PutBucketLifecycle accepted an absent lifecycle body");
+      Require
+        (Has (Put_Lifecycle (""), "<Code>MalformedXML</Code>"),
+         "PutBucketLifecycleConfiguration accepted an absent body");
       Require
         (Has
            (Run

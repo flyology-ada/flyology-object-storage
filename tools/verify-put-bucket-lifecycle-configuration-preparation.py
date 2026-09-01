@@ -18,6 +18,8 @@ SOURCES = (
     ROOT / "src/flyology-object_storage-s3-lifecycle.ads",
     ROOT / "src/flyology-object_storage-s3-lifecycle.adb",
     ROOT / "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb",
+    ROOT / "src/flyology-object_storage-server-s3_applications.adb",
+    ROOT / "tests/src/s3_server_application_corpus.adb",
 )
 REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
@@ -81,6 +83,138 @@ def enum_values(model: str, shape: int) -> list[str]:
         fail(f"shape {shape} lacks enum values")
     return [value for _, value in re.findall(
         r'when\s+(\d+)\s+=>\s+return\s+"([^"]*)";', match.group(1))]
+
+
+def bounded_region(source: str, start: str, end: str, label: str) -> str:
+    if source.count(start) != 1:
+        fail(f"{label} start boundary is not unique")
+    tail = source.split(start, 1)[1]
+    if tail.count(end) != 1:
+        fail(f"{label} end boundary is not unique after its start")
+    return start + tail.split(end, 1)[0]
+
+
+def require_in_order(region: str, tokens: list[str], label: str) -> None:
+    offset = 0
+    for token in tokens:
+        if region.count(token) != 1:
+            fail(f"{label} lacks one exact {token}")
+        index = region.find(token, offset)
+        if index < 0:
+            fail(f"{label} reordered {token}")
+        offset = index + len(token)
+
+
+def mutate_once(source: str, old: str, new: str, label: str) -> str:
+    if source.count(old) != 1:
+        fail(f"{label} canonical mutation source is not unique")
+    candidate = source.replace(old, new, 1)
+    if candidate == source:
+        fail(f"{label} did not change its candidate")
+    return candidate
+
+
+def verify_legacy_server(server: str, corpus: str) -> None:
+    query_region = bounded_region(
+        server,
+        "      Is_Bucket_Lifecycle_Query : constant Boolean :=\n",
+        "      Is_Bucket_Logging_Query : constant Boolean :=\n",
+        "legacy lifecycle query",
+    )
+    require_in_order(query_region, [
+        '"lifecycle=&x-id=PutBucketLifecycleConfiguration"',
+        '"x-id=PutBucketLifecycleConfiguration&lifecycle="',
+        '"lifecycle=&x-id=PutBucketLifecycle"',
+        '"x-id=PutBucketLifecycle&lifecycle="',
+    ], "legacy lifecycle query")
+
+    dispatch_region = bounded_region(
+        server,
+        '            elsif Method = "PUT" and then '
+        "Is_Bucket_Lifecycle_Query\n",
+        '            elsif Method = "GET" and then '
+        "Is_Bucket_Lifecycle_Query\n",
+        "legacy lifecycle dispatch",
+    )
+    require_in_order(dispatch_region, [
+        'Query_Text = "lifecycle=&x-id=PutBucketLifecycle"',
+        'Query_Text = "x-id=PutBucketLifecycle&lifecycle="',
+        "then Put_Bucket_Lifecycle_Legacy",
+        "else Put_Bucket_Lifecycle",
+    ], "legacy lifecycle dispatch")
+
+    handler_region = bounded_region(
+        server,
+        "            when Put_Bucket_Encryption |\n",
+        "            when Get_Bucket_Encryption |\n",
+        "legacy lifecycle handler",
+    )
+    require_in_order(handler_region, [
+        "Operation = Put_Bucket_Lifecycle_Legacy",
+        "not Is_Lifecycle or else Is_Legacy_Lifecycle",
+        "Put_Bucket_Lifecycle | Put_Bucket_Lifecycle_Legacy |",
+        "begin\n"
+        "                           if Is_Legacy_Lifecycle then",
+        "for Rule of Value.Rules loop",
+        "if Rule.Filter.Is_Set\n"
+        "                                   or else not Rule.Prefix.Is_Set",
+        "legacy lifecycle rules require Prefix",
+        "and exclude Filter",
+        "not Is_Legacy_Lifecycle or else MD5_Count /= 1",
+        "(not Is_Lifecycle\n"
+        "                       or else Is_Legacy_Lifecycle",
+    ], "legacy lifecycle handler")
+
+    corpus_region = bounded_region(
+        corpus,
+        "      Legacy_Lifecycle_Put : constant SigV4.Name_Value_Array :=\n",
+        '         "GetBucketLogging did not return disabled state");\n',
+        "legacy lifecycle corpus",
+    )
+    require_in_order(corpus_region, [
+        "(Has (Put_Legacy_Lifecycle (Legacy_Lifecycle_Document), "
+        '"200 OK")',
+        "PutBucketLifecycle rejected valid legacy checksum transport",
+        "Checksum_Value\n"
+        "                    (Core.SHA256, Legacy_Lifecycle_Document) "
+        "& CRLF)),\n"
+        '            "200 OK")',
+        "PutBucketLifecycle rejected generated checksum transport",
+        'Content_MD5 ("different") & CRLF)),\n'
+        '            "<Code>BadDigest</Code>")',
+        "PutBucketLifecycle accepted a mismatched Content-MD5",
+        "Legacy_Lifecycle_Document,\n"
+        '                  "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &\n'
+        '                  "x-amz-checksum-sha256: " &\n'
+        '                  Checksum_Value (Core.SHA256, "different") '
+        "& CRLF)),\n"
+        '            "<Code>BadDigest</Code>")',
+        "PutBucketLifecycle accepted a generated checksum mismatch",
+        "Legacy_Lifecycle_Document)),\n"
+        '            "<Code>InvalidRequest</Code>")',
+        "PutBucketLifecycle accepted missing checksum transport",
+        "PutBucketLifecycle accepted a current-only transition header",
+        "(Put_Legacy_Lifecycle (Filter_Lifecycle_Document),\n"
+        '            "<Code>MalformedXML</Code>")',
+        "PutBucketLifecycle accepted a current-only Filter",
+        "(Put_Legacy_Lifecycle (Missing_Prefix_Lifecycle_Document),\n"
+        '            "<Code>MalformedXML</Code>")',
+        "PutBucketLifecycle accepted a lifecycle rule without Prefix",
+        '(Has (Put_Lifecycle (Filter_Lifecycle_Document), "200 OK")',
+        "PutBucketLifecycleConfiguration rejected its Filter member",
+        '(Has (Put_Legacy_Lifecycle (""), "<Code>MalformedXML</Code>")',
+        "PutBucketLifecycle accepted an absent lifecycle body",
+        '(Has (Put_Lifecycle (""), "<Code>MalformedXML</Code>")',
+        "PutBucketLifecycleConfiguration accepted an absent body",
+    ], "legacy lifecycle corpus")
+
+
+def reject_legacy_server(server: str, corpus: str, label: str) -> None:
+    try:
+        verify_legacy_server(server, corpus)
+    except ValueError:
+        return
+    fail(f"{label} legacy lifecycle candidate was accepted")
 
 
 def main() -> int:
@@ -170,6 +304,13 @@ def main() -> int:
     if legacy_rule_wire != [
             name for name in modern_rule_wire if name != "Filter"]:
         fail("legacy lifecycle Rule is not the maintained wire subset")
+    if case_values(model, "Member_Required", 621) != [
+            "False", "False", "True", "True", "False", "False",
+            "False", "False"] or \
+            case_values(model, "Member_Required", 374) != [
+                "False", "False", "False", "False", "True", "False",
+                "False", "False", "False"]:
+        fail("legacy/current lifecycle Rule requirements changed")
     if enum_values(model, 77) != [
             "CRC32", "CRC32C", "SHA1", "SHA256", "CRC64NVME", "SHA512",
             "MD5", "XXHASH64", "XXHASH3", "XXHASH128"] or \
@@ -192,6 +333,108 @@ def main() -> int:
             fail(f"maintained lifecycle preparation lacks exact {token}")
     if "Model.Put_Bucket_Lifecycle_Operation" in prepare:
         fail("deprecated lifecycle operation identity is unexpectedly used")
+    server = SOURCES[-2].read_text(encoding="utf-8")
+    server_corpus = SOURCES[-1].read_text(encoding="utf-8")
+    verify_legacy_server(server, server_corpus)
+
+    query_region = bounded_region(
+        server,
+        "      Is_Bucket_Lifecycle_Query : constant Boolean :=\n",
+        "      Is_Bucket_Logging_Query : constant Boolean :=\n",
+        "legacy lifecycle query",
+    )
+    wrong_query = mutate_once(
+        query_region,
+        '"lifecycle=&x-id=PutBucketLifecycle"',
+        '"lifecycle=&x-id=PutBucketLifecycleConfiguration"',
+        "legacy route identity",
+    )
+    reject_legacy_server(
+        server.replace(query_region, wrong_query, 1),
+        server_corpus,
+        "wrong route identity",
+    )
+
+    handler_region = bounded_region(
+        server,
+        "            when Put_Bucket_Encryption |\n",
+        "            when Get_Bucket_Encryption |\n",
+        "legacy lifecycle handler",
+    )
+    for label, old, new in (
+        (
+            "legacy MD5 drift",
+            "not Is_Legacy_Lifecycle or else MD5_Count /= 1",
+            "MD5_Count /= 1",
+        ),
+        (
+            "transition-header leakage",
+            "(not Is_Lifecycle\n"
+            "                       or else Is_Legacy_Lifecycle",
+            "(not Is_Lifecycle\n"
+            "                       or else False",
+        ),
+        (
+            "legacy Filter leakage",
+            "if Rule.Filter.Is_Set",
+            "if False and then Rule.Filter.Is_Set",
+        ),
+        (
+            "legacy Prefix leakage",
+            "or else not Rule.Prefix.Is_Set",
+            "or else False",
+        ),
+    ):
+        wrong_handler = mutate_once(handler_region, old, new, label)
+        reject_legacy_server(
+            server.replace(handler_region, wrong_handler, 1),
+            server_corpus,
+            label,
+        )
+
+    corpus_region = bounded_region(
+        server_corpus,
+        "      Legacy_Lifecycle_Put : constant SigV4.Name_Value_Array :=\n",
+        '         "GetBucketLogging did not return disabled state");\n',
+        "legacy lifecycle corpus",
+    )
+    wrong_corpus = mutate_once(
+        corpus_region,
+        "PutBucketLifecycle accepted a generated checksum mismatch",
+        "PutBucketLifecycle generated checksum result",
+        "detached checksum evidence",
+    )
+    reject_legacy_server(
+        server,
+        server_corpus.replace(corpus_region, wrong_corpus, 1),
+        "detached checksum evidence",
+    )
+    wrong_filter_assertion = mutate_once(
+        corpus_region,
+        "(Put_Legacy_Lifecycle (Filter_Lifecycle_Document),\n"
+        '            "<Code>MalformedXML</Code>")',
+        "(Put_Legacy_Lifecycle (Filter_Lifecycle_Document),\n"
+        '            "200 OK")',
+        "Filter assertion predicate",
+    )
+    reject_legacy_server(
+        server,
+        server_corpus.replace(corpus_region, wrong_filter_assertion, 1),
+        "Filter assertion predicate",
+    )
+    wrong_prefix_assertion = mutate_once(
+        corpus_region,
+        "(Put_Legacy_Lifecycle (Missing_Prefix_Lifecycle_Document),\n"
+        '            "<Code>MalformedXML</Code>")',
+        "(Put_Legacy_Lifecycle (Missing_Prefix_Lifecycle_Document),\n"
+        '            "200 OK")',
+        "Prefix assertion predicate",
+    )
+    reject_legacy_server(
+        server,
+        server_corpus.replace(corpus_region, wrong_prefix_assertion, 1),
+        "Prefix assertion predicate",
+    )
     for token in (
             "Serialize", "Prepare_Put_Bucket_Lifecycle_Configuration",
             "Decode_Put_Bucket_Lifecycle_Configuration_Response",
@@ -206,7 +449,7 @@ def main() -> int:
         "PutBucketLifecycleConfiguration preparation: maintained five-member "
         "request/one-member response plus the legacy five-member exact "
         "prefix-rule compatibility subset, current operation identity, "
-        "generated checksum, and lifecycle graph"
+        "generated checksum, exact legacy server route, and lifecycle graph"
     )
     return 0
 

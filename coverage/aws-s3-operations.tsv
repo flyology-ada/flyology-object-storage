@@ -84,7 +84,7 @@ PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	covered	covered	covered	covered
 PutBucketIntelligentTieringConfiguration	extended	covered	covered	covered	covered
 PutBucketInventoryConfiguration	extended	covered	covered	covered	covered
-PutBucketLifecycle	extended	missing	partial	missing	covered
+PutBucketLifecycle	extended	covered	partial	covered	covered
 PutBucketLifecycleConfiguration	extended	covered	covered	covered	covered
 PutBucketLogging	extended	covered	covered	covered	covered
 PutBucketMetricsConfiguration	extended	covered	covered	covered	covered

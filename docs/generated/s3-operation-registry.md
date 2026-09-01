@@ -94,7 +94,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketEncryption | Set_Encryption | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketIntelligentTieringConfiguration | Set_Intelligent_Tiering_Configuration | buckets | rest_xml_mutation | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / shared_family |
 | PutBucketInventoryConfiguration | Set_Inventory_Configuration | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / generated |
-| PutBucketLifecycle | Set_Lifecycle_Configuration | buckets | rest_xml_mutation | handwritten | false | true | missing / absent | partial / handwritten | missing / absent | covered / handwritten |
+| PutBucketLifecycle | Set_Lifecycle_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | partial / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketLifecycleConfiguration | Set_Lifecycle_Configuration | buckets | rest_xml_mutation | handwritten | false | true | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketLogging | Set_Logging | buckets | rest_xml_mutation | generated | true | true | covered / handwritten | covered / generated | covered / handwritten | covered / generated |
 | PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | covered / handwritten | covered / shared_family | covered / handwritten | covered / handwritten |
