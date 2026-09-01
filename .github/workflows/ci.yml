@@ -76,6 +76,14 @@ jobs:
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
+      - name: Fetch pinned botocore S3 model
+        timeout-minutes: 5
+        run: |
+          mkdir -p obj/ci
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 120 \
+            https://raw.githubusercontent.com/boto/botocore/36c34f15391da01cd717c73c0fffa747c9889768/botocore/data/s3/2006-03-01/service-2.json \
+            --output obj/ci/service-2.json
       - name: Install Alire
         timeout-minutes: 15
         uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
@@ -106,6 +114,8 @@ jobs:
           grep -Fq 'Origin: commit eb09a80a7e06274e93289861c2cae1ca7e8cb1af' \
             obj/ci/quic-resolution.log
       - name: Run root and SQLite gates
+        env:
+          FLYOLOGY_S3_SERVICE_MODEL: ${{ github.workspace }}/obj/ci/service-2.json
         run: ./tools/ci/run-tests.sh
       - name: Upload test logs
         if: ${{ always() }}
