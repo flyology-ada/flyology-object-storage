@@ -35,6 +35,8 @@ with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
+with Flyology.Object_Storage.S3.Metadata_Configurations;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
@@ -50,6 +52,7 @@ with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.MFA;
+with Flyology.Object_Storage.Server.Metadata_Results;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
 
@@ -83,6 +86,10 @@ procedure S3_Server_Application_Corpus is
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Logging renames Flyology.Object_Storage.S3.Logging;
+   package Metadata_Configurations renames
+     Flyology.Object_Storage.S3.Metadata_Configurations;
+   package Metadata_Tables renames
+     Flyology.Object_Storage.S3.Metadata_Tables;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
@@ -100,6 +107,8 @@ procedure S3_Server_Application_Corpus is
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package MFA renames Flyology.Object_Storage.Server.MFA;
+   package Metadata_Results renames
+     Flyology.Object_Storage.Server.Metadata_Results;
    package Static_Credentials renames
      Flyology.Object_Storage.Server.Static_Credentials;
    package US renames Ada.Strings.Unbounded;
@@ -119,6 +128,8 @@ procedure S3_Server_Application_Corpus is
    use type Object_Lock.Retention_Mode;
    use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
+   use type Metadata_Configurations.Expiration_State;
+   use type Metadata_Configurations.Inventory_Configuration_State;
    use type Tags.Tag_Vectors.Vector;
    use type ACL.Grantee_Type;
    use type ACL.Permission;
@@ -394,6 +405,279 @@ procedure S3_Server_Application_Corpus is
       end if;
    end Verify;
 
+   type Metadata_Provider_Mode is
+     (Metadata_Provider_Succeeds, Metadata_Provider_Fails,
+      Metadata_Provider_Raises);
+
+   type Test_Metadata_Provider is limited new Metadata_Results.Provider with
+   record
+      Mode             : Metadata_Provider_Mode := Metadata_Provider_Succeeds;
+      Create_Legacy_Calls : Natural := 0;
+      Create_Current_Calls : Natural := 0;
+      Inventory_Calls  : Natural := 0;
+      Journal_Calls    : Natural := 0;
+      Annotation_Calls : Natural := 0;
+      Inventory_Observed          : Boolean := False;
+      Journal_Observed            : Boolean := False;
+      Annotation_Observed         : Boolean := False;
+      Inventory_Previous_Observed : Boolean := False;
+      Journal_Previous_Observed   : Boolean := False;
+      Annotation_Previous_Observed : Boolean := False;
+   end record;
+
+   overriding procedure Create_Legacy
+     (Item          : in out Test_Metadata_Provider;
+      Bucket        : String;
+      Request       : Metadata_Tables.S3_Tables_Destination;
+      Configuration : out
+        Metadata_Configurations.Metadata_Configuration_Request;
+      Legacy_Result : out
+        Metadata_Tables.Metadata_Table_Configuration_Result;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Flyology.Object_Storage.Status);
+
+   overriding procedure Create_Current
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Request        : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status);
+
+   overriding procedure Update_Inventory
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status);
+
+   overriding procedure Update_Journal
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status);
+
+   overriding procedure Update_Annotation
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status);
+
+   function Metadata_Request return
+     Metadata_Configurations.Metadata_Configuration_Request is
+     (Metadata_Configurations.Parse_Create
+        ("<MetadataConfiguration>" &
+         "<JournalTableConfiguration><RecordExpiration>" &
+         "<Expiration>ENABLED</Expiration><Days>30</Days>" &
+         "</RecordExpiration><EncryptionConfiguration>" &
+         "<SseAlgorithm>AES256</SseAlgorithm>" &
+         "</EncryptionConfiguration></JournalTableConfiguration>" &
+         "</MetadataConfiguration>", XML.Default_Limits));
+
+   function Metadata_Result
+     (Status : String) return
+      Metadata_Configurations.Metadata_Configuration is
+     (Metadata_Configurations.Parse
+        ("<GetBucketMetadataConfigurationResult>" &
+         "<MetadataConfigurationResult><DestinationResult>" &
+         "<TableBucketType>customer</TableBucketType>" &
+         "<TableBucketArn>arn:metadata</TableBucketArn>" &
+         "<TableNamespace>metadata</TableNamespace>" &
+         "</DestinationResult><JournalTableConfigurationResult>" &
+         "<TableStatus>" & Status & "</TableStatus>" &
+         "<TableName>journal</TableName><RecordExpiration>" &
+         "<Expiration>ENABLED</Expiration><Days>30</Days>" &
+         "</RecordExpiration></JournalTableConfigurationResult>" &
+         "<InventoryTableConfigurationResult>" &
+         "<ConfigurationState>ENABLED</ConfigurationState>" &
+         "</InventoryTableConfigurationResult>" &
+         "<AnnotationTableConfigurationResult>" &
+         "<ConfigurationState>DISABLED</ConfigurationState>" &
+         "</AnnotationTableConfigurationResult>" &
+         "</MetadataConfigurationResult>" &
+         "</GetBucketMetadataConfigurationResult>", XML.Default_Limits));
+
+   function Legacy_Metadata_Result return
+     Metadata_Tables.Metadata_Table_Configuration_Result is
+     (Metadata_Tables.Parse
+        ("<GetBucketMetadataTableConfigurationResult>" &
+         "<MetadataTableConfigurationResult>" &
+         "<S3TablesDestinationResult>" &
+         "<TableBucketArn>arn:legacy</TableBucketArn>" &
+         "<TableName>legacy</TableName>" &
+         "<TableArn>arn:legacy:table</TableArn>" &
+         "<TableNamespace>legacy</TableNamespace>" &
+         "</S3TablesDestinationResult>" &
+         "</MetadataTableConfigurationResult><Status>ACTIVE</Status>" &
+         "</GetBucketMetadataTableConfigurationResult>",
+         XML.Default_Limits));
+
+   procedure Complete_Metadata_Provider_Call
+     (Item   : Test_Metadata_Provider;
+      Result : out Flyology.Object_Storage.Status) is
+   begin
+      if Item.Mode = Metadata_Provider_Raises then
+         raise Program_Error with "metadata provider sentinel";
+      elsif Item.Mode = Metadata_Provider_Fails then
+         Result := Flyology.Object_Storage.Backend_Unavailable;
+      else
+         Result := Flyology.Object_Storage.Success;
+      end if;
+   end Complete_Metadata_Provider_Call;
+
+   overriding procedure Create_Legacy
+     (Item          : in out Test_Metadata_Provider;
+      Bucket        : String;
+      Request       : Metadata_Tables.S3_Tables_Destination;
+      Configuration : out
+        Metadata_Configurations.Metadata_Configuration_Request;
+      Legacy_Result : out
+        Metadata_Tables.Metadata_Table_Configuration_Result;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Flyology.Object_Storage.Status)
+   is
+      pragma Unreferenced (Bucket, Request, Token, Deadline);
+   begin
+      Item.Create_Legacy_Calls := Item.Create_Legacy_Calls + 1;
+      Configuration := Metadata_Request;
+      Legacy_Result := Legacy_Metadata_Result;
+      Current_Result := Metadata_Result ("LEGACY");
+      Complete_Metadata_Provider_Call (Item, Result);
+   end Create_Legacy;
+
+   overriding procedure Create_Current
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Request        : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status)
+   is
+      pragma Unreferenced (Bucket, Request, Token, Deadline);
+   begin
+      Item.Create_Current_Calls := Item.Create_Current_Calls + 1;
+      Current_Result := Metadata_Result ("CURRENT");
+      Complete_Metadata_Provider_Call (Item, Result);
+   end Create_Current;
+
+   overriding procedure Update_Inventory
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status)
+   is
+      pragma Unreferenced (Bucket, Token, Deadline);
+   begin
+      Item.Inventory_Calls := Item.Inventory_Calls + 1;
+      Item.Inventory_Previous_Observed :=
+        US.To_String (Previous.Journal.Table_Status) = "LEGACY";
+      Item.Inventory_Observed :=
+        Configuration.Inventory.Is_Set
+        and then Configuration.Inventory.Configuration_State =
+          Metadata_Configurations.Inventory_Enabled
+        and then Configuration.Journal.Expiration.Expiration =
+          Metadata_Configurations.Expiration_Enabled
+        and then Configuration.Journal.Encryption.Is_Set
+        and then not Configuration.Annotation.Is_Set;
+      Current_Result := Metadata_Result ("INVENTORY");
+      Complete_Metadata_Provider_Call (Item, Result);
+   end Update_Inventory;
+
+   overriding procedure Update_Journal
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status)
+   is
+      pragma Unreferenced (Bucket, Token, Deadline);
+   begin
+      Item.Journal_Calls := Item.Journal_Calls + 1;
+      Item.Journal_Previous_Observed :=
+        US.To_String (Previous.Journal.Table_Status) = "INVENTORY";
+      Item.Journal_Observed :=
+        Configuration.Journal.Expiration.Expiration =
+          Metadata_Configurations.Expiration_Disabled
+        and then Configuration.Journal.Encryption.Is_Set
+        and then Configuration.Inventory.Is_Set
+        and then Configuration.Inventory.Configuration_State =
+          Metadata_Configurations.Inventory_Enabled
+        and then not Configuration.Annotation.Is_Set;
+      Current_Result := Metadata_Result ("JOURNAL");
+      Complete_Metadata_Provider_Call (Item, Result);
+   end Update_Journal;
+
+   overriding procedure Update_Annotation
+     (Item           : in out Test_Metadata_Provider;
+      Bucket         : String;
+      Configuration  : Metadata_Configurations.
+        Metadata_Configuration_Request;
+      Previous       : Metadata_Configurations.Metadata_Configuration;
+      Current_Result : out
+        Metadata_Configurations.Metadata_Configuration;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time;
+      Result         : out Flyology.Object_Storage.Status)
+   is
+      pragma Unreferenced (Bucket, Token, Deadline);
+   begin
+      Item.Annotation_Calls := Item.Annotation_Calls + 1;
+      Item.Annotation_Previous_Observed :=
+        US.To_String (Previous.Journal.Table_Status) = "JOURNAL";
+      Item.Annotation_Observed :=
+        Configuration.Annotation.Is_Set
+        and then US.To_String (Configuration.Annotation.Role.Value) =
+          "metadata-role"
+        and then Configuration.Inventory.Is_Set
+        and then Configuration.Inventory.Configuration_State =
+          Metadata_Configurations.Inventory_Enabled
+        and then Configuration.Journal.Expiration.Expiration =
+          Metadata_Configurations.Expiration_Disabled
+        and then Configuration.Journal.Encryption.Is_Set;
+      Current_Result := Metadata_Result ("ANNOTATION");
+      Complete_Metadata_Provider_Call (Item, Result);
+   end Update_Annotation;
+
    --  Test-reference generation capacity: the established sixteen corpus
    --  generations plus one retained-version CopyObject destination.
    Store : Flyology.Object_Storage.Backends.Memory.Store
@@ -404,6 +688,7 @@ procedure S3_Server_Application_Corpus is
      Static_Credentials.Create
        (Access_Key, Secret_Key, Principal => "test-principal");
    MFA_Policy : aliased Test_MFA_Verifier;
+   Metadata_Provider : aliased Test_Metadata_Provider;
    Rules : constant Authentication.Policy :=
      (Expected_Region    => US.To_Unbounded_String (Region),
       Maximum_Clock_Skew => 1.0);
@@ -416,7 +701,19 @@ procedure S3_Server_Application_Corpus is
       Credentials             => Credentials,
       MFA_Verifier            => MFA_Policy'Unchecked_Access,
       Rules                   => Rules,
-      Clock                   => Fixed_Clock);
+      Clock                   => Fixed_Clock,
+      Metadata_Provider       => Metadata_Provider'Unchecked_Access);
+
+   package No_Metadata_App is new
+     Flyology.Object_Storage.Server.S3_Applications
+       (Backend_Type            =>
+          Flyology.Object_Storage.Backends.Memory.Store,
+        Store                   => Store,
+        Credential_Provider_Type => Static_Credentials.Provider,
+        Credentials             => Credentials,
+        MFA_Verifier            => MFA_Policy'Unchecked_Access,
+        Rules                   => Rules,
+        Clock                   => Fixed_Clock);
 
    package No_MFA_App is new Flyology.Object_Storage.Server.S3_Applications
      (Backend_Type            =>
@@ -1366,7 +1663,8 @@ procedure S3_Server_Application_Corpus is
      (Input : US.Unbounded_String;
       Receive_Max : Natural := Natural'Last;
       Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
-      Use_Null_MFA : Boolean := False)
+      Use_Null_MFA : Boolean := False;
+      Use_Null_Metadata : Boolean := False)
      return US.Unbounded_String
    is
       Wire : aliased Memory_Transport;
@@ -1386,7 +1684,9 @@ procedure S3_Server_Application_Corpus is
                 Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
                null, HTTP_Server.Request_Deadline (Client), Scheme);
          begin
-            if Use_Null_MFA then
+            if Use_Null_Metadata then
+               No_Metadata_App.Handle (X);
+            elsif Use_Null_MFA then
                No_MFA_App.Handle (X);
             else
                S3_App.Handle (X);
@@ -1405,11 +1705,12 @@ procedure S3_Server_Application_Corpus is
      (Input       : String;
       Receive_Max : Natural := Natural'Last;
       Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
-      Use_Null_MFA : Boolean := False) return String
+      Use_Null_MFA : Boolean := False;
+      Use_Null_Metadata : Boolean := False) return String
    is (US.To_String
          (Run_Unbounded
             (US.To_Unbounded_String (Input), Receive_Max, Scheme,
-             Use_Null_MFA)));
+             Use_Null_MFA, Use_Null_Metadata)));
 
    function Has (Value, Pattern : String) return Boolean is
      (Ada.Strings.Fixed.Index (Value, Pattern) /= 0);
@@ -3772,6 +4073,363 @@ procedure S3_Server_Application_Corpus is
             "duplicate multipart query parameter was accepted");
       end;
    end Check_Multipart_Server;
+
+   procedure Check_Metadata_Server is
+      V2_Create : constant String :=
+        "<MetadataConfiguration>" &
+        "<JournalTableConfiguration><RecordExpiration>" &
+        "<Expiration>ENABLED</Expiration><Days>30</Days>" &
+        "</RecordExpiration><EncryptionConfiguration>" &
+        "<SseAlgorithm>AES256</SseAlgorithm>" &
+        "</EncryptionConfiguration></JournalTableConfiguration>" &
+        "</MetadataConfiguration>";
+      V1_Create : constant String :=
+        "<MetadataTableConfiguration><S3TablesDestination>" &
+        "<TableBucketArn>arn:request</TableBucketArn>" &
+        "<TableName>request</TableName>" &
+        "</S3TablesDestination></MetadataTableConfiguration>";
+      Inventory_Update : constant String :=
+        "<InventoryTableConfiguration>" &
+        "<ConfigurationState>ENABLED</ConfigurationState>" &
+        "</InventoryTableConfiguration>";
+      Journal_Update : constant String :=
+        "<JournalTableConfiguration><RecordExpiration>" &
+        "<Expiration>DISABLED</Expiration>" &
+        "</RecordExpiration></JournalTableConfiguration>";
+      Annotation_Update : constant String :=
+        "<AnnotationTableConfiguration>" &
+        "<ConfigurationState>ENABLED</ConfigurationState>" &
+        "<Role>metadata-role</Role>" &
+        "</AnnotationTableConfiguration>";
+
+      function Query
+        (Subresource, Operation_ID : String)
+         return SigV4.Name_Value_Array is
+        (SigV4.Pair (Subresource, ""),
+         SigV4.Pair ("x-id", Operation_ID));
+
+      function Headers
+        (Document          : String;
+         Require_Algorithm : Boolean := True;
+         Owner             : String := "") return String is
+        ("Content-MD5: " & Content_MD5 (Document) & CRLF &
+         (if Require_Algorithm then
+            "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+            "x-amz-checksum-sha256: " &
+            Checksum_Value (Core.SHA256, Document) & CRLF
+          else "") &
+         (if Owner'Length = 0 then ""
+          else "x-amz-expected-bucket-owner: " & Owner & CRLF));
+
+      function Mutation
+        (Method, Subresource, Operation_ID, Document : String;
+         Require_Algorithm : Boolean := True;
+         Owner             : String := "") return String is
+        (Signed_Query_Body_Request
+           (Method, "/test-bucket", Query (Subresource, Operation_ID),
+            Document, Headers (Document, Require_Algorithm, Owner)));
+
+      function Control
+        (Method, Subresource, Operation_ID : String;
+         Owner : String := "") return String is
+        (Signed_Query_Request
+           (Method, "/test-bucket", Query (Subresource, Operation_ID),
+            Extra_Header_Name =>
+              (if Owner'Length = 0
+               then "" else "x-amz-expected-bucket-owner"),
+            Extra_Header_Value => Owner));
+
+      procedure Require_Status
+        (Request, Status, Label : String;
+         Pattern : String := "")
+      is
+         Response : constant String := Run (Request);
+      begin
+         Require
+           (Has (Response, Status)
+            and then (Pattern'Length = 0 or else Has (Response, Pattern)),
+            Label & ": " & Response);
+      end Require_Status;
+
+      Initial_Calls : Natural;
+   begin
+      Require_Status
+        (Control
+           ("DELETE", "metadataConfiguration",
+            "DeleteBucketMetadataConfiguration"),
+         "204 No Content", "initial metadata cleanup failed");
+
+      Initial_Calls := Metadata_Provider.Create_Current_Calls;
+      declare
+         Response : constant String := Run
+           (Mutation
+              ("POST", "metadataConfiguration",
+               "CreateBucketMetadataConfiguration", V2_Create),
+            Use_Null_Metadata => True);
+      begin
+         Require
+           (Has (Response, "501 Not Implemented")
+            and then Metadata_Provider.Create_Current_Calls = Initial_Calls,
+            "null metadata provider mutated state or invoked provider");
+      end;
+
+      Require_Status
+        (Mutation
+           ("POST", "metadataTable",
+            "CreateBucketMetadataTableConfiguration", V1_Create,
+            Require_Algorithm => False),
+         "200 OK", "legacy metadata create failed");
+      Require
+        (Metadata_Provider.Create_Legacy_Calls = 1,
+         "legacy metadata provider call count changed");
+      Require_Status
+        (Control
+           ("GET", "metadataTable",
+            "GetBucketMetadataTableConfiguration"),
+         "200 OK", "legacy metadata read failed", "arn:legacy");
+      Require_Status
+        (Control
+           ("GET", "metadataConfiguration",
+            "GetBucketMetadataConfiguration"),
+         "200 OK", "current view of legacy metadata failed", "LEGACY");
+
+      Require_Status
+        (Mutation
+           ("PUT", "metadataInventoryTable",
+            "UpdateBucketMetadataInventoryTableConfiguration",
+            Inventory_Update),
+         "200 OK", "metadata inventory update failed");
+      Require_Status
+        (Mutation
+           ("PUT", "metadataJournalTable",
+            "UpdateBucketMetadataJournalTableConfiguration",
+            Journal_Update),
+         "200 OK", "metadata journal update failed");
+      Require_Status
+        (Mutation
+           ("PUT", "metadataAnnotationTable",
+            "UpdateBucketMetadataAnnotationTableConfiguration",
+            Annotation_Update),
+         "200 OK", "metadata annotation update failed");
+      Require
+        (Metadata_Provider.Inventory_Calls = 1
+         and then Metadata_Provider.Journal_Calls = 1
+         and then Metadata_Provider.Annotation_Calls = 1
+         and then Metadata_Provider.Inventory_Observed
+         and then Metadata_Provider.Journal_Observed
+         and then Metadata_Provider.Annotation_Observed
+         and then Metadata_Provider.Inventory_Previous_Observed
+         and then Metadata_Provider.Journal_Previous_Observed
+         and then Metadata_Provider.Annotation_Previous_Observed,
+         "metadata updates lost a member or changed provider call counts");
+      Require_Status
+        (Control
+           ("GET", "metadataConfiguration",
+            "GetBucketMetadataConfiguration"),
+         "200 OK", "updated metadata read failed", "ANNOTATION");
+      Require_Status
+        (Control
+           ("GET", "metadataTable",
+            "GetBucketMetadataTableConfiguration"),
+         "200 OK", "updates changed the legacy metadata result",
+         "arn:legacy");
+
+      Metadata_Provider.Mode := Metadata_Provider_Fails;
+      Require_Status
+        (Mutation
+           ("PUT", "metadataInventoryTable",
+            "UpdateBucketMetadataInventoryTableConfiguration",
+            Inventory_Update),
+         "503 Service Unavailable", "provider failure was not bounded");
+      Metadata_Provider.Mode := Metadata_Provider_Succeeds;
+      Require
+        (Metadata_Provider.Inventory_Calls = 2,
+         "failed metadata update replayed or skipped its provider call");
+      Metadata_Provider.Mode := Metadata_Provider_Raises;
+      Require_Status
+        (Mutation
+           ("PUT", "metadataJournalTable",
+            "UpdateBucketMetadataJournalTableConfiguration",
+            Journal_Update),
+         "503 Service Unavailable", "provider exception was not bounded",
+         "SlowDown");
+      Metadata_Provider.Mode := Metadata_Provider_Succeeds;
+      Require
+        (Metadata_Provider.Journal_Calls = 2,
+         "exceptional metadata update replayed or skipped provider call");
+      Require_Status
+        (Control
+           ("GET", "metadataConfiguration",
+            "GetBucketMetadataConfiguration"),
+         "200 OK", "provider failure changed retained metadata",
+         "ANNOTATION");
+
+      Require_Status
+        (Control
+           ("DELETE", "metadataTable",
+            "DeleteBucketMetadataTableConfiguration"),
+         "204 No Content", "legacy metadata delete failed");
+      Require_Status
+        (Control
+           ("GET", "metadataTable",
+            "GetBucketMetadataTableConfiguration"),
+         "200 OK", "absent legacy metadata read failed");
+      Require_Status
+        (Control
+           ("GET", "metadataConfiguration",
+            "GetBucketMetadataConfiguration"),
+         "404 Not Found", "absent current metadata read failed",
+         "NoSuchConfiguration");
+
+      Require_Status
+        (Mutation
+           ("POST", "metadataConfiguration",
+            "CreateBucketMetadataConfiguration", V2_Create),
+         "200 OK", "current metadata create failed");
+      Require
+        (Metadata_Provider.Create_Current_Calls = Initial_Calls + 1,
+         "current metadata provider call count changed");
+      Require_Status
+        (Control
+           ("GET", "metadataTable",
+            "GetBucketMetadataTableConfiguration"),
+         "405 Method Not Allowed",
+         "legacy read accepted current metadata state");
+      Require_Status
+        (Control
+           ("DELETE", "metadataTable",
+            "DeleteBucketMetadataTableConfiguration"),
+         "405 Method Not Allowed",
+         "legacy delete accepted current metadata state");
+
+      Initial_Calls := Metadata_Provider.Inventory_Calls;
+      declare
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket",
+               Query
+                 ("metadataInventoryTable",
+                  "UpdateBucketMetadataInventoryTableConfiguration"),
+               Inventory_Update,
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Inventory_Update) & CRLF));
+      begin
+         Require
+           (Has (Response, "400 Bad Request")
+            and then Has (Response, "InvalidDigest")
+            and then Metadata_Provider.Inventory_Calls = Initial_Calls,
+            "missing metadata Content-MD5 invoked provider");
+      end;
+      declare
+         Digest : constant String := Content_MD5 (Inventory_Update);
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket",
+               Query
+                 ("metadataInventoryTable",
+                  "UpdateBucketMetadataInventoryTableConfiguration"),
+               Inventory_Update,
+               "Content-MD5: " & Digest & CRLF &
+               "Content-MD5: " & Digest & CRLF &
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, Inventory_Update) & CRLF));
+      begin
+         Require
+           (Has (Response, "400 Bad Request")
+            and then Has (Response, "InvalidRequest")
+            and then Metadata_Provider.Inventory_Calls = Initial_Calls,
+            "duplicate metadata Content-MD5 invoked provider");
+      end;
+      declare
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket",
+               Query
+                 ("metadataInventoryTable",
+                  "UpdateBucketMetadataInventoryTableConfiguration"),
+               Inventory_Update,
+               "Content-MD5: " & Content_MD5 (Inventory_Update) & CRLF &
+               "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Checksum_Value (Core.SHA256, "different") & CRLF));
+      begin
+         Require
+           (Has (Response, "400 Bad Request")
+            and then Has (Response, "BadDigest")
+            and then Metadata_Provider.Inventory_Calls = Initial_Calls,
+            "mismatched metadata checksum invoked provider");
+      end;
+      declare
+         Response : constant String := Run
+           (Mutation
+              ("PUT", "metadataInventoryTable",
+               "UpdateBucketMetadataInventoryTableConfiguration",
+               Inventory_Update, Owner => "wrong-owner"));
+      begin
+         Require
+           (Has (Response, "403 Forbidden")
+            and then Metadata_Provider.Inventory_Calls = Initial_Calls,
+            "expected-owner rejection invoked metadata provider");
+      end;
+      declare
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket",
+               Query
+                 ("metadataInventoryTable",
+                  "UpdateBucketMetadataInventoryTableConfiguration"),
+               Inventory_Update,
+               "Content-MD5: " & Content_MD5 (Inventory_Update) & CRLF));
+      begin
+         Require
+           (Has (Response, "400 Bad Request")
+            and then Metadata_Provider.Inventory_Calls = Initial_Calls,
+            "missing algorithm checksum invoked metadata provider");
+      end;
+      Require_Status
+        (Signed_Query_Body_Request
+           ("POST", "/test-bucket",
+            Query
+              ("metadataConfiguration",
+               "CreateBucketMetadataConfiguration"),
+            "<MetadataConfiguration><Unknown/></MetadataConfiguration>",
+            Headers
+              ("<MetadataConfiguration><Unknown/>" &
+               "</MetadataConfiguration>")),
+         "400 Bad Request", "malformed metadata XML was accepted",
+         "MalformedXML");
+      Require_Status
+        (Signed_Query_Request
+           ("GET", "/test-bucket",
+            (SigV4.Pair ("metadataConfiguration", ""),
+             SigV4.Pair ("x-id", "GetBucketMetadataTableConfiguration"))),
+         "400 Bad Request", "cross-operation metadata query was accepted",
+         "InvalidArgument");
+
+      Require_Status
+        (Control
+           ("DELETE", "metadataConfiguration",
+            "DeleteBucketMetadataConfiguration"),
+         "204 No Content", "current metadata delete failed");
+      Initial_Calls := Metadata_Provider.Inventory_Calls;
+      Require_Status
+        (Mutation
+           ("PUT", "metadataInventoryTable",
+            "UpdateBucketMetadataInventoryTableConfiguration",
+            Inventory_Update),
+         "404 Not Found", "absent metadata update was not rejected",
+         "NoSuchConfiguration");
+      Require
+        (Metadata_Provider.Inventory_Calls = Initial_Calls,
+         "absent metadata update invoked provider");
+      Require_Status
+        (Control
+           ("DELETE", "metadataConfiguration",
+            "DeleteBucketMetadataConfiguration"),
+         "204 No Content", "absent metadata delete was not idempotent");
+   end Check_Metadata_Server;
 
 begin
    declare
@@ -14309,6 +14967,8 @@ begin
             "ListObjectVersions bucket cleanup failed");
       end;
    end;
+
+   Check_Metadata_Server;
 
    Require
      (Has

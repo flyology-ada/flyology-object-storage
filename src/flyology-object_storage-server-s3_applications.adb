@@ -32,6 +32,8 @@ with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Logging;
+with Flyology.Object_Storage.S3.Metadata_Configurations;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Metrics;
@@ -52,8 +54,6 @@ with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
-
-   pragma Unreferenced (Metadata_Provider);
 
    package Apps renames Flyology.HTTP.Server.Applications;
    package US renames Ada.Strings.Unbounded;
@@ -79,6 +79,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Lifecycle renames S3.Lifecycle;
    package Listings renames S3.Listings;
    package Logging renames S3.Logging;
+   package Metadata_Configurations renames S3.Metadata_Configurations;
+   package Metadata_Tables renames S3.Metadata_Tables;
    package Multipart renames S3.Multipart;
    package Multipart_Uploads renames S3.Multipart_Uploads;
    package Metrics renames S3.Metrics;
@@ -99,8 +101,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Backends.Length_Kind;
    use type Backends.Copy_Metadata_Directive;
    use type Backends.Copy_Tagging_Directive;
+   use type Backends.Bucket_Metadata_Configuration_Kind;
    use type Backends.Version_Delete_Kind;
    use type Flyology.HTTP.Origin_Scheme;
+   use type Metadata_Results.Provider_Access;
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
    use type Multipart.Multipart_Query_Kind;
@@ -739,6 +743,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Website, Get_Bucket_Website, Delete_Bucket_Website,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
+         Create_Bucket_Metadata_Configuration,
+         Create_Bucket_Metadata_Table_Configuration,
+         Get_Bucket_Metadata_Configuration,
+         Get_Bucket_Metadata_Table_Configuration,
+         Delete_Bucket_Metadata_Configuration,
+         Delete_Bucket_Metadata_Table_Configuration,
+         Update_Bucket_Metadata_Inventory_Table_Configuration,
+         Update_Bucket_Metadata_Journal_Table_Configuration,
+         Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_ACL, Get_Object_ACL,
@@ -1288,6 +1301,55 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                 "x-id=GetBucketNotification&notification=" |
                 "notification=&x-id=GetBucketNotificationConfiguration" |
                 "x-id=GetBucketNotificationConfiguration&notification="));
+      Is_Create_Bucket_Metadata_Configuration_Query : constant Boolean :=
+        Method = "POST"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataConfiguration", "CreateBucketMetadataConfiguration");
+      Is_Create_Bucket_Metadata_Table_Configuration_Query : constant Boolean :=
+        Method = "POST"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataTable", "CreateBucketMetadataTableConfiguration");
+      Is_Get_Bucket_Metadata_Configuration_Query : constant Boolean :=
+        Method = "GET"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataConfiguration", "GetBucketMetadataConfiguration");
+      Is_Get_Bucket_Metadata_Table_Configuration_Query : constant Boolean :=
+        Method = "GET"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataTable", "GetBucketMetadataTableConfiguration");
+      Is_Delete_Bucket_Metadata_Configuration_Query : constant Boolean :=
+        Method = "DELETE"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataConfiguration", "DeleteBucketMetadataConfiguration");
+      Is_Delete_Bucket_Metadata_Table_Configuration_Query : constant Boolean :=
+        Method = "DELETE"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataTable", "DeleteBucketMetadataTableConfiguration");
+      Is_Update_Bucket_Metadata_Inventory_Query : constant Boolean :=
+        Method = "PUT"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataInventoryTable",
+           "UpdateBucketMetadataInventoryTableConfiguration");
+      Is_Update_Bucket_Metadata_Journal_Query : constant Boolean :=
+        Method = "PUT"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataJournalTable",
+           "UpdateBucketMetadataJournalTableConfiguration");
+      Is_Update_Bucket_Metadata_Annotation_Query : constant Boolean :=
+        Method = "PUT"
+        and then Is_Exact_Bucket_Control_Query
+          ("metadataAnnotationTable",
+           "UpdateBucketMetadataAnnotationTableConfiguration");
+      Is_Metadata_Query : constant Boolean :=
+        Is_Create_Bucket_Metadata_Configuration_Query
+        or else Is_Create_Bucket_Metadata_Table_Configuration_Query
+        or else Is_Get_Bucket_Metadata_Configuration_Query
+        or else Is_Get_Bucket_Metadata_Table_Configuration_Query
+        or else Is_Delete_Bucket_Metadata_Configuration_Query
+        or else Is_Delete_Bucket_Metadata_Table_Configuration_Query
+        or else Is_Update_Bucket_Metadata_Inventory_Query
+        or else Is_Update_Bucket_Metadata_Journal_Query
+        or else Is_Update_Bucket_Metadata_Annotation_Query;
       Is_Bucket_Replication_Query : constant Boolean :=
         Is_Exact_Bucket_Control_Query
           ("replication",
@@ -1555,6 +1617,25 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Looks_Like_Bucket_Configuration_Query : constant Boolean :=
         Has_Bucket_Configuration_Query
         or else Has_Bucket_Configuration_Operation_ID;
+      Looks_Like_Metadata_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&metadataConfiguration") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&metadataTable") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&metadataInventoryTable") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&metadataJournalTable") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&metadataAnnotationTable") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=CreateBucketMetadata") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketMetadata") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketMetadata") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=UpdateBucketMetadata") /= 0;
       Looks_Like_Singleton_Configuration_Query : constant Boolean :=
         Has_Singleton_Configuration_Query
         or else Has_Singleton_Configuration_Operation_ID;
@@ -1888,6 +1969,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Bucket_Policy_Query_Invalid : Boolean := False;
       Bucket_CORS_Query_Invalid : Boolean := False;
       Bucket_Configuration_Query_Invalid : Boolean := False;
+      Metadata_Query_Invalid : Boolean := False;
       Bucket_Scalar_Control_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
@@ -3082,6 +3164,604 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Info       : Object_Information;
       Publication_Identity : Backends.Version_Identity;
       Result     : Status;
+
+      function Empty_Metadata_State return Backends.Bucket_Metadata_State is
+        (Kind => Backends.Current_Metadata_Configuration,
+         Current_Configuration_Document => US.Null_Unbounded_String,
+         Current_Result_Document        => US.Null_Unbounded_String,
+         Legacy_Result_Document         => US.Null_Unbounded_String);
+
+      procedure Send_Metadata_Backend_Error (Value : Status) is
+      begin
+         if Value = Already_Exists then
+            Send_Error
+              (X, 409, "OperationAborted",
+               "A conflicting operation is currently in progress",
+               Target_Text);
+         else
+            Send_Backend_Error (X, Value, True, Target_Text);
+         end if;
+      end Send_Metadata_Backend_Error;
+
+      procedure Send_Metadata_Not_Found is
+      begin
+         Send_Error
+           (X, 404, "NoSuchConfiguration",
+            "The specified metadata configuration does not exist",
+            Target_Text);
+      end Send_Metadata_Not_Found;
+
+      procedure Read_Metadata_Document
+        (Operation_Name            : String;
+         Require_Algorithm_Checksum : Boolean;
+         Document                  : out US.Unbounded_String;
+         Body_Accepted             : out Boolean)
+      is
+         MD5_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "content-md5");
+         SDK_Count : constant Natural :=
+           Apps.Request_Header_Count
+             (X, "x-amz-sdk-checksum-algorithm");
+      begin
+         Document := US.Null_Unbounded_String;
+         Body_Accepted := False;
+         if MD5_Count > 1 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The Content-MD5 header is duplicated", Target_Text);
+         elsif MD5_Count = 0 then
+            Send_Error
+              (X, 400, "InvalidDigest",
+               Operation_Name & " requires Content-MD5", Target_Text);
+         elsif Require_Algorithm_Checksum
+           and then SDK_Count = 0
+           and then Checksum_Value_Header_Count = 0
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               Operation_Name & " requires an algorithm checksum",
+               Target_Text);
+         else
+            Read_Bucket_Scalar_Control
+              (Operation_Name, Allow_Content_MD5 => True,
+               Require_Checksum => False, Auth_Value => Auth,
+               Length_Value => Length, Document => Document,
+               Accepted => Body_Accepted);
+         end if;
+      end Read_Metadata_Document;
+
+      procedure Handle_Metadata_Request
+        (Metadata_Operation : Operation_Kind;
+         Bucket             : String)
+      is
+         Owner_Accepted : Boolean;
+         Payer_Count    : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-request-payer");
+
+         procedure Provider_Unavailable is
+         begin
+            Send_Metadata_Backend_Error (Backend_Unavailable);
+         end Provider_Unavailable;
+
+         procedure Call_Create_Current
+           (Provider : Metadata_Results.Provider_Access;
+            Request  : Metadata_Configurations.
+              Metadata_Configuration_Request;
+            Current  : out Metadata_Configurations.Metadata_Configuration;
+            Value    : out Status) is
+         begin
+            if Provider = null then
+               Value := Not_Implemented;
+            else
+               Metadata_Results.Create_Current
+                 (Provider.all, Bucket, Request, Current,
+                  Apps.Cancellation (X), Apps.Deadline (X), Value);
+            end if;
+         end Call_Create_Current;
+
+         procedure Call_Create_Legacy
+           (Provider      : Metadata_Results.Provider_Access;
+            Request       : Metadata_Tables.S3_Tables_Destination;
+            Configuration : out Metadata_Configurations.
+              Metadata_Configuration_Request;
+            Legacy        : out
+              Metadata_Tables.Metadata_Table_Configuration_Result;
+            Current       : out
+              Metadata_Configurations.Metadata_Configuration;
+            Value         : out Status) is
+         begin
+            if Provider = null then
+               Value := Not_Implemented;
+            else
+               Metadata_Results.Create_Legacy
+                 (Provider.all, Bucket, Request, Configuration,
+                  Legacy, Current, Apps.Cancellation (X),
+                  Apps.Deadline (X), Value);
+            end if;
+         end Call_Create_Legacy;
+
+         procedure Check_Read_Headers (Accepted : out Boolean) is
+         begin
+            Accepted := False;
+            if Payer_Count > 0 then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "Bucket metadata operations do not define RequestPayer",
+                  Target_Text);
+            else
+               Check_Expected_Bucket_Owner
+                 (US.To_String (Auth.Principal), Accepted);
+            end if;
+         end Check_Read_Headers;
+
+         procedure Create_Current is
+            Document      : US.Unbounded_String;
+            Body_Accepted : Boolean;
+         begin
+            if Metadata_Provider = null then
+               Send_Metadata_Backend_Error (Not_Implemented);
+               return;
+            end if;
+            Read_Metadata_Document
+              ("CreateBucketMetadataConfiguration", True,
+               Document, Body_Accepted);
+            if not Body_Accepted then
+               return;
+            end if;
+            declare
+               Request : constant
+                 Metadata_Configurations.Metadata_Configuration_Request :=
+                   Metadata_Configurations.Parse_Create
+                     (US.To_String (Document), XML.Default_Limits);
+            begin
+               declare
+                  Current : Metadata_Configurations.Metadata_Configuration;
+               begin
+                  Call_Create_Current
+                    (Metadata_Provider, Request, Current, Result);
+                  if Result /= Success then
+                     Send_Metadata_Backend_Error (Result);
+                     return;
+                  end if;
+                  declare
+                     State : constant Backends.Bucket_Metadata_State :=
+                       (Kind => Backends.Current_Metadata_Configuration,
+                        Current_Configuration_Document =>
+                          US.To_Unbounded_String
+                            (Metadata_Configurations.Serialize_Create
+                               (Request, XML.Default_Limits)),
+                        Current_Result_Document =>
+                          US.To_Unbounded_String
+                            (Metadata_Configurations.Serialize_Result
+                               (Current, XML.Default_Limits)),
+                        Legacy_Result_Document => US.Null_Unbounded_String);
+                  begin
+                     Backends.Create_Bucket_Metadata_State_If_Supported
+                       (Store, Bucket, State, Apps.Cancellation (X),
+                        Apps.Deadline (X), Result);
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Metadata_Backend_Error (Result);
+                     end if;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled |
+                       Flyology.IO.Timeout_Error =>
+                     raise;
+                  when others =>
+                     Provider_Unavailable;
+               end;
+            exception
+               when Metadata_Configurations.Malformed_Metadata_Configuration =>
+                  Send_Error
+                    (X, 400, "MalformedXML",
+                     "The metadata configuration is invalid", Target_Text);
+            end;
+         end Create_Current;
+
+         procedure Create_Legacy is
+            Document      : US.Unbounded_String;
+            Body_Accepted : Boolean;
+         begin
+            if Metadata_Provider = null then
+               Send_Metadata_Backend_Error (Not_Implemented);
+               return;
+            end if;
+            Read_Metadata_Document
+              ("CreateBucketMetadataTableConfiguration", False,
+               Document, Body_Accepted);
+            if not Body_Accepted then
+               return;
+            end if;
+            declare
+               Request : constant Metadata_Tables.S3_Tables_Destination :=
+                 Metadata_Tables.Parse_Create
+                   (US.To_String (Document), XML.Default_Limits);
+            begin
+               declare
+                  Configuration :
+                    Metadata_Configurations.Metadata_Configuration_Request;
+                  Legacy :
+                    Metadata_Tables.Metadata_Table_Configuration_Result;
+                  Current : Metadata_Configurations.Metadata_Configuration;
+               begin
+                  Call_Create_Legacy
+                    (Metadata_Provider, Request, Configuration,
+                     Legacy, Current, Result);
+                  if Result /= Success then
+                     Send_Metadata_Backend_Error (Result);
+                     return;
+                  end if;
+                  declare
+                     State : constant Backends.Bucket_Metadata_State :=
+                       (Kind =>
+                          Backends.Legacy_Metadata_Table_Configuration,
+                        Current_Configuration_Document =>
+                          US.To_Unbounded_String
+                            (Metadata_Configurations.Serialize_Create
+                               (Configuration, XML.Default_Limits)),
+                        Current_Result_Document =>
+                          US.To_Unbounded_String
+                            (Metadata_Configurations.Serialize_Result
+                               (Current, XML.Default_Limits)),
+                        Legacy_Result_Document =>
+                          US.To_Unbounded_String
+                            (Metadata_Tables.Serialize_Result
+                               (Legacy, XML.Default_Limits)));
+                  begin
+                     Backends.Create_Bucket_Metadata_State_If_Supported
+                       (Store, Bucket, State, Apps.Cancellation (X),
+                        Apps.Deadline (X), Result);
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Metadata_Backend_Error (Result);
+                     end if;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled |
+                       Flyology.IO.Timeout_Error =>
+                     raise;
+                  when others =>
+                     Provider_Unavailable;
+               end;
+            exception
+               when Metadata_Tables.Malformed_Metadata_Table =>
+                  Send_Error
+                    (X, 400, "MalformedXML",
+                     "The metadata table configuration is invalid",
+                     Target_Text);
+            end;
+         end Create_Legacy;
+
+         procedure Get_Configuration (Legacy : Boolean) is
+            State      : Backends.Bucket_Metadata_State :=
+              Empty_Metadata_State;
+            Configured : Boolean := False;
+         begin
+            Check_Read_Headers (Owner_Accepted);
+            if not Owner_Accepted then
+               return;
+            end if;
+            Backends.Get_Bucket_Metadata_State_If_Supported
+              (Store, Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+               State, Configured, Result);
+            if Result /= Success then
+               Send_Metadata_Backend_Error (Result);
+            elsif not Configured then
+               if Legacy then
+                  Apps.Respond (X, 200, "application/xml", "");
+               else
+                  Send_Metadata_Not_Found;
+               end if;
+            elsif Legacy
+              and then State.Kind =
+                Backends.Current_Metadata_Configuration
+            then
+               Send_Error
+                 (X, 405, "MethodNotAllowed",
+                  "The metadata table API does not address this state",
+                  Target_Text);
+            else
+               begin
+                  if Legacy then
+                     declare
+                        Document : constant String :=
+                          US.To_String (State.Legacy_Result_Document);
+                        Canonical : constant String :=
+                          (if Document'Length = 0 then ""
+                           else Metadata_Tables.Serialize_Result
+                             (Metadata_Tables.Parse
+                                (Document, XML.Default_Limits),
+                              XML.Default_Limits));
+                     begin
+                        Apps.Respond
+                          (X, 200, "application/xml", Canonical);
+                     end;
+                  else
+                     declare
+                        Canonical : constant String :=
+                          Metadata_Configurations.Serialize_Result
+                            (Metadata_Configurations.Parse
+                               (US.To_String
+                                  (State.Current_Result_Document),
+                                XML.Default_Limits),
+                             XML.Default_Limits);
+                     begin
+                        Apps.Respond
+                          (X, 200, "application/xml", Canonical);
+                     end;
+                  end if;
+               exception
+                  when others =>
+                     Provider_Unavailable;
+               end;
+            end if;
+         end Get_Configuration;
+
+         procedure Delete_Configuration (Legacy : Boolean) is
+            State      : Backends.Bucket_Metadata_State :=
+              Empty_Metadata_State;
+            Configured : Boolean := False;
+         begin
+            Check_Read_Headers (Owner_Accepted);
+            if not Owner_Accepted then
+               return;
+            end if;
+            Backends.Get_Bucket_Metadata_State_If_Supported
+              (Store, Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+               State, Configured, Result);
+            if Result /= Success then
+               Send_Metadata_Backend_Error (Result);
+            elsif not Configured then
+               Apps.Respond (X, 204, "", "");
+            elsif Legacy
+              and then State.Kind =
+                Backends.Current_Metadata_Configuration
+            then
+               Send_Error
+                 (X, 405, "MethodNotAllowed",
+                  "The metadata table API does not address this state",
+                  Target_Text);
+            else
+               Backends.Delete_Bucket_Metadata_State_If_Supported
+                 (Store, Bucket, State, Apps.Cancellation (X),
+                  Apps.Deadline (X), Result);
+               if Result = Success then
+                  Apps.Respond (X, 204, "", "");
+               else
+                  Send_Metadata_Backend_Error (Result);
+               end if;
+            end if;
+         end Delete_Configuration;
+
+         subtype Metadata_Update_Operation is Operation_Kind range
+           Update_Bucket_Metadata_Inventory_Table_Configuration ..
+           Update_Bucket_Metadata_Annotation_Table_Configuration;
+         Inventory_Update : constant Metadata_Update_Operation :=
+           Update_Bucket_Metadata_Inventory_Table_Configuration;
+         Journal_Update : constant Metadata_Update_Operation :=
+           Update_Bucket_Metadata_Journal_Table_Configuration;
+         Annotation_Update : constant Metadata_Update_Operation :=
+           Update_Bucket_Metadata_Annotation_Table_Configuration;
+
+         type Metadata_Update (Kind : Metadata_Update_Operation) is record
+            case Kind is
+               when Inventory_Update =>
+                  Inventory :
+                    Metadata_Configurations.Inventory_Table_Configuration;
+               when Journal_Update =>
+                  Journal : Metadata_Configurations.Record_Expiration;
+               when Annotation_Update =>
+                  Annotation :
+                    Metadata_Configurations.Annotation_Table_Configuration;
+            end case;
+         end record;
+
+         procedure Call_Update
+           (Provider      : Metadata_Results.Provider_Access;
+            Update        : Metadata_Update_Operation;
+            Configuration : Metadata_Configurations.
+              Metadata_Configuration_Request;
+            Previous      : Metadata_Configurations.Metadata_Configuration;
+            Current       : out
+              Metadata_Configurations.Metadata_Configuration;
+            Value         : out Status) is
+         begin
+            if Provider = null then
+               Value := Not_Implemented;
+            else
+               case Update is
+                  when Inventory_Update =>
+                     Metadata_Results.Update_Inventory
+                       (Provider.all, Bucket, Configuration,
+                        Previous, Current, Apps.Cancellation (X),
+                        Apps.Deadline (X), Value);
+                  when Journal_Update =>
+                     Metadata_Results.Update_Journal
+                       (Provider.all, Bucket, Configuration,
+                        Previous, Current, Apps.Cancellation (X),
+                        Apps.Deadline (X), Value);
+                  when Annotation_Update =>
+                     Metadata_Results.Update_Annotation
+                       (Provider.all, Bucket, Configuration,
+                        Previous, Current, Apps.Cancellation (X),
+                        Apps.Deadline (X), Value);
+               end case;
+            end if;
+         end Call_Update;
+
+         function Parse_Update
+           (Kind : Metadata_Update_Operation;
+            Document : String) return Metadata_Update
+         is
+         begin
+            case Kind is
+               when Inventory_Update =>
+                  return
+                    (Kind => Inventory_Update,
+                     Inventory =>
+                       Metadata_Configurations.Parse_Update_Inventory
+                         (Document, XML.Default_Limits));
+               when Journal_Update =>
+                  return
+                    (Kind => Journal_Update,
+                     Journal => Metadata_Configurations.Parse_Update_Journal
+                       (Document, XML.Default_Limits));
+               when Annotation_Update =>
+                  return
+                    (Kind => Annotation_Update,
+                     Annotation =>
+                       Metadata_Configurations.Parse_Update_Annotation
+                         (Document, XML.Default_Limits));
+            end case;
+         end Parse_Update;
+
+         procedure Update_Configuration is
+            Document      : US.Unbounded_String;
+            Body_Accepted : Boolean;
+            Name : constant String :=
+              (case Metadata_Operation is
+                  when Update_Bucket_Metadata_Inventory_Table_Configuration =>
+                    "UpdateBucketMetadataInventoryTableConfiguration",
+                  when Update_Bucket_Metadata_Journal_Table_Configuration =>
+                    "UpdateBucketMetadataJournalTableConfiguration",
+                  when Update_Bucket_Metadata_Annotation_Table_Configuration =>
+                    "UpdateBucketMetadataAnnotationTableConfiguration",
+                  when others => "");
+         begin
+            if Metadata_Provider = null then
+               Send_Metadata_Backend_Error (Not_Implemented);
+               return;
+            end if;
+            Read_Metadata_Document
+              (Name, True, Document, Body_Accepted);
+            if not Body_Accepted then
+               return;
+            end if;
+            declare
+               Update : constant Metadata_Update :=
+                 Parse_Update
+                   (Metadata_Update_Operation (Metadata_Operation),
+                    US.To_String (Document));
+            begin
+               declare
+                  Expected   : Backends.Bucket_Metadata_State :=
+                    Empty_Metadata_State;
+                  Configured : Boolean := False;
+               begin
+                  Backends.Get_Bucket_Metadata_State_If_Supported
+                    (Store, Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                     Expected, Configured, Result);
+                  if Result /= Success then
+                     Send_Metadata_Backend_Error (Result);
+                     return;
+                  elsif not Configured then
+                     Send_Metadata_Not_Found;
+                     return;
+                  end if;
+                  begin
+                     declare
+                        Configuration : Metadata_Configurations.
+                          Metadata_Configuration_Request :=
+                            Metadata_Configurations.Parse_Create
+                              (US.To_String
+                                 (Expected.Current_Configuration_Document),
+                               XML.Default_Limits);
+                        Previous : constant
+                          Metadata_Configurations.Metadata_Configuration :=
+                            Metadata_Configurations.Parse
+                              (US.To_String
+                                 (Expected.Current_Result_Document),
+                               XML.Default_Limits);
+                        Current :
+                          Metadata_Configurations.Metadata_Configuration;
+                     begin
+                        case Update.Kind is
+                           when Inventory_Update =>
+                              Configuration.Inventory := Update.Inventory;
+                           when Journal_Update =>
+                              Configuration.Journal.Expiration :=
+                                Update.Journal;
+                           when Annotation_Update =>
+                              Configuration.Annotation := Update.Annotation;
+                        end case;
+                        Call_Update
+                          (Metadata_Provider, Update.Kind, Configuration,
+                           Previous, Current, Result);
+                        if Result /= Success then
+                           Send_Metadata_Backend_Error (Result);
+                           return;
+                        end if;
+                        declare
+                           Replacement : constant
+                             Backends.Bucket_Metadata_State :=
+                               (Kind => Expected.Kind,
+                                Current_Configuration_Document =>
+                                  US.To_Unbounded_String
+                                    (Metadata_Configurations.Serialize_Create
+                                       (Configuration, XML.Default_Limits)),
+                                Current_Result_Document =>
+                                  US.To_Unbounded_String
+                                    (Metadata_Configurations.Serialize_Result
+                                       (Current, XML.Default_Limits)),
+                                Legacy_Result_Document =>
+                                  Expected.Legacy_Result_Document);
+                        begin
+                           Backends.Replace_Bucket_Metadata_State_If_Supported
+                             (Store, Bucket, Expected, Replacement,
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                           if Result = Success then
+                              Apps.Respond (X, 200, "", "");
+                           else
+                              Send_Metadata_Backend_Error (Result);
+                           end if;
+                        end;
+                     end;
+                  exception
+                     when Flyology.Cancellation.Operation_Cancelled |
+                          Flyology.IO.Timeout_Error =>
+                        raise;
+                     when others =>
+                        Provider_Unavailable;
+                  end;
+               end;
+            exception
+               when Metadata_Configurations.Malformed_Metadata_Configuration =>
+                  Send_Error
+                    (X, 400, "MalformedXML",
+                     "The metadata update is invalid", Target_Text);
+            end;
+         end Update_Configuration;
+      begin
+         Check_Expected_Bucket_Owner
+           (US.To_String (Auth.Principal), Owner_Accepted);
+         if not Owner_Accepted then
+            return;
+         end if;
+         case Metadata_Operation is
+            when Create_Bucket_Metadata_Configuration =>
+               Create_Current;
+            when Create_Bucket_Metadata_Table_Configuration =>
+               Create_Legacy;
+            when Get_Bucket_Metadata_Configuration =>
+               Get_Configuration (Legacy => False);
+            when Get_Bucket_Metadata_Table_Configuration =>
+               Get_Configuration (Legacy => True);
+            when Delete_Bucket_Metadata_Configuration =>
+               Delete_Configuration (Legacy => False);
+            when Delete_Bucket_Metadata_Table_Configuration =>
+               Delete_Configuration (Legacy => True);
+            when Update_Bucket_Metadata_Inventory_Table_Configuration |
+                 Update_Bucket_Metadata_Journal_Table_Configuration |
+                 Update_Bucket_Metadata_Annotation_Table_Configuration =>
+               Update_Configuration;
+            when others =>
+               raise Program_Error;
+         end case;
+      end Handle_Metadata_Request;
    begin
       if Parsed.Status /= Requests.Target_Parsed then
          Send_Error
@@ -3124,6 +3804,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Point_Configuration_Query)
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "POST" | "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Metadata_Query)
         and then not
           (Parsed.Kind = Requests.Bucket_Target
            and then Method in "PUT" | "GET"
@@ -3232,6 +3916,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              (Is_Bucket_ABAC_Query
               or else Is_Bucket_Acceleration_Query
               or else Is_Bucket_Request_Payment_Query);
+         Metadata_Query_Invalid :=
+           Method in "POST" | "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Metadata_Query
+           and then not Is_Metadata_Query;
          Operation :=
            (if Looks_Like_ACL_Query
             then
@@ -3289,6 +3977,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               (if Is_Legacy_Bucket_Notification_Get_Query then
                  Get_Bucket_Notification
                else Get_Bucket_Notification_Configuration)
+            elsif Is_Create_Bucket_Metadata_Configuration_Query
+            then Create_Bucket_Metadata_Configuration
+            elsif Is_Create_Bucket_Metadata_Table_Configuration_Query
+            then Create_Bucket_Metadata_Table_Configuration
+            elsif Is_Get_Bucket_Metadata_Configuration_Query
+            then Get_Bucket_Metadata_Configuration
+            elsif Is_Get_Bucket_Metadata_Table_Configuration_Query
+            then Get_Bucket_Metadata_Table_Configuration
+            elsif Is_Delete_Bucket_Metadata_Configuration_Query
+            then Delete_Bucket_Metadata_Configuration
+            elsif Is_Delete_Bucket_Metadata_Table_Configuration_Query
+            then Delete_Bucket_Metadata_Table_Configuration
+            elsif Is_Update_Bucket_Metadata_Inventory_Query
+            then Update_Bucket_Metadata_Inventory_Table_Configuration
+            elsif Is_Update_Bucket_Metadata_Journal_Query
+            then Update_Bucket_Metadata_Journal_Table_Configuration
+            elsif Is_Update_Bucket_Metadata_Annotation_Query
+            then Update_Bucket_Metadata_Annotation_Table_Configuration
             elsif Method = "PUT"
               and then Looks_Like_Singleton_Configuration_Query
               and then
@@ -3637,6 +4343,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Inventory | Put_Bucket_Replication |
          Put_Bucket_Website | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object_Lock_Configuration |
+         Create_Bucket_Metadata_Configuration |
+         Create_Bucket_Metadata_Table_Configuration |
+         Update_Bucket_Metadata_Inventory_Table_Configuration |
+         Update_Bucket_Metadata_Journal_Table_Configuration |
+         Update_Bucket_Metadata_Annotation_Table_Configuration |
          Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Put_Object_Legal_Hold | Put_Object_Retention |
@@ -3760,6 +4471,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             "The bucket-configuration request query is invalid",
             Target_Text);
          return;
+      elsif Metadata_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket metadata request query is invalid", Target_Text);
+         return;
       elsif Bucket_Scalar_Control_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -3799,6 +4515,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Put_Bucket_Inventory | Put_Bucket_Replication |
         Put_Bucket_Website | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object_Lock_Configuration |
+        Create_Bucket_Metadata_Configuration |
+        Create_Bucket_Metadata_Table_Configuration |
+        Update_Bucket_Metadata_Inventory_Table_Configuration |
+        Update_Bucket_Metadata_Journal_Table_Configuration |
+        Update_Bucket_Metadata_Annotation_Table_Configuration |
         Put_Object | Put_Object_Tagging | Put_Object_Legal_Hold |
         Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -4173,6 +4894,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   end if;
 
                end;
+
+            when Create_Bucket_Metadata_Configuration |
+                 Create_Bucket_Metadata_Table_Configuration |
+                 Get_Bucket_Metadata_Configuration |
+                 Get_Bucket_Metadata_Table_Configuration |
+                 Delete_Bucket_Metadata_Configuration |
+                 Delete_Bucket_Metadata_Table_Configuration |
+                 Update_Bucket_Metadata_Inventory_Table_Configuration |
+                 Update_Bucket_Metadata_Journal_Table_Configuration |
+                 Update_Bucket_Metadata_Annotation_Table_Configuration =>
+               Handle_Metadata_Request (Operation, Bucket);
 
             when Head_Bucket =>
                declare
@@ -13322,6 +14054,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          | Flyology.IO.Timeout_Error =>
          Apps.Mark_Failed (X);
          raise;
+      when Metadata_Configurations.Malformed_Metadata_Configuration
+         | Metadata_Tables.Malformed_Metadata_Table =>
+         if Apps.Wire_Response_Started (X) then
+            Apps.Mark_Failed (X);
+         else
+            Send_Error
+              (X, 400, "MalformedXML",
+               "The XML provided was not well-formed or did not validate " &
+               "against the published schema", Target_Text);
+         end if;
       when Buckets.Malformed_Bucket_Configuration =>
          if Apps.Wire_Response_Started (X) then
             Apps.Mark_Failed (X);
