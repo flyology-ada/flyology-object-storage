@@ -1472,7 +1472,8 @@ procedure S3_Server_Application_Corpus is
       Extra_Headers : String := "";
       Hash_Override : String := "";
       Expect        : Boolean := False;
-      Corrupt_Signature : Boolean := False) return String
+      Corrupt_Signature : Boolean := False;
+      Raw_Query     : String := "") return String
    is
       Payload_Hash : constant String :=
         (if Hash_Override'Length = 0
@@ -1542,7 +1543,9 @@ procedure S3_Server_Application_Corpus is
             Authorization (Authorization'Last) :=
               (if Authorization (Authorization'Last) = '0' then '1' else '0');
          end if;
-         return Method & " " & Target & "?" & Query_Text & " HTTP/1.1" &
+         return Method & " " & Target & "?" &
+           (if Raw_Query'Length = 0 then Query_Text else Raw_Query) &
+           " HTTP/1.1" &
            CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp &
            CRLF & "x-amz-content-sha256: " & Payload_Hash & CRLF &
            "Authorization: " & Authorization & CRLF & Extra_Headers &
@@ -11359,6 +11362,279 @@ begin
            (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
          and then Has (Response, "x-amz-object-size: 11" & CRLF),
          "PutObject ETag mismatch");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("renameObject", ""));
+
+      function Rename
+        (Target        : String := "/test-bucket/renamed-object";
+         Request_Query : SigV4.Name_Value_Array := Query;
+         Raw_Query     : String := "";
+         Extra         : String :=
+           "x-amz-rename-source: /test-bucket/object" & CRLF;
+         Payload       : String := "";
+         Corrupt       : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", Target, Request_Query, Payload, Extra,
+               Raw_Query => Raw_Query,
+               Corrupt_Signature => Corrupt)));
+
+      function Rejected (Value : String) return Boolean is
+        (Has (Value, "501 Not Implemented")
+         and then Has (Value, "<Code>NotImplemented</Code>")
+         and then not Has (Value, "200 OK"));
+
+      type Header_List is array (Positive range <>) of
+        US.Unbounded_String;
+      ETag_Headers : constant Header_List :=
+        (US.To_Unbounded_String ("if-match"),
+         US.To_Unbounded_String ("if-none-match"),
+         US.To_Unbounded_String ("x-amz-rename-source-if-match"),
+         US.To_Unbounded_String ("x-amz-rename-source-if-none-match"));
+      Date_Headers : constant Header_List :=
+        (US.To_Unbounded_String ("if-modified-since"),
+         US.To_Unbounded_String ("if-unmodified-since"),
+         US.To_Unbounded_String
+           ("x-amz-rename-source-if-modified-since"),
+         US.To_Unbounded_String
+           ("x-amz-rename-source-if-unmodified-since"));
+      Long_Token : constant String :=
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" &
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+   begin
+      Require
+        (Rejected (Rename),
+         "RenameObject did not reject unavailable atomic rename");
+      Require
+        (Rejected
+           (Rename
+              (Request_Query =>
+                 (SigV4.Pair ("renameObject", ""),
+                  SigV4.Pair ("x-id", "RenameObject")))),
+         "RenameObject rejected its exact operation identifier");
+      Require
+        (Rejected
+           (Rename (Raw_Query => "renameObject")),
+         "RenameObject rejected its bare query form");
+      Require
+        (Rejected
+           (Rename
+              (Request_Query =>
+                 (SigV4.Pair ("renameObject", ""),
+                  SigV4.Pair ("x-id", "RenameObject")),
+               Raw_Query => "x-id=RenameObject&renameObject=")),
+         "RenameObject rejected its reverse operation identifier");
+      Require
+        (Has
+           (Rename
+              (Request_Query =>
+                 (1 => SigV4.Pair ("x-id", "RenameObject")),
+               Raw_Query => "x-id=RenameObject"),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted an operation identifier without subresource");
+      Require
+        (Has
+           (Rename
+              (Request_Query =>
+                 (SigV4.Pair ("renameObject", ""),
+                  SigV4.Pair ("renameObject", "")),
+               Raw_Query => "renameObject=&renameObject="),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted a duplicate subresource");
+      Require
+        (Has
+           (Rename
+              (Target => "/absent-bucket/renamed-object",
+               Extra =>
+                 "x-amz-rename-source: /absent-bucket/object" & CRLF),
+            "<Code>NoSuchBucket</Code>"),
+         "RenameObject did not distinguish a missing bucket");
+      Require
+        (Has
+           (Rename
+              (Request_Query =>
+                 (SigV4.Pair ("renameObject", ""),
+                  SigV4.Pair ("unexpected", "value"))),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted an unknown query member");
+      Require
+        (Has
+           (Rename
+              (Request_Query =>
+                 (SigV4.Pair ("renameObject", ""),
+                  SigV4.Pair ("unexpected", "value")),
+               Corrupt => True),
+            "403 Forbidden"),
+         "RenameObject query validation preceded authentication");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /other-bucket/object" & CRLF,
+               Corrupt => True),
+            "403 Forbidden"),
+         "RenameObject header validation preceded authentication");
+      Require
+        (Has
+           (Rename (Extra => ""),
+            "<Code>InvalidRequest</Code>"),
+         "RenameObject accepted a missing source");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "x-amz-rename-source: /test-bucket/other" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "RenameObject accepted duplicate sources");
+      Require
+        (Has
+           (Rename (Extra => "x-amz-rename-source: " & CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted an empty source");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /other-bucket/object" & CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted a cross-bucket source");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object?versionId=null" &
+                 CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted a source query");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "x-amz-rename-source-extra: value" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "RenameObject accepted an unmodeled source control");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "x-amz-client-token: " & CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "RenameObject accepted an empty client token");
+      Require
+        (Has
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "x-amz-client-token: one" & CRLF &
+                 "x-amz-client-token: two" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "RenameObject accepted a duplicate client token");
+      Require
+        (Long_Token'Length > 64,
+         "RenameObject long-token fixture no longer exceeds model prose");
+      Require
+        (Rejected
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "x-amz-client-token: " & Long_Token & CRLF)),
+         "RenameObject invented an operation-specific client-token cap");
+      for Header of ETag_Headers loop
+         declare
+            Name : constant String := US.To_String (Header);
+            Prefix : constant String :=
+              "x-amz-rename-source: /test-bucket/object" & CRLF;
+         begin
+            Require
+              (Has
+                 (Rename
+                    (Extra => Prefix & Name & ": bad" & CRLF),
+                  "<Code>InvalidArgument</Code>"),
+               "RenameObject accepted malformed " & Name);
+            Require
+              (Has
+                 (Rename
+                    (Extra => Prefix & Name & ": ""one""" & CRLF &
+                       Name & ": ""two""" & CRLF),
+                  "<Code>InvalidRequest</Code>"),
+               "RenameObject accepted duplicate " & Name);
+         end;
+      end loop;
+      for Header of Date_Headers loop
+         declare
+            Name : constant String := US.To_String (Header);
+            Prefix : constant String :=
+              "x-amz-rename-source: /test-bucket/object" & CRLF;
+         begin
+            Require
+              (Has
+                 (Rename
+                    (Extra => Prefix & Name & ": invalid" & CRLF),
+                  "<Code>InvalidArgument</Code>"),
+               "RenameObject accepted malformed " & Name);
+            Require
+              (Has
+                 (Rename
+                    (Extra => Prefix & Name & ": " & Timestamp & CRLF &
+                       Name & ": " & Timestamp & CRLF),
+                  "<Code>InvalidRequest</Code>"),
+               "RenameObject accepted duplicate " & Name);
+         end;
+      end loop;
+      Require
+        (Rejected
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/object" & CRLF &
+                 "if-match: ""destination""" & CRLF &
+                 "if-none-match: ""other-destination""" & CRLF &
+                 "if-modified-since: Wed, 21 Oct 2015 07:28:00 GMT" &
+                 CRLF &
+                 "if-unmodified-since: Wed, 21 Oct 2015 07:28:00 GMT" &
+                 CRLF & "x-amz-rename-source-if-match: ""other-source""" &
+                 CRLF & "x-amz-rename-source-if-none-match: ""source""" &
+                 CRLF &
+                 "x-amz-rename-source-if-modified-since: " &
+                 "Wed, 21 Oct 2015 07:28:00 GMT" & CRLF &
+                 "x-amz-rename-source-if-unmodified-since: " &
+                 "Wed, 21 Oct 2015 07:28:00 GMT" & CRLF &
+                 "x-amz-client-token: caller-token" & CRLF)),
+         "RenameObject rejected valid inactive controls");
+      Require
+        (Rejected
+           (Rename
+              (Extra =>
+                 "x-amz-rename-source: /test-bucket/missing-source" &
+                 CRLF)),
+         "RenameObject inspected source existence");
+      Require
+        (Has
+           (Rename (Payload => "unexpected"),
+            "<Code>InvalidRequest</Code>"),
+         "RenameObject accepted a request body");
+      Require
+        (Has
+           (Rename (Payload => "unexpected", Corrupt => True),
+            "403 Forbidden"),
+         "RenameObject body validation preceded authentication");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/object", "")),
+            "200 OK"),
+         "rejected RenameObject changed its source");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/renamed-object", "")),
+            "404 Not Found"),
+         "rejected RenameObject created its destination");
    end;
 
    declare

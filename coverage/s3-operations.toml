@@ -655,7 +655,10 @@ put_object_acl = [
   ["git", "diff", "--check"],
 ]
 rename_object = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-rename-object-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-rename-object-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["./tests/scripts/test.sh"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -5169,20 +5172,21 @@ provider = "objects"
 family = "bodyless_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 public_name = "Not_Exposed"
-codec = "generated_model_only_bodyless_conditional_headers"
+codec = "private_strict_rename_negative_capability"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "mutation model coverage only; no public rename request, conditional-header encoder, client-token binding, response decoder, or runtime evidence exists, so this review reports no successful mutation, no admission certainty, and no automatic replay"
-reconciliation = "the model describes a caller-supplied idempotency token for exact repeated parameters, but no implemented token generation, persistence, parameter binding, response binding, or retry path exists; this review claims no idempotent completion, causal proof, certainty upgrade, or automatic replay"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RenameObject API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled rename-source, destination and source preconditions, client token, empty response, and IdempotencyParameterMismatch error are inventory only; no URL encoding, conditional-header formatting, token validation, response validation, or retry behavior is implemented", "directory-bucket S3 Express One Zone endpoint and session semantics are not implemented or qualified; no same-bucket enforcement, atomicity, overwrite prevention, persistence, or external-provider behavior is claimed", "the model prose describes a maximum 64-character ASCII client token, but its generated ClientToken shape carries no corresponding bound or pattern; this review does not invent a public token limit, encoding policy, or token-generation policy"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "the authenticated local server validates one exact bodyless RenameObject request, consults only shared Head_Bucket existence, returns NoSuchBucket for an absent bucket and NotImplemented for an existing maintained general-purpose bucket, and never accepts or completes a rename; no automatic replay is authorized"
+reconciliation = "the optional client token is validated only as singleton nonempty text-safe transport and is never persisted or bound to parameters; later source or destination observation does not prove rename causation, upgrade mutation certainty, establish idempotent completion, or authorize automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects RenameObject API, composable operation, synchronous wrapper, Finish path, response decoder, or public client GNATdoc qualification is claimed", "the private server accepts only exact renameObject query forms, a singleton same-bucket object RenameSource without a source query, syntactically valid singleton destination and source condition headers, an optional singleton nonempty text-safe client token, and no body; it exposes no encoder or public request type", "the maintained backends model only general-purpose buckets, so an existing bucket returns NotImplemented after validation and a missing bucket returns NoSuchBucket; no source or destination object lookup, rename success, atomic move, overwrite behavior, persistence, or directory-bucket session behavior is implemented", "destination and source preconditions are validated only for transport syntax and are never evaluated; no condition result, source or destination existence result, or mutation admission is claimed", "the generated ClientToken shape carries no bound or pattern; the private route adds no operation-specific token length cap, generation, persistence, parameter binding, idempotency, IdempotencyParameterMismatch behavior, or automatic replay", "directory-bucket S3 Express One Zone endpoint selection, session refresh, access-point routing, and external-provider interoperability are not implemented or qualified"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "shared_family", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "rename_object"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-rename-object-model.py"], server = [], corpus = ["tests/scripts/verify-rename-object-model.py"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-rename-object-model.py"], server = ["src/flyology-object_storage-server-s3_applications.ads", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-rename-object-model.py", "tools/verify-rename-object-preparation.py", "docs/qualification/rename-object.md", "tests/src/s3_server_application_corpus.adb"] }
+evidence_tokens = ["Head_Bucket"]
 
 [[operation]]
 name = "RestoreObject"

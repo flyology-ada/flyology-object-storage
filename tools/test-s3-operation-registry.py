@@ -3955,18 +3955,18 @@ def main() -> None:
         raise AssertionError("duplicate PutObjectAcl lane accepted")
 
     rename_object_certainty = (
-        "mutation model coverage only; no public rename request, "
-        "conditional-header encoder, client-token binding, response "
-        "decoder, or runtime evidence exists, so this review reports no "
-        "successful mutation, no admission certainty, and no automatic "
-        "replay"
+        "the authenticated local server validates one exact bodyless "
+        "RenameObject request, consults only shared Head_Bucket existence, "
+        "returns NoSuchBucket for an absent bucket and NotImplemented for "
+        "an existing maintained general-purpose bucket, and never accepts "
+        "or completes a rename; no automatic replay is authorized"
     )
     rename_object_reconciliation = (
-        "the model describes a caller-supplied idempotency token for exact "
-        "repeated parameters, but no implemented token generation, "
-        "persistence, parameter binding, response binding, or retry path "
-        "exists; this review claims no idempotent completion, causal proof, "
-        "certainty upgrade, or automatic replay"
+        "the optional client token is validated only as singleton nonempty "
+        "text-safe transport and is never persisted or bound to parameters; "
+        "later source or destination observation does not prove rename "
+        "causation, upgrade mutation certainty, establish idempotent "
+        "completion, or authorize automatic replay"
     )
     rename_object_errors = [
         "authentication", "authorization", "not_found", "invalid_request",
@@ -3975,21 +3975,29 @@ def main() -> None:
     rename_object_exclusions = [
         "Not_Exposed is a registry sentinel and not an Ada declaration; no "
         "Low_Level or Objects RenameObject API, composable operation, "
-        "synchronous wrapper, Finish path, or GNATdoc qualification is "
+        "synchronous wrapper, Finish path, response decoder, or public "
+        "client GNATdoc qualification is claimed",
+        "the private server accepts only exact renameObject query forms, a "
+        "singleton same-bucket object RenameSource without a source query, "
+        "syntactically valid singleton destination and source condition "
+        "headers, an optional singleton nonempty text-safe client token, and "
+        "no body; it exposes no encoder or public request type",
+        "the maintained backends model only general-purpose buckets, so an "
+        "existing bucket returns NotImplemented after validation and a "
+        "missing bucket returns NoSuchBucket; no source or destination "
+        "object lookup, rename success, atomic move, overwrite behavior, "
+        "persistence, or directory-bucket session behavior is implemented",
+        "destination and source preconditions are validated only for "
+        "transport syntax and are never evaluated; no condition result, "
+        "source or destination existence result, or mutation admission is "
         "claimed",
-        "the modeled rename-source, destination and source preconditions, "
-        "client token, empty response, and IdempotencyParameterMismatch "
-        "error are inventory only; no URL encoding, conditional-header "
-        "formatting, token validation, response validation, or retry "
-        "behavior is implemented",
-        "directory-bucket S3 Express One Zone endpoint and session semantics "
-        "are not implemented or qualified; no same-bucket enforcement, "
-        "atomicity, overwrite prevention, persistence, or external-provider "
-        "behavior is claimed",
-        "the model prose describes a maximum 64-character ASCII client "
-        "token, but its generated ClientToken shape carries no corresponding "
-        "bound or pattern; this review does not invent a public token limit, "
-        "encoding policy, or token-generation policy",
+        "the generated ClientToken shape carries no bound or pattern; the "
+        "private route adds no operation-specific token length cap, "
+        "generation, persistence, parameter binding, idempotency, "
+        "IdempotencyParameterMismatch behavior, or automatic replay",
+        "directory-bucket S3 Express One Zone endpoint selection, session "
+        "refresh, access-point routing, and external-provider "
+        "interoperability are not implemented or qualified",
     ]
 
     def assert_rename_object_registry(candidate):
@@ -4000,33 +4008,53 @@ def main() -> None:
         assert entry.get("qualification") == "rename_object"
         assert entry.get("family") == "bodyless_mutation"
         assert entry.get("codec") == (
-            "generated_model_only_bodyless_conditional_headers"
+            "private_strict_rename_negative_capability"
         )
         assert entry.get("certainty") == rename_object_certainty
         assert entry.get("reconciliation") == rename_object_reconciliation
         assert entry.get("errors") == rename_object_errors
         assert entry.get("exclusions") == rename_object_exclusions
         assert entry.get("ada_symbols") is None
+        assert entry.get("implementation_mode") == "generated"
+        assert entry.get("evidence_tokens") == ["Head_Bucket"]
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "backend": "covered", "client": "partial",
+            "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
-            "backend": "absent", "client": "generated",
-            "server": "absent", "tests": "handwritten",
+            "backend": "shared_family", "client": "generated",
+            "server": "handwritten", "tests": "handwritten",
         }
         assert entry["evidence"] == {
-            "backend": [],
+            "backend": [
+                "src/flyology-object_storage-backends.ads",
+                "tests/src/object_storage_test_cases.adb",
+                "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb",
+            ],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-rename-object-model.py",
             ],
-            "server": [],
-            "corpus": ["tests/scripts/verify-rename-object-model.py"],
+            "server": [
+                "src/flyology-object_storage-server-s3_applications.ads",
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+            "corpus": [
+                "tests/scripts/verify-rename-object-model.py",
+                "tools/verify-rename-object-preparation.py",
+                "docs/qualification/rename-object.md",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
         }
         assert candidate.qualification["rename_object"] == [
             ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-rename-object-preparation.py"],
+            ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-rename-object-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/test-s3-operation-registry.py"],
+            ["./tests/scripts/test.sh"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -4064,21 +4092,21 @@ def main() -> None:
     conditional_rename_object = copy.deepcopy(registry)
     conditional_rename_object.operations[
         "RenameObject"
-    ]["exclusions"][1] = "the client validates every precondition"
+    ]["exclusions"][3] = "all preconditions are evaluated atomically"
     reject_rename_object_registry(
         conditional_rename_object, "invented conditional-header binding"
     )
     encoded_rename_source = copy.deepcopy(registry)
     encoded_rename_source.operations[
         "RenameObject"
-    ]["exclusions"][1] += "; the client URL-encodes RenameSource"
+    ]["exclusions"][1] += "; a public client URL-encodes RenameSource"
     reject_rename_object_registry(
         encoded_rename_source, "invented RenameSource encoding"
     )
     automated_rename_session = copy.deepcopy(registry)
     automated_rename_session.operations[
         "RenameObject"
-    ]["exclusions"][2] += "; the client refreshes S3 Express sessions"
+    ]["exclusions"][5] += "; the client refreshes S3 Express sessions"
     reject_rename_object_registry(
         automated_rename_session, "invented session automation"
     )
@@ -4113,7 +4141,7 @@ def main() -> None:
     bounded_rename_token = copy.deepcopy(registry)
     bounded_rename_token.operations[
         "RenameObject"
-    ]["exclusions"][3] = "the public client token is limited to 64 bytes"
+    ]["exclusions"][4] = "the public client token is limited to 64 bytes"
     reject_rename_object_registry(
         bounded_rename_token, "invented client-token policy"
     )
@@ -4123,6 +4151,41 @@ def main() -> None:
     ]["evidence"]["client"] = []
     reject_rename_object_registry(
         missing_rename_object_model, "missing model evidence"
+    )
+    missing_rename_object_backend = copy.deepcopy(registry)
+    missing_rename_object_backend.operations[
+        "RenameObject"
+    ]["evidence"]["backend"] = []
+    reject_rename_object_registry(
+        missing_rename_object_backend, "missing backend evidence"
+    )
+    missing_rename_object_server = copy.deepcopy(registry)
+    missing_rename_object_server.operations[
+        "RenameObject"
+    ]["evidence"]["server"] = []
+    reject_rename_object_registry(
+        missing_rename_object_server, "missing server evidence"
+    )
+    successful_rename_object = copy.deepcopy(registry)
+    successful_rename_object.operations[
+        "RenameObject"
+    ]["certainty"] = "an atomic rename completes with HTTP 200"
+    reject_rename_object_registry(
+        successful_rename_object, "invented rename success"
+    )
+    detached_rename_object_verifier = copy.deepcopy(registry)
+    detached_rename_object_verifier.qualification[
+        "rename_object"
+    ].pop(0)
+    reject_rename_object_registry(
+        detached_rename_object_verifier, "detached focused verifier"
+    )
+    detached_rename_object_test = copy.deepcopy(registry)
+    detached_rename_object_test.qualification[
+        "rename_object"
+    ].pop(3)
+    reject_rename_object_registry(
+        detached_rename_object_test, "detached root test"
     )
     rename_object_lane, rename_object_commands = (
         s3_operation.qualification_plan(registry, ["RenameObject"])

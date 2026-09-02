@@ -1773,7 +1773,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration,
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
-         Put_Object, Copy_Object, Get_Object, Get_Object_Torrent,
+         Put_Object, Copy_Object, Rename_Object, Get_Object,
+         Get_Object_Torrent,
          Head_Object, Delete_Object,
          Restore_Object,
          Put_Object_ACL, Get_Object_ACL,
@@ -2276,6 +2277,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "torrent="
         or else Query_Text = "torrent=&x-id=GetObjectTorrent"
         or else Query_Text = "x-id=GetObjectTorrent&torrent=";
+      Is_Rename_Object_Query : constant Boolean :=
+        Method = "PUT"
+        and then
+          (Query_Text = "renameObject"
+           or else Query_Text = "renameObject="
+           or else Query_Text = "renameObject=&x-id=RenameObject"
+           or else Query_Text = "x-id=RenameObject&renameObject=");
       Is_Get_Bucket_Location_Query : constant Boolean :=
         Query_Text = "location"
         or else Query_Text = "location="
@@ -2565,6 +2573,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index (Padded_Query, "&session=") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=CreateSession&") /= 0;
+      Has_Rename_Object_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&renameObject&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&renameObject=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=RenameObject&") /= 0;
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&tagging=") /= 0;
@@ -3135,6 +3149,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Restore_Query_Invalid : Boolean := False;
       Bucket_Versioning_Query_Invalid : Boolean := False;
       Create_Session_Query_Invalid : Boolean := False;
+      Rename_Object_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
@@ -5636,6 +5651,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             elsif Method = "GET" then List_Objects
             else Unsupported);
       elsif Parsed.Kind = Requests.Object_Target then
+         Rename_Object_Query_Invalid :=
+           Method = "PUT" and then Has_Rename_Object_Query
+           and then not Is_Rename_Object_Query;
          ACL_Query_Invalid :=
            Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
@@ -5648,7 +5666,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Restore_Query_Invalid :=
            Method = "POST" and then Has_Restore_Query
            and then not Restore_Request.Valid;
-         if Looks_Like_ACL_Query then
+         if Method = "PUT" and then Has_Rename_Object_Query then
+            Operation := Rename_Object;
+         elsif Looks_Like_ACL_Query then
             Operation :=
               (if Method = "GET" then Get_Object_ACL
                elsif Method = "PUT" then Put_Object_ACL
@@ -5941,6 +5961,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The multipart request query is invalid", Target_Text);
+         return;
+      elsif Rename_Object_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The RenameObject request query is invalid", Target_Text);
          return;
       elsif ACL_Query_Invalid then
          Send_Error
@@ -12327,6 +12352,152 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Target_Text);
                   else
                      Send_Backend_Error (X, Result, False, Target_Text);
+                  end if;
+               end;
+
+            when Rename_Object =>
+               declare
+                  Source_Name : constant String := "x-amz-rename-source";
+                  Token_Name  : constant String := "x-amz-client-token";
+
+                  function Count (Name : String) return Natural is
+                    (Apps.Request_Header_Count (X, Name));
+
+                  function Is_Allowed_Header (Name : String) return Boolean is
+                    (Name in Source_Name | Token_Name |
+                       "if-match" | "if-none-match" |
+                       "if-modified-since" | "if-unmodified-since" |
+                       "x-amz-rename-source-if-match" |
+                       "x-amz-rename-source-if-none-match" |
+                       "x-amz-rename-source-if-modified-since" |
+                       "x-amz-rename-source-if-unmodified-since");
+
+                  function Has_Unmodeled_Control_Header return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                           Rename_Control : constant Boolean :=
+                             Ada.Strings.Fixed.Index
+                               (Name, "x-amz-rename-source") = Name'First;
+                           Token_Control : constant Boolean :=
+                             Ada.Strings.Fixed.Index
+                               (Name, "x-amz-client-token") = Name'First;
+                           Conditional_Control : constant Boolean :=
+                             Ada.Strings.Fixed.Index (Name, "if-") =
+                               Name'First;
+                        begin
+                           if (Rename_Control or else Token_Control
+                               or else Conditional_Control)
+                             and then not Is_Allowed_Header (Name)
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_Unmodeled_Control_Header;
+
+                  function Duplicate_Control_Header return Boolean is
+                    (Count (Source_Name) /= 1
+                     or else Count (Token_Name) > 1
+                     or else Count ("if-match") > 1
+                     or else Count ("if-none-match") > 1
+                     or else Count ("if-modified-since") > 1
+                     or else Count ("if-unmodified-since") > 1
+                     or else Count ("x-amz-rename-source-if-match") > 1
+                     or else Count
+                       ("x-amz-rename-source-if-none-match") > 1
+                     or else Count
+                       ("x-amz-rename-source-if-modified-since") > 1
+                     or else Count
+                       ("x-amz-rename-source-if-unmodified-since") > 1);
+
+                  function Valid_Entity_Tag_Header
+                    (Name : String) return Boolean is
+                    (Count (Name) = 0
+                     or else
+                       (Count (Name) = 1
+                        and then Backends.Valid_Read_Entity_Tag_Condition
+                          (Apps.Request_Header (X, Name))));
+
+                  function Valid_Date_Header
+                    (Name : String) return Boolean is
+                    (Count (Name) = 0
+                     or else
+                       (Count (Name) = 1
+                        and then Object_Reads.Parse_Conditional_Date
+                          (Apps.Request_Header (X, Name), Clock).Valid));
+
+                  Raw_Source : constant String :=
+                    Apps.Request_Header (X, Source_Name);
+                  Source_Target : constant String :=
+                    (if Raw_Source'Length > 0
+                       and then Raw_Source (Raw_Source'First) = '/'
+                     then Raw_Source else '/' & Raw_Source);
+                  Source_Parsed : constant Requests.Target_Result :=
+                    Requests.Parse_Target (Source_Target);
+                  Source_Bucket : constant String :=
+                    Requests.Bucket_Name (Source_Target, Source_Parsed);
+                  Token : constant String :=
+                    Apps.Request_Header (X, Token_Name);
+               begin
+                  if Duplicate_Control_Header
+                    or else Has_Unmodeled_Control_Header
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A RenameObject control is missing or duplicated",
+                        Target_Text);
+                     return;
+                  elsif Raw_Source'Length = 0
+                    or else not Valid_Header_Text (Raw_Source)
+                    or else Source_Parsed.Kind /= Requests.Object_Target
+                    or else Source_Parsed.Has_Query
+                    or else Source_Bucket /= Bucket
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The RenameObject source is invalid", Target_Text);
+                     return;
+                  elsif Count (Token_Name) = 1
+                    and then
+                      (Token'Length = 0 or else not Valid_Header_Text (Token))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The RenameObject client token is invalid",
+                        Target_Text);
+                     return;
+                  elsif not Valid_Entity_Tag_Header ("if-match")
+                    or else not Valid_Entity_Tag_Header ("if-none-match")
+                    or else not Valid_Entity_Tag_Header
+                      ("x-amz-rename-source-if-match")
+                    or else not Valid_Entity_Tag_Header
+                      ("x-amz-rename-source-if-none-match")
+                    or else not Valid_Date_Header ("if-modified-since")
+                    or else not Valid_Date_Header ("if-unmodified-since")
+                    or else not Valid_Date_Header
+                      ("x-amz-rename-source-if-modified-since")
+                    or else not Valid_Date_Header
+                      ("x-amz-rename-source-if-unmodified-since")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A RenameObject condition is invalid", Target_Text);
+                     return;
+                  end if;
+                  Store.Head_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
+                  if Result = Success then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Atomic directory-bucket rename is not implemented",
+                        Target_Text);
+                  else
+                     Send_Backend_Error (X, Result, True, Target_Text);
                   end if;
                end;
 

@@ -42,6 +42,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  service-level ListBuckets, path-style
    --  Create/GetBucketLocation/Put/GetBucketVersioning/Head/DeleteBucket,
    --  validated negative-capability CreateSession routing,
+   --  validated negative-capability RenameObject routing,
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,
