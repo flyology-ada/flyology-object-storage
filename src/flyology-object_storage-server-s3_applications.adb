@@ -194,6 +194,230 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Derived from the shared entity-safe XML parser limits. The private
    --  SelectObjectContent route validates only a bounded request envelope
    --  before reporting that event-stream selection is unavailable.
+   Maximum_Update_Object_Encryption_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared entity-safe XML parser limits. The private
+   --  UpdateObjectEncryption route validates only the modeled request
+   --  envelope before reporting that encryption mutation is unavailable.
+
+   type Object_Encryption_XML_Field is
+     (No_Encryption_Field, KMS_ARN_Field, Bucket_Key_Field);
+   type Object_Encryption_XML_Validator is new XML.Event_Handler with record
+      Depth               : Natural := 0;
+      Field               : Object_Encryption_XML_Field :=
+        No_Encryption_Field;
+      Root_Seen           : Boolean := False;
+      Encryption_Seen     : Boolean := False;
+      KMS_ARN_Seen        : Boolean := False;
+      Bucket_Key_Seen     : Boolean := False;
+      Root_Closed         : Boolean := False;
+      Value               : US.Unbounded_String;
+   end record;
+   overriding procedure Start_Element
+     (Item : in out Object_Encryption_XML_Validator; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Object_Encryption_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Object_Encryption_XML_Validator; Value : String);
+   overriding procedure End_Element
+     (Item : in out Object_Encryption_XML_Validator; Local_Name : String);
+
+   procedure Require_XML_Whitespace (Value : String) is
+   begin
+      for Element of Value loop
+         if Element not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+            raise XML.XML_Error with "text outside modeled XML members";
+         end if;
+      end loop;
+   end Require_XML_Whitespace;
+
+   function Valid_KMS_Key_ARN (Value : String) return Boolean is
+      function Valid_Partition (Item : String) return Boolean is
+      begin
+         if Item'Length < 3 or else Item (Item'First .. Item'First + 2) /=
+           "aws"
+         then
+            return False;
+         end if;
+         for Element of Item loop
+            if Element not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-'
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Partition;
+
+      function Valid_Region (Item : String) return Boolean is
+      begin
+         if Item'Length = 0 then
+            return False;
+         end if;
+         for Element of Item loop
+            if Element not in 'a' .. 'z' | '0' .. '9' | '-' then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Region;
+
+      function Valid_Account (Item : String) return Boolean is
+      begin
+         if Item'Length /= 12 then
+            return False;
+         end if;
+         for Element of Item loop
+            if Element not in '0' .. '9' then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Account;
+
+      function Valid_Key (Item : String) return Boolean is
+      begin
+         if Item'Length = 0 then
+            return False;
+         end if;
+         for Element of Item loop
+            if Element not in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-'
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Key;
+
+      Partition_End : Natural;
+      Service_End   : Natural;
+      Region_End    : Natural;
+      Account_End   : Natural;
+   begin
+      if Value'Length not in 20 .. 2_048
+        or else Value'Length < 4
+        or else Value (Value'First .. Value'First + 3) /= "arn:"
+      then
+         return False;
+      end if;
+      Partition_End := Ada.Strings.Fixed.Index
+        (Value, ":", From => Value'First + 4);
+      if Partition_End = 0 or else Partition_End = Value'First + 4 then
+         return False;
+      end if;
+      Service_End := Ada.Strings.Fixed.Index
+        (Value, ":", From => Partition_End + 1);
+      Region_End := Ada.Strings.Fixed.Index
+        (Value, ":", From => Service_End + 1);
+      Account_End := Ada.Strings.Fixed.Index
+        (Value, ":", From => Region_End + 1);
+      return Service_End > Partition_End + 1
+        and then Region_End > Service_End + 1
+        and then Account_End > Region_End + 1
+        and then Account_End + 5 <= Value'Last
+        and then Valid_Partition
+          (Value (Value'First + 4 .. Partition_End - 1))
+        and then Value (Partition_End + 1 .. Service_End - 1) = "kms"
+        and then Valid_Region (Value (Service_End + 1 .. Region_End - 1))
+        and then Valid_Account (Value (Region_End + 1 .. Account_End - 1))
+        and then Value (Account_End + 1 .. Account_End + 4) = "key/"
+        and then Valid_Key (Value (Account_End + 5 .. Value'Last));
+   end Valid_KMS_Key_ARN;
+
+   overriding procedure Start_Element
+     (Item : in out Object_Encryption_XML_Validator; Local_Name : String) is
+   begin
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen or else Local_Name /= "ObjectEncryption" then
+            raise XML.XML_Error with "invalid ObjectEncryption root";
+         end if;
+         Item.Root_Seen := True;
+      elsif Item.Depth = 2 then
+         if Item.Encryption_Seen or else Local_Name /= "SSE-KMS" then
+            raise XML.XML_Error with "invalid ObjectEncryption union";
+         end if;
+         Item.Encryption_Seen := True;
+      elsif Item.Depth = 3 then
+         Item.Value := US.Null_Unbounded_String;
+         if Local_Name = "KMSKeyArn" and then not Item.KMS_ARN_Seen then
+            Item.KMS_ARN_Seen := True;
+            Item.Field := KMS_ARN_Field;
+         elsif Local_Name = "BucketKeyEnabled"
+           and then not Item.Bucket_Key_Seen
+         then
+            Item.Bucket_Key_Seen := True;
+            Item.Field := Bucket_Key_Field;
+         else
+            raise XML.XML_Error with "invalid SSE-KMS member";
+         end if;
+      else
+         raise XML.XML_Error with "invalid ObjectEncryption nesting";
+      end if;
+   end Start_Element;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Object_Encryption_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      pragma Unreferenced (Item);
+   begin
+      if Attribute_Count /= 0
+        or else Namespace_URI /=
+          "http://s3.amazonaws.com/doc/2006-03-01/"
+      then
+         raise XML.XML_Error with "invalid ObjectEncryption namespace";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure Text
+     (Item : in out Object_Encryption_XML_Validator; Value : String) is
+   begin
+      if Item.Depth = 3
+        and then Item.Field in KMS_ARN_Field | Bucket_Key_Field
+      then
+         US.Append (Item.Value, Value);
+      else
+         Require_XML_Whitespace (Value);
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Object_Encryption_XML_Validator; Local_Name : String)
+   is
+      Value : constant String := US.To_String (Item.Value);
+   begin
+      if Item.Depth = 3 then
+         if (Item.Field = KMS_ARN_Field
+             and then
+               (Local_Name /= "KMSKeyArn" or else not Valid_KMS_Key_ARN
+                  (Value)))
+           or else
+             (Item.Field = Bucket_Key_Field
+              and then
+                (Local_Name /= "BucketKeyEnabled"
+                 or else Value not in "true" | "false"))
+         then
+            raise XML.XML_Error with "invalid SSE-KMS value";
+         end if;
+         Item.Field := No_Encryption_Field;
+         Item.Value := US.Null_Unbounded_String;
+      elsif Item.Depth = 2 then
+         if Local_Name /= "SSE-KMS" or else not Item.KMS_ARN_Seen then
+            raise XML.XML_Error with "incomplete SSE-KMS value";
+         end if;
+      elsif Item.Depth = 1 then
+         if Local_Name /= "ObjectEncryption"
+           or else not Item.Encryption_Seen
+         then
+            raise XML.XML_Error with "incomplete ObjectEncryption value";
+         end if;
+         Item.Root_Closed := True;
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
 
    type Select_XML_Validator is new XML.Event_Handler with record
       Depth       : Natural := 0;
@@ -1839,6 +2063,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Rename_Object, Select_Object_Content,
+         Update_Object_Encryption,
          Get_Object,
          Get_Object_Torrent,
          Head_Object, Delete_Object,
@@ -2665,6 +2890,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&select-type=") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=SelectObjectContent&") /= 0;
+      Has_Update_Object_Encryption_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&encryption&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&encryption=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=UpdateObjectEncryption&") /= 0;
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&tagging=") /= 0;
@@ -3226,6 +3457,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Restore_Request : constant Object_Lock_Query_Result :=
         Parse_Object_Lock_Query
           (Query_Text, "restore", "RestoreObject", Allow_Version => True);
+      Update_Object_Encryption_Request : constant Object_Lock_Query_Result :=
+        Parse_Object_Lock_Query
+          (Query_Text, "encryption", "UpdateObjectEncryption",
+           Allow_Version => True);
       ACL_Query_Invalid : Boolean := False;
       Object_Lock_Query_Invalid : Boolean := False;
       Multipart_Query_Invalid : Boolean := False;
@@ -3237,6 +3472,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Create_Session_Query_Invalid : Boolean := False;
       Rename_Object_Query_Invalid : Boolean := False;
       Select_Object_Content_Query_Invalid : Boolean := False;
+      Update_Object_Encryption_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
@@ -5744,6 +5980,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Select_Object_Content_Query_Invalid :=
            Method = "POST" and then Has_Select_Object_Content_Query
            and then not Is_Select_Object_Content_Query;
+         Update_Object_Encryption_Query_Invalid :=
+           Method = "PUT" and then Has_Update_Object_Encryption_Query
+           and then not Update_Object_Encryption_Request.Valid;
          ACL_Query_Invalid :=
            Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
@@ -5762,6 +6001,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Has_Select_Object_Content_Query
          then
             Operation := Select_Object_Content;
+         elsif Method = "PUT"
+           and then Has_Update_Object_Encryption_Query
+         then
+            Operation := Update_Object_Encryption;
          elsif Looks_Like_ACL_Query then
             Operation :=
               (if Method = "GET" then Get_Object_ACL
@@ -5972,7 +6215,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration |
          Update_Bucket_Metadata_Annotation_Table_Configuration |
          Put_Object |
-         Restore_Object | Select_Object_Content |
+         Restore_Object | Select_Object_Content | Update_Object_Encryption |
          Put_Object_Annotation | Put_Object_Tagging |
          Delete_Objects | Put_Multipart_Part |
          Put_Object_Legal_Hold | Put_Object_Retention |
@@ -6040,6 +6283,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
           Get_Object | Get_Object_Attributes | Select_Object_Content |
+          Update_Object_Encryption |
           Create_Session |
           List_Multipart_Parts |
           Create_Multipart | Complete_Multipart |
@@ -6066,6 +6310,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The SelectObjectContent request query is invalid", Target_Text);
+         return;
+      elsif Update_Object_Encryption_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The UpdateObjectEncryption request query is invalid",
+            Target_Text);
          return;
       elsif ACL_Query_Invalid then
          Send_Error
@@ -6179,6 +6429,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Update_Bucket_Metadata_Journal_Table_Configuration |
         Update_Bucket_Metadata_Annotation_Table_Configuration |
         Put_Object | Restore_Object | Select_Object_Content |
+        Update_Object_Encryption |
         Put_Object_Annotation | Put_Object_Tagging |
         Put_Object_Legal_Hold |
         Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
@@ -12788,6 +13039,207 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "S3 Select event streaming is not implemented",
                         Target_Text);
+                  else
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                  end if;
+               end;
+
+            when Update_Object_Encryption =>
+               declare
+                  function Has_Unmodeled_Encryption_Header return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if (Name'Length >= 28
+                               and then
+                                 Name (Name'First .. Name'First + 27) =
+                                   "x-amz-server-side-encryption")
+                             or else
+                               (Name'Length >= 40
+                                and then
+                                  Name (Name'First .. Name'First + 39) =
+                                    "x-amz-copy-source-server-side-" &
+                                    "encryption")
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_Unmodeled_Encryption_Header;
+
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Value_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Trailer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Info : Object_Information;
+                  Selector : constant Backends.Version_Selector :=
+                    To_Version_Selector
+                      (Update_Object_Encryption_Request.Has_Version_ID,
+                       Update_Object_Encryption_Request.Version_ID);
+               begin
+                  if Payer_Count > 1 or else MD5_Count > 1
+                    or else SDK_Count /= 1 or else Value_Count > 1
+                    or else Trailer_Count > 1
+                    or else Checksum_Header_Count /= Value_Count
+                    or else Value_Count + Trailer_Count /= 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An UpdateObjectEncryption header is missing, " &
+                        "invalid, or duplicated", Target_Text);
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The UpdateObjectEncryption request payer is " &
+                        "invalid", Target_Text);
+                     return;
+                  elsif MD5_Count = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidDigest",
+                        "The Content-MD5 header is invalid", Target_Text);
+                     return;
+                  elsif Has_Unmodeled_Encryption_Header then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An UpdateObjectEncryption transport header is " &
+                        "invalid", Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes = 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "UpdateObjectEncryption requires one bounded XML " &
+                        "body", Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes >
+                      Maximum_Update_Object_Encryption_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "The UpdateObjectEncryption body is too large",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  declare
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => S3.Core.CRC64NVME,
+                        Length_Value => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => MD5_Count = 1,
+                        Expected_Content_MD5 =>
+                          (if MD5_Count = 1 then
+                             US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                           else US.Null_Unbounded_String),
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => False,
+                        Checksum_From_Trailer => False,
+                        Reject_Unexpected_Trailers => False,
+                        Expected_Body_Checksum => US.Null_Unbounded_String,
+                        Observed => 0,
+                        Maximum => Maximum_Update_Object_Encryption_Body,
+                        Completed => False,
+                        others => <>);
+                     Document : constant String := Read_Document (Source);
+                     Validator : aliased Object_Encryption_XML_Validator;
+                  begin
+                     case Verify_Document_Checksum (Document) is
+                        when Document_Checksum_OK => null;
+                        when Document_Checksum_Group_Invalid |
+                          Document_Checksum_Value_Invalid =>
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The UpdateObjectEncryption checksum is " &
+                              "invalid", Target_Text);
+                           return;
+                        when Document_Checksum_Mismatch =>
+                           Send_Error
+                             (X, 400, "BadDigest",
+                              "The UpdateObjectEncryption checksum does not " &
+                              "match", Target_Text);
+                           return;
+                     end case;
+                     if Document'Length = 0 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "UpdateObjectEncryption requires one bounded XML " &
+                           "body", Target_Text);
+                        return;
+                     end if;
+                     begin
+                        XML.Parse (Document, Validator, XML.Default_Limits);
+                        if not Validator.Root_Seen
+                          or else not Validator.Root_Closed
+                          or else Validator.Depth /= 0
+                        then
+                           raise XML.XML_Error with
+                             "incomplete ObjectEncryption";
+                        end if;
+                     exception
+                        when XML.XML_Error =>
+                           Send_Error
+                             (X, 400, "MalformedXML",
+                              "The UpdateObjectEncryption XML body is " &
+                              "malformed", Target_Text);
+                           return;
+                     end;
+                  end;
+
+                  Store.Head_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
+                  if Result /= Success then
+                     Send_Backend_Error (X, Result, True, Target_Text);
+                     return;
+                  end if;
+                  Store.Head_Object
+                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                     Info, Result, Selector => Selector);
+                  if Result = Success then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object encryption mutation is not implemented",
+                        Target_Text);
+                  elsif Result = Not_Found
+                    and then
+                      Update_Object_Encryption_Request.Has_Version_ID
+                  then
+                     Send_Error
+                       (X, 404, "NoSuchVersion",
+                        "The specified version does not exist", Target_Text);
                   else
                      Send_Backend_Error (X, Result, False, Target_Text);
                   end if;

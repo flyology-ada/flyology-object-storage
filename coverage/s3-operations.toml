@@ -682,7 +682,10 @@ select_object_content = [
   ["git", "diff", "--check"],
 ]
 update_object_encryption = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-update-object-encryption-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-update-object-encryption-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["./tests/scripts/test.sh"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -5319,20 +5322,21 @@ provider = "objects"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 public_name = "Not_Exposed"
-codec = "generated_model_only_object_encryption_xml_and_headers"
+codec = "private_strict_object_encryption_xml_negative_capability"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "mutation model coverage only; no public encryption-update request, XML serializer, checksum binding, response decoder, or runtime evidence exists, so this review reports no accepted or completed update, no admission certainty, and no automatic replay"
-reconciliation = "the model carries an optional VersionId, but neither explicit nor omitted-version request binding nor later HeadObject encryption-state decoding is implemented; later observation cannot prove causation, upgrade mutation certainty, or authorize automatic replay"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects UpdateObjectEncryption API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the actual ObjectEncryption union exposes only SSEKMS even though surrounding prose also mentions SSES3, and BucketKeyEnabled is merely optional despite prose describing false when omitted; this review does not invent an SSES3 variant, a public false default, or a conflict resolution", "the modeled XML, Content-MD5, required generated-checksum selection, VersionId, requester-pays controls, and response header are inventory only; no serialization, digest computation, signing binding, version binding, response validation, or rewind behavior is implemented", "the KMS ARN shape, account and organization ownership prose, permissions, current-encryption restrictions, Object Lock conditions, and sensitive value are service inventory only; no client validation, policy, authorization, or logging behavior is claimed", "the operation models NoSuchKey, InvalidRequest, and synthetic AccessDenied error shapes plus a default HTTP 200 response; no status, error, RequestCharged, success, or malformed-response decoder is implemented or qualified", "a later HeadObject encryption observation can reflect concurrent or already-matching state and cannot prove that a lost update caused the observation", "directory buckets and S3 on Outposts are documented as unsupported; access-point routing and external-provider behavior are not implemented or qualified"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "the authenticated local server validates one exact bounded UpdateObjectEncryption request, consults only shared Head_Bucket and version-aware Head_Object observation, returns NoSuchBucket, NoSuchKey, or NoSuchVersion for absence and NotImplemented for an existing object, and never updates encryption, mutates an object, or reports success; no automatic replay is authorized"
+reconciliation = "the selected current, null, or exact object generation is only the target whose unsupported update was rejected; no encryption state changes, and a later HeadObject observation can reflect concurrent or already-matching state and cannot prove causation, upgrade mutation certainty, or authorize automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects UpdateObjectEncryption API, composable operation, synchronous wrapper, Finish path, response decoder, or public client GNATdoc qualification is claimed", "the private server accepts only an authenticated exact PUT object query with encryption, optional VersionId, and optional modeled x-id=UpdateObjectEncryption; it preserves current, null, and exact-generation selection without exposing a public request type", "the bounded entity-safe XML request accepts only the pinned ObjectEncryption root and sole SSE-KMS union member with one required lexical KMSKeyArn and one optional exact Boolean BucketKeyEnabled; SSES3 is rejected and omission of BucketKeyEnabled remains absence rather than a false default", "the route validates singleton expected-owner and requester-pays controls, optional Content-MD5, and the pinned required generated-checksum selector and value or trailer against the exact request bytes; it does not expose a serializer, choose a checksum default, or emit the success-only RequestCharged header", "the maintained backend route calls only Head_Bucket and version-aware Head_Object; a missing bucket returns NoSuchBucket, a missing current object returns NoSuchKey, a missing selected generation returns NoSuchVersion, and an existing object returns NotImplemented without reading object bytes or changing object or encryption state", "KMS account or organization ownership, permissions, current-encryption restrictions, Object Lock conditions, key use, encryption execution, sensitive-value retention, and logging policy are not implemented or qualified", "the operation's modeled default HTTP 200 response and RequestCharged header are never emitted; no accepted or completed mutation, response decoding, cancellation, drain, restart, or client-side admission certainty is claimed", "directory buckets and S3 on Outposts are documented as unsupported; access-point routing and external-provider behavior are not implemented or qualified"]
+evidence_tokens = ["Head_Bucket", "Head_Object"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "shared_family", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "update_object_encryption"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-update-object-encryption-model.py"], server = [], corpus = ["tests/scripts/verify-update-object-encryption-model.py"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "tests/src/versioned_object_conformance.adb", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-update-object-encryption-model.py"], server = ["src/flyology-object_storage-server-s3_applications.ads", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-update-object-encryption-model.py", "tools/verify-update-object-encryption-preparation.py", "docs/qualification/update-object-encryption.md", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
 name = "UploadPart"

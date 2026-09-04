@@ -11639,6 +11639,376 @@ begin
 
    declare
       Document : constant String :=
+        "<ObjectEncryption " &
+        "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<SSE-KMS><KMSKeyArn>" &
+        "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+        "</KMSKeyArn><BucketKeyEnabled>true</BucketKeyEnabled>" &
+        "</SSE-KMS></ObjectEncryption>";
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("encryption", ""));
+      Checksum : constant String := Checksum_Value (Core.SHA256, Document);
+      Default_Headers : constant String :=
+        "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+        "x-amz-checksum-sha256: " & Checksum & CRLF;
+
+      function Update_Encryption
+        (Target        : String := "/test-bucket/object";
+         Request_Query : SigV4.Name_Value_Array := Query;
+         Raw_Query     : String := "";
+         Payload       : String := Document;
+         Extra         : String := Default_Headers;
+         Corrupt       : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", Target, Request_Query, Payload, Extra,
+               Raw_Query => Raw_Query,
+               Corrupt_Signature => Corrupt)));
+
+      function Unavailable (Value : String) return Boolean is
+        (Has (Value, "501 Not Implemented")
+         and then Has (Value, "<Code>NotImplemented</Code>")
+         and then not Has (Value, "200 OK")
+         and then not Has (Value, "x-amz-request-charged:"));
+
+      function Declared_Oversize return String is
+         Payload_Hash : constant String := SigV4.Empty_Payload_Hash;
+         Headers : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-checksum-sha256",
+                        Checksum_Value (Core.SHA256, "")),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair ("x-amz-sdk-checksum-algorithm", "SHA256"));
+         Signing : constant SigV4.Signing_Result := SigV4.Sign
+           ("PUT", "/test-bucket/object", Query, Headers, Payload_Hash,
+            Access_Key, Secret_Key, Region, Timestamp);
+      begin
+         return
+           "PUT /test-bucket/object?encryption= HTTP/1.1" & CRLF &
+           "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+           "x-amz-content-sha256: " & Payload_Hash & CRLF &
+           "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+           "x-amz-checksum-sha256: " &
+           Checksum_Value (Core.SHA256, "") & CRLF &
+           "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+           "Content-Length: " &
+           Ada.Strings.Fixed.Trim
+             (Natural'Image
+                (XML.Default_Limits.Maximum_Document_Bytes + 1),
+              Ada.Strings.Both) & CRLF &
+           "Connection: close" & CRLF & CRLF;
+      end Declared_Oversize;
+   begin
+      Require
+        (Unavailable (Update_Encryption),
+         "UpdateObjectEncryption did not reject unavailable mutation");
+      declare
+         Omitted_Bucket_Key : constant String :=
+           "<ObjectEncryption " &
+           "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<SSE-KMS><KMSKeyArn>" &
+           "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+           "</KMSKeyArn></SSE-KMS></ObjectEncryption>";
+      begin
+         Require
+           (Unavailable
+              (Update_Encryption
+                 (Payload => Omitted_Bucket_Key,
+                  Extra =>
+                    "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                    "x-amz-checksum-sha256: " &
+                    Checksum_Value (Core.SHA256, Omitted_Bucket_Key) &
+                    CRLF)),
+            "UpdateObjectEncryption rejected omitted BucketKeyEnabled");
+      end;
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("x-id", "UpdateObjectEncryption")))),
+         "UpdateObjectEncryption rejected its exact operation identifier");
+      Require
+        (Unavailable
+           (Update_Encryption (Raw_Query => "encryption")),
+         "UpdateObjectEncryption rejected its bare query form");
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("x-id", "UpdateObjectEncryption")),
+               Raw_Query =>
+                 "x-id=UpdateObjectEncryption&encryption=")),
+         "UpdateObjectEncryption rejected reverse operation identifier");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (1 => SigV4.Pair ("x-id", "UpdateObjectEncryption")),
+               Raw_Query => "x-id=UpdateObjectEncryption"),
+            "<Code>InvalidArgument</Code>"),
+         "UpdateObjectEncryption accepted an operation identifier without " &
+         "the encryption query");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("encryption", "")),
+               Raw_Query => "encryption=&encryption="),
+            "<Code>InvalidArgument</Code>"),
+         "UpdateObjectEncryption accepted duplicate encryption controls");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("unknown", "value"))),
+            "<Code>InvalidArgument</Code>"),
+         "UpdateObjectEncryption accepted an unknown query member");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("versionId", ""))),
+            "<Code>InvalidArgument</Code>"),
+         "UpdateObjectEncryption accepted an empty version selector");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("unknown", "value")),
+               Corrupt => True),
+            "403 Forbidden"),
+         "UpdateObjectEncryption query validation preceded authentication");
+      Require
+        (Has
+           (Update_Encryption (Payload => "<Wrong/>", Corrupt => True),
+            "403 Forbidden"),
+         "UpdateObjectEncryption body validation preceded authentication");
+      Require
+        (Has
+           (Update_Encryption (Extra => ""),
+            "<Code>InvalidRequest</Code>"),
+         "UpdateObjectEncryption accepted a missing request checksum");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: not-base64" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "UpdateObjectEncryption accepted a malformed checksum");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, "different") & CRLF),
+            "<Code>BadDigest</Code>"),
+         "UpdateObjectEncryption accepted a mismatched checksum");
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "content-md5: " & Content_MD5 (Document) & CRLF)),
+         "UpdateObjectEncryption rejected a matching Content-MD5");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "content-md5: " & Content_MD5 ("different") & CRLF),
+            "<Code>BadDigest</Code>"),
+         "UpdateObjectEncryption accepted a mismatched Content-MD5");
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-request-payer: requester" & CRLF)),
+         "UpdateObjectEncryption rejected the requester payer value");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-request-payer: owner" & CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "UpdateObjectEncryption accepted an invalid request payer");
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF)),
+         "UpdateObjectEncryption rejected its expected bucket owner");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-expected-bucket-owner: another-principal" & CRLF),
+            "403 Forbidden"),
+         "UpdateObjectEncryption ignored an expected-owner mismatch");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF &
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "UpdateObjectEncryption accepted duplicate expected owners");
+      Require
+        (Has
+           (Update_Encryption (Payload => ""),
+            "<Code>InvalidRequest</Code>"),
+         "UpdateObjectEncryption accepted an empty body");
+      Require
+        (Has (Run (Declared_Oversize), "<Code>EntityTooLarge</Code>"),
+         "UpdateObjectEncryption accepted an oversized body");
+      Require
+        (Has
+           (Update_Encryption (Payload => "<ObjectEncryption>"),
+            "<Code>BadDigest</Code>"),
+         "UpdateObjectEncryption did not bind checksum before XML parsing");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload => "<ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, "<ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption accepted malformed XML");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload =>
+                 "<ObjectEncryption><SSE-KMS><KMSKeyArn>" &
+                 "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+                 "</KMSKeyArn></SSE-KMS></ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value
+                   (Core.SHA256,
+                    "<ObjectEncryption><SSE-KMS><KMSKeyArn>" &
+                    "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+                    "</KMSKeyArn></SSE-KMS></ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption accepted an unnamespaced payload");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload =>
+                 "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""><SSES3/></ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value
+                   (Core.SHA256,
+                    "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                    "2006-03-01/""><SSES3/></ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption invented an SSES3 union member");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload =>
+                 "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""><SSE-KMS/></ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value
+                   (Core.SHA256,
+                    "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                    "2006-03-01/""><SSE-KMS/></ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption accepted SSE-KMS without KMSKeyArn");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload =>
+                 "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""><SSE-KMS><KMSKeyArn>not-an-arn" &
+                 "</KMSKeyArn></SSE-KMS></ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value
+                   (Core.SHA256,
+                    "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                    "2006-03-01/""><SSE-KMS><KMSKeyArn>not-an-arn" &
+                    "</KMSKeyArn></SSE-KMS></ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption accepted an invalid KMS key ARN");
+      Require
+        (Has
+           (Update_Encryption
+              (Payload =>
+                 "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""><SSE-KMS><KMSKeyArn>" &
+                 "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+                 "</KMSKeyArn><BucketKeyEnabled>TRUE</BucketKeyEnabled>" &
+                 "</SSE-KMS></ObjectEncryption>",
+               Extra =>
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value
+                   (Core.SHA256,
+                    "<ObjectEncryption xmlns=""http://s3.amazonaws.com/doc/" &
+                    "2006-03-01/""><SSE-KMS><KMSKeyArn>" &
+                    "arn:aws:kms:us-east-1:123456789012:key/key-1" &
+                    "</KMSKeyArn><BucketKeyEnabled>TRUE</BucketKeyEnabled>" &
+                    "</SSE-KMS></ObjectEncryption>") & CRLF),
+            "<Code>MalformedXML</Code>"),
+         "UpdateObjectEncryption accepted an invalid boolean value");
+      Require
+        (Has
+           (Update_Encryption
+              (Extra => Default_Headers &
+                 "x-amz-server-side-encryption: aws:kms" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "UpdateObjectEncryption accepted an unmodeled transport header");
+      Require
+        (Has
+           (Update_Encryption (Target => "/absent-bucket/object"),
+            "<Code>NoSuchBucket</Code>"),
+         "UpdateObjectEncryption did not distinguish a missing bucket");
+      Require
+        (Has
+           (Update_Encryption
+              (Target => "/test-bucket/missing-encryption-object"),
+            "<Code>NoSuchKey</Code>"),
+         "UpdateObjectEncryption did not distinguish a missing key");
+      Require
+        (Unavailable
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("versionId", "null")))),
+         "UpdateObjectEncryption did not bind the null generation");
+      Require
+        (Has
+           (Update_Encryption
+              (Request_Query =>
+                 (SigV4.Pair ("encryption", ""),
+                  SigV4.Pair ("versionId", "missing-version"))),
+            "<Code>NoSuchVersion</Code>"),
+         "UpdateObjectEncryption did not distinguish a missing version");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/object", "")),
+            "200 OK"),
+         "rejected UpdateObjectEncryption changed the source object");
+   end;
+
+   declare
+      Document : constant String :=
         "<SelectObjectContentRequest " &
         "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
         "<Expression>SELECT * FROM S3Object</Expression>" &

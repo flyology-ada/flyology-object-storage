@@ -4832,17 +4832,19 @@ def main() -> None:
         raise AssertionError("duplicate SelectObjectContent lane accepted")
 
     update_object_encryption_certainty = (
-        "mutation model coverage only; no public encryption-update request, "
-        "XML serializer, checksum binding, response decoder, or runtime "
-        "evidence exists, so this review reports no accepted or completed "
-        "update, no admission certainty, and no automatic replay"
+        "the authenticated local server validates one exact bounded "
+        "UpdateObjectEncryption request, consults only shared Head_Bucket and "
+        "version-aware Head_Object observation, returns NoSuchBucket, "
+        "NoSuchKey, or NoSuchVersion for absence and NotImplemented for an "
+        "existing object, and never updates encryption, mutates an object, or "
+        "reports success; no automatic replay is authorized"
     )
     update_object_encryption_reconciliation = (
-        "the model carries an optional VersionId, but neither explicit nor "
-        "omitted-version request binding nor later HeadObject "
-        "encryption-state decoding is implemented; later observation cannot "
-        "prove causation, upgrade mutation certainty, or authorize automatic "
-        "replay"
+        "the selected current, null, or exact object generation is only the "
+        "target whose unsupported update was rejected; no encryption state "
+        "changes, and a later HeadObject observation can reflect concurrent "
+        "or already-matching state and cannot prove causation, upgrade "
+        "mutation certainty, or authorize automatic replay"
     )
     update_object_encryption_errors = [
         "authentication", "authorization", "not_found", "invalid_request",
@@ -4851,31 +4853,35 @@ def main() -> None:
     update_object_encryption_exclusions = [
         "Not_Exposed is a registry sentinel and not an Ada declaration; no "
         "Low_Level or Objects UpdateObjectEncryption API, composable "
-        "operation, synchronous wrapper, Finish path, or GNATdoc "
-        "qualification is claimed",
-        "the actual ObjectEncryption union exposes only SSEKMS even though "
-        "surrounding prose also mentions SSES3, and BucketKeyEnabled is "
-        "merely optional despite prose describing false when omitted; this "
-        "review does not invent an SSES3 variant, a public false default, or "
-        "a conflict resolution",
-        "the modeled XML, Content-MD5, required generated-checksum selection, "
-        "VersionId, requester-pays controls, and response header are "
-        "inventory "
-        "only; no serialization, digest computation, signing binding, "
-        "version binding, response validation, or rewind behavior is "
-        "implemented",
-        "the KMS ARN shape, account and organization ownership prose, "
-        "permissions, current-encryption restrictions, Object Lock "
-        "conditions, and sensitive value are service inventory only; no "
-        "client validation, policy, authorization, or logging behavior is "
-        "claimed",
-        "the operation models NoSuchKey, InvalidRequest, and synthetic "
-        "AccessDenied error shapes plus a default HTTP 200 response; no "
-        "status, error, RequestCharged, success, or malformed-response "
-        "decoder is implemented or qualified",
-        "a later HeadObject encryption observation can reflect concurrent or "
-        "already-matching state and cannot prove that a lost update caused "
-        "the observation",
+        "operation, synchronous wrapper, Finish path, response decoder, or "
+        "public client GNATdoc qualification is claimed",
+        "the private server accepts only an authenticated exact PUT object "
+        "query with encryption, optional VersionId, and optional modeled "
+        "x-id=UpdateObjectEncryption; it preserves current, null, and "
+        "exact-generation selection without exposing a public request type",
+        "the bounded entity-safe XML request accepts only the pinned "
+        "ObjectEncryption root and sole SSE-KMS union member with one required "
+        "lexical KMSKeyArn and one optional exact Boolean BucketKeyEnabled; "
+        "SSES3 is rejected and omission of BucketKeyEnabled remains absence "
+        "rather than a false default",
+        "the route validates singleton expected-owner and requester-pays "
+        "controls, optional Content-MD5, and the pinned required generated-"
+        "checksum selector and value or trailer against the exact request "
+        "bytes; it does not expose a serializer, choose a checksum default, "
+        "or emit the success-only RequestCharged header",
+        "the maintained backend route calls only Head_Bucket and version-aware "
+        "Head_Object; a missing bucket returns NoSuchBucket, a missing current "
+        "object returns NoSuchKey, a missing selected generation returns "
+        "NoSuchVersion, and an existing object returns NotImplemented without "
+        "reading object bytes or changing object or encryption state",
+        "KMS account or organization ownership, permissions, current-"
+        "encryption restrictions, Object Lock conditions, key use, encryption "
+        "execution, sensitive-value retention, and logging policy are not "
+        "implemented or qualified",
+        "the operation's modeled default HTTP 200 response and RequestCharged "
+        "header are never emitted; no accepted or completed mutation, response "
+        "decoding, cancellation, drain, restart, or client-side admission "
+        "certainty is claimed",
         "directory buckets and S3 on Outposts are documented as unsupported; "
         "access-point routing and external-provider behavior are not "
         "implemented or qualified",
@@ -4889,7 +4895,7 @@ def main() -> None:
         assert entry.get("qualification") == "update_object_encryption"
         assert entry.get("family") == "rest_xml_mutation"
         assert entry.get("codec") == (
-            "generated_model_only_object_encryption_xml_and_headers"
+            "private_strict_object_encryption_xml_negative_capability"
         )
         assert entry.get("certainty") == update_object_encryption_certainty
         assert entry.get("reconciliation") == (
@@ -4898,26 +4904,49 @@ def main() -> None:
         assert entry.get("errors") == update_object_encryption_errors
         assert entry.get("exclusions") == update_object_encryption_exclusions
         assert entry.get("ada_symbols") is None
+        assert entry.get("evidence_tokens") == [
+            "Head_Bucket", "Head_Object",
+        ]
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "backend": "covered", "client": "partial",
+            "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
-            "backend": "absent", "client": "generated",
-            "server": "absent", "tests": "handwritten",
+            "backend": "shared_family", "client": "generated",
+            "server": "handwritten", "tests": "handwritten",
         }
         assert entry["evidence"] == {
-            "backend": [],
+            "backend": [
+                "src/flyology-object_storage-backends.ads",
+                "tests/src/versioned_object_conformance.adb",
+                "tests/src/object_storage_test_cases.adb",
+                "sqlite/tests/src/"
+                "flyology_object_storage_sqlite_tests.adb",
+            ],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-update-object-encryption-model.py",
             ],
-            "server": [],
-            "corpus": ["tests/scripts/verify-update-object-encryption-model.py"],
+            "server": [
+                "src/flyology-object_storage-server-s3_applications.ads",
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+            "corpus": [
+                "tests/scripts/verify-update-object-encryption-model.py",
+                "tools/verify-update-object-encryption-preparation.py",
+                "docs/qualification/update-object-encryption.md",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
         }
         assert candidate.qualification["update_object_encryption"] == [
             ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-update-object-encryption-preparation.py"],
+            ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-update-object-encryption-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/test-s3-operation-registry.py"],
+            ["./tests/scripts/test.sh"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -4957,28 +4986,28 @@ def main() -> None:
     sse_s3_update_encryption = copy.deepcopy(registry)
     sse_s3_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][1] += "; the public union includes SSES3"
+    ]["exclusions"][2] += "; the public union includes SSES3"
     reject_update_object_encryption_registry(
         sse_s3_update_encryption, "invented SSES3 variant"
     )
     defaulted_update_encryption = copy.deepcopy(registry)
     defaulted_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][1] += "; omitted BucketKeyEnabled defaults to false"
+    ]["exclusions"][2] += "; omitted BucketKeyEnabled defaults to false"
     reject_update_object_encryption_registry(
         defaulted_update_encryption, "invented bucket-key default"
     )
     checked_update_encryption = copy.deepcopy(registry)
     checked_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][3] += "; the client validates KMS ownership and ARN"
+    ]["exclusions"][5] += "; the client validates KMS ownership and ARN"
     reject_update_object_encryption_registry(
         checked_update_encryption, "invented KMS policy"
     )
     serialized_update_encryption = copy.deepcopy(registry)
     serialized_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][2] += "; XML, MD5, and checksums bind exact bytes"
+    ]["exclusions"][3] += "; XML, MD5, and checksums bind exact bytes"
     reject_update_object_encryption_registry(
         serialized_update_encryption, "invented checksum binding"
     )
@@ -4992,14 +5021,14 @@ def main() -> None:
     decoded_update_encryption = copy.deepcopy(registry)
     decoded_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][4] += "; the client decodes success and every error"
+    ]["exclusions"][6] += "; the client decodes success and every error"
     reject_update_object_encryption_registry(
         decoded_update_encryption, "invented response decoder"
     )
     routed_update_encryption = copy.deepcopy(registry)
     routed_update_encryption.operations[
         "UpdateObjectEncryption"
-    ]["exclusions"][6] += "; directory, Outposts, and access points work"
+    ]["exclusions"][7] += "; directory, Outposts, and access points work"
     reject_update_object_encryption_registry(
         routed_update_encryption, "invented endpoint support"
     )
@@ -5023,6 +5052,34 @@ def main() -> None:
     ]["evidence"]["client"] = []
     reject_update_object_encryption_registry(
         missing_update_encryption_model, "missing model evidence"
+    )
+    missing_update_encryption_backend = copy.deepcopy(registry)
+    missing_update_encryption_backend.operations[
+        "UpdateObjectEncryption"
+    ]["coverage"]["backend"] = "missing"
+    reject_update_object_encryption_registry(
+        missing_update_encryption_backend, "missing backend coverage"
+    )
+    missing_update_encryption_server = copy.deepcopy(registry)
+    missing_update_encryption_server.operations[
+        "UpdateObjectEncryption"
+    ]["coverage"]["server"] = "missing"
+    reject_update_object_encryption_registry(
+        missing_update_encryption_server, "missing server coverage"
+    )
+    successful_update_encryption = copy.deepcopy(registry)
+    successful_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["certainty"] = "the server completes the encryption update"
+    reject_update_object_encryption_registry(
+        successful_update_encryption, "invented server success"
+    )
+    mutating_update_encryption = copy.deepcopy(registry)
+    mutating_update_encryption.operations[
+        "UpdateObjectEncryption"
+    ]["exclusions"][4] += "; the route calls Put_Object"
+    reject_update_object_encryption_registry(
+        mutating_update_encryption, "invented backend mutation"
     )
     documented_update_encryption = copy.deepcopy(registry)
     documented_update_encryption.qualification[

@@ -111,7 +111,7 @@ SelectObjectContent	extended	covered	partial	covered	covered
 UpdateBucketMetadataAnnotationTableConfiguration	extended	covered	covered	covered	covered
 UpdateBucketMetadataInventoryTableConfiguration	extended	covered	covered	covered	covered
 UpdateBucketMetadataJournalTableConfiguration	extended	covered	covered	covered	covered
-UpdateObjectEncryption	extended	missing	partial	missing	covered
+UpdateObjectEncryption	extended	covered	partial	covered	covered
 UploadPart	core	covered	covered	covered	covered
 UploadPartCopy	core	covered	covered	covered	covered
 WriteGetObjectResponse	extended	missing	partial	missing	covered
