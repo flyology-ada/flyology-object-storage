@@ -691,7 +691,10 @@ update_object_encryption = [
   ["git", "diff", "--check"],
 ]
 write_get_object_response = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-write-get-object-response-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-write-get-object-response-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["./tests/scripts/test.sh"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -5391,17 +5394,17 @@ provider = "objects"
 family = "streaming_mutation"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 public_name = "Not_Exposed"
-codec = "generated_model_only_unsigned_stream_and_forwarded_headers"
+codec = "private_strict_object_lambda_callback_negative_capability"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "streaming mutation model coverage only; no public request, source ownership, endpoint routing, response decoder, admission evidence, or runtime path exists, so this review reports no accepted or completed callback and permits no automatic replay of the single-use request token"
-reconciliation = "the modeled callback has no output or operation errors and no implemented observation can bind a later GetObject result to a particular token, body, or forwarded-header set; later state cannot prove completion or causation"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects WriteGetObjectResponse API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the Object Lambda host prefix, static endpoint context, RequestRoute validation, and external endpoint construction are model inventory only; directory buckets are documented as unsupported", "RequestToken is modeled as a required unbounded string and described as single-use, but retention, redaction, admission, idempotency, retry, and replay policy are not implemented", "the optional streaming Body and its length, backpressure, cancellation, drain, rewind, source ownership, and lifetime are not implemented or bounded", "the modeled forwarded status, error, metadata, checksum, encryption, Object Lock, version, and content headers are inventory only; documentation-only mutual exclusions, status lists, error-code syntax, checksum one-of rules, signed-space encoding, metadata ordering, duplicate handling, and sensitive KMS forwarding are not enforced", "the operation uses v4-unsigned-body and an unsigned payload and has no modeled output, operation error shapes, or request checksum trait; no success, failure, malformed-response, or token-admission decoder is implemented", "a later GetObject result can reflect concurrent or already-matching state and cannot prove that this callback delivered the body or headers"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "the authenticated local server recognizes the exact Object Lambda callback, validates its required signed route and token, requires HTTPS with exact UNSIGNED-PAYLOAD, drains the request body within the existing HTTP server bound, and returns only NotImplemented; it never accepts or completes a callback, forwards bytes or headers, calls the storage backend, or reports success, and permits no automatic replay of the single-use request token"
+reconciliation = "the rejected callback creates no token, body, header, or backend state to observe; a later GetObject result can reflect concurrent or already-matching state and cannot prove callback completion or causation, upgrade certainty, or authorize automatic replay"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects WriteGetObjectResponse API, composable operation, synchronous wrapper, Finish path, response decoder, or public client GNATdoc qualification is claimed", "the private server recognizes only the exact POST /WriteGetObjectResponse target with no query, requires secure HTTPS and exact UNSIGNED-PAYLOAD authentication, and validates singleton nonempty text-safe signed x-amz-request-route and x-amz-request-token values plus the exact route-dot Host prefix; it exposes no endpoint builder or public request type", "the request body is consumed and discarded within the existing configured Flyology HTTP request-body bound before the terminal rejection; no callback-body interpretation, forwarding, retention, rewind, source ownership, success, or admission is implemented", "RequestToken is never echoed, retained, persisted, consumed as authority, or bound to a pending GetObject request; single-use enforcement, token generation, expiration, idempotency, retry, and replay remain unimplemented", "the modeled forwarded status, error, metadata, checksum, encryption, Object Lock, version, and content headers remain generated-model inventory only; mutual exclusions, status lists, error-code syntax, checksum one-of rules, signed-space encoding, metadata ordering, duplicate handling, and sensitive KMS forwarding are not implemented", "the route never calls the storage backend and backend coverage remains missing; successful Object Lambda callback coordination requires a separate token authority and pending-request stream handoff rather than a bucket or object storage capability", "the operation has no modeled output, operation error shapes, or request checksum trait; the local negative capability emits only authenticated InvalidRequest or NotImplemented errors and never a 2xx callback result", "directory-bucket, access-point, Object Lambda endpoint discovery, external-provider interoperability, and successful callback behavior are not qualified"]
+coverage = { backend = "missing", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "write_get_object_response"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-write-get-object-response-model.py"], server = [], corpus = ["tests/scripts/verify-write-get-object-response-model.py"] }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-write-get-object-response-model.py"], server = ["src/flyology-object_storage-server-s3_applications.ads", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-write-get-object-response-model.py", "tools/verify-write-get-object-response-preparation.py", "docs/qualification/write-get-object-response.md", "tests/src/s3_server_application_corpus.adb"] }

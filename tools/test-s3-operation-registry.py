@@ -5105,17 +5105,19 @@ def main() -> None:
         raise AssertionError("duplicate UpdateObjectEncryption lane accepted")
 
     write_get_object_response_certainty = (
-        "streaming mutation model coverage only; no public request, source "
-        "ownership, endpoint routing, response decoder, admission evidence, "
-        "or runtime path exists, so this review reports no accepted or "
-        "completed callback and permits no automatic replay of the "
-        "single-use request token"
+        "the authenticated local server recognizes the exact Object Lambda "
+        "callback, validates its required signed route and token, requires "
+        "HTTPS with exact UNSIGNED-PAYLOAD, drains the request body within "
+        "the existing HTTP server bound, and returns only NotImplemented; "
+        "it never accepts or completes a callback, forwards bytes or "
+        "headers, calls the storage backend, or reports success, and permits "
+        "no automatic replay of the single-use request token"
     )
     write_get_object_response_reconciliation = (
-        "the modeled callback has no output or operation errors and no "
-        "implemented observation can bind a later GetObject result to a "
-        "particular token, body, or forwarded-header set; later state cannot "
-        "prove completion or causation"
+        "the rejected callback creates no token, body, header, or backend "
+        "state to observe; a later GetObject result can reflect concurrent "
+        "or already-matching state and cannot prove callback completion or "
+        "causation, upgrade certainty, or authorize automatic replay"
     )
     write_get_object_response_errors = [
         "authentication", "authorization", "invalid_request",
@@ -5124,30 +5126,39 @@ def main() -> None:
     write_get_object_response_exclusions = [
         "Not_Exposed is a registry sentinel and not an Ada declaration; no "
         "Low_Level or Objects WriteGetObjectResponse API, composable "
-        "operation, synchronous wrapper, Finish path, or GNATdoc "
-        "qualification is claimed",
-        "the Object Lambda host prefix, static endpoint context, RequestRoute "
-        "validation, and external endpoint construction are model inventory "
-        "only; directory buckets are documented as unsupported",
-        "RequestToken is modeled as a required unbounded string and described "
-        "as single-use, but retention, redaction, admission, idempotency, "
-        "retry, and replay policy are not implemented",
-        "the optional streaming Body and its length, backpressure, "
-        "cancellation, drain, rewind, source ownership, and lifetime are not "
-        "implemented or bounded",
+        "operation, synchronous wrapper, Finish path, response decoder, or "
+        "public client GNATdoc qualification is claimed",
+        "the private server recognizes only the exact POST "
+        "/WriteGetObjectResponse target with no query, requires secure HTTPS "
+        "and exact UNSIGNED-PAYLOAD authentication, and validates singleton "
+        "nonempty text-safe signed x-amz-request-route and "
+        "x-amz-request-token values plus the exact route-dot Host prefix; it "
+        "exposes no endpoint builder or public request type",
+        "the request body is consumed and discarded within the existing "
+        "configured Flyology HTTP request-body bound before the terminal "
+        "rejection; no callback-body interpretation, forwarding, retention, "
+        "rewind, source ownership, success, or admission is implemented",
+        "RequestToken is never echoed, retained, persisted, consumed as "
+        "authority, or bound to a pending GetObject request; single-use "
+        "enforcement, token generation, expiration, idempotency, retry, and "
+        "replay remain unimplemented",
         "the modeled forwarded status, error, metadata, checksum, encryption, "
-        "Object Lock, version, and content headers are inventory only; "
-        "documentation-only mutual exclusions, status lists, error-code "
-        "syntax, checksum one-of rules, signed-space encoding, metadata "
-        "ordering, duplicate handling, and sensitive KMS forwarding are not "
-        "enforced",
-        "the operation uses v4-unsigned-body and an unsigned payload and has "
-        "no modeled output, operation error shapes, or request checksum "
-        "trait; no success, failure, malformed-response, or token-admission "
-        "decoder is implemented",
-        "a later GetObject result can reflect concurrent or already-matching "
-        "state and cannot prove that this callback delivered the body or "
-        "headers",
+        "Object Lock, version, and content headers remain generated-model "
+        "inventory only; mutual exclusions, status lists, error-code syntax, "
+        "checksum one-of rules, signed-space encoding, metadata ordering, "
+        "duplicate handling, and sensitive KMS forwarding are not "
+        "implemented",
+        "the route never calls the storage backend and backend coverage "
+        "remains missing; successful Object Lambda callback coordination "
+        "requires a separate token authority and pending-request stream "
+        "handoff rather than a bucket or object storage capability",
+        "the operation has no modeled output, operation error shapes, or "
+        "request checksum trait; the local negative capability emits only "
+        "authenticated InvalidRequest or NotImplemented errors and never a "
+        "2xx callback result",
+        "directory-bucket, access-point, Object Lambda endpoint discovery, "
+        "external-provider interoperability, and successful callback "
+        "behavior are not qualified",
     ]
     model_only_verifier_commands = [
         ["uv", "run", "--python", "3.13", "--",
@@ -5176,7 +5187,7 @@ def main() -> None:
         assert entry.get("qualification") == "write_get_object_response"
         assert entry.get("family") == "streaming_mutation"
         assert entry.get("codec") == (
-            "generated_model_only_unsigned_stream_and_forwarded_headers"
+            "private_strict_object_lambda_callback_negative_capability"
         )
         assert entry.get("certainty") == write_get_object_response_certainty
         assert entry.get("reconciliation") == (
@@ -5187,11 +5198,11 @@ def main() -> None:
         assert entry.get("ada_symbols") is None
         assert entry["coverage"] == {
             "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
             "backend": "absent", "client": "generated",
-            "server": "absent", "tests": "handwritten",
+            "server": "handwritten", "tests": "handwritten",
         }
         assert entry["evidence"] == {
             "backend": [],
@@ -5199,14 +5210,26 @@ def main() -> None:
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-write-get-object-response-model.py",
             ],
-            "server": [],
+            "server": [
+                "src/flyology-object_storage-server-s3_applications.ads",
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
             "corpus": [
                 "tests/scripts/verify-write-get-object-response-model.py",
+                "tools/verify-write-get-object-response-preparation.py",
+                "docs/qualification/write-get-object-response.md",
+                "tests/src/s3_server_application_corpus.adb",
             ],
         }
         assert candidate.qualification["write_get_object_response"] == [
             ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-write-get-object-response-preparation.py"],
+            ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-write-get-object-response-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/test-s3-operation-registry.py"],
+            ["./tests/scripts/test.sh"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -5250,7 +5273,7 @@ def main() -> None:
     signed_write_response = copy.deepcopy(registry)
     signed_write_response.operations[
         "WriteGetObjectResponse"
-    ]["exclusions"][5] += "; the payload is signed and checksummed"
+    ]["exclusions"][1] += "; the payload is signed and checksummed"
     reject_write_get_object_response_registry(
         signed_write_response, "invented signed payload"
     )
@@ -5264,7 +5287,7 @@ def main() -> None:
     owned_write_response = copy.deepcopy(registry)
     owned_write_response.operations[
         "WriteGetObjectResponse"
-    ]["exclusions"][3] += "; the body is bounded, rewindable, and retained"
+    ]["exclusions"][2] += "; the body is rewindable and retained"
     reject_write_get_object_response_registry(
         owned_write_response, "invented body ownership"
     )
@@ -5299,7 +5322,7 @@ def main() -> None:
     decoded_write_response = copy.deepcopy(registry)
     decoded_write_response.operations[
         "WriteGetObjectResponse"
-    ]["exclusions"][5] += "; completion and failures are decoded"
+    ]["exclusions"][6] += "; completion and failures are decoded"
     reject_write_get_object_response_registry(
         decoded_write_response, "invented response decoder"
     )
@@ -5316,6 +5339,69 @@ def main() -> None:
     ]["evidence"]["client"] = []
     reject_write_get_object_response_registry(
         missing_write_response_model, "missing model evidence"
+    )
+    invented_write_response_backend = copy.deepcopy(registry)
+    invented_write_response_backend.operations[
+        "WriteGetObjectResponse"
+    ]["coverage"]["backend"] = "covered"
+    reject_write_get_object_response_registry(
+        invented_write_response_backend, "invented backend coverage"
+    )
+    missing_write_response_server = copy.deepcopy(registry)
+    missing_write_response_server.operations[
+        "WriteGetObjectResponse"
+    ]["coverage"]["server"] = "missing"
+    reject_write_get_object_response_registry(
+        missing_write_response_server, "missing server coverage"
+    )
+    absent_write_response_server = copy.deepcopy(registry)
+    absent_write_response_server.operations[
+        "WriteGetObjectResponse"
+    ]["provenance"]["server"] = "absent"
+    reject_write_get_object_response_registry(
+        absent_write_response_server, "missing server provenance"
+    )
+    missing_write_response_evidence = copy.deepcopy(registry)
+    missing_write_response_evidence.operations[
+        "WriteGetObjectResponse"
+    ]["evidence"]["server"] = []
+    reject_write_get_object_response_registry(
+        missing_write_response_evidence, "missing server evidence"
+    )
+    mutating_write_response = copy.deepcopy(registry)
+    mutating_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][5] += "; the route calls the storage backend"
+    reject_write_get_object_response_registry(
+        mutating_write_response, "invented backend call"
+    )
+    successful_write_response = copy.deepcopy(registry)
+    successful_write_response.operations[
+        "WriteGetObjectResponse"
+    ]["exclusions"][6] += "; accepted callbacks return 200"
+    reject_write_get_object_response_registry(
+        successful_write_response, "invented callback success"
+    )
+    missing_write_response_verifier = copy.deepcopy(registry)
+    missing_write_response_verifier.qualification[
+        "write_get_object_response"
+    ].pop(0)
+    reject_write_get_object_response_registry(
+        missing_write_response_verifier, "missing preparation verifier"
+    )
+    missing_write_response_oracle = copy.deepcopy(registry)
+    missing_write_response_oracle.qualification[
+        "write_get_object_response"
+    ].pop(2)
+    reject_write_get_object_response_registry(
+        missing_write_response_oracle, "missing registry oracle"
+    )
+    missing_write_response_root = copy.deepcopy(registry)
+    missing_write_response_root.qualification[
+        "write_get_object_response"
+    ].pop(3)
+    reject_write_get_object_response_registry(
+        missing_write_response_root, "missing maintained root test"
     )
     documented_write_response = copy.deepcopy(registry)
     documented_write_response.qualification[

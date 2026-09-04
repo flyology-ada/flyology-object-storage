@@ -2063,7 +2063,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
          Put_Object, Copy_Object, Rename_Object, Select_Object_Content,
-         Update_Object_Encryption,
+         Update_Object_Encryption, Write_Get_Object_Response,
          Get_Object,
          Get_Object_Torrent,
          Head_Object, Delete_Object,
@@ -2530,6 +2530,20 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
+      Write_Get_Object_Response_Target : constant String :=
+        "/WriteGetObjectResponse";
+      Looks_Like_Write_Get_Object_Response : constant Boolean :=
+        Target_Text'Length >= Write_Get_Object_Response_Target'Length
+        and then Target_Text
+          (Target_Text'First ..
+             Target_Text'First +
+               Write_Get_Object_Response_Target'Length - 1) =
+            Write_Get_Object_Response_Target
+        and then
+          (Target_Text'Length = Write_Get_Object_Response_Target'Length
+           or else Target_Text
+             (Target_Text'First +
+                Write_Get_Object_Response_Target'Length) = '?');
       Parsed      : constant Requests.Target_Result :=
         Requests.Parse_Target (Target_Text);
       Query_Text  : constant String :=
@@ -5548,7 +5562,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end case;
       end Handle_Metadata_Request;
    begin
-      if Parsed.Status /= Requests.Target_Parsed then
+      if Parsed.Status /= Requests.Target_Parsed
+        and then not Looks_Like_Write_Get_Object_Response
+      then
          Send_Error
            (X, 400, "InvalidURI", "Could not parse the specified URI",
             Target_Text);
@@ -5636,7 +5652,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       end if;
 
-      if Parsed.Kind = Requests.Service_Target then
+      if Looks_Like_Write_Get_Object_Response then
+         Operation := Write_Get_Object_Response;
+      elsif Parsed.Kind = Requests.Service_Target then
          Operation :=
            (if Method /= "GET" then Unsupported
             elsif Directory_Bucket_List_Request.Recognized then
@@ -6197,7 +6215,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       Apps.Configure_Route
          (X, "s3", Target_Text,
-         (if Operation in Create_Bucket | Put_Bucket_Tagging |
+         (if Operation = Write_Get_Object_Response
+          then Apps.Discard_Request_Body
+          elsif Operation in Create_Bucket | Put_Bucket_Tagging |
          Put_Bucket_ABAC | Put_Bucket_Acceleration |
          Put_Bucket_Request_Payment | Put_Public_Access_Block |
          Put_Bucket_CORS | Put_Bucket_Encryption |
@@ -6230,6 +6250,66 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       end if;
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
+
+      if Operation = Write_Get_Object_Response then
+         declare
+            Route_Count : constant Natural :=
+              Apps.Request_Header_Count (X, "x-amz-request-route");
+            Token_Count : constant Natural :=
+              Apps.Request_Header_Count (X, "x-amz-request-token");
+            Host_Count : constant Natural :=
+              Apps.Request_Header_Count (X, "host");
+            Route : constant String :=
+              Apps.Request_Header (X, "x-amz-request-route");
+            Token : constant String :=
+              Apps.Request_Header (X, "x-amz-request-token");
+            Host : constant String := Apps.Request_Header (X, "host");
+            Host_Matches_Route : constant Boolean :=
+              Route'Length > 0
+              and then Host'Length > Route'Length
+              and then Host (Host'First .. Host'First + Route'Length) =
+                Route & ".";
+         begin
+            if Method /= "POST"
+              or else Target_Text /= Write_Get_Object_Response_Target
+            then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "The WriteGetObjectResponse target is invalid",
+                  Target_Text);
+               return;
+            elsif Apps.Request_Scheme (X) /= Flyology.HTTP.Secure_HTTPS
+              or else US.To_String (Auth.Payload_Hash) /=
+                S3.SigV4.Unsigned_Payload
+            then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "WriteGetObjectResponse requires HTTPS with " &
+                  "UNSIGNED-PAYLOAD", Target_Text);
+               return;
+            elsif Route_Count /= 1 or else Token_Count /= 1
+              or else Host_Count /= 1 or else Route'Length = 0
+              or else Token'Length = 0 or else not Valid_Header_Text (Route)
+              or else not Valid_Header_Text (Token)
+              or else not Host_Matches_Route
+            then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "The WriteGetObjectResponse route or token is invalid",
+                  Target_Text);
+               return;
+            end if;
+            Apps.Apply_Body_Policy (X, Accepted);
+            if not Accepted then
+               return;
+            end if;
+            Send_Error
+              (X, 501, "NotImplemented",
+               "Object Lambda response callbacks are not implemented",
+               Target_Text);
+            return;
+         end;
+      end if;
 
       if Operation = Put_Multipart_Part and then Has_Encryption_Header then
          declare
@@ -6469,6 +6549,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Key    : constant String := Requests.Object_Key (Target_Text, Parsed);
       begin
          case Operation is
+            when Write_Get_Object_Response =>
+               Send_Error
+                 (X, 501, "NotImplemented",
+                  "Object Lambda response callbacks are not implemented",
+                  Target_Text);
+
             when Unsupported_ACL =>
                Send_Error
                  (X, 501, "NotImplemented",

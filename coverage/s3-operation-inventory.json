@@ -5540,7 +5540,7 @@
         "backend": "missing",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
         "backend": [],
@@ -5549,9 +5549,16 @@
           "tests/scripts/verify-write-get-object-response-model.py"
         ],
         "corpus": [
-          "tests/scripts/verify-write-get-object-response-model.py"
+          "tests/scripts/verify-write-get-object-response-model.py",
+          "tools/verify-write-get-object-response-preparation.py",
+          "docs/qualification/write-get-object-response.md",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.ads",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "streaming_mutation",
       "generator_eligible": false,
@@ -5560,7 +5567,7 @@
       "provenance": {
         "backend": "absent",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"

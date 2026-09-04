@@ -772,7 +772,8 @@ procedure S3_Server_Application_Corpus is
       Hash_Override : String := "";
       Chunked       : Boolean := False;
       Expect        : Boolean := False;
-      Corrupt_Signature : Boolean := False) return String
+      Corrupt_Signature : Boolean := False;
+      Host_Value    : String := Host) return String
    is
       Payload_Hash : constant String :=
         (if Hash_Override'Length > 0 then Hash_Override
@@ -810,7 +811,7 @@ procedure S3_Server_Application_Corpus is
            (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
            Payload & CRLF & "0" & CRLF & CRLF);
    begin
-      Headers (1) := SigV4.Pair ("host", Host);
+      Headers (1) := SigV4.Pair ("host", Host_Value);
       Headers (2) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
       Headers (3) := SigV4.Pair ("x-amz-date", Timestamp);
       if Extra_Count > 0 then
@@ -854,7 +855,7 @@ procedure S3_Server_Application_Corpus is
            (if Query_Name'Length = 0 then ""
             else "?" & Query_Name & "=" & Query_Value) &
            " HTTP/1.1" & CRLF &
-           "Host: " & Host & CRLF &
+           "Host: " & Host_Value & CRLF &
            "x-amz-date: " & Timestamp & CRLF &
            "x-amz-content-sha256: " & Payload_Hash & CRLF &
            "Authorization: " & Authorization & CRLF & Extra_Headers &
@@ -11635,6 +11636,150 @@ begin
                  ("HEAD", "/test-bucket/renamed-object", "")),
             "404 Not Found"),
          "rejected RenameObject created its destination");
+   end;
+
+   declare
+      Route : constant String := "route-id";
+      Token : constant String := "token-id";
+      Route_Host : constant String := Route & ".example.com";
+      Required_Headers : constant String :=
+        "x-amz-request-route: " & Route & CRLF &
+        "x-amz-request-token: " & Token & CRLF;
+
+      function Write_Response
+        (Payload       : String := "";
+         Extra         : String := Required_Headers;
+         Method        : String := "POST";
+         Target        : String := "/WriteGetObjectResponse";
+         Host_Value    : String := Route_Host;
+         Payload_Hash  : String := SigV4.Unsigned_Payload;
+         Query_Name    : String := "";
+         Query_Value   : String := "";
+         Scheme        : Flyology.HTTP.Origin_Scheme :=
+           Flyology.HTTP.Secure_HTTPS;
+         Receive_Max   : Natural := Natural'Last;
+         Corrupt       : Boolean := False) return String is
+        (Run
+           (Signed_Request
+              (Method, Target, Payload, Extra,
+               Query_Name => Query_Name, Query_Value => Query_Value,
+               Hash_Override => Payload_Hash,
+               Corrupt_Signature => Corrupt,
+               Host_Value => Host_Value),
+            Receive_Max => Receive_Max, Scheme => Scheme));
+
+      function Unavailable (Value : String) return Boolean is
+        (Has (Value, "501 Not Implemented")
+         and then Has (Value, "<Code>NotImplemented</Code>")
+         and then not Has (Value, "200 OK")
+         and then not Has (Value, Token));
+
+      function Unsafe_Token_Rejected return Boolean is
+         Marker  : constant String :=
+           "x-amz-request-token: " & Token;
+         Request : String := Signed_Request
+           ("POST", "/WriteGetObjectResponse", "",
+            Required_Headers, Hash_Override => SigV4.Unsigned_Payload,
+            Host_Value => Route_Host);
+         Position : constant Natural := Ada.Strings.Fixed.Index
+           (Request, Marker);
+      begin
+         if Position = 0 then
+            raise Program_Error with
+              "WriteGetObjectResponse token header is absent";
+         end if;
+         Request (Position + Marker'Length - 1) := Character'Val (127);
+         return Has
+           (Run (Request, Scheme => Flyology.HTTP.Secure_HTTPS),
+            "400 Bad Request");
+      exception
+         when Flyology.HTTP.Protocol_Error =>
+            return True;
+      end Unsafe_Token_Rejected;
+   begin
+      Require
+        (Unavailable (Write_Response),
+         "WriteGetObjectResponse did not reject callback admission");
+      Require
+        (Unavailable
+           (Write_Response (Payload => "streamed callback bytes",
+                            Receive_Max => 1)),
+         "WriteGetObjectResponse did not drain its rejected body");
+      Require
+        (Has
+           (Write_Response
+              (Extra => "x-amz-request-token: " & Token & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a missing route");
+      Require
+        (Has
+           (Write_Response
+              (Extra => "x-amz-request-route: " & Route & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a missing token");
+      Require
+        (Has
+           (Write_Response
+              (Extra => Required_Headers &
+                 "x-amz-request-route: " & Route & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a duplicate route");
+      Require
+        (Has
+           (Write_Response
+              (Extra => Required_Headers &
+                 "x-amz-request-token: " & Token & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a duplicate token");
+      Require
+        (Has
+           (Write_Response
+              (Extra => "x-amz-request-route: " & CRLF &
+                 "x-amz-request-token: " & Token & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted an empty route");
+      Require
+        (Unsafe_Token_Rejected,
+         "WriteGetObjectResponse accepted an unsafe token");
+      Require
+        (Has
+           (Write_Response (Host_Value => "other.example.com"),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a route and Host mismatch");
+      Require
+        (Has
+           (Write_Response (Query_Name => "unexpected", Query_Value => "1"),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a query");
+      Require
+        (Has
+           (Write_Response (Scheme => Flyology.HTTP.Plain_HTTP),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted UNSIGNED-PAYLOAD over HTTP");
+      Require
+        (Has
+           (Write_Response (Payload_Hash => SigV4.SHA256_Hex ("")),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted a signed payload hash");
+      Require
+        (Has
+           (Write_Response
+              (Extra => "x-amz-request-token: " & Token & CRLF,
+               Corrupt => True),
+            "<Code>SignatureDoesNotMatch</Code>"),
+         "WriteGetObjectResponse validated controls before authentication");
+      Require
+        (Unavailable
+           (Write_Response
+              (Extra => Required_Headers &
+                 "x-amz-fwd-status: 206" & CRLF &
+                 "x-amz-fwd-header-content-type: text/plain" & CRLF)),
+         "WriteGetObjectResponse interpreted forwarded response fields");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/object", "")),
+            "200 OK"),
+         "WriteGetObjectResponse routing changed ordinary S3 requests");
    end;
 
    declare

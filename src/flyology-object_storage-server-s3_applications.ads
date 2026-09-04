@@ -45,6 +45,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  validated negative-capability RenameObject routing,
    --  validated negative-capability SelectObjectContent routing,
    --  validated negative-capability UpdateObjectEncryption routing,
+   --  validated negative-capability WriteGetObjectResponse routing,
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,
