@@ -107,7 +107,7 @@ PutObjectTagging	core	covered	covered	covered	covered
 PutPublicAccessBlock	extended	covered	covered	covered	covered
 RenameObject	extended	covered	partial	covered	covered
 RestoreObject	extended	covered	partial	covered	covered
-SelectObjectContent	extended	missing	partial	missing	covered
+SelectObjectContent	extended	covered	partial	covered	covered
 UpdateBucketMetadataAnnotationTableConfiguration	extended	covered	covered	covered	covered
 UpdateBucketMetadataInventoryTableConfiguration	extended	covered	covered	covered	covered
 UpdateBucketMetadataJournalTableConfiguration	extended	covered	covered	covered	covered

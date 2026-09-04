@@ -43,6 +43,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  Create/GetBucketLocation/Put/GetBucketVersioning/Head/DeleteBucket,
    --  validated negative-capability CreateSession routing,
    --  validated negative-capability RenameObject routing,
+   --  validated negative-capability SelectObjectContent routing,
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,

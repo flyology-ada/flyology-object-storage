@@ -5202,30 +5202,41 @@
     },
     "SelectObjectContent": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
-        "server": "missing"
+        "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-backends.ads",
+          "tests/src/object_storage_test_cases.adb",
+          "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-select-object-content-model.py"
         ],
         "corpus": [
-          "tests/scripts/verify-select-object-content-model.py"
+          "tests/scripts/verify-select-object-content-model.py",
+          "tools/verify-select-object-content-preparation.py",
+          "docs/qualification/select-object-content.md",
+          "tests/src/s3_server_application_corpus.adb"
         ],
-        "server": []
+        "server": [
+          "src/flyology-object_storage-server-s3_applications.ads",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ]
       },
       "family": "event_stream_read",
       "generator_eligible": false,
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "shared_family",
         "client": "generated",
-        "server": "absent",
+        "server": "handwritten",
         "tests": "handwritten"
       },
       "provider": "objects"

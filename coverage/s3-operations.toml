@@ -673,7 +673,10 @@ restore_object = [
   ["git", "diff", "--check"],
 ]
 select_object_content = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-select-object-content-preparation.py"],
   ["uv", "run", "--python", "3.13", "--", "tests/scripts/verify-select-object-content-model.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/test-s3-operation-registry.py"],
+  ["./tests/scripts/test.sh"],
   ["./tools/verify-coverage.sh"],
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
@@ -5218,20 +5221,21 @@ provider = "objects"
 family = "event_stream_read"
 public_provider = "Flyology.Object_Storage.Client.Objects"
 public_name = "Not_Exposed"
-codec = "generated_model_only_select_xml_and_event_stream"
+codec = "private_strict_select_xml_negative_capability"
 absence = "not_applicable"
 errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
-certainty = "read model coverage only; no public Select request serializer, accepted query, event-stream decoder, complete End event, result sink, resume path, or runtime evidence exists, so this review exposes no selected records and claims no automatic replay"
-reconciliation = "a partial or interrupted event stream is not an implemented resumable observation; a fresh request would start a new query against potentially changed current-object data and cannot continue, prove, or upgrade the earlier result"
-exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects SelectObjectContent API, composable operation, synchronous wrapper, Finish path, or GNATdoc qualification is claimed", "the modeled SQL, CSV/JSON/Parquet serializers, progress and scan range, SSE-C headers, expected owner, and XML request are inventory only; no request serialization, cross-field validation, SSE-C key or MD5 binding, HTTPS enforcement, range validation, or default is implemented", "the Records, Stats, Progress, Cont, and End variants are structural inventory only; no event-stream prelude, header, message CRC, unknown-event, error-frame, truncation, End-required completion, or split-record reconstruction policy is implemented", "no caller-owned sink, backpressure, per-frame or aggregate bound, cancellation drain, typed Finish, owner retention, same-object restart, or task-lifetime behavior is claimed", "the operation models no error shapes; documentation-only special errors, modeled default HTTP 200, in-stream errors, success completion, and malformed response behavior are not decoded or qualified", "S3 Select is documented as unavailable to new customers; exposure policy, directory-bucket and Outposts exclusions, access-point routing, and external-provider behavior are not implemented or qualified", "the request models no VersionId; this review claims no selected-version binding, stable snapshot, continuation, or causal relationship across a later reissued query"]
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "handwritten" }
+certainty = "the authenticated local server validates one exact bounded SelectObjectContent request, consults only shared Head_Bucket and Head_Object observation, returns NoSuchBucket or NoSuchKey for absence and NotImplemented for an existing object, and never executes a query, emits an event, or reports success; no automatic replay is authorized"
+reconciliation = "Head_Object identifies only the current object whose unsupported query was rejected; no selected records or snapshot exist, and a later request is an independent observation that cannot resume, continue, prove, or upgrade the earlier result"
+exclusions = ["Not_Exposed is a registry sentinel and not an Ada declaration; no Low_Level or Objects SelectObjectContent API, composable operation, synchronous wrapper, Finish path, result sink, response decoder, or public client GNATdoc qualification is claimed", "the private server accepts only an authenticated exact POST object query with select and select-type=2, a nonempty bounded entity-safe well-formed SelectObjectContentRequest root in the pinned namespace, a singleton matching expected owner, and a complete syntactically valid HTTPS SSE-C header group when supplied; the body bound is derived from the maintained XML limits and is not a new public or operation-specific policy", "root and transport validation do not validate or default Expression, SQL, CSV/JSON/Parquet input, compression, output serialization, progress, ScanRange, or their cross-field relationships; no request serializer, query engine, object-body read, or SSE-C decryption and object-encryption binding is implemented", "the Records, Stats, Progress, Cont, and End variants remain structural inventory only; the server never returns modeled 200 success, event-stream prelude, headers, message CRC, records, error frame, completion End, or split-record reconstruction", "the maintained backend route calls only Head_Bucket and Head_Object; a missing bucket returns NoSuchBucket, a missing object returns NoSuchKey, and an existing object returns NotImplemented without reading object bytes, exposing records, or mutating state", "no caller-owned sink, backpressure, per-frame or aggregate result bound, cancellation drain, typed Finish, owner retention, same-object restart, resume token, or task-lifetime behavior is claimed", "S3 Select availability, directory-bucket and Outposts behavior, access-point routing, and external-provider interoperability are not implemented or qualified", "the request models no VersionId; the current-object existence check is not a stable snapshot, selected-version binding, continuation, causal result, or authority for automatic replay"]
+evidence_tokens = ["Head_Bucket", "Head_Object"]
+coverage = { backend = "covered", client = "partial", server = "covered", corpus = "covered" }
+provenance = { backend = "shared_family", client = "generated", server = "handwritten", tests = "handwritten" }
 implementation_mode = "generated"
 generator_eligible = false
 human_decisions_resolved = true
 decision_status = "reviewed"
 qualification = "select_object_content"
-evidence = { backend = [], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-select-object-content-model.py"], server = [], corpus = ["tests/scripts/verify-select-object-content-model.py"] }
+evidence = { backend = ["src/flyology-object_storage-backends.ads", "tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["src/flyology-object_storage-s3-model.adb", "tests/scripts/verify-select-object-content-model.py"], server = ["src/flyology-object_storage-server-s3_applications.ads", "src/flyology-object_storage-server-s3_applications.adb", "tests/src/s3_server_application_corpus.adb"], corpus = ["tests/scripts/verify-select-object-content-model.py", "tools/verify-select-object-content-preparation.py", "docs/qualification/select-object-content.md", "tests/src/s3_server_application_corpus.adb"] }
 
 [[operation]]
 name = "UpdateBucketMetadataAnnotationTableConfiguration"

@@ -4558,15 +4558,17 @@ def main() -> None:
     assert planned_commands == planned_list_directory_lane
 
     select_object_content_certainty = (
-        "read model coverage only; no public Select request serializer, "
-        "accepted query, event-stream decoder, complete End event, result "
-        "sink, resume path, or runtime evidence exists, so this review "
-        "exposes no selected records and claims no automatic replay"
+        "the authenticated local server validates one exact bounded "
+        "SelectObjectContent request, consults only shared Head_Bucket and "
+        "Head_Object observation, returns NoSuchBucket or NoSuchKey for "
+        "absence and NotImplemented for an existing object, and never "
+        "executes a query, emits an event, or reports success; no automatic "
+        "replay is authorized"
     )
     select_object_content_reconciliation = (
-        "a partial or interrupted event stream is not an implemented "
-        "resumable observation; a fresh request would start a new query "
-        "against potentially changed current-object data and cannot "
+        "Head_Object identifies only the current object whose unsupported "
+        "query was rejected; no selected records or snapshot exist, and a "
+        "later request is an independent observation that cannot resume, "
         "continue, prove, or upgrade the earlier result"
     )
     select_object_content_errors = [
@@ -4576,31 +4578,38 @@ def main() -> None:
     select_object_content_exclusions = [
         "Not_Exposed is a registry sentinel and not an Ada declaration; no "
         "Low_Level or Objects SelectObjectContent API, composable operation, "
-        "synchronous wrapper, Finish path, or GNATdoc qualification is "
+        "synchronous wrapper, Finish path, result sink, response decoder, or "
+        "public client GNATdoc qualification is claimed",
+        "the private server accepts only an authenticated exact POST object "
+        "query with select and select-type=2, a nonempty bounded entity-safe "
+        "well-formed SelectObjectContentRequest root in the pinned namespace, "
+        "a singleton matching expected owner, and a complete syntactically "
+        "valid HTTPS SSE-C header group when supplied; the body bound is "
+        "derived from the maintained XML limits and is not a new public or "
+        "operation-specific policy",
+        "root and transport validation do not validate or default Expression, "
+        "SQL, CSV/JSON/Parquet input, compression, output serialization, "
+        "progress, ScanRange, or their cross-field relationships; no request "
+        "serializer, query engine, object-body read, or SSE-C decryption and "
+        "object-encryption binding is implemented",
+        "the Records, Stats, Progress, Cont, and End variants remain "
+        "structural inventory only; the server never returns modeled 200 "
+        "success, event-stream prelude, headers, message CRC, records, error "
+        "frame, completion End, or split-record reconstruction",
+        "the maintained backend route calls only Head_Bucket and Head_Object; "
+        "a missing bucket returns NoSuchBucket, a missing object returns "
+        "NoSuchKey, and an existing object returns NotImplemented without "
+        "reading object bytes, exposing records, or mutating state",
+        "no caller-owned sink, backpressure, per-frame or aggregate result "
+        "bound, cancellation drain, typed Finish, owner retention, "
+        "same-object restart, resume token, or task-lifetime behavior is "
         "claimed",
-        "the modeled SQL, CSV/JSON/Parquet serializers, progress and scan "
-        "range, SSE-C headers, expected owner, and XML request are inventory "
-        "only; no request serialization, cross-field validation, SSE-C key "
-        "or MD5 binding, HTTPS enforcement, range validation, or default is "
-        "implemented",
-        "the Records, Stats, Progress, Cont, and End variants are structural "
-        "inventory only; no event-stream prelude, header, message CRC, "
-        "unknown-event, error-frame, truncation, End-required completion, or "
-        "split-record reconstruction policy is implemented",
-        "no caller-owned sink, backpressure, per-frame or aggregate bound, "
-        "cancellation drain, typed Finish, owner retention, same-object "
-        "restart, or task-lifetime behavior is claimed",
-        "the operation models no error shapes; documentation-only special "
-        "errors, modeled default HTTP 200, in-stream errors, success "
-        "completion, and malformed response behavior are not decoded or "
-        "qualified",
-        "S3 Select is documented as unavailable to new customers; exposure "
-        "policy, directory-bucket and Outposts exclusions, access-point "
-        "routing, and external-provider behavior are not implemented or "
-        "qualified",
-        "the request models no VersionId; this review claims no "
-        "selected-version binding, stable snapshot, continuation, or causal "
-        "relationship across a later reissued query",
+        "S3 Select availability, directory-bucket and Outposts behavior, "
+        "access-point routing, and external-provider interoperability are "
+        "not implemented or qualified",
+        "the request models no VersionId; the current-object existence check "
+        "is not a stable snapshot, selected-version binding, continuation, "
+        "causal result, or authority for automatic replay",
     ]
 
     def assert_select_object_content_registry(candidate):
@@ -4611,7 +4620,7 @@ def main() -> None:
         assert entry.get("qualification") == "select_object_content"
         assert entry.get("family") == "event_stream_read"
         assert entry.get("codec") == (
-            "generated_model_only_select_xml_and_event_stream"
+            "private_strict_select_xml_negative_capability"
         )
         assert entry.get("certainty") == select_object_content_certainty
         assert entry.get("reconciliation") == (
@@ -4620,26 +4629,48 @@ def main() -> None:
         assert entry.get("errors") == select_object_content_errors
         assert entry.get("exclusions") == select_object_content_exclusions
         assert entry.get("ada_symbols") is None
+        assert entry.get("evidence_tokens") == [
+            "Head_Bucket", "Head_Object",
+        ]
         assert entry["coverage"] == {
-            "backend": "missing", "client": "partial",
-            "server": "missing", "corpus": "covered",
+            "backend": "covered", "client": "partial",
+            "server": "covered", "corpus": "covered",
         }
         assert entry["provenance"] == {
-            "backend": "absent", "client": "generated",
-            "server": "absent", "tests": "handwritten",
+            "backend": "shared_family", "client": "generated",
+            "server": "handwritten", "tests": "handwritten",
         }
         assert entry["evidence"] == {
-            "backend": [],
+            "backend": [
+                "src/flyology-object_storage-backends.ads",
+                "tests/src/object_storage_test_cases.adb",
+                "sqlite/tests/src/"
+                "flyology_object_storage_sqlite_tests.adb",
+            ],
             "client": [
                 "src/flyology-object_storage-s3-model.adb",
                 "tests/scripts/verify-select-object-content-model.py",
             ],
-            "server": [],
-            "corpus": ["tests/scripts/verify-select-object-content-model.py"],
+            "server": [
+                "src/flyology-object_storage-server-s3_applications.ads",
+                "src/flyology-object_storage-server-s3_applications.adb",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
+            "corpus": [
+                "tests/scripts/verify-select-object-content-model.py",
+                "tools/verify-select-object-content-preparation.py",
+                "docs/qualification/select-object-content.md",
+                "tests/src/s3_server_application_corpus.adb",
+            ],
         }
         assert candidate.qualification["select_object_content"] == [
             ["uv", "run", "--python", "3.13", "--",
+             "tools/verify-select-object-content-preparation.py"],
+            ["uv", "run", "--python", "3.13", "--",
              "tests/scripts/verify-select-object-content-model.py"],
+            ["uv", "run", "--python", "3.13", "--",
+             "tools/test-s3-operation-registry.py"],
+            ["./tests/scripts/test.sh"],
             ["./tools/verify-coverage.sh"],
             ["./tools/ci/check-repository.sh", "{model}"],
             ["git", "diff", "--check"],
@@ -4667,6 +4698,20 @@ def main() -> None:
     reject_select_object_content_registry(
         full_select_client, "invented complete client coverage"
     )
+    missing_select_backend = copy.deepcopy(registry)
+    missing_select_backend.operations[
+        "SelectObjectContent"
+    ]["coverage"]["backend"] = "missing"
+    reject_select_object_content_registry(
+        missing_select_backend, "missing shared backend coverage"
+    )
+    missing_select_server = copy.deepcopy(registry)
+    missing_select_server.operations[
+        "SelectObjectContent"
+    ]["coverage"]["server"] = "missing"
+    reject_select_object_content_registry(
+        missing_select_server, "missing negative server coverage"
+    )
     nonstreaming_select = copy.deepcopy(registry)
     nonstreaming_select.operations[
         "SelectObjectContent"
@@ -4691,28 +4736,28 @@ def main() -> None:
     ranged_select = copy.deepcopy(registry)
     ranged_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][1] += "; the client enforces ScanRange defaults"
+    ]["exclusions"][2] += "; the client enforces ScanRange defaults"
     reject_select_object_content_registry(
         ranged_select, "invented scan-range policy"
     )
     decoded_select = copy.deepcopy(registry)
     decoded_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][2] += "; the client validates every frame and CRC"
+    ]["exclusions"][3] += "; the client validates every frame and CRC"
     reject_select_object_content_registry(
         decoded_select, "invented event decoder"
     )
     aggregated_select = copy.deepcopy(registry)
     aggregated_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][3] += "; the client reconstructs bounded records"
+    ]["exclusions"][5] += "; the client reconstructs bounded records"
     reject_select_object_content_registry(
         aggregated_select, "invented sink and record aggregation"
     )
     successful_select = copy.deepcopy(registry)
     successful_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][4] += "; End proves a successful query"
+    ]["exclusions"][3] += "; End proves a successful query"
     reject_select_object_content_registry(
         successful_select, "invented success decoder"
     )
@@ -4726,21 +4771,21 @@ def main() -> None:
     versioned_select = copy.deepcopy(registry)
     versioned_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][6] += "; the query binds an exact VersionId"
+    ]["exclusions"][7] += "; the query binds an exact VersionId"
     reject_select_object_content_registry(
         versioned_select, "invented version binding"
     )
     available_select = copy.deepcopy(registry)
     available_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][5] += "; Select is supported for every caller"
+    ]["exclusions"][6] += "; Select is supported for every caller"
     reject_select_object_content_registry(
         available_select, "invented service availability"
     )
     routed_select = copy.deepcopy(registry)
     routed_select.operations[
         "SelectObjectContent"
-    ]["exclusions"][5] += "; directory, Outposts, and access points work"
+    ]["exclusions"][6] += "; directory, Outposts, and access points work"
     reject_select_object_content_registry(
         routed_select, "invented endpoint support"
     )
@@ -4757,6 +4802,20 @@ def main() -> None:
     ]["evidence"]["client"] = []
     reject_select_object_content_registry(
         missing_select_model, "missing model evidence"
+    )
+    successful_select_route = copy.deepcopy(registry)
+    successful_select_route.operations[
+        "SelectObjectContent"
+    ]["certainty"] = "the local server returns selected records with 200"
+    reject_select_object_content_registry(
+        successful_select_route, "invented server success"
+    )
+    reading_select_route = copy.deepcopy(registry)
+    reading_select_route.operations[
+        "SelectObjectContent"
+    ]["exclusions"][4] += "; the route calls Get_Object"
+    reject_select_object_content_registry(
+        reading_select_route, "invented object-body read"
     )
     select_lane, select_commands = s3_operation.qualification_plan(
         registry, ["SelectObjectContent"]

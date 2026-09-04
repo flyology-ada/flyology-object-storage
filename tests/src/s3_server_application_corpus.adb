@@ -11639,6 +11639,310 @@ begin
 
    declare
       Document : constant String :=
+        "<SelectObjectContentRequest " &
+        "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<Expression>SELECT * FROM S3Object</Expression>" &
+        "<ExpressionType>SQL</ExpressionType>" &
+        "<InputSerialization><CSV/></InputSerialization>" &
+        "<OutputSerialization><CSV/></OutputSerialization>" &
+        "</SelectObjectContentRequest>";
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("select", ""),
+         SigV4.Pair ("select-type", "2"));
+
+      function Select_Content
+        (Target        : String := "/test-bucket/object";
+         Request_Query : SigV4.Name_Value_Array := Query;
+         Raw_Query     : String := "";
+         Payload       : String := Document;
+         Extra         : String := "";
+         Scheme        : Flyology.HTTP.Origin_Scheme :=
+           Flyology.HTTP.Plain_HTTP;
+         Corrupt       : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("POST", Target, Request_Query, Payload, Extra,
+               Raw_Query => Raw_Query,
+               Corrupt_Signature => Corrupt),
+            Scheme => Scheme));
+
+      function Unavailable (Value : String) return Boolean is
+        (Has (Value, "501 Not Implemented")
+         and then Has (Value, "<Code>NotImplemented</Code>")
+         and then not Has (Value, "200 OK"));
+
+      function Declared_Oversize return String is
+         Payload_Hash : constant String := SigV4.Empty_Payload_Hash;
+         Headers : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp));
+         Signing : constant SigV4.Signing_Result := SigV4.Sign
+           ("POST", "/test-bucket/object", Query, Headers, Payload_Hash,
+            Access_Key, Secret_Key, Region, Timestamp);
+      begin
+         return
+           "POST /test-bucket/object?select=&select-type=2 HTTP/1.1" &
+           CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp &
+           CRLF & "x-amz-content-sha256: " & Payload_Hash & CRLF &
+           "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+           "Content-Length: " &
+           Ada.Strings.Fixed.Trim
+             (Natural'Image
+                (XML.Default_Limits.Maximum_Document_Bytes + 1),
+              Ada.Strings.Both) & CRLF &
+           "Connection: close" & CRLF & CRLF;
+      end Declared_Oversize;
+   begin
+      Require
+        (Unavailable (Select_Content),
+         "SelectObjectContent did not reject unavailable event streaming");
+      Require
+        (Unavailable
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "2"),
+                  SigV4.Pair ("x-id", "SelectObjectContent")))),
+         "SelectObjectContent rejected its exact operation identifier");
+      Require
+        (Unavailable
+           (Select_Content (Raw_Query => "select&select-type=2")),
+         "SelectObjectContent rejected its bare query form");
+      Require
+        (Unavailable
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "2"),
+                  SigV4.Pair ("x-id", "SelectObjectContent")),
+               Raw_Query =>
+                 "x-id=SelectObjectContent&select=&select-type=2")),
+         "SelectObjectContent rejected its reverse operation identifier");
+      Require
+        (Has
+           (Select_Content
+              (Request_Query =>
+                 (1 => SigV4.Pair ("x-id", "SelectObjectContent")),
+               Raw_Query => "x-id=SelectObjectContent"),
+            "<Code>InvalidArgument</Code>"),
+         "SelectObjectContent accepted an operation identifier without " &
+         "its query controls");
+      Require
+        (Has
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "2")),
+               Raw_Query => "select=&select=&select-type=2"),
+            "<Code>InvalidArgument</Code>"),
+         "SelectObjectContent accepted a duplicate select control");
+      Require
+        (Has
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "1"))),
+            "<Code>InvalidArgument</Code>"),
+         "SelectObjectContent accepted the wrong select type");
+      Require
+        (Has
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "2"),
+                  SigV4.Pair ("unexpected", "value"))),
+            "<Code>InvalidArgument</Code>"),
+         "SelectObjectContent accepted an unknown query member");
+      Require
+        (Has
+           (Select_Content
+              (Request_Query =>
+                 (SigV4.Pair ("select", ""),
+                  SigV4.Pair ("select-type", "1")),
+               Corrupt => True),
+            "403 Forbidden"),
+         "SelectObjectContent query validation preceded authentication");
+      Require
+        (Has
+           (Select_Content
+              (Payload => "<WrongRoot/>", Corrupt => True),
+            "403 Forbidden"),
+         "SelectObjectContent body validation preceded authentication");
+      Require
+        (Has
+           (Select_Content
+              (Target => "/absent-bucket/object"),
+            "<Code>NoSuchBucket</Code>"),
+         "SelectObjectContent did not distinguish a missing bucket");
+      Require
+        (Has
+           (Select_Content
+              (Target => "/test-bucket/missing-select-object"),
+            "<Code>NoSuchKey</Code>"),
+         "SelectObjectContent did not distinguish a missing object");
+      Require
+        (Has
+           (Select_Content (Payload => ""),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted an empty body");
+      Require
+        (Has (Run (Declared_Oversize), "<Code>EntityTooLarge</Code>"),
+         "SelectObjectContent accepted an oversized document");
+      Require
+        (Has
+           (Select_Content (Payload => "<SelectObjectContentRequest>"),
+            "<Code>MalformedXML</Code>"),
+         "SelectObjectContent accepted malformed XML");
+      Require
+        (Has
+           (Select_Content
+              (Payload =>
+                 "<SelectObjectContentRequest></SelectObjectContentRequest>"),
+            "<Code>MalformedXML</Code>"),
+         "SelectObjectContent accepted an unnamespaced request root");
+      Require
+        (Has
+           (Select_Content
+              (Payload =>
+                 "<WrongRoot xmlns=""http://s3.amazonaws.com/doc/" &
+                 "2006-03-01/""/>"),
+            "<Code>MalformedXML</Code>"),
+         "SelectObjectContent accepted the wrong request root");
+      Require
+        (Unavailable
+           (Select_Content
+              (Extra =>
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF)),
+         "SelectObjectContent rejected its expected bucket owner");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-expected-bucket-owner: another-principal" & CRLF),
+            "403 Forbidden"),
+         "SelectObjectContent ignored an expected-owner mismatch");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF &
+                 "x-amz-expected-bucket-owner: test-principal" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted duplicate expected-owner headers");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: " &
+                 "AES256" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted an incomplete SSE-C group");
+      Require
+        (Has
+           (Select_Content
+              (Extra => "x-amz-server-side-encryption: AES256" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted an unmodeled encryption header");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: AES256" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 SSE_Test_Key_MD5 & CRLF &
+                 "x-amz-server-side-encryption: AES256" & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted valid SSE-C with an unmodeled " &
+         "encryption header");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: AES256" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 SSE_Test_Key_MD5 & CRLF &
+                 "x-amz-copy-source-server-side-encryption-customer-" &
+                 "algorithm: AES256" & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted valid SSE-C with a copy-source " &
+         "encryption header");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: bad" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 SSE_Test_Key_MD5 & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidArgument</Code>"),
+         "SelectObjectContent accepted an invalid SSE-C algorithm");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: AES256" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 SSE_Test_Key_MD5 & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted SSE-C over plaintext");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: AES256" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidDigest</Code>"),
+         "SelectObjectContent accepted an SSE-C key/digest mismatch");
+      Require
+        (Unavailable
+           (Select_Content
+              (Extra =>
+                 "x-amz-server-side-encryption-customer-algorithm: AES256" &
+                 CRLF &
+                 "x-amz-server-side-encryption-customer-key: " &
+                 SSE_Test_Key & CRLF &
+                 "x-amz-server-side-encryption-customer-key-md5: " &
+                 SSE_Test_Key_MD5 & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS)),
+         "SelectObjectContent rejected a valid SSE-C transport group");
+      Require
+        (Has
+           (Select_Content
+              (Extra =>
+                 "content-type: application/xml" & CRLF &
+                 "content-type: application/xml" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "SelectObjectContent accepted duplicate content-type headers");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/object", "")),
+            "200 OK"),
+         "rejected SelectObjectContent changed its source object");
+   end;
+
+   declare
+      Document : constant String :=
         "<RestoreRequest><Days>1</Days></RestoreRequest>";
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("restore", ""),

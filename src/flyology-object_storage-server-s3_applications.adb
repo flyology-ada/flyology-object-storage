@@ -189,6 +189,71 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    --  Derived from the shared entity-safe XML parser limits. RestoreObject
    --  only validates a bounded document before reporting maintained active
    --  storage; it does not introduce archival-state policy.
+   Maximum_Select_Object_Content_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared entity-safe XML parser limits. The private
+   --  SelectObjectContent route validates only a bounded request envelope
+   --  before reporting that event-stream selection is unavailable.
+
+   type Select_XML_Validator is new XML.Event_Handler with record
+      Depth       : Natural := 0;
+      Root_Seen   : Boolean := False;
+      Root_Closed : Boolean := False;
+   end record;
+   overriding procedure Start_Element
+     (Item : in out Select_XML_Validator; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Select_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Select_XML_Validator; Value : String) is null;
+   overriding procedure End_Element
+     (Item : in out Select_XML_Validator; Local_Name : String);
+
+   overriding procedure Start_Element
+     (Item : in out Select_XML_Validator; Local_Name : String) is
+   begin
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen
+           or else Local_Name /= "SelectObjectContentRequest"
+         then
+            raise XML.XML_Error with
+              "invalid SelectObjectContentRequest root";
+         end if;
+         Item.Root_Seen := True;
+      end if;
+   end Start_Element;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Select_XML_Validator;
+      Namespace_URI   : String;
+      Attribute_Count : Natural) is
+   begin
+      if not Item.Root_Seen
+        and then
+          (Attribute_Count /= 0
+           or else Namespace_URI /=
+             "http://s3.amazonaws.com/doc/2006-03-01/")
+      then
+         raise XML.XML_Error with
+           "invalid SelectObjectContentRequest namespace";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure End_Element
+     (Item : in out Select_XML_Validator; Local_Name : String) is
+   begin
+      if Item.Depth = 1 then
+         if Local_Name /= "SelectObjectContentRequest" then
+            raise XML.XML_Error with
+              "invalid SelectObjectContentRequest closure";
+         end if;
+         Item.Root_Closed := True;
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
 
    type Restore_XML_Field is
      (No_Restore_Field, Restore_Days_Field, Restore_Tier_Field,
@@ -1773,7 +1838,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration,
          Update_Bucket_Metadata_Annotation_Table_Configuration,
          Put_Object_Lock_Configuration, Get_Object_Lock_Configuration,
-         Put_Object, Copy_Object, Rename_Object, Get_Object,
+         Put_Object, Copy_Object, Rename_Object, Select_Object_Content,
+         Get_Object,
          Get_Object_Torrent,
          Head_Object, Delete_Object,
          Restore_Object,
@@ -2284,6 +2350,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            or else Query_Text = "renameObject="
            or else Query_Text = "renameObject=&x-id=RenameObject"
            or else Query_Text = "x-id=RenameObject&renameObject=");
+      Is_Select_Object_Content_Query : constant Boolean :=
+        Method = "POST"
+        and then
+          (Query_Text = "select&select-type=2"
+           or else Query_Text = "select=&select-type=2"
+           or else Query_Text =
+             "select&select-type=2&x-id=SelectObjectContent"
+           or else Query_Text =
+             "select=&select-type=2&x-id=SelectObjectContent"
+           or else Query_Text =
+             "x-id=SelectObjectContent&select&select-type=2"
+           or else Query_Text =
+             "x-id=SelectObjectContent&select=&select-type=2");
       Is_Get_Bucket_Location_Query : constant Boolean :=
         Query_Text = "location"
         or else Query_Text = "location="
@@ -2579,6 +2658,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&renameObject=") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=RenameObject&") /= 0;
+      Has_Select_Object_Content_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&select&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&select=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&select-type=") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=SelectObjectContent&") /= 0;
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&tagging=") /= 0;
@@ -3150,6 +3236,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Bucket_Versioning_Query_Invalid : Boolean := False;
       Create_Session_Query_Invalid : Boolean := False;
       Rename_Object_Query_Invalid : Boolean := False;
+      Select_Object_Content_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
@@ -5654,6 +5741,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Rename_Object_Query_Invalid :=
            Method = "PUT" and then Has_Rename_Object_Query
            and then not Is_Rename_Object_Query;
+         Select_Object_Content_Query_Invalid :=
+           Method = "POST" and then Has_Select_Object_Content_Query
+           and then not Is_Select_Object_Content_Query;
          ACL_Query_Invalid :=
            Method in "GET" | "PUT" and then Looks_Like_ACL_Query
            and then not ACL_Request.Valid;
@@ -5668,6 +5758,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then not Restore_Request.Valid;
          if Method = "PUT" and then Has_Rename_Object_Query then
             Operation := Rename_Object;
+         elsif Method = "POST"
+           and then Has_Select_Object_Content_Query
+         then
+            Operation := Select_Object_Content;
          elsif Looks_Like_ACL_Query then
             Operation :=
               (if Method = "GET" then Get_Object_ACL
@@ -5878,7 +5972,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Update_Bucket_Metadata_Journal_Table_Configuration |
          Update_Bucket_Metadata_Annotation_Table_Configuration |
          Put_Object |
-         Restore_Object |
+         Restore_Object | Select_Object_Content |
          Put_Object_Annotation | Put_Object_Tagging |
          Delete_Objects | Put_Multipart_Part |
          Put_Object_Legal_Hold | Put_Object_Retention |
@@ -5945,7 +6039,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
-          Get_Object | Get_Object_Attributes | Create_Session |
+          Get_Object | Get_Object_Attributes | Select_Object_Content |
+          Create_Session |
           List_Multipart_Parts |
           Create_Multipart | Complete_Multipart |
           List_Bucket_Analytics | List_Bucket_Metrics |
@@ -5966,6 +6061,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The RenameObject request query is invalid", Target_Text);
+         return;
+      elsif Select_Object_Content_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The SelectObjectContent request query is invalid", Target_Text);
          return;
       elsif ACL_Query_Invalid then
          Send_Error
@@ -6078,7 +6178,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         Update_Bucket_Metadata_Inventory_Table_Configuration |
         Update_Bucket_Metadata_Journal_Table_Configuration |
         Update_Bucket_Metadata_Annotation_Table_Configuration |
-        Put_Object | Restore_Object |
+        Put_Object | Restore_Object | Select_Object_Content |
         Put_Object_Annotation | Put_Object_Tagging |
         Put_Object_Legal_Hold |
         Put_Object_Retention | Delete_Objects | Put_Multipart_Part |
@@ -12498,6 +12598,198 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Target_Text);
                   else
                      Send_Backend_Error (X, Result, True, Target_Text);
+                  end if;
+               end;
+
+            when Select_Object_Content =>
+               declare
+                  function Has_Unmodeled_Encryption_Header return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if
+                             ((Name'Length >= 28
+                               and then
+                                 Name (Name'First .. Name'First + 27) =
+                                   "x-amz-server-side-encryption")
+                              or else
+                                (Name'Length >= 40
+                                 and then
+                                   Name (Name'First .. Name'First + 39) =
+                                     "x-amz-copy-source-server-side-" &
+                                     "encryption"))
+                             and then Name not in
+                               "x-amz-server-side-encryption-customer-" &
+                                 "algorithm" |
+                               "x-amz-server-side-encryption-customer-key" |
+                               "x-amz-server-side-encryption-customer-key-" &
+                                 "md5"
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_Unmodeled_Encryption_Header;
+
+                  Owner_OK : Boolean := False;
+                  Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-algorithm");
+                  Key_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key-md5");
+                  Info : Object_Information;
+               begin
+                  if Algorithm_Count > 1 or else Key_Count > 1
+                    or else MD5_Count > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-expected-bucket-owner") > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A SelectObjectContent header is duplicated",
+                        Target_Text);
+                     return;
+                  elsif Algorithm_Count + Key_Count + MD5_Count not in 0 | 3
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The SelectObjectContent SSE-C group is incomplete",
+                        Target_Text);
+                     return;
+                  elsif Has_Unmodeled_Encryption_Header then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The SelectObjectContent encryption header is " &
+                        "invalid", Target_Text);
+                     return;
+                  elsif Algorithm_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-server-side-encryption-customer-algorithm")
+                        /= "AES256"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The SSE-C algorithm is invalid", Target_Text);
+                     return;
+                  elsif Algorithm_Count = 1
+                    and then Apps.Request_Scheme (X) /=
+                      Flyology.HTTP.Secure_HTTPS
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "SSE-C requests require HTTPS", Target_Text);
+                     return;
+                  elsif Algorithm_Count = 1
+                    and then not Checksums.Valid_SSE_C_Key_MD5
+                      (Apps.Request_Header
+                         (X, "x-amz-server-side-encryption-customer-key"),
+                       Apps.Request_Header
+                         (X, "x-amz-server-side-encryption-customer-key-md5"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidDigest",
+                        "The SSE-C key or digest is invalid", Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes = 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "SelectObjectContent requires one bounded XML body",
+                        Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes >
+                      Maximum_Select_Object_Content_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "The SelectObjectContent body is too large",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  declare
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => S3.Core.CRC64NVME,
+                        Length_Value => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => False,
+                        Expected_Content_MD5 => US.Null_Unbounded_String,
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => False,
+                        Checksum_From_Trailer => False,
+                        Reject_Unexpected_Trailers => False,
+                        Expected_Body_Checksum => US.Null_Unbounded_String,
+                        Observed => 0,
+                        Maximum => Maximum_Select_Object_Content_Body,
+                        Completed => False,
+                        others => <>);
+                     Document : constant String := Read_Document (Source);
+                     Validator : aliased Select_XML_Validator;
+                  begin
+                     if Document'Length = 0 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "SelectObjectContent requires one bounded XML " &
+                           "body", Target_Text);
+                        return;
+                     end if;
+                     begin
+                        XML.Parse (Document, Validator, XML.Default_Limits);
+                        if not Validator.Root_Seen
+                          or else not Validator.Root_Closed
+                          or else Validator.Depth /= 0
+                        then
+                           raise XML.XML_Error with
+                             "incomplete SelectObjectContentRequest";
+                        end if;
+                     exception
+                        when XML.XML_Error =>
+                           Send_Error
+                             (X, 400, "MalformedXML",
+                              "The SelectObjectContent XML body is " &
+                              "malformed", Target_Text);
+                           return;
+                     end;
+                  end;
+
+                  Store.Head_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
+                  if Result /= Success then
+                     Send_Backend_Error (X, Result, True, Target_Text);
+                     return;
+                  end if;
+                  Store.Head_Object
+                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                     Info, Result);
+                  if Result = Success then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "S3 Select event streaming is not implemented",
+                        Target_Text);
+                  else
+                     Send_Backend_Error (X, Result, False, Target_Text);
                   end if;
                end;
 
