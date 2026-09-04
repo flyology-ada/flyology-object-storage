@@ -14,6 +14,8 @@ project Flyology_Object_Storage_Public_API is
       "flyology-object_storage-client-objects.ads",
       "flyology-object_storage-client-paginated_rest_xml_reads.ads",
       "flyology-object_storage-client-rest_xml_mutations.ads",
+      "flyology-object_storage-server.ads",
+      "flyology-object_storage-server-object_lambda_responses.ads",
       "flyology-object_storage-s3.ads",
       "flyology-object_storage-s3-acl.ads",
       "flyology-object_storage-s3-analytics.ads",

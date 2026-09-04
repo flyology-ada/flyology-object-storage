@@ -99,6 +99,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Versioning renames S3.Versioning;
    package Website renames S3.Website;
    package XML renames S3.XML;
+   package Object_Lambda_Responses renames
+     Flyology.Object_Storage.Server.Object_Lambda_Responses;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -112,6 +114,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Flyology.HTTP.Origin_Scheme;
    use type GNAT.Sockets.Family_Type;
    use type Metadata_Results.Provider_Access;
+   use type Object_Lambda_Responses.Delivery_Result;
+   use type Object_Lambda_Responses.Provider_Access;
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
    use type Multipart.Multipart_Query_Kind;
@@ -3950,7 +3954,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       package Request_IO is
          type Request_Source
            (Checksum_Kind : Checksum_Policy.Algorithm := S3.Core.CRC64NVME)
-         is limited new Backends.Byte_Source with record
+         is limited new Backends.Byte_Source
+           and Object_Lambda_Responses.Response_Body_Source with record
             Length_Value : Backends.Source_Length :=
               (Kind => Backends.Unknown);
             Expected_Hash : US.Unbounded_String;
@@ -3995,9 +4000,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Token    : access Flyology.Cancellation.Token;
             Deadline : Ada.Real_Time.Time)
          is
-            pragma Unreferenced (Token, Deadline);
+            pragma Unreferenced (Deadline);
             Chunk_Length : Byte_Count := 0;
          begin
+            if Token /= null and then Token.Requested then
+               raise Flyology.Cancellation.Operation_Cancelled;
+            end if;
             if Item.Completed then
                Last := Data'First - 1;
                Finished := True;
@@ -4540,6 +4548,448 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             return (Kind => Backends.Known, Bytes => Parsed_Length.Value);
          end;
       end Body_Length;
+
+      function Write_Response_Header_Name
+        (Field : Object_Lambda_Responses.Forwarded_Field) return String
+      is
+        (case Field is
+            when Object_Lambda_Responses.Status_Code =>
+              "x-amz-fwd-status",
+            when Object_Lambda_Responses.Error_Code =>
+              "x-amz-fwd-error-code",
+            when Object_Lambda_Responses.Error_Message =>
+              "x-amz-fwd-error-message",
+            when Object_Lambda_Responses.Accept_Ranges =>
+              "x-amz-fwd-header-accept-ranges",
+            when Object_Lambda_Responses.Cache_Control =>
+              "x-amz-fwd-header-cache-control",
+            when Object_Lambda_Responses.Content_Disposition =>
+              "x-amz-fwd-header-content-disposition",
+            when Object_Lambda_Responses.Content_Encoding =>
+              "x-amz-fwd-header-content-encoding",
+            when Object_Lambda_Responses.Content_Language =>
+              "x-amz-fwd-header-content-language",
+            when Object_Lambda_Responses.Content_Range =>
+              "x-amz-fwd-header-content-range",
+            when Object_Lambda_Responses.Content_Type =>
+              "x-amz-fwd-header-content-type",
+            when Object_Lambda_Responses.Checksum_CRC32 =>
+              "x-amz-fwd-header-x-amz-checksum-crc32",
+            when Object_Lambda_Responses.Checksum_CRC32C =>
+              "x-amz-fwd-header-x-amz-checksum-crc32c",
+            when Object_Lambda_Responses.Checksum_CRC64NVME =>
+              "x-amz-fwd-header-x-amz-checksum-crc64nvme",
+            when Object_Lambda_Responses.Checksum_SHA1 =>
+              "x-amz-fwd-header-x-amz-checksum-sha1",
+            when Object_Lambda_Responses.Checksum_SHA256 =>
+              "x-amz-fwd-header-x-amz-checksum-sha256",
+            when Object_Lambda_Responses.Checksum_SHA512 =>
+              "x-amz-fwd-header-x-amz-checksum-sha512",
+            when Object_Lambda_Responses.Checksum_MD5 =>
+              "x-amz-fwd-header-x-amz-checksum-md5",
+            when Object_Lambda_Responses.Checksum_XXHASH64 =>
+              "x-amz-fwd-header-x-amz-checksum-xxhash64",
+            when Object_Lambda_Responses.Checksum_XXHASH3 =>
+              "x-amz-fwd-header-x-amz-checksum-xxhash3",
+            when Object_Lambda_Responses.Checksum_XXHASH128 =>
+              "x-amz-fwd-header-x-amz-checksum-xxhash128",
+            when Object_Lambda_Responses.Delete_Marker =>
+              "x-amz-fwd-header-x-amz-delete-marker",
+            when Object_Lambda_Responses.Entity_Tag =>
+              "x-amz-fwd-header-etag",
+            when Object_Lambda_Responses.Expires =>
+              "x-amz-fwd-header-expires",
+            when Object_Lambda_Responses.Expiration =>
+              "x-amz-fwd-header-x-amz-expiration",
+            when Object_Lambda_Responses.Last_Modified =>
+              "x-amz-fwd-header-last-modified",
+            when Object_Lambda_Responses.Missing_Metadata =>
+              "x-amz-fwd-header-x-amz-missing-meta",
+            when Object_Lambda_Responses.Object_Lock_Mode =>
+              "x-amz-fwd-header-x-amz-object-lock-mode",
+            when Object_Lambda_Responses.Object_Lock_Legal_Hold =>
+              "x-amz-fwd-header-x-amz-object-lock-legal-hold",
+            when Object_Lambda_Responses.Object_Lock_Retain_Until =>
+              "x-amz-fwd-header-x-amz-object-lock-retain-until-date",
+            when Object_Lambda_Responses.Parts_Count =>
+              "x-amz-fwd-header-x-amz-mp-parts-count",
+            when Object_Lambda_Responses.Replication_Status =>
+              "x-amz-fwd-header-x-amz-replication-status",
+            when Object_Lambda_Responses.Request_Charged =>
+              "x-amz-fwd-header-x-amz-request-charged",
+            when Object_Lambda_Responses.Restore =>
+              "x-amz-fwd-header-x-amz-restore",
+            when Object_Lambda_Responses.Server_Side_Encryption =>
+              "x-amz-fwd-header-x-amz-server-side-encryption",
+            when Object_Lambda_Responses.SSE_Customer_Algorithm =>
+              "x-amz-fwd-header-x-amz-server-side-encryption-customer-" &
+              "algorithm",
+            when Object_Lambda_Responses.SSE_KMS_Key_ID =>
+              "x-amz-fwd-header-x-amz-server-side-encryption-aws-kms-" &
+              "key-id",
+            when Object_Lambda_Responses.SSE_Customer_Key_MD5 =>
+              "x-amz-fwd-header-x-amz-server-side-encryption-customer-" &
+              "key-md5",
+            when Object_Lambda_Responses.Storage_Class =>
+              "x-amz-fwd-header-x-amz-storage-class",
+            when Object_Lambda_Responses.Tag_Count =>
+              "x-amz-fwd-header-x-amz-tagging-count",
+            when Object_Lambda_Responses.Version_ID =>
+              "x-amz-fwd-header-x-amz-version-id",
+            when Object_Lambda_Responses.Bucket_Key_Enabled =>
+              "x-amz-fwd-header-x-amz-server-side-encryption-bucket-key-" &
+              "enabled");
+
+      function Valid_Write_Response_Status (Value : String) return Boolean is
+         Parsed : constant S3.Wire_Core.Natural_Result :=
+           S3.Wire_Core.Parse_Natural (Value);
+      begin
+         return Parsed.Valid
+           and then Parsed.Value in
+             200 | 206 | 304 | 400 | 401 | 403 | 404 | 405 | 409 | 411 |
+             412 | 416 | 500 | 503;
+      end Valid_Write_Response_Status;
+
+      function Valid_Write_Response_Error_Code
+        (Value : String) return Boolean
+      is
+      begin
+         return Value'Length > 0 and then Valid_Header_Text (Value);
+      end Valid_Write_Response_Error_Code;
+
+      function Valid_Write_Response_ISO_8601
+        (Value : String) return Boolean
+      is
+         Text : constant String (1 .. Value'Length) := Value;
+
+         function Decimal (First, Last : Positive) return Natural is
+            Result : Natural := 0;
+         begin
+            for Index in First .. Last loop
+               if Text (Index) not in '0' .. '9' then
+                  return Natural'Last;
+               end if;
+               Result := Result * 10 + Character'Pos (Text (Index)) -
+                 Character'Pos ('0');
+            end loop;
+            return Result;
+         end Decimal;
+
+         Year        : Natural;
+         Month       : Natural;
+         Day         : Natural;
+         Hour        : Natural;
+         Minute      : Natural;
+         Second      : Natural;
+         Zone        : Positive := 20;
+         Maximum_Day : Natural;
+      begin
+         if Text'Length not in 20 .. 35
+           or else Text (5) /= '-'
+           or else Text (8) /= '-'
+           or else Text (11) /= 'T'
+           or else Text (14) /= ':'
+           or else Text (17) /= ':'
+         then
+            return False;
+         end if;
+         Year := Decimal (1, 4);
+         Month := Decimal (6, 7);
+         Day := Decimal (9, 10);
+         Hour := Decimal (12, 13);
+         Minute := Decimal (15, 16);
+         Second := Decimal (18, 19);
+         if Year not in 1 .. 9_999
+           or else Month not in 1 .. 12
+           or else Hour > 23
+           or else Minute > 59
+           or else Second > 59
+         then
+            return False;
+         end if;
+         Maximum_Day :=
+           (case Month is
+               when 2 =>
+                 (if Year mod 400 = 0
+                    or else (Year mod 4 = 0 and then Year mod 100 /= 0)
+                  then 29 else 28),
+               when 4 | 6 | 9 | 11 => 30,
+               when others => 31);
+         if Day not in 1 .. Maximum_Day then
+            return False;
+         end if;
+         if Text (Zone) = '.' then
+            Zone := Zone + 1;
+            declare
+               First_Fraction : constant Positive := Zone;
+            begin
+               while Zone <= Text'Last
+                 and then Text (Zone) in '0' .. '9'
+               loop
+                  Zone := Zone + 1;
+               end loop;
+               if Zone = First_Fraction
+                 or else Zone - First_Fraction > 9
+               then
+                  return False;
+               end if;
+            end;
+         end if;
+         if Zone = Text'Last and then Text (Zone) = 'Z' then
+            return True;
+         elsif Zone + 5 = Text'Last
+           and then Text (Zone) in '+' | '-'
+           and then Text (Zone + 3) = ':'
+         then
+            return Decimal (Zone + 1, Zone + 2) <= 23
+              and then Decimal (Zone + 4, Zone + 5) <= 59;
+         else
+            return False;
+         end if;
+      end Valid_Write_Response_ISO_8601;
+
+      function Valid_Write_Response_Field
+        (Field : Object_Lambda_Responses.Forwarded_Field;
+         Value : String) return Boolean
+      is
+         function Valid_Natural return Boolean is
+           (S3.Wire_Core.Parse_Natural (Value).Valid);
+
+         function Valid_Boolean return Boolean is
+           (S3.Wire_Core.Parse_Boolean (Value).Valid);
+
+         function Valid_Checksum (Bytes : Natural) return Boolean is
+           (S3.Wire_Core.Valid_Base64 (Value, Bytes));
+      begin
+         if not Valid_Header_Text (Value) then
+            return False;
+         end if;
+         case Field is
+            when Object_Lambda_Responses.Status_Code =>
+               return Valid_Write_Response_Status (Value);
+            when Object_Lambda_Responses.Error_Code =>
+               return Valid_Write_Response_Error_Code (Value);
+            when Object_Lambda_Responses.Checksum_CRC32 |
+                 Object_Lambda_Responses.Checksum_CRC32C =>
+               return Valid_Checksum (4);
+            when Object_Lambda_Responses.Checksum_CRC64NVME |
+                 Object_Lambda_Responses.Checksum_XXHASH64 |
+                 Object_Lambda_Responses.Checksum_XXHASH3 =>
+               return Valid_Checksum (8);
+            when Object_Lambda_Responses.Checksum_SHA1 =>
+               return Valid_Checksum (20);
+            when Object_Lambda_Responses.Checksum_SHA256 =>
+               return Valid_Checksum (32);
+            when Object_Lambda_Responses.Checksum_SHA512 =>
+               return Valid_Checksum (64);
+            when Object_Lambda_Responses.Checksum_MD5 =>
+               return Valid_Checksum (16);
+            when Object_Lambda_Responses.Checksum_XXHASH128 =>
+               return Valid_Checksum (16);
+            when Object_Lambda_Responses.Delete_Marker |
+                 Object_Lambda_Responses.Bucket_Key_Enabled =>
+               return Valid_Boolean;
+            when Object_Lambda_Responses.Expires |
+                 Object_Lambda_Responses.Last_Modified =>
+               return IMF_Dates.Parse (Value).Valid;
+            when Object_Lambda_Responses.Missing_Metadata |
+                 Object_Lambda_Responses.Parts_Count |
+                 Object_Lambda_Responses.Tag_Count =>
+               return Valid_Natural;
+            when Object_Lambda_Responses.Object_Lock_Mode =>
+               return Value in "GOVERNANCE" | "COMPLIANCE";
+            when Object_Lambda_Responses.Object_Lock_Legal_Hold =>
+               return Value in "ON" | "OFF";
+            when Object_Lambda_Responses.Object_Lock_Retain_Until =>
+               return Valid_Write_Response_ISO_8601 (Value);
+            when Object_Lambda_Responses.Replication_Status =>
+               return Value in
+                 "COMPLETE" | "PENDING" | "FAILED" | "REPLICA" |
+                 "COMPLETED";
+            when Object_Lambda_Responses.Request_Charged =>
+               return Value = "requester";
+            when Object_Lambda_Responses.Server_Side_Encryption =>
+               return Value in
+                 "AES256" | "aws:fsx" | "aws:backup" | "aws:kms" |
+                 "aws:kms:dsse";
+            when Object_Lambda_Responses.SSE_Customer_Algorithm =>
+               return Value = "AES256";
+            when Object_Lambda_Responses.SSE_Customer_Key_MD5 =>
+               return Valid_Checksum (16);
+            when Object_Lambda_Responses.Storage_Class =>
+               return Value in
+                 "STANDARD" | "REDUCED_REDUNDANCY" | "STANDARD_IA" |
+                 "ONEZONE_IA" | "INTELLIGENT_TIERING" | "GLACIER" |
+                 "DEEP_ARCHIVE" | "OUTPOSTS" | "GLACIER_IR" | "SNOW" |
+                 "EXPRESS_ONEZONE" | "FSX_OPENZFS" | "FSX_ONTAP" |
+                 "AWS_BACKUP_WARM" | "AWS_BACKUP_LOW_COST_WARM";
+            when others =>
+               return True;
+         end case;
+      end Valid_Write_Response_Field;
+
+      procedure Parse_Write_Response
+        (Length   : Backends.Source_Length;
+         Response : in out Object_Lambda_Responses.Response_Description;
+         Valid    : out Boolean)
+      is
+         Checksum_Count : Natural := 0;
+
+         function Starts_With (Value, Prefix : String) return Boolean is
+           (Value'Length >= Prefix'Length
+            and then Value
+              (Value'First .. Value'First + Prefix'Length - 1) = Prefix);
+
+         function Known_Forwarded_Header (Name : String) return Boolean is
+         begin
+            for Field in Object_Lambda_Responses.Forwarded_Field loop
+               if Name = Write_Response_Header_Name (Field) then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Known_Forwarded_Header;
+      begin
+         Valid := False;
+         Response.Content_Length :=
+           (if Length.Kind = Backends.Known
+            then (Is_Known => True, Bytes => Length.Bytes)
+            else (Is_Known => False));
+         for Field in Object_Lambda_Responses.Forwarded_Field loop
+            declare
+               Name  : constant String := Write_Response_Header_Name (Field);
+               Count : constant Natural :=
+                 Apps.Request_Header_Count (X, Name);
+            begin
+               if Count > 1 then
+                  return;
+               elsif Count = 1 then
+                  declare
+                     Value : constant String := Apps.Request_Header (X, Name);
+                  begin
+                     if not Valid_Write_Response_Field (Field, Value) then
+                        return;
+                     end if;
+                     Response.Fields (Field) :=
+                       (Is_Set => True,
+                        Value  => US.To_Unbounded_String (Value));
+                     if Field in
+                       Object_Lambda_Responses.Checksum_CRC32 ..
+                       Object_Lambda_Responses.Checksum_XXHASH128
+                     then
+                        Checksum_Count := Checksum_Count + 1;
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+         if Checksum_Count > 1 then
+            return;
+         end if;
+         for Index in 1 .. Apps.Request_Header_Count (X) loop
+            declare
+               Raw_Name : constant String :=
+                 Apps.Request_Header_Name (X, Index);
+               Name : constant String :=
+                 Ada.Characters.Handling.To_Lower (Raw_Name);
+               Value : constant String :=
+                 Apps.Request_Header_Value (X, Index);
+            begin
+               if Starts_With (Name, "x-amz-fwd-")
+                 and then not Known_Forwarded_Header (Name)
+               then
+                  return;
+               elsif Starts_With (Name, "x-amz-meta-") then
+                  if Name'Length = 11 or else not Valid_Header_Text (Value)
+                  then
+                     return;
+                  end if;
+                  declare
+                     Metadata_Name : constant String :=
+                       Raw_Name (Raw_Name'First + 11 .. Raw_Name'Last);
+                  begin
+                     for Existing of Response.Metadata loop
+                        if Ada.Characters.Handling.To_Lower
+                          (US.To_String (Existing.Name)) =
+                            Ada.Characters.Handling.To_Lower (Metadata_Name)
+                        then
+                           return;
+                        end if;
+                     end loop;
+                     Response.Metadata.Append
+                       (Object_Lambda_Responses.Metadata_Entry'
+                          (Name  => US.To_Unbounded_String (Metadata_Name),
+                           Value => US.To_Unbounded_String (Value)));
+                  end;
+               end if;
+            end;
+         end loop;
+         declare
+            Status : constant Object_Lambda_Responses.Optional_Text :=
+              Response.Fields (Object_Lambda_Responses.Status_Code);
+            Has_Error : constant Boolean :=
+              Response.Fields (Object_Lambda_Responses.Error_Code).Is_Set
+              or else Response.Fields
+                (Object_Lambda_Responses.Error_Message).Is_Set;
+            Successful : constant Boolean :=
+              not Status.Is_Set
+              or else US.To_String (Status.Value) in "200" | "206";
+            Empty_Body : constant Boolean :=
+              Length.Kind = Backends.Unknown or else Length.Bytes = 0;
+         begin
+            if Has_Error and then (Successful or else not Empty_Body) then
+               return;
+            end if;
+         end;
+         Valid := True;
+      end Parse_Write_Response;
+
+      procedure Drain_Write_Response_Body
+        (Source : in out Request_IO.Request_Source)
+      is
+         Buffer   : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
+         Last     : Ada.Streams.Stream_Element_Offset;
+         Finished : Boolean := False;
+      begin
+         while not Finished loop
+            Source.Read
+              (Buffer, Last, Finished, Apps.Cancellation (X),
+               Apps.Deadline (X));
+         end loop;
+      end Drain_Write_Response_Body;
+
+      procedure Best_Effort_Drain_Write_Response_Body
+        (Source : in out Request_IO.Request_Source)
+      is
+      begin
+         Drain_Write_Response_Body (Source);
+      exception
+         when Flyology.Cancellation.Operation_Cancelled |
+              Flyology.IO.Timeout_Error =>
+            raise;
+         when others =>
+            null;
+      end Best_Effort_Drain_Write_Response_Body;
+
+      procedure Deliver_Write_Response
+        (Provider      : Object_Lambda_Responses.Provider_Access;
+         Principal     : String;
+         Request_Route : String;
+         Request_Token : String;
+         Response      : Object_Lambda_Responses.Response_Description;
+         Source        : in out Request_IO.Request_Source;
+         Result        : out Object_Lambda_Responses.Delivery_Result)
+      is
+      begin
+         if Provider = null then
+            Result := Object_Lambda_Responses.Delivery_Failed;
+         else
+            Object_Lambda_Responses.Deliver
+              (Provider.all, Principal, Request_Route, Request_Token,
+               Response, Source, Apps.Cancellation (X), Apps.Deadline (X),
+               Result);
+         end if;
+      end Deliver_Write_Response;
 
       function Read_Document
         (Source : in out Request_IO.Request_Source) return String
@@ -6216,7 +6666,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Configure_Route
          (X, "s3", Target_Text,
          (if Operation = Write_Get_Object_Response
-          then Apps.Discard_Request_Body
+          then Apps.Stream_Body
           elsif Operation in Create_Bucket | Put_Bucket_Tagging |
          Put_Bucket_ABAC | Put_Bucket_Acceleration |
          Put_Bucket_Request_Payment | Put_Public_Access_Block |
@@ -6269,6 +6719,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               and then Host'Length > Route'Length
               and then Host (Host'First .. Host'First + Route'Length) =
                 Route & ".";
+            Length_Valid : Boolean;
+            Length : Backends.Source_Length;
          begin
             if Method /= "POST"
               or else Target_Text /= Write_Get_Object_Response_Target
@@ -6299,15 +6751,96 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Target_Text);
                return;
             end if;
+            Length := Body_Length (Length_Valid);
+            if not Length_Valid then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "The WriteGetObjectResponse content length is invalid",
+                  Target_Text);
+               return;
+            end if;
             Apps.Apply_Body_Policy (X, Accepted);
             if not Accepted then
                return;
             end if;
-            Send_Error
-              (X, 501, "NotImplemented",
-               "Object Lambda response callbacks are not implemented",
-               Target_Text);
-            return;
+            declare
+               Source : Request_IO.Request_Source;
+               Response : Object_Lambda_Responses.Response_Description;
+               Response_Valid : Boolean;
+               Result : Object_Lambda_Responses.Delivery_Result :=
+                 Object_Lambda_Responses.Delivery_Failed;
+            begin
+               Source.Length_Value := Length;
+               Parse_Write_Response (Length, Response, Response_Valid);
+               if Response_Valid
+                 and then Length.Kind = Backends.Unknown
+                 and then
+                   (Response.Fields
+                      (Object_Lambda_Responses.Error_Code).Is_Set
+                    or else Response.Fields
+                      (Object_Lambda_Responses.Error_Message).Is_Set)
+               then
+                  Drain_Write_Response_Body (Source);
+                  Response_Valid := Source.Observed = 0;
+               end if;
+               if not Response_Valid then
+                  Drain_Write_Response_Body (Source);
+                  Send_Error
+                    (X, 400, "InvalidRequest",
+                     "The WriteGetObjectResponse controls are invalid",
+                     Target_Text);
+                  return;
+               elsif Object_Lambda_Response_Provider = null then
+                  Drain_Write_Response_Body (Source);
+                  Send_Error
+                    (X, 501, "NotImplemented",
+                     "Object Lambda response callbacks are not implemented",
+                     Target_Text);
+                  return;
+               end if;
+               begin
+                  Deliver_Write_Response
+                    (Object_Lambda_Response_Provider,
+                     US.To_String (Auth.Principal), Route, Token, Response,
+                     Source, Result);
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled |
+                       Flyology.IO.Timeout_Error =>
+                     raise;
+                  when others =>
+                     Best_Effort_Drain_Write_Response_Body (Source);
+                     Send_Error
+                       (X, 500, "InternalError",
+                        "The Object Lambda response delivery failed",
+                        Target_Text);
+                     return;
+               end;
+               if Result = Object_Lambda_Responses.Delivered
+                 and then Source.Completed
+               then
+                  Apps.Respond (X, 200, "", "");
+               else
+                  declare
+                     Pre_Admission_Invalid_Token : constant Boolean :=
+                       Result = Object_Lambda_Responses.Invalid_Token
+                       and then Source.Observed = 0;
+                  begin
+                     Best_Effort_Drain_Write_Response_Body (Source);
+                     if Pre_Admission_Invalid_Token then
+                        Send_Error
+                          (X, 400, "ValidationError",
+                           "The Object Lambda request token is invalid",
+                           Target_Text);
+                     else
+                        Send_Error
+                          (X, 500, "InternalError",
+                           "The Object Lambda response delivery failed",
+                           Target_Text);
+                     end if;
+                  end;
+               end if;
+               return;
+            end;
          end;
       end if;
 

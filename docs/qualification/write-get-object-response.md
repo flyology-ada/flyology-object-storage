@@ -1,10 +1,10 @@
-# WriteGetObjectResponse negative-capability profile
+# WriteGetObjectResponse dispatcher profile
 
-WriteGetObjectResponse is covered only for the maintained local server's
-authenticated Object Lambda rejection boundary. The operation remains
-`Not_Exposed`: there is no public Low_Level or Objects request, synchronous
-wrapper, composable operation, Finish path, response decoder, or public client
-GNATdoc claim.
+WriteGetObjectResponse is implemented as a public server provider boundary.
+There is no Low_Level or Objects client request, composable client operation,
+synchronous client wrapper, Finish path, or client response decoder. A caller
+supplies `Object_Lambda_Responses.Provider` to the server application and owns
+the actual execution machinery.
 
 The private server recognizes only exact `POST /WriteGetObjectResponse` with no
 query. It requires secure HTTPS with the exact `UNSIGNED-PAYLOAD` SigV4 payload
@@ -14,34 +14,37 @@ the exact route followed by a dot, preserving the pinned Object Lambda host
 prefix relationship without inventing endpoint discovery or rewriting.
 
 Authentication precedes route, header, payload-policy, and body diagnostics.
-After validation, the request body is consumed and discarded under the
-existing configured Flyology HTTP request-body bound. The server then returns
-only `501 NotImplemented`. It never reports 2xx success, echoes or retains the
-token, forwards body bytes or modeled response headers, or calls the storage
-backend.
+The server validates every modeled forwarded response control, preserves
+case-fold-unique user metadata in physical order, enforces checksum one-of and
+decoded-length rules, and lends the non-rewindable body source to exactly one
+synchronous provider call. Field identity is structurally typed; field values
+remain exact validated text rather than Ada scalar values.
 
-The callback's status, error, metadata, checksum, encryption, Object Lock,
-version, and content headers remain generated-model inventory only. Their
-mutual exclusions, status and error syntax, checksum selection, metadata
-ordering, duplicate handling, and sensitive KMS forwarding are not
-implemented or accepted as callback output.
+The provider owns token authenticity, expiry, route binding, atomic single-use
+consumption, pending GetObject lookup, backpressure, and final delivery. The
+library adds no token store, scheduler, detached task, resource policy, or
+automatic replay. Borrowed route, token, principal, response, cancellation,
+deadline, and body values may not escape the synchronous call.
 
-Backend coverage intentionally remains missing. WriteGetObjectResponse is a
-callback to a pending Object Lambda request, not a bucket or object persistence
-operation. Successful support requires a separate authority that issues and
-consumes single-use tokens and hands the body stream to the matching pending
-GetObject request. Calling an unrelated storage capability would not provide
-that behavior or constitute backend evidence.
+Backend coverage is supplied by this caller-owned response-delivery provider,
+not by the bucket or object persistence backend. `Delivered` is accepted only
+after the provider consumes the entire body and means that the complete
+response reached the pending caller. `Invalid_Token` maps to ValidationError.
+The provider may return `Invalid_Token` only before token consumption,
+pending-response admission, and any body read; a later token rejection maps to
+InternalError. Provider exceptions, unread `Delivered`, and `Delivery_Failed`
+also map to InternalError without replay. Cancellation and timeout propagate.
+After possible admission, their delivery outcome remains provider-reconciled
+unknown.
 
-No callback is accepted or completed, and no token, body, header, or backend
-state exists to reconcile. A later GetObject observation cannot prove callback
-completion or causation, upgrade certainty, or authorize automatic replay.
-Directory-bucket and access-point behavior, Object Lambda endpoint discovery,
-external-provider interoperability, and successful callback coordination are
-not qualified.
+After `Delivery_Failed`, only the caller provider has token and pending-response
+state from which to reconcile. The library has no independent observation that
+can prove completion or causation, upgrade certainty, or authorize replay.
+Directory-bucket and access-point endpoint discovery and external AWS Object
+Lambda interoperability are not qualified.
 
 Qualification remains conditional on every command in the single
-`write_get_object_response` lane succeeding. The dedicated preparation
-verifier pins this rejection-only server boundary, the existing model verifier
-pins the 46-member request inventory, and the maintained root, coverage, and
-repository gates retain authentication, body-drain, and routing evidence.
+`write_get_object_response` lane succeeding. The dedicated source verifier pins
+the dispatcher and ownership boundary, the model verifier pins the 46-member
+request inventory, and the maintained corpus, coverage, GNATdoc, and repository
+gates retain the implementation evidence.

@@ -5537,13 +5537,18 @@
     },
     "WriteGetObjectResponse": {
       "coverage": {
-        "backend": "missing",
+        "backend": "covered",
         "client": "partial",
         "corpus": "covered",
         "server": "covered"
       },
       "evidence": {
-        "backend": [],
+        "backend": [
+          "src/flyology-object_storage-server-object_lambda_responses.ads",
+          "src/flyology-object_storage-server-s3_applications.ads",
+          "src/flyology-object_storage-server-s3_applications.adb",
+          "tests/src/s3_server_application_corpus.adb"
+        ],
         "client": [
           "src/flyology-object_storage-s3-model.adb",
           "tests/scripts/verify-write-get-object-response-model.py"
@@ -5555,6 +5560,7 @@
           "tests/src/s3_server_application_corpus.adb"
         ],
         "server": [
+          "src/flyology-object_storage-server-object_lambda_responses.ads",
           "src/flyology-object_storage-server-s3_applications.ads",
           "src/flyology-object_storage-server-s3_applications.adb",
           "tests/src/s3_server_application_corpus.adb"
@@ -5565,7 +5571,7 @@
       "human_decisions_resolved": true,
       "implementation_mode": "generated",
       "provenance": {
-        "backend": "absent",
+        "backend": "handwritten",
         "client": "generated",
         "server": "handwritten",
         "tests": "handwritten"

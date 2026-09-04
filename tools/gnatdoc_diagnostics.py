@@ -18,7 +18,7 @@ DIAGNOSTIC = re.compile(
     r"(?P<column>[1-9][0-9]*): "
     r"(?P<severity>warning|error): (?P<message>\S.*)$"
 )
-EXPECTED_PUBLIC_SOURCE_COUNT = 40
+EXPECTED_PUBLIC_SOURCE_COUNT = 42
 
 
 class Diagnostic_Error(RuntimeError):
@@ -178,7 +178,7 @@ def _dependency_source_index(
     if not lines:
         raise Diagnostic_Error("dependency source manifest is empty")
     for number, raw_line in enumerate(lines, 1):
-        match = re.fullmatch(r"   (/.*\.(?:ads|adb))", raw_line)
+        match = re.fullmatch(r"(?:   |      )(/.*\.(?:ads|adb))", raw_line)
         if match is None:
             raise Diagnostic_Error(
                 "dependency source manifest line "

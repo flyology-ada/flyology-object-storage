@@ -4,6 +4,7 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.MFA;
 with Flyology.Object_Storage.Server.Metadata_Results;
+with Flyology.Object_Storage.Server.Object_Lambda_Responses;
 
 --  Binds one pluggable backend and credential provider into an authenticated
 --  path-style S3 application callback. Each Handle call owns its request and
@@ -25,6 +26,8 @@ with Flyology.Object_Storage.Server.Metadata_Results;
 --  null makes metadata creates and updates return NotImplemented without
 --  backend mutation; reads and deletes do not consult it and remain subject
 --  to the Store's optional metadata capability
+--  @formal Object_Lambda_Response_Provider Optional caller-owned synchronous
+--  WriteGetObjectResponse dispatcher; null retains NotImplemented behavior
 generic
    type Backend_Type (<>) is limited new Backends.Backend with private;
    Store : in out Backend_Type;
@@ -36,6 +39,8 @@ generic
    with function Clock return Ada.Calendar.Time is Ada.Calendar.Clock;
    Torrent_Piece_Length : Positive;
    Metadata_Provider : Metadata_Results.Provider_Access := null;
+   Object_Lambda_Response_Provider :
+     Object_Lambda_Responses.Provider_Access := null;
 package Flyology.Object_Storage.Server.S3_Applications is
 
    --  Serve one Flyology HTTP exchange. The current slice implements the
@@ -45,7 +50,7 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  validated negative-capability RenameObject routing,
    --  validated negative-capability SelectObjectContent routing,
    --  validated negative-capability UpdateObjectEncryption routing,
-   --  validated negative-capability WriteGetObjectResponse routing,
+   --  validated caller-dispatched WriteGetObjectResponse routing,
    --  create/get/update/delete bucket metadata configurations,
    --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,

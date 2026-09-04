@@ -56,6 +56,7 @@ with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.MFA;
 with Flyology.Object_Storage.Server.Metadata_Results;
+with Flyology.Object_Storage.Server.Object_Lambda_Responses;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
 
@@ -115,6 +116,8 @@ procedure S3_Server_Application_Corpus is
    package MFA renames Flyology.Object_Storage.Server.MFA;
    package Metadata_Results renames
      Flyology.Object_Storage.Server.Metadata_Results;
+   package Object_Lambda_Responses renames
+     Flyology.Object_Storage.Server.Object_Lambda_Responses;
    package Static_Credentials renames
      Flyology.Object_Storage.Server.Static_Credentials;
    package US renames Ada.Strings.Unbounded;
@@ -134,6 +137,7 @@ procedure S3_Server_Application_Corpus is
    use type Object_Lock.Retention_Mode;
    use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
+   use type Object_Lambda_Responses.Forwarded_Field;
    use type Metadata_Configurations.Expiration_State;
    use type Metadata_Configurations.Inventory_Configuration_State;
    use type Tags.Tag_Vectors.Vector;
@@ -711,6 +715,83 @@ procedure S3_Server_Application_Corpus is
       Complete_Metadata_Provider_Call (Item, Result);
    end Update_Annotation;
 
+   type Test_Object_Lambda_Provider is limited new
+     Object_Lambda_Responses.Provider with
+   record
+      Calls          : Natural := 0;
+      Last_Principal : US.Unbounded_String;
+      Last_Route     : US.Unbounded_String;
+      Last_Token     : US.Unbounded_String;
+      Last_Delivered_Token : US.Unbounded_String;
+      Last_Body      : US.Unbounded_String;
+      Last_Response  : Object_Lambda_Responses.Response_Description;
+   end record;
+
+   overriding procedure Deliver
+     (Item          : in out Test_Object_Lambda_Provider;
+      Principal     : String;
+      Request_Route : String;
+      Request_Token : String;
+      Response      : Object_Lambda_Responses.Response_Description;
+      Source        : in out
+        Object_Lambda_Responses.Response_Body_Source'Class;
+      Cancellation  : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Object_Lambda_Responses.Delivery_Result)
+   is
+      Buffer   : Ada.Streams.Stream_Element_Array (1 .. 7);
+      Last     : Ada.Streams.Stream_Element_Offset;
+      Finished : Boolean := False;
+   begin
+      Item.Calls := Item.Calls + 1;
+      Item.Last_Principal := US.To_Unbounded_String (Principal);
+      Item.Last_Route := US.To_Unbounded_String (Request_Route);
+      Item.Last_Token := US.To_Unbounded_String (Request_Token);
+      Item.Last_Response := Response;
+      US.Set_Unbounded_String (Item.Last_Body, "");
+      if Request_Token = "invalid-token" then
+         Result := Object_Lambda_Responses.Invalid_Token;
+         return;
+      elsif Request_Token = "late-invalid-token" then
+         Source.Read
+           (Buffer, Last, Finished, Cancellation, Deadline);
+         Result := Object_Lambda_Responses.Invalid_Token;
+         return;
+      elsif Request_Token = "failed-token" then
+         Result := Object_Lambda_Responses.Delivery_Failed;
+         return;
+      elsif Request_Token = "short-token" then
+         Result := Object_Lambda_Responses.Delivered;
+         return;
+      elsif Request_Token = "exception-token" then
+         raise Program_Error with "injected Object Lambda provider failure";
+      elsif Request_Token = "provider-cancel-token" then
+         raise Flyology.Cancellation.Operation_Cancelled;
+      elsif Request_Token = "source-cancel-token" then
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+         begin
+            Stop.Request;
+            Source.Read
+              (Buffer, Last, Finished, Stop'Access, Deadline);
+            raise Program_Error with
+              "cancelled Object Lambda body source returned";
+         end;
+      elsif Request_Token = US.To_String (Item.Last_Delivered_Token) then
+         Result := Object_Lambda_Responses.Invalid_Token;
+         return;
+      end if;
+      while not Finished loop
+         Source.Read
+           (Buffer, Last, Finished, Cancellation, Deadline);
+         for Index in Buffer'First .. Last loop
+            US.Append (Item.Last_Body, Character'Val (Buffer (Index)));
+         end loop;
+      end loop;
+      Item.Last_Delivered_Token := US.To_Unbounded_String (Request_Token);
+      Result := Object_Lambda_Responses.Delivered;
+   end Deliver;
+
    --  Test-reference generation capacity: the established sixteen corpus
    --  generations plus one retained-version CopyObject destination.
    Store : Flyology.Object_Storage.Backends.Memory.Store
@@ -722,6 +803,7 @@ procedure S3_Server_Application_Corpus is
        (Access_Key, Secret_Key, Principal => "test-principal");
    MFA_Policy : aliased Test_MFA_Verifier;
    Metadata_Provider : aliased Test_Metadata_Provider;
+   Object_Lambda_Provider : aliased Test_Object_Lambda_Provider;
    Rules : constant Authentication.Policy :=
      (Expected_Region    => US.To_Unbounded_String (Region),
       Maximum_Clock_Skew => 1.0);
@@ -736,7 +818,9 @@ procedure S3_Server_Application_Corpus is
       Rules                   => Rules,
       Clock                   => Fixed_Clock,
       Torrent_Piece_Length    => 10_000,
-      Metadata_Provider       => Metadata_Provider'Unchecked_Access);
+      Metadata_Provider       => Metadata_Provider'Unchecked_Access,
+      Object_Lambda_Response_Provider =>
+        Object_Lambda_Provider'Unchecked_Access);
 
    package No_Metadata_App is new
      Flyology.Object_Storage.Server.S3_Applications
@@ -1704,7 +1788,8 @@ procedure S3_Server_Application_Corpus is
       Receive_Max : Natural := Natural'Last;
       Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
       Use_Null_MFA : Boolean := False;
-      Use_Null_Metadata : Boolean := False)
+      Use_Null_Metadata : Boolean := False;
+      Cancellation : access Flyology.Cancellation.Token := null)
      return US.Unbounded_String
    is
       Wire : aliased Memory_Transport;
@@ -1722,7 +1807,7 @@ procedure S3_Server_Application_Corpus is
             X : Apps.Exchange := Apps.Create
                (Request, Client,
                 Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
-               null, HTTP_Server.Request_Deadline (Client), Scheme);
+               Cancellation, HTTP_Server.Request_Deadline (Client), Scheme);
          begin
             if Use_Null_Metadata then
                No_Metadata_App.Handle (X);
@@ -1746,11 +1831,13 @@ procedure S3_Server_Application_Corpus is
       Receive_Max : Natural := Natural'Last;
       Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
       Use_Null_MFA : Boolean := False;
-      Use_Null_Metadata : Boolean := False) return String
+      Use_Null_Metadata : Boolean := False;
+      Cancellation : access Flyology.Cancellation.Token := null)
+      return String
    is (US.To_String
          (Run_Unbounded
             (US.To_Unbounded_String (Input), Receive_Max, Scheme,
-             Use_Null_MFA, Use_Null_Metadata)));
+             Use_Null_MFA, Use_Null_Metadata, Cancellation)));
 
    function Has (Value, Pattern : String) return Boolean is
      (Ada.Strings.Fixed.Index (Value, Pattern) /= 0);
@@ -11658,21 +11745,38 @@ begin
          Scheme        : Flyology.HTTP.Origin_Scheme :=
            Flyology.HTTP.Secure_HTTPS;
          Receive_Max   : Natural := Natural'Last;
-         Corrupt       : Boolean := False) return String is
+         Chunked       : Boolean := False;
+         Corrupt       : Boolean := False;
+         Use_Null_Provider : Boolean := False) return String is
         (Run
            (Signed_Request
               (Method, Target, Payload, Extra,
                Query_Name => Query_Name, Query_Value => Query_Value,
                Hash_Override => Payload_Hash,
+               Chunked => Chunked,
                Corrupt_Signature => Corrupt,
                Host_Value => Host_Value),
-            Receive_Max => Receive_Max, Scheme => Scheme));
+            Receive_Max => Receive_Max, Scheme => Scheme,
+            Use_Null_Metadata => Use_Null_Provider));
+
+      function Callback_Headers
+        (Value : String; Additional : String := "") return String is
+        ("x-amz-request-route: " & Route & CRLF &
+         "x-amz-request-token: " & Value & CRLF & Additional);
 
       function Unavailable (Value : String) return Boolean is
         (Has (Value, "501 Not Implemented")
          and then Has (Value, "<Code>NotImplemented</Code>")
          and then not Has (Value, "200 OK")
          and then not Has (Value, Token));
+
+      function Field_Is
+        (Field : Object_Lambda_Responses.Forwarded_Field;
+         Value : String) return Boolean is
+        (Object_Lambda_Provider.Last_Response.Fields (Field).Is_Set
+         and then US.To_String
+           (Object_Lambda_Provider.Last_Response.Fields (Field).Value) =
+             Value);
 
       function Unsafe_Token_Rejected return Boolean is
          Marker  : constant String :=
@@ -11696,14 +11800,33 @@ begin
          when Flyology.HTTP.Protocol_Error =>
             return True;
       end Unsafe_Token_Rejected;
+
+      function Malformed_Terminal_Result
+        (Request_Token : String) return String
+      is
+         Ending : constant String := "0" & CRLF & CRLF;
+         Request : String := Signed_Request
+           ("POST", "/WriteGetObjectResponse", "body",
+            Callback_Headers (Request_Token),
+            Hash_Override => SigV4.Unsigned_Payload,
+            Chunked => True, Host_Value => Route_Host);
+         Position : constant Natural := Request'Last - Ending'Length + 1;
+      begin
+         Require
+           (Request (Position .. Request'Last) = Ending,
+            "WriteGetObjectResponse malformed chunk fixture changed");
+         Request (Position) := 'X';
+         return Run (Request, Scheme => Flyology.HTTP.Secure_HTTPS);
+      end Malformed_Terminal_Result;
    begin
       Require
-        (Unavailable (Write_Response),
+        (Unavailable (Write_Response (Use_Null_Provider => True)),
          "WriteGetObjectResponse did not reject callback admission");
       Require
         (Unavailable
            (Write_Response (Payload => "streamed callback bytes",
-                            Receive_Max => 1)),
+                            Receive_Max => 1,
+                            Use_Null_Provider => True)),
          "WriteGetObjectResponse did not drain its rejected body");
       Require
         (Has
@@ -11769,12 +11892,405 @@ begin
             "<Code>SignatureDoesNotMatch</Code>"),
          "WriteGetObjectResponse validated controls before authentication");
       Require
-        (Unavailable
+        (Has
            (Write_Response
-              (Extra => Required_Headers &
+              (Extra => Callback_Headers
+                 ("control-token",
                  "x-amz-fwd-status: 206" & CRLF &
                  "x-amz-fwd-header-content-type: text/plain" & CRLF)),
-         "WriteGetObjectResponse interpreted forwarded response fields");
+            "200 OK"),
+         "WriteGetObjectResponse did not dispatch forwarded controls");
+      Require
+        (US.To_String (Object_Lambda_Provider.Last_Principal) =
+           "test-principal"
+         and then US.To_String (Object_Lambda_Provider.Last_Route) = Route
+         and then US.To_String (Object_Lambda_Provider.Last_Token) =
+           "control-token"
+         and then Field_Is
+           (Object_Lambda_Responses.Status_Code, "206")
+         and then Field_Is
+           (Object_Lambda_Responses.Content_Type, "text/plain"),
+         "WriteGetObjectResponse changed dispatched identity or controls");
+      declare
+         Payload : constant String := "transformed response";
+         Headers : constant String :=
+           Callback_Headers
+             ("complete-token",
+              "x-amz-fwd-status: 206" & CRLF &
+              "x-amz-fwd-header-accept-ranges: bytes" & CRLF &
+              "x-amz-fwd-header-cache-control: no-cache" & CRLF &
+              "x-amz-fwd-header-content-disposition: attachment" & CRLF &
+              "x-amz-fwd-header-content-encoding: gzip" & CRLF &
+              "x-amz-fwd-header-content-language: en" & CRLF &
+              "x-amz-fwd-header-content-range: bytes 0-19/20" & CRLF &
+              "x-amz-fwd-header-content-type: text/plain" & CRLF &
+              "x-amz-fwd-header-x-amz-checksum-crc32: " &
+              Checksum_Value (Core.CRC32, Payload) & CRLF &
+              "x-amz-fwd-header-x-amz-delete-marker: true" & CRLF &
+              "x-amz-fwd-header-etag: callback-tag" & CRLF &
+              "x-amz-fwd-header-expires: " &
+              "Wed, 21 Oct 2015 07:28:00 GMT" & CRLF &
+              "x-amz-fwd-header-x-amz-expiration: rule-id=archive" & CRLF &
+              "x-amz-fwd-header-last-modified: " &
+              "Wed, 21 Oct 2015 07:28:00 GMT" & CRLF &
+              "x-amz-fwd-header-x-amz-missing-meta: 2" & CRLF &
+              "x-amz-meta-first: alpha" & CRLF &
+              "x-amz-meta-second: beta" & CRLF &
+              "x-amz-fwd-header-x-amz-object-lock-mode: GOVERNANCE" &
+              CRLF &
+              "x-amz-fwd-header-x-amz-object-lock-legal-hold: ON" &
+              CRLF &
+              "x-amz-fwd-header-x-amz-object-lock-retain-until-date: " &
+              "2030-01-02T03:04:05Z" & CRLF &
+              "x-amz-fwd-header-x-amz-mp-parts-count: 1" & CRLF &
+              "x-amz-fwd-header-x-amz-replication-status: COMPLETE" &
+              CRLF &
+              "x-amz-fwd-header-x-amz-request-charged: requester" & CRLF &
+              "x-amz-fwd-header-x-amz-restore: ongoing-request=false" &
+              CRLF &
+              "x-amz-fwd-header-x-amz-server-side-encryption: AES256" &
+              CRLF &
+              "x-amz-fwd-header-x-amz-server-side-encryption-customer-" &
+              "algorithm: AES256" & CRLF &
+              "x-amz-fwd-header-x-amz-server-side-encryption-aws-kms-" &
+              "key-id: key-1" & CRLF &
+              "x-amz-fwd-header-x-amz-server-side-encryption-customer-" &
+              "key-md5: " & Content_MD5 ("customer key") & CRLF &
+              "x-amz-fwd-header-x-amz-storage-class: STANDARD" & CRLF &
+              "x-amz-fwd-header-x-amz-tagging-count: 1" & CRLF &
+              "x-amz-fwd-header-x-amz-version-id: version-1" & CRLF &
+              "x-amz-fwd-header-x-amz-server-side-encryption-bucket-key-" &
+              "enabled: false" & CRLF);
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Payload => Payload, Extra => Headers, Receive_Max => 1),
+               "200 OK"),
+            "WriteGetObjectResponse rejected complete modeled controls");
+         Require
+           (US.To_String (Object_Lambda_Provider.Last_Body) = Payload
+            and then
+              Object_Lambda_Provider.Last_Response.Content_Length.Is_Known
+            and then
+              Object_Lambda_Provider.Last_Response.Content_Length.Bytes =
+                Flyology.Object_Storage.Byte_Count (Payload'Length)
+            and then Field_Is
+              (Object_Lambda_Responses.Checksum_CRC32,
+               Checksum_Value (Core.CRC32, Payload))
+            and then Field_Is
+              (Object_Lambda_Responses.Object_Lock_Retain_Until,
+               "2030-01-02T03:04:05Z")
+            and then Field_Is
+              (Object_Lambda_Responses.Expires,
+               "Wed, 21 Oct 2015 07:28:00 GMT")
+            and then Field_Is
+              (Object_Lambda_Responses.Last_Modified,
+               "Wed, 21 Oct 2015 07:28:00 GMT")
+            and then Field_Is
+              (Object_Lambda_Responses.Missing_Metadata, "2")
+            and then Field_Is
+              (Object_Lambda_Responses.SSE_KMS_Key_ID, "key-1")
+            and then Field_Is
+              (Object_Lambda_Responses.Bucket_Key_Enabled, "false")
+            and then Object_Lambda_Provider.Last_Response.Metadata.Length = 2
+            and then US.To_String
+              (Object_Lambda_Provider.Last_Response.Metadata (1).Name) =
+                "first"
+            and then US.To_String
+              (Object_Lambda_Provider.Last_Response.Metadata (1).Value) =
+                "alpha"
+            and then US.To_String
+              (Object_Lambda_Provider.Last_Response.Metadata (2).Name) =
+                "second"
+            and then US.To_String
+              (Object_Lambda_Provider.Last_Response.Metadata (2).Value) =
+                "beta",
+            "WriteGetObjectResponse changed streamed body or controls");
+      end;
+      declare
+         Checksum_Fields : constant array (Positive range 1 .. 10) of
+           Object_Lambda_Responses.Forwarded_Field :=
+             (Object_Lambda_Responses.Checksum_CRC32,
+              Object_Lambda_Responses.Checksum_CRC32C,
+              Object_Lambda_Responses.Checksum_CRC64NVME,
+              Object_Lambda_Responses.Checksum_SHA1,
+              Object_Lambda_Responses.Checksum_SHA256,
+              Object_Lambda_Responses.Checksum_SHA512,
+              Object_Lambda_Responses.Checksum_MD5,
+              Object_Lambda_Responses.Checksum_XXHASH64,
+              Object_Lambda_Responses.Checksum_XXHASH3,
+              Object_Lambda_Responses.Checksum_XXHASH128);
+         Algorithms : constant array (Positive range 1 .. 10) of
+           Checksum_Policy.Algorithm :=
+             (Core.CRC32, Core.CRC32C, Core.CRC64NVME, Core.SHA1,
+              Core.SHA256, Core.SHA512, Core.MD5, Core.XXHASH64,
+              Core.XXHASH3, Core.XXHASH128);
+         Header_Names : constant array (Positive range 1 .. 10) of
+           US.Unbounded_String :=
+             (US.To_Unbounded_String ("crc32"),
+              US.To_Unbounded_String ("crc32c"),
+              US.To_Unbounded_String ("crc64nvme"),
+              US.To_Unbounded_String ("sha1"),
+              US.To_Unbounded_String ("sha256"),
+              US.To_Unbounded_String ("sha512"),
+              US.To_Unbounded_String ("md5"),
+              US.To_Unbounded_String ("xxhash64"),
+              US.To_Unbounded_String ("xxhash3"),
+              US.To_Unbounded_String ("xxhash128"));
+      begin
+         for Index in Checksum_Fields'Range loop
+            declare
+               Value : constant String :=
+                 Checksum_Value (Algorithms (Index), "");
+               Response : constant String := Write_Response
+                 (Extra => Callback_Headers
+                    ("checksum-token-" & Positive'Image (Index),
+                     "x-amz-fwd-header-x-amz-checksum-" &
+                     US.To_String (Header_Names (Index)) & ": " & Value &
+                     CRLF));
+            begin
+               Require
+                 (Has (Response, "200 OK")
+                  and then Field_Is (Checksum_Fields (Index), Value),
+                  "WriteGetObjectResponse rejected a modeled checksum");
+            end;
+         end loop;
+      end;
+      Require
+        (Has
+           (Write_Response
+              (Extra => Callback_Headers
+                 ("error-token",
+                  "x-amz-fwd-status: 403" & CRLF &
+                  "x-amz-fwd-error-code: AccessDenied2" & CRLF &
+                  "x-amz-fwd-error-message: denied" & CRLF),
+               Chunked => True),
+            "200 OK")
+         and then Field_Is
+           (Object_Lambda_Responses.Error_Code, "AccessDenied2")
+         and then Field_Is
+           (Object_Lambda_Responses.Error_Message, "denied"),
+         "WriteGetObjectResponse rejected a digit-bearing error code");
+      declare
+         Invalid_Controls : constant array (Positive range 1 .. 8) of
+           US.Unbounded_String :=
+             (US.To_Unbounded_String
+                ("x-amz-fwd-error-code: " & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-checksum-crc32: invalid" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-delete-marker: maybe" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-missing-meta: -1" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-expires: not-a-date" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-object-lock-retain-until-date: " &
+                 "2030-99-02T03:04:05Z" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-object-lock-mode: INVALID" & CRLF),
+              US.To_Unbounded_String
+                ("x-amz-fwd-header-x-amz-storage-class: INVALID" & CRLF));
+      begin
+         for Index in Invalid_Controls'Range loop
+            Require
+              (Has
+                 (Write_Response
+                    (Extra => Callback_Headers
+                       ("invalid-class-" & Positive'Image (Index),
+                        US.To_String (Invalid_Controls (Index)))),
+                  "<Code>InvalidRequest</Code>"),
+               "WriteGetObjectResponse accepted an invalid control class");
+         end loop;
+      end;
+      Require
+        (Has
+           (Write_Response
+              (Extra => Callback_Headers
+                 ("invalid-controls",
+                  "x-amz-fwd-status: 201" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted an invalid response status");
+      Require
+        (Has
+           (Write_Response
+              (Payload => "conflicting body",
+               Extra => Callback_Headers
+                 ("error-body-token",
+                  "x-amz-fwd-status: 403" & CRLF &
+                  "x-amz-fwd-error-code: AccessDenied" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted an error response body");
+      Require
+        (Has
+           (Write_Response
+              (Extra => Callback_Headers
+                 ("duplicate-metadata",
+                  "x-amz-meta-Key: one" & CRLF &
+                  "x-amz-meta-key: two" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted duplicate metadata names");
+      Require
+        (Has
+           (Write_Response
+              (Extra => Callback_Headers
+                 ("unknown-control",
+                  "x-amz-fwd-header-unknown: value" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted an unmodeled forwarded field");
+      Require
+        (Has
+           (Write_Response
+              (Extra => Callback_Headers
+                 ("multiple-checksums",
+                  "x-amz-fwd-header-x-amz-checksum-crc32: AAAAAA==" &
+                  CRLF &
+                  "x-amz-fwd-header-x-amz-checksum-sha1: " &
+                  Checksum_Value (Core.SHA1, "") & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "WriteGetObjectResponse accepted multiple checksums");
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Payload => "invalid token body", Receive_Max => 1,
+                  Extra => Callback_Headers ("invalid-token")),
+               "<Code>ValidationError</Code>")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse accepted or retried an invalid token");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Payload => "admitted invalid token body", Receive_Max => 1,
+                  Extra => Callback_Headers ("late-invalid-token")),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse made an admitted invalid token " &
+            "conclusive");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Payload => "delivery failure body", Receive_Max => 1,
+                  Extra => Callback_Headers ("failed-token")),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse hid or retried a delivery failure");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Payload => "unread body", Receive_Max => 1,
+                  Extra => Callback_Headers ("short-token")),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse accepted or retried unread delivery");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Malformed_Terminal_Result ("invalid-token"),
+               "<Code>ValidationError</Code>")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse lost or retried a malformed " &
+            "invalid token");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Malformed_Terminal_Result ("failed-token"),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse lost or retried malformed " &
+            "delivery failure");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Malformed_Terminal_Result ("short-token"),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse lost or retried malformed " &
+            "unread delivery");
+      end;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Malformed_Terminal_Result ("exception-token"),
+               "500 Internal Server Error")
+            and then Object_Lambda_Provider.Calls = Before + 1,
+            "WriteGetObjectResponse lost or retried a provider exception");
+      end;
+      for Body_Source in Boolean loop
+         declare
+            Before : constant Natural := Object_Lambda_Provider.Calls;
+            Raised : Boolean := False;
+            Cancel_Token : constant String :=
+              (if Body_Source then "source-cancel-token"
+               else "provider-cancel-token");
+         begin
+            begin
+               declare
+                  Ignored : constant String := Write_Response
+                    (Payload => "cancelled body", Receive_Max => 1,
+                     Extra => Callback_Headers (Cancel_Token));
+               begin
+                  raise Program_Error with
+                    "cancelled Object Lambda provider returned " & Ignored;
+               end;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Require
+              (Raised and then Object_Lambda_Provider.Calls = Before + 1,
+               "WriteGetObjectResponse did not propagate cancellation once");
+            Require
+              (Has
+                 (Write_Response
+                    (Extra => Callback_Headers
+                       ("post-cancel-token-" & Boolean'Image (Body_Source))),
+                  "200 OK")
+               and then Object_Lambda_Provider.Calls = Before + 2,
+               "WriteGetObjectResponse retained a cancelled body source");
+         end;
+      end loop;
+      declare
+         Before : constant Natural := Object_Lambda_Provider.Calls;
+      begin
+         Require
+           (Has
+              (Write_Response
+                 (Extra => Callback_Headers ("single-use-token")),
+               "200 OK")
+            and then Has
+              (Write_Response
+                 (Extra => Callback_Headers ("single-use-token")),
+               "<Code>ValidationError</Code>")
+            and then Object_Lambda_Provider.Calls = Before + 2,
+            "WriteGetObjectResponse retried or reused a provider token");
+      end;
       Require
         (Has
            (Run (Signed_Request ("HEAD", "/test-bucket/object", "")),
