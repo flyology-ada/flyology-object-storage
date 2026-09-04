@@ -180,11 +180,19 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
             raise Audit_Error(f"invalid provider: {name}")
         if entry["family"] not in FAMILIES:
             raise Audit_Error(f"invalid operation family: {name}")
+        public_surface = entry.get("public_surface", "client")
+        if public_surface not in ("client", "server"):
+            raise Audit_Error(f"invalid public surface: {name}")
         expected_provider = (
             "Flyology.Object_Storage.Client."
             + entry["provider"].capitalize()
         )
-        if entry["public_provider"] != expected_provider:
+        provider_matches = entry["public_provider"] == expected_provider
+        if public_surface == "server":
+            provider_matches = entry["public_provider"].startswith(
+                "Flyology.Object_Storage.Server."
+            )
+        if not provider_matches:
             raise Audit_Error(f"provider/package ownership mismatch: {name}")
         if any(
             coverage[layer] == "missing" and provenance[layer] != "absent"
