@@ -48,6 +48,9 @@ test "$(grep -Fc 'uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235
 test "$(grep -Fc 'version: "0.11.28"' "$WORKFLOW")" = 3 || \
   fail "integrity, test, and docs jobs must install exact uv 0.11.28"
 
+command -v ruby >/dev/null 2>&1 || fail "Ruby YAML parser is required"
+ruby "$PROJECT_DIR/tools/ci/verify-test-model-workflow.rb" "$WORKFLOW"
+
 test "$(grep -Ec '^  docs:$' "$WORKFLOW")" = 1 || \
   fail "workflow must contain exactly one docs job"
 DOCS_BLOCK=$(awk '
@@ -104,4 +107,4 @@ if [ "$INSTALL_LINE" -ge "$VERSION_LINE" ] || \
   fail "proof tool install and version assertion must precede tools/prove.sh"
 fi
 
-echo "workflow policy: immutable actions, exact tools, documented API gate"
+echo "workflow policy: immutable actions, exact tools, pinned test model, documented API gate"
