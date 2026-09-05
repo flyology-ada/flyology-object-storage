@@ -46,6 +46,200 @@ expect_rejection wrong-uv-version \
   'integrity, test, and docs jobs must install exact uv 0.11.28' \
   sed 's/version: "0.11.28"/version: "0.11.27"/g' "$WORKFLOW"
 
+expect_rejection commented-test-model-url \
+  'test model fetch must execute the exact pinned download command' \
+  awk '
+    /raw.githubusercontent.com\/boto\/botocore/ { models++ }
+    models == 2 && /raw.githubusercontent.com\/boto\/botocore/ {
+      print "            # " $0
+      sub(/raw.githubusercontent.com/, "invalid.example")
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection commented-test-model-output \
+  'test model fetch must execute the exact pinned download command' \
+  awk '
+    /--output obj\/ci\/service-2.json/ { outputs++ }
+    outputs == 2 && /--output obj\/ci\/service-2.json/ {
+      print "            # " $0
+      sub(/obj\/ci\/service-2.json/, "obj/ci/wrong-model.json")
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection commented-test-model-export \
+  'root and SQLite gate environment must be a mapping' \
+  awk '
+    /FLYOLOGY_S3_SERVICE_MODEL:/ {
+      print "          # " $0
+      next
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection disabled-test-model-fetch \
+  'test model fetch step must be unconditional' \
+  awk '
+    /- name: Fetch pinned botocore S3 model/ { fetches++ }
+    { print }
+    fetches == 2 && !inserted && /- name: Fetch pinned botocore S3 model/ {
+      print "        if: ${{ false }}"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection disabled-root-sqlite-gate \
+  'root and SQLite gate step must be unconditional' \
+  awk '
+    { print }
+    !inserted && /- name: Run root and SQLite gates/ {
+      print "        if: ${{ false }}"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection commented-test-command \
+  'root and SQLite gate must execute the maintained test wrapper' \
+  awk '
+    /run: \.\/tools\/ci\/run-tests.sh/ {
+      print "        run: |"
+      print "          # ./tools/ci/run-tests.sh"
+      print "          echo tests skipped"
+      next
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection test-job-continues-on-error \
+  'test job must fail the workflow on error' \
+  awk '
+    { print }
+    !inserted && /^  test:$/ {
+      print "    continue-on-error: true"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection test-job-shell-default \
+  'test job run defaults are forbidden' \
+  awk '
+    { print }
+    !inserted && /^  test:$/ {
+      print "    defaults:"
+      print "      run:"
+      print "        shell: echo {0}"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection workflow-shell-default \
+  'workflow run defaults are forbidden' \
+  awk '
+    !inserted && /^jobs:$/ {
+      print "defaults:"
+      print "  run:"
+      print "    shell: echo {0}"
+      print ""
+      inserted=1
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection test-step-working-directory \
+  'test model fetch and root/SQLite gate must run from the repository root' \
+  awk '
+    { print }
+    !inserted && /- name: Run root and SQLite gates/ {
+      print "        working-directory: tests"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection workflow-shellopts \
+  'workflow environment is forbidden' \
+  awk '
+    !inserted && /^jobs:$/ {
+      print "env:"
+      print "  SHELLOPTS: noexec"
+      print ""
+      inserted=1
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection test-job-shellopts \
+  'test job environment is forbidden' \
+  awk '
+    { print }
+    !inserted && /^  test:$/ {
+      print "    env:"
+      print "      SHELLOPTS: noexec"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection test-model-fetch-shellopts \
+  'test model fetch environment is forbidden' \
+  awk '
+    /- name: Fetch pinned botocore S3 model/ { fetches++ }
+    { print }
+    fetches == 2 && !inserted && /- name: Fetch pinned botocore S3 model/ {
+      print "        env:"
+      print "          SHELLOPTS: noexec"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection root-sqlite-gate-shellopts \
+  'root and SQLite gate environment must contain only the model path' \
+  awk '
+    { print }
+    !inserted && /FLYOLOGY_S3_SERVICE_MODEL:/ {
+      print "          SHELLOPTS: noexec"
+      inserted=1
+    }
+  ' "$WORKFLOW"
+
+expect_rejection preceding-step-persists-shellopts \
+  'test job steps must match the reviewed sequence and definitions' \
+  awk '
+    /- name: Fetch pinned botocore S3 model/ { fetches++ }
+    fetches == 2 && !inserted && /- name: Fetch pinned botocore S3 model/ {
+      print "      - name: Persist no-execution shell option"
+      print "        run: echo SHELLOPTS=noexec >> \"$GITHUB_ENV\""
+      inserted=1
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection preceding-step-persists-bash-env \
+  'test job steps must match the reviewed sequence and definitions' \
+  awk '
+    /- name: Fetch pinned botocore S3 model/ { fetches++ }
+    fetches == 2 && !inserted && /- name: Fetch pinned botocore S3 model/ {
+      print "      - name: Persist early-exit Bash environment"
+      print "        run: |"
+      print "          printf \047exit 0\\n\047 > obj/ci/bash-env"
+      print "          echo BASH_ENV=$PWD/obj/ci/bash-env >> \"$GITHUB_ENV\""
+      inserted=1
+    }
+    { print }
+  ' "$WORKFLOW"
+
+expect_rejection preceding-step-replaces-wrapper \
+  'test job steps must match the reviewed sequence and definitions' \
+  awk '
+    !inserted && /- name: Run root and SQLite gates/ {
+      print "      - name: Replace maintained test wrapper"
+      print "        run: |"
+      print "          printf \047#!/bin/sh\\nexit 0\\n\047 > tools/ci/run-tests.sh"
+      print "          chmod +x tools/ci/run-tests.sh"
+      inserted=1
+    }
+    { print }
+  ' "$WORKFLOW"
+
 expect_rejection missing-docs-uv \
   'integrity, test, and docs jobs must install exact setup-uv v9.0.0' \
   awk '
@@ -61,7 +255,7 @@ expect_rejection missing-docs-operation \
   sed '/--operation ListBuckets/d' "$WORKFLOW"
 
 expect_rejection relocated-docs-uv \
-  'docs job must install exact setup-uv v9.0.0 once' \
+  'test job steps must match the reviewed sequence and definitions' \
   awk '
     /^  test:$/ { job="test" }
     /^  docs:$/ { job="docs" }
@@ -104,4 +298,4 @@ expect_rejection persisted-credentials \
     { print }
   ' "$WORKFLOW"
 
-echo "workflow policy negative oracle: 9 unsafe mutations rejected"
+echo "workflow policy negative oracle: 26 unsafe mutations rejected"
