@@ -5929,9 +5929,20 @@ package body Object_Storage_Test_Cases is
               ("file-bucket", Key, Replacement,
                (Entity_Tag   => US.To_Unbounded_String ("etag-2"),
                 Content_Type => US.To_Unbounded_String ("text/plain"),
+                Checksum     =>
+                  (Algorithm => Checksum_SHA256,
+                   Method    => Full_Object_Checksum,
+                   Value     => US.Null_Unbounded_String),
                 others => <>),
                null, Ada.Real_Time.Time_Last, Info, Result);
-            Assert (Result = Success, "files atomic overwrite");
+            Assert
+              (Result = Success
+               and then US.To_String (Info.Entity_Tag) = "etag-2"
+               and then Info.Checksum.Algorithm = Checksum_SHA256
+               and then Info.Checksum.Method = Full_Object_Checksum
+               and then US.To_String (Info.Checksum.Value) =
+                 "munEJlR7wENVIlHs5k8qC3baPoSrFM2esCU75jHC0jI=",
+               "files supplied ETag overwrite or checksum changed");
          end;
          declare
             Empty_Source : Buffer_Source :=
@@ -6225,6 +6236,10 @@ package body Object_Storage_Test_Cases is
            (Result = Success
             and then Info.Size = 11
             and then US.To_String (Info.Entity_Tag) = "etag-2"
+            and then Info.Checksum.Algorithm = Checksum_SHA256
+            and then Info.Checksum.Method = Full_Object_Checksum
+            and then US.To_String (Info.Checksum.Value) =
+              "munEJlR7wENVIlHs5k8qC3baPoSrFM2esCU75jHC0jI="
             and then Info.Metadata.Expires =
               Optional_Metadata_Time'(Is_Set => False, Value => 0),
             "files metadata persists across reopen");

@@ -8,6 +8,7 @@ cd "$PROJECT_DIR"
 "$PROJECT_DIR/tools/test-coverage-verifier.sh"
 "$PROJECT_DIR/tools/verify-composable-client-fixtures.sh"
 "$PROJECT_DIR/tools/test-composable-client-fixtures-verifier.sh"
+uv run --python 3.13 -- "$PROJECT_DIR/tools/verify-files-supplied-etag.py"
 . "$PROJECT_DIR/tests/generated/s3-operation-tests.sh"
 run_s3_model_verifiers
 cd "$PROJECT_DIR/tests"

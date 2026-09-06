@@ -7166,7 +7166,9 @@ package body Flyology.Object_Storage.Backends.Files is
                   return;
                end if;
                SIO.Write (File, Buffer (Buffer'First .. Last));
-               GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+               if Generate_ETag then
+                  GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+               end if;
                if Options.Checksum.Algorithm /= No_Checksum then
                   Checksum_Engine.Update
                     (Direct_Hash, Buffer (Buffer'First .. Last));
