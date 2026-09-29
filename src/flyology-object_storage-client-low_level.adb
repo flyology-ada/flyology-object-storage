@@ -12094,10 +12094,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
       Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
       Add ("RequestPayer", Parameters.Request_Payer);
-      return Result : Prepared_Request := Prepare_Model_Request
+      return Result : Prepared_Request := Prepare_Model_Request_Internal
         (Model.Put_Object_Tagging_Operation, Origin, Style, Values, Payload,
-         True, "", Identity, Region, Timestamp)
+         True, "", Identity, Region, Timestamp,
+         Generate_Request_Checksum => True)
       do
+         Result.Requested_Object_Tagging_Version_ID :=
+           Parameters.Version_ID;
          --  The one-shot source owns the exact serialized and signed tag
          --  document. Keeping it in Request too would select HTTP's retained
          --  replayable-body form and conflict with composable execution.
@@ -12132,9 +12135,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add ("VersionId", Parameters.Version_ID);
       Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
       Add ("RequestPayer", Parameters.Request_Payer);
-      return Prepare_Model_Request
+      return Result : Prepared_Request := Prepare_Model_Request
         (Model.Get_Object_Tagging_Operation, Origin, Style, Values, "", False,
-         "", Identity, Region, Timestamp);
+         "", Identity, Region, Timestamp)
+      do
+         Result.Requested_Object_Tagging_Version_ID :=
+           Parameters.Version_ID;
+      end return;
    end Prepare_Get_Object_Tagging;
 
    function Prepare_Delete_Object_Tagging
@@ -12161,9 +12168,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Values (2) := Model_Value_Of ("Key", Key);
       Add ("VersionId", Parameters.Version_ID);
       Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
-      return Prepare_Model_Request
+      return Result : Prepared_Request := Prepare_Model_Request
         (Model.Delete_Object_Tagging_Operation, Origin, Style, Values, "",
-         False, "", Identity, Region, Timestamp);
+         False, "", Identity, Region, Timestamp)
+      do
+         Result.Requested_Object_Tagging_Version_ID :=
+           Parameters.Version_ID;
+      end return;
    end Prepare_Delete_Object_Tagging;
 
    function Decode_Object_Tagging_Response
@@ -12264,6 +12275,35 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         function Response_Version_ID
+           (Response : Flyology.HTTP.Client.Response;
+            Success  : Boolean) return String
+         is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count
+                (Response, "x-amz-version-id");
+         begin
+            if Count > 1 or else (Success and then Count /= 1) then
+               raise Invalid_Response with
+                 "invalid object tagging version header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String := Flyology.HTTP.Client.Header
+                 (Response, "x-amz-version-id");
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+                 or else not S3.Deletions.Valid_Version_ID (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid object tagging version header value";
+               end if;
+               return Value;
+            end;
+         end Response_Version_ID;
+
          function Execute_Request return Flyology.HTTP.Client.Response is
          begin
             if Expected in Model.Put_Object_Tagging_Operation |
@@ -12298,11 +12338,21 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Read_All
              (Response, Maximum, Token);
          Document : constant String := Flyology.Bytes.To_Byte_String (Payload);
+         Version_ID : constant String := Response_Version_ID
+           (Response, Status = Model.Response_Code (Expected));
+         Requested_Version_ID : constant String := US.To_String
+           (Prepared.Requested_Object_Tagging_Version_ID);
       begin
+         if Status = Model.Response_Code (Expected)
+           and then Requested_Version_ID'Length > 0
+           and then Version_ID /= Requested_Version_ID
+         then
+            raise Invalid_Response with
+              "object tagging response does not match prepared request";
+         end if;
          return Decode_Object_Tagging_Response
-           (Status, Document,
-            Flyology.HTTP.Client.Header (Response, "x-amz-version-id"),
-            Request_ID, Host_ID, Expected, Limits);
+           (Status, Document, Version_ID, Request_ID, Host_ID, Expected,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

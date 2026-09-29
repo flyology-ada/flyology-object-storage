@@ -1,0 +1,51 @@
+operation	http_result	admission	status	s3_code	disposition	failure_reason	reconcile	selection	note
+PutObjectTagging	Response_Complete	Response_Observed	200	none	Object_Tag_Mutation_Completed	No_Failure	no	explicit-version	exact same-version response proves completion, not causal tag-state proof
+PutObjectTagging	Response_Complete	Response_Observed	200	none	Object_Tag_Mutation_Completed	No_Failure	no	omitted-version	current-version response proves completion, not target-version identity
+GetObjectTagging	Response_Complete	Response_Observed	200	none	not-applicable	No_Failure	no	explicit-version	exact same-version current-state observation, not causal proof
+GetObjectTagging	Response_Complete	Response_Observed	200	none	not-applicable	No_Failure	no	omitted-version	current-version observation only, with no mutation certainty
+DeleteObjectTagging	Response_Complete	Response_Observed	204	none	Object_Tag_Mutation_Completed	No_Failure	no	explicit-version	exact same-version response proves completion, not causal tag-state proof
+DeleteObjectTagging	Response_Complete	Response_Observed	204	none	Object_Tag_Mutation_Completed	No_Failure	no	omitted-version	current-version response proves completion, not target-version identity
+PutObjectTagging	Response_Complete	Response_Observed	400	InvalidDigest	Object_Tag_Mutation_Definitely_Not_Applied	Invalid_Request	no	explicit-or-omitted	put checksum rejection is conclusive
+GetObjectTagging	Response_Complete	Response_Observed	400	InvalidDigest	not-applicable	Corrupt_Or_Invalid_Response	no	explicit-or-omitted	put-only checksum error is not a read contract
+DeleteObjectTagging	Response_Complete	Response_Observed	400	InvalidDigest	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	put-only checksum error is not delete evidence
+PutObjectTagging	Pre_Admission_Rejected	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Invalid_Request	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Cancelled	Not_Admitted	none	none	Object_Tag_Mutation_Cancelled_Before_Admission	Cancelled	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Cancelled	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Cancelled	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Timed_Out	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Timed_Out	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Timed_Out	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Timed_Out	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Client_Unavailable	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Client_Unavailable	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Connection_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Connection_Failed	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Transport_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Transport_Failed	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Transport_Failed	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Transport_Failed	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Request_Source_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Request_Source_Failed	no	explicit-or-omitted	failure occurred before possible admission
+PutObjectTagging	Request_Source_Failed	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Request_Source_Failed	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Response_Invalid	Response_Observed	invalid	malformed	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Response_Body_Too_Large	Response_Observed	oversized	none	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+PutObjectTagging	Response_Sink_Failed	Response_Observed	overflow-or-fault	none	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+GetObjectTagging	Pre_Admission_Rejected	Not_Admitted	none	none	not-applicable	Invalid_Request	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Cancelled	Not_Admitted	none	none	not-applicable	Cancelled	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Cancelled	Possibly_Admitted	none	none	not-applicable	Cancelled	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Timed_Out	Not_Admitted	none	none	not-applicable	Timed_Out	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Timed_Out	Possibly_Admitted	none	none	not-applicable	Timed_Out	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Client_Unavailable	Not_Admitted	none	none	not-applicable	Client_Unavailable	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Connection_Failed	Not_Admitted	none	none	not-applicable	Connection_Failed	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Transport_Failed	Not_Admitted	none	none	not-applicable	Transport_Failed	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Transport_Failed	Possibly_Admitted	none	none	not-applicable	Transport_Failed	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Request_Source_Failed	Not_Admitted	none	none	not-applicable	Request_Source_Failed	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Response_Invalid	Response_Observed	invalid	malformed	not-applicable	Corrupt_Or_Invalid_Response	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Response_Body_Too_Large	Response_Observed	oversized	none	not-applicable	Corrupt_Or_Invalid_Response	no	explicit-or-omitted	read failure upgrades no mutation certainty
+GetObjectTagging	Response_Sink_Failed	Response_Observed	overflow-or-fault	none	not-applicable	Corrupt_Or_Invalid_Response	no	explicit-or-omitted	read failure upgrades no mutation certainty
+DeleteObjectTagging	Pre_Admission_Rejected	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Invalid_Request	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Cancelled	Not_Admitted	none	none	Object_Tag_Mutation_Cancelled_Before_Admission	Cancelled	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Cancelled	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Cancelled	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Timed_Out	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Timed_Out	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Timed_Out	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Timed_Out	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Client_Unavailable	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Client_Unavailable	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Connection_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Connection_Failed	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Transport_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Transport_Failed	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Transport_Failed	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Transport_Failed	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Request_Source_Failed	Not_Admitted	none	none	Object_Tag_Mutation_Definitely_Not_Applied	Request_Source_Failed	no	explicit-or-omitted	failure occurred before possible admission
+DeleteObjectTagging	Request_Source_Failed	Possibly_Admitted	none	none	Object_Tag_Mutation_Outcome_Unknown	Request_Source_Failed	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Response_Invalid	Response_Observed	invalid	malformed	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Response_Body_Too_Large	Response_Observed	oversized	none	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
+DeleteObjectTagging	Response_Sink_Failed	Response_Observed	overflow-or-fault	none	Object_Tag_Mutation_Outcome_Unknown	Corrupt_Or_Invalid_Response	yes	explicit-or-omitted	possibly admitted mutation is never replayed
