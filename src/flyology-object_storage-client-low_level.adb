@@ -1327,6 +1327,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if not Valid_Bucket_Name (Bucket)
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
+        or else US.Length (Parameters.Expected_Bucket_Owner) > 8_192
       then
          raise Invalid_Request with "invalid ListObjects parameters";
       end if;
@@ -1813,6 +1814,49 @@ package body Flyology.Object_Storage.Client.Low_Level is
       SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
       SSE_Key_MD5 : constant String :=
         US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Concrete_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC32) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC32C) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC64NVME) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA1) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA256) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA512) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_MD5) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH64) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH3) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH128) > 0);
+      Concrete_Algorithm : constant Checksum_Algorithm :=
+        (if US.Length (Parameters.Checksum_CRC32) > 0 then Checksum_CRC32
+         elsif US.Length (Parameters.Checksum_CRC32C) > 0
+         then Checksum_CRC32C
+         elsif US.Length (Parameters.Checksum_CRC64NVME) > 0
+         then Checksum_CRC64NVME
+         elsif US.Length (Parameters.Checksum_SHA1) > 0 then Checksum_SHA1
+         elsif US.Length (Parameters.Checksum_SHA256) > 0
+         then Checksum_SHA256
+         elsif US.Length (Parameters.Checksum_SHA512) > 0
+         then Checksum_SHA512
+         elsif US.Length (Parameters.Checksum_MD5) > 0 then Checksum_MD5
+         elsif US.Length (Parameters.Checksum_XXHASH64) > 0
+         then Checksum_XXHASH64
+         elsif US.Length (Parameters.Checksum_XXHASH3) > 0
+         then Checksum_XXHASH3
+         elsif US.Length (Parameters.Checksum_XXHASH128) > 0
+         then Checksum_XXHASH128
+         else No_Checksum);
+      Concrete_Value : constant US.Unbounded_String :=
+        (case Concrete_Algorithm is
+            when No_Checksum => US.Null_Unbounded_String,
+            when Checksum_CRC32 => Parameters.Checksum_CRC32,
+            when Checksum_CRC32C => Parameters.Checksum_CRC32C,
+            when Checksum_CRC64NVME => Parameters.Checksum_CRC64NVME,
+            when Checksum_SHA1 => Parameters.Checksum_SHA1,
+            when Checksum_SHA256 => Parameters.Checksum_SHA256,
+            when Checksum_SHA512 => Parameters.Checksum_SHA512,
+            when Checksum_MD5 => Parameters.Checksum_MD5,
+            when Checksum_XXHASH64 => Parameters.Checksum_XXHASH64,
+            when Checksum_XXHASH3 => Parameters.Checksum_XXHASH3,
+            when Checksum_XXHASH128 => Parameters.Checksum_XXHASH128);
       Optional_Count : constant Natural :=
         Boolean'Pos (US.Length (Parameters.Checksum_CRC32) > 0) +
         Boolean'Pos (US.Length (Parameters.Checksum_CRC32C) > 0) +
@@ -5806,6 +5850,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
                    Flyology.HTTP.Secure_HTTPS)
         or else (Algorithm'Length > 0
                  and then not Valid_Checksum_Algorithm (Algorithm))
+        or else Concrete_Count > 1
+        or else (Algorithm'Length > 0 and then Concrete_Count = 0)
         or else not Valid_Optional_Checksum (Parameters.Content_MD5, 16)
         or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32, 4)
         or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32C, 4)
@@ -5825,6 +5871,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  and then Request_Payer /= "requester")
         or else not Valid_SSE_C_Group
           (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
+        or else (SSE_Key'Length > 0
+                 and then not Checksums.Valid_SSE_C_Key_MD5
+                   (SSE_Key, SSE_Key_MD5))
         or else (SSE_Key'Length > 0
                  and then Flyology.HTTP.Scheme (Origin) /=
                    Flyology.HTTP.Secure_HTTPS)
@@ -5865,16 +5914,90 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add_Header
         ("x-amz-expected-bucket-owner",
          Parameters.Expected_Bucket_Owner);
-      return Prepare_Object_Request
+      return Result : Prepared_Request := Prepare_Object_Request
         (Upload_Part_Operation, "PUT", Origin, Style, Bucket, Key, Query,
-         Headers, "", Payload_Hash, Identity, Region, Timestamp);
+         Headers, "", Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Upload_Checksum_Algorithm := Concrete_Algorithm;
+         Result.Upload_Checksum_Value := Concrete_Value;
+      end return;
    end Prepare_Upload_Part;
+
+   Maximum_Upload_Part_Response_Header_Bytes : constant Positive := 8_192;
+
+   function Upload_Checksum_Count
+     (Value : Upload_Part_Result) return Natural is
+     (Boolean'Pos (US.Length (Value.Checksum_CRC32) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_CRC32C) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_CRC64NVME) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA1) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA256) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA512) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_MD5) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH64) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0));
+
+   function Bounded_Optional_Upload_Header
+     (Value : US.Unbounded_String) return Boolean is
+     (US.Length (Value) <= Maximum_Upload_Part_Response_Header_Bytes);
+
+   function Valid_Upload_Part_Enum
+     (Value : US.Unbounded_String; Member : Positive) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Upload_Part_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Text'Length = 0 then
+         return True;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Text = Model.Enumeration_Value (Shape, Index) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Upload_Part_Enum;
+
+   function Valid_Upload_Part_Entity_Tag (Value : String) return Boolean is
+   begin
+      if Value'Length not in
+        1 .. Maximum_Upload_Part_Response_Header_Bytes
+      then
+         return False;
+      end if;
+      for Item of Value loop
+         if Character'Pos (Item) < 16#20#
+           or else Character'Pos (Item) = 16#7F#
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Upload_Part_Entity_Tag;
 
    procedure Validate_Upload_Result (Value : Upload_Part_Result) is
       Bucket_Key : constant String := US.To_String (Value.Bucket_Key_Enabled);
       Charged : constant String := US.To_String (Value.Request_Charged);
+      Encryption : constant String :=
+        US.To_String (Value.Server_Side_Encryption);
+      Customer_Algorithm : constant String :=
+        US.To_String (Value.SSE_Customer_Algorithm);
+      Customer_Key_MD5 : constant String :=
+        US.To_String (Value.SSE_Customer_Key_MD5);
+      KMS_Key_ID : constant String := US.To_String (Value.SSE_KMS_Key_ID);
+      Has_Customer_Encryption : constant Boolean :=
+        Customer_Algorithm'Length > 0 or else Customer_Key_MD5'Length > 0;
+      Has_KMS_Detail : constant Boolean :=
+        KMS_Key_ID'Length > 0 or else Bucket_Key'Length > 0;
+      Is_KMS : constant Boolean :=
+        Encryption in "aws:kms" | "aws:kms:dsse";
    begin
-      if US.Length (Value.Entity_Tag) = 0
+      if not Valid_Upload_Part_Entity_Tag
+        (US.To_String (Value.Entity_Tag))
         or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
@@ -5885,8 +6008,32 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
         or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
         or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else Upload_Checksum_Count (Value) > 1
+        or else not Valid_Upload_Part_Enum
+          (Value.Server_Side_Encryption, 1)
+        or else not Bounded_Optional_Upload_Header
+          (Value.Server_Side_Encryption)
+        or else not Bounded_Optional_Upload_Header
+          (Value.SSE_Customer_Algorithm)
+        or else not Bounded_Optional_Upload_Header
+          (Value.SSE_Customer_Key_MD5)
+        or else not Bounded_Optional_Upload_Header (Value.SSE_KMS_Key_ID)
+        or else not Bounded_Optional_Upload_Header
+          (Value.Bucket_Key_Enabled)
+        or else not Bounded_Optional_Upload_Header (Value.Request_Charged)
+        or else Customer_Algorithm not in "" | "AES256"
+        or else (Customer_Key_MD5'Length > 0
+                 and then not Wire_Core.Valid_Base64
+                   (Customer_Key_MD5, 16))
+        or else ((Customer_Algorithm'Length > 0) /=
+                   (Customer_Key_MD5'Length > 0))
+        or else (Has_Customer_Encryption
+                 and then (Encryption'Length > 0 or else Has_KMS_Detail))
+        or else (Has_KMS_Detail and then not Is_KMS)
+        or else (Bucket_Key'Length > 0 and then Encryption /= "aws:kms")
         or else (Bucket_Key'Length > 0
                  and then not Wire_Core.Parse_Boolean (Bucket_Key).Valid)
+        or else not Valid_Upload_Part_Enum (Value.Request_Charged, 17)
         or else (Charged'Length > 0 and then Charged /= "requester")
       then
          raise Invalid_Response with "invalid UploadPart response headers";
@@ -5904,13 +6051,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
    begin
       if Status = 200 then
-         if not Whitespace_Only (Payload) then
+         if Payload'Length /= 0 then
             raise Invalid_Response with
               "UploadPart success contains a response body";
          end if;
          Validate_Upload_Result (Headers);
          return (Kind => Part_Uploaded, Status => Status, Result => Headers);
       else
+         if Request_ID'Length > Maximum_Upload_Part_Response_Header_Bytes
+           or else Host_ID'Length >
+             Maximum_Upload_Part_Response_Header_Bytes
+         then
+            raise Invalid_Response with
+              "UploadPart error response identifiers exceed limit";
+         end if;
          return
            (Kind   => Upload_Rejected,
             Status => Status,

@@ -2120,6 +2120,8 @@ private
       Target_Value    : Ada.Strings.Unbounded.Unbounded_String;
       Authority_Value : Ada.Strings.Unbounded.Unbounded_String;
       Signing   : S3.SigV4.Signing_Result;
+      Upload_Checksum_Algorithm : Checksum_Algorithm := No_Checksum;
+      Upload_Checksum_Value : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
 end Flyology.Object_Storage.Client.Low_Level;
