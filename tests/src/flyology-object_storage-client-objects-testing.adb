@@ -119,6 +119,14 @@ package body Flyology.Object_Storage.Client.Objects.Testing is
       Check_Response
         (400, "InvalidRequest", Definitely_Not_Published, Invalid_Request);
       Check_Response
+        (400, "InvalidWriteOffset", Definitely_Not_Published,
+         Invalid_Request);
+      Check_Response
+        (400, "TooManyParts", Definitely_Not_Published, Invalid_Request);
+      Check_Response
+        (400, "EncryptionTypeMismatch", Definitely_Not_Published,
+         Invalid_Request);
+      Check_Response
         (404, "NoSuchBucket", Definitely_Not_Published, Not_Found);
       Check_Response
         (409, "ConditionalRequestConflict", Outcome_Unknown,

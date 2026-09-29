@@ -19,11 +19,8 @@ by this repository:
 - request shape 135, `CreateMultipartUploadRequest`, with 31 members; and
 - output shape 134, `CreateMultipartUploadOutput`, with 14 members.
 
-The current
-[AWS CreateMultipartUpload API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html),
-[UploadPart API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html),
-[CompleteMultipartUpload API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html),
-and [multipart checksum guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html)
+The current AWS documentation for CreateMultipartUpload, UploadPart,
+CompleteMultipartUpload, and multipart checksum handling
 were reviewed on 2026-08-22. The pinned generated model remains authoritative
 for this crate when current prose and the pinned SDK revision differ.
 
@@ -138,10 +135,10 @@ relations. It preserves both KMS and SSE-C response groups, admits exact
 values. Fragmented raw-loopback responses run through native and Flyology
 lightweight clients, use both the direct composable constructor and its typed
 synchronous wrapper, bind bucket/key and explicit policy, and reject duplicate
-and present-empty physical headers. A dropped successful initiation returns
-typed unknown creation certainty and is followed by one read-only
-ListMultipartUploads reconciliation request; the scripted server rejects any
-automatic POST replay.
+and present-empty physical headers. The lost-response sequence first proves an
+empty exact bucket/key listing, drops one successful initiation response, then
+uses a read-only ListMultipartUploads request to discover the candidate upload;
+the scripted server rejects any automatic POST replay.
 The original evidence promoted only the client cell. The server-admission
 closure below separately gates every modeled request field without claiming
 advanced backend policy persistence.
@@ -204,6 +201,14 @@ native/lightweight socket repetitions. The socket corpus includes direct
 constructor success, pre-admission cancellation, exact lost-response admission
 certainty, read-only reconciliation, and rejection of automatic POST replay.
 The SQLite wrapper/backend gate passed.
+
+The maintained focused lane additionally requires native and lightweight
+admission/cancel handshakes, terminal peer drain acknowledgement, typed
+`Finish`, and same-operation restart after the cancelled exchange. Its
+lost-response sequence first proves the exact bucket/key listing empty, drops
+one admitted response, and then uses `ListMultipartUploads` only as a read-only
+discovery aid. Concurrent indistinguishable initiations still prevent unique
+attribution and remain caller-owned policy.
 
 The six-server implementation matrix passed all 18 implementation/repetition
 lanes across RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files,

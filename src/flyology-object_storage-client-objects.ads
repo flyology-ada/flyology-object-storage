@@ -1091,7 +1091,9 @@ package Flyology.Object_Storage.Client.Objects is
    --  API. The response buffer bound is derived from the shared XML limits.
 
    --  Start or restart one bounded ListObjectsV2 operation. Request
-   --  validation and signing finish before start.
+   --  validation and signing finish before start. The operation retains its
+   --  HTTP client and optional cancellation owner through terminal drain;
+   --  each completed page is an independent read-only service snapshot.
    --  @param Operation Fresh or consumed established listing operation
    --  @param Client Configured origin client retained through terminal drain
    --  @param Origin Exact origin used by Client and SigV4
@@ -1116,7 +1118,9 @@ package Flyology.Object_Storage.Client.Objects is
      with Pre => not Flyology.Operations.Is_Active (Operation)
        and then not Flyology.Operations.Is_Terminal (Operation);
 
-   --  Construct one bounded ListObjectsV2 operation.
+   --  Construct one bounded ListObjectsV2 operation. The result owns its
+   --  prepared request and bounded response bytes through terminal Finish;
+   --  each completed page is an independent read-only service snapshot.
    --  @param Set Caller-owned completion set
    --  @param Client Configured origin client retained through terminal drain
    --  @param Origin Exact origin used by Client and SigV4
@@ -2573,7 +2577,8 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Objects_Result;
 
-   --  List one bounded page of current objects with S3 ListObjectsV2.
+   --  List one bounded page of current objects with S3 ListObjectsV2. Each
+   --  completed page is an independent read-only service snapshot.
    --  Pass Page.Next_Continuation_Token from a truncated result to continue
    --  the same prefix/delimiter scope. Continuation tokens remain opaque;
    --  Start_After is an exclusive key used to select an initial page.
@@ -2618,9 +2623,10 @@ package Flyology.Object_Storage.Client.Objects is
       return List_Outcome;
 
    --  List one bounded ListObjectsV2 page by waiting on the composable
-   --  owner-driven operation. This parameter-record overload preserves typed
-   --  HTTP failure and admission information; the convenience overload above
-   --  retains its established raising transport contract.
+   --  owner-driven operation. The operation retains its HTTP client and
+   --  optional cancellation owner through terminal drain. This overload
+   --  preserves typed HTTP failure and admission information; each completed
+   --  page is an independent read-only service snapshot.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Bucket Bucket whose current objects are listed

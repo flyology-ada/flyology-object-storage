@@ -1,6 +1,8 @@
 # ListObjects v1 qualification evidence
 
-This slice qualifies `ListObjects` from the pinned botocore S3 service model.
+This evidence plan gates `ListObjects` from the pinned botocore S3 service
+model. Qualification is established only by the maintained focused lane on
+the exact reviewed tree.
 The model is pinned at botocore revision
 `36c34f15391da01cd717c73c0fffa747c9889768`; its normalized model digest is
 `429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9`.
@@ -33,9 +35,11 @@ headers and binds the bucket, optional echoed prefix/delimiter/marker,
 requested or default maximum, URL-encoding mode, and requester-pays charge to
 the signed request. The parameter-record synchronous overload waits on this
 operation; the convenience overload preserves its raising transport contract
-and applies marker fallback afterward. The socket corpus covers success,
-modeled error normalization, wrong echoes, duplicate headers, unrequested
-payer charges, pre-admission cancellation, and direct-operation restart.
+and applies marker fallback afterward. The socket corpus covers success, all
+six modeled error-normalization classes, wrong echoes, duplicate headers,
+unrequested payer charges, pre-admission and admitted cancellation, explicit
+transport drain acknowledgement, retained-owner substitution rejection, and
+same-object restart after typed Finish.
 
 The authenticated general-purpose path-style server projects its static
 principal as the bucket and object owner. It enforces expected-owner and
@@ -53,19 +57,17 @@ v1 page without a delimiter. Their strict no-delimiter continuation subcase is
 excluded explicitly; the basic v1 path remains enabled, while every Flyology
 backend passes the complete two-page AWS fallback rule.
 
-Reproduce the deterministic qualification with:
+Reproduce the deterministic focused qualification with:
 
 ```text
-./tests/scripts/test.sh
-./sqlite/tests/scripts/test.sh
-./tests/scripts/test-s3-matrix.sh
-./tools/verify-coverage.sh
-./tools/test-coverage-verifier.sh
-./tools/verify-benchmark-plan.sh
+FLYOLOGY_S3_SERVICE_MODEL=/path/to/pinned-service-2.json \
+  UV_CACHE_DIR=/tmp/fos-uv-cache \
+  uv run --python 3.13 -- tools/s3-operation.py qualify ListObjects
 ```
 
 The retained unqualified-host smoke evidence is
-[`20260822-listobjects-v1-smoke.tsv`](../../benchmarks/evidence/20260822-listobjects-v1-smoke.tsv).
+[`20260822-listobjects-v1-smoke.tsv`](
+../../benchmarks/evidence/20260822-listobjects-v1-smoke.tsv).
 Its signed raw-XML oracle ran before and after the measured request against
 RustFS, SeaweedFS, and Flyology memory, files, and SQLite. Every run required
 HTTP 200, the exact ordered unique 64-key set, `MaxKeys=1000`,

@@ -1,9 +1,10 @@
 # CompleteMultipartUpload qualification
 
-This record qualifies both the authenticated general-purpose, path-style
-CompleteMultipartUpload server route and the typed composable client. It does
-not extend the directory-bucket, access-point, Outposts, Requester Pays, or
-server-side-encryption capability set.
+This record defines the focused qualification boundary for the authenticated
+general-purpose, path-style CompleteMultipartUpload server route and typed
+composable client. A qualification claim requires the maintained focused lane
+to finish. The boundary does not extend the directory-bucket, access-point,
+Outposts, Requester Pays, or server-side-encryption capability set.
 
 ## Composable client boundary
 
@@ -21,16 +22,20 @@ Only a complete validated successful response reports
 complete S3 rejection and every failure after possible admission reports
 `Completion_Outcome_Unknown`; this deliberately includes error XML embedded
 in HTTP 200. The caller reconciles the destination object and exact upload
-read-only before choosing retry or abort. A later abort cannot roll back an
-already published object.
+read-only before choosing retry or abort. The socket corpus requires both a
+generation-bound whole-object read and exact-upload ListParts rejection after
+a lost completion response. A later abort cannot roll back an already
+published object.
 
 The 46-row compile-independent certainty corpus covers the complete modeled
 success and rejection set plus every HTTP terminal failure under each admission
 state. The Ada normalization corpus applies the same mapping. Native and
 lightweight socket tests cover success, restart of the same operation,
-pre-admission cancellation, and a server that accepts completion but loses the
-response; a subsequent whole Get must prove the exact bytes, checksum, and
-entity tag without replaying completion. The six-server implementation matrix
+pre-admission cancellation, admitted cancellation through transport drain,
+typed Finish, and restart of the same consumed operation. A server that accepts
+completion but loses the response requires a subsequent whole Get and exact
+upload ListParts reconciliation without replaying completion. The six-server
+implementation matrix
 drives this typed synchronous path for Flyology memory, files, and SQLite,
 RustFS, SeaweedFS, and supplemental MinIO.
 
@@ -90,32 +95,13 @@ generation-bound whole GET before deleting it.
 
 ## Gate
 
-The focused executable is:
+The maintained focused lane requires the independent preparation verifier,
+the composable certainty fixture verifier and its negative self-tests, the
+warning-strict tests build, the signed socket corpus, the 116-operation
+coverage verifier, fresh public API documentation, the pinned-model repository
+gate, and a clean diff check. The lane is not successful unless every command
+exits cleanly and the final qualification sentinel is emitted.
 
-```sh
-cd tests
-alr -n build
-./bin/s3_server_application_corpus
-```
-
-Repository qualification additionally requires the root and SQLite test
-scripts, the coverage verifier, GNATdoc with the documented Flyology root
-project exclusion, and a clean diff check. The change is confined to the
-authenticated server adapter and its corpus; no SPARK-enabled backend or wire
-codec unit changes, so it does not expand the proof boundary.
-
-On the final reviewed tree, the root gate passed 41/41 AUnit tests, the 126-case
-files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64 GiB CRC
-linearization oracle, the signed application corpus, and three
-native/lightweight socket repetitions. The fixture verifier and its mutation
-self-tests passed. The full implementation matrix passed three repetitions
-against RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files, and
-SQLite; durable files/SQLite restart lanes also passed. GNATdoc produced a
-nonempty API index containing the new composable operation. Its warnings are
-confined to upstream and pre-existing undocumented entities; the maintained
-fail-closed build reported no internal error.
-
-The serialized warning-strict GNATprove gate proved 936/936 checks. Its report
-contained zero warnings, unproved or justified checks, and `pragma Assume`
-statements; the source contained no proof suppression or SPARK exclusion. The
-post-run host audit was clean for GNATprove, Why3, SMT solvers, TLC, and TLAPS.
+The focused lane does not run the provider matrix, full repository suite, or a
+formal proof tool. Evidence from those separate campaigns is not attributed to
+CompleteMultipartUpload qualification.

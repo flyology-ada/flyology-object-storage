@@ -165,7 +165,17 @@ responses prove definite nonpublication. Every failure after possible
 admission, response-body overflow, malformed physical singleton, inconsistent
 Requester Pays response, and embedded HTTP-200 service error is
 `Outcome_Unknown`. The caller must reconcile the destination with a
-generation-bound whole Get before deciding whether to retry.
+generation-bound whole Get before deciding whether to retry. A retry must
+preserve and re-evaluate the exact source selector and source conditions; a
+destination read alone does not prove that a later replay would select the
+same source generation.
+
+The focused socket lane admits a bodyless CopyObject request, withholds its
+response, observes cooperative cancellation and transport drain, consumes the
+typed unknown result, and restarts the same operation object only after the
+drain acknowledgement. A separate lost-response sequence accepts exactly one
+copy and then requires an exact destination whole-object read; an automatic
+mutation replay desynchronizes the server oracle.
 
 `Success` confirms that the complete body, information, metadata, tags, and
 checksum tuple was published. A synchronous `Backend_Unavailable`, transport

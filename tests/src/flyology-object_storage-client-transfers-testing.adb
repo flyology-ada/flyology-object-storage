@@ -1101,6 +1101,9 @@ package body Flyology.Object_Storage.Client.Transfers.Testing is
         (403, "AccessDenied", Definitely_Not_Published,
          Authorization_Failed);
       Check_Copy_Response
+        (403, "ObjectNotInActiveTierError", Definitely_Not_Published,
+         Invalid_Request);
+      Check_Copy_Response
         (404, "NoSuchBucket", Definitely_Not_Published, Not_Found);
       Check_Copy_Response
         (404, "NoSuchKey", Definitely_Not_Published, Not_Found);
@@ -1139,8 +1142,12 @@ package body Flyology.Object_Storage.Client.Transfers.Testing is
             Result : constant Copy_Result :=
               Normalize_Copy_Response (Value, Admission);
          begin
-            if Result.Disposition /= Outcome_Unknown
+            if Result.Kind /= Copy_Response_Available
+              or else Result.Disposition /= Outcome_Unknown
               or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.Admission /= Admission
+              or else Result.Response.Kind /= Low_Level.Object_Copied
+              or else Result.Response.Status /= 200
             then
                raise Program_Error with
                  "inconsistent CopyObject certainty was accepted";

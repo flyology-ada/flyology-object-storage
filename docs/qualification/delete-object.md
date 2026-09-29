@@ -24,10 +24,11 @@ deletion under the same protected, publication-gate, or transactional
 boundary. An ordinary missing unversioned key succeeds idempotently. A missing
 key with `If-Match` is `Not_Found`; a mismatched existing object is
 `Precondition_Failed`. Race lanes admit one atomic outcome and preserve exact
-body/metadata on rejection. The memory, files, and SQLite servers map absent, `null`,
-and opaque version selectors onto their protected or transactional state
-machines. Enabled and suspended simple deletes publish typed markers; exact
-data or marker removal returns the selected version and delete-marker headers;
+body/metadata on rejection. The memory, files, and SQLite servers map absent,
+`null`, and opaque version selectors onto their protected or transactional
+state machines. Enabled and suspended simple deletes publish typed markers;
+exact data or marker removal returns the selected version and delete-marker
+headers;
 missing exact identities remain idempotent; and MFA Delete admission is checked
 within the mutation.
 
@@ -61,18 +62,22 @@ The limited `Client.Objects.Delete` constructor and reusable operation-last
 procedure drive that same one-shot policy through one hidden
 HTTP child on the caller's completion-set owner stack. Its typed result keeps
 admission certainty separate from deletion disposition. Valid 204 is
-`Deletion_Completed`; exact modeled rejections are
+`Deletion_Completed`; recognized exact S3 rejections are
 `Definitely_Not_Deleted`; every nonconclusive or post-admission failure is
 `Deletion_Outcome_Unknown` and requires exact reconciliation before any later
 retry. The `Client.Objects.Delete` result-type overload is a literal wait on
 this state machine, while the established raising overload remains compatible.
+Native and lightweight socket lanes also hold one admitted DELETE open, cancel
+the parent, wait through transport drain, consume the typed unknown result,
+acknowledge the drain, and restart the same consumed operation object to a
+validated 204 on a different exact key.
 
-The supported server semantics are ordinary unversioned deletion, memory and
-SQLite version selection and marker publication, atomic `If-Match`,
-expected-owner policy, and pluggable fail-closed MFA authorization. A present
-false governance-bypass value is a no-op. Durable version selection outside
-SQLite, Requester Pays, and a true governance bypass return explicit modeled
-`NotImplemented`;
+The supported server semantics are ordinary unversioned deletion, memory,
+pure-files, and SQLite version selection and marker publication, atomic
+`If-Match`, expected-owner policy, and pluggable fail-closed MFA authorization.
+A present
+false governance-bypass value is a no-op. Requester Pays and a true governance
+bypass return explicit typed `NotImplemented`;
 directory-only time/size predicates return `InvalidArgument`. MFA requires
 secure transport and a bounded non-retained verifier decision for the bucket
 root owner; missing, malformed, duplicate, overlong, insecure, non-root,
@@ -98,8 +103,9 @@ live/dangling namespace corpus. The SQLite gate repeats atomic conditions,
 concurrent outcomes, persistence/reopen, and catalog migration coverage.
 
 On 2026-08-22 the default three-repeat six-server campaign passed all 18 lanes:
-digest-pinned RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files,
-and SQLite, each three times. Every lane retained the independent s5cmd byte,
+digest-pinned RustFS, SeaweedFS, supplemental MinIO, and Flyology memory,
+files, and SQLite, each three times. Every lane retained the independent s5cmd
+byte,
 multi-delete, and cleanup oracles. The three Flyology servers are authoritative
 for the strict modeled behavior. Narrow external divergences are explicit:
 RustFS and SeaweedFS return 412 rather than AWS's documented 404 for

@@ -22,10 +22,11 @@ The strict normalization corpus covers every accepted service status/code
 pair, every non-complete HTTP result across all admission certainties, and an
 inconsistent success certainty. The signed native and lightweight socket
 corpus covers fragmented success, exact structured rejection, wrong prefix
-echo, duplicate singleton headers, cancellation before admission, and direct
-restart through a returned continuation token. The existing convenience path
-now waits on the same operation and retains its raising cancellation, timeout,
-and transport contract.
+echo, duplicate singleton headers, cancellation before and after admission,
+transport drain acknowledgement, typed `Finish`, retained-owner substitution
+rejection, and same-object restart. The existing convenience path waits on the
+same operation and retains its raising cancellation, timeout, and transport
+contract.
 
 The shared deterministic and six-provider matrix gates continue to exercise
 the complete ListBuckets request/parser/server/backend path against RustFS,
@@ -33,13 +34,15 @@ SeaweedFS, supplemental MinIO, and Flyology memory, files, and SQLite. This
 composable slice does not alter the existing atomic backend pagination or
 external compatibility claim.
 
-Reproduce the qualification with:
+The maintained focused lane runs the independent source/model verifier, the
+warning-strict test build, the signed socket corpus, coverage verification, a
+fresh selected-operation documentation gate, the pinned-model repository gate,
+and the final diff check. The documentation gate remains fail-closed on every
+repository-owned warning; site generation alone is not qualification.
+
+Reproduce the focused lane with:
 
 ```text
-./tests/scripts/test.sh
-./sqlite/tests/scripts/test.sh
-./tests/scripts/test-s3-matrix.sh
-./tools/ci/check-repository.sh
-./tools/build-api-docs.sh
-./tools/prove.sh
+FLYOLOGY_S3_SERVICE_MODEL=/path/to/service-2.json \
+  uv run --python 3.13 -- tools/s3-operation.py qualify ListBuckets
 ```
