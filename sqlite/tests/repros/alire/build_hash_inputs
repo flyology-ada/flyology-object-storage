@@ -1,0 +1,6 @@
+dependency:flyology_object_storage=0.1.0-dev=e1a0f81b918f7c8a2e609b49a13a98b52476d2dd9d03420325815f0ce2e5f988
+dependency:flyology_object_storage_sqlite=0.1.0-dev=0a22bb42704708a6760b67e670b8a1d4a6b8fbe5dfde0b54b08e84a1ff73ef01
+external:LIBRARY_TYPE=default
+external:REPROS_SQLITE_LIBRARY_TYPE=default
+profile:repros_sqlite=DEVELOPMENT
+switches:repros_sqlite=-Og,-fdata-sections,-ffunction-sections,-g,-gnatVa,-gnatW8,-gnatw.X,-gnatwa,-gnaty-d,-gnaty3,-gnatyA,-gnatyB,-gnatyI,-gnatyO,-gnatyS,-gnatya,-gnatyb,-gnatyc,-gnatye,-gnatyf,-gnatyh,-gnatyi,-gnatyk,-gnatyl,-gnatym,-gnatyn,-gnatyp,-gnatyr,-gnatyt,-gnatyu,-gnatyx

@@ -1,0 +1,78 @@
+Note: Synchronizing workspace...
+Dependencies automatically updated as follows:
+
+   +  flyology                       0.1.1-dev (new)
+   +  flyology_allocators            0.1.0     (new,indirect)
+   +  flyology_cachelines            0.1.0     (new,indirect)
+   +  flyology_http                  0.1.3-dev (new)
+   +. flyology_object_storage        0.1.0-dev (new,path=..)
+   +. flyology_object_storage_sqlite 0.1.0-dev (new,path=../sqlite)
+   +  flyology_quic                  0.1.3-dev (new,indirect)
+   +b gnat                           16.1.0    (new,gnat_native,indirect,binary)
+   +  xmlada                         26.0.0    (new,indirect)
+
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_server=0.1.0-dev/flyology_object_storage_server.gpr...
+Setup
+   [mkdir]        object directory for project Flyology_Object_Storage_Server
+   [mkdir]        exec directory for project Flyology_Object_Storage_Server
+Compile
+   [Ada]          flyology_object_storage_server.adb
+   [Ada]          flyology_object_storage_server_credentials_corpus.adb
+   [Ada]          flyology_allocators-layouts.adb
+   [Ada]          flyology_allocators-storage.adb
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span_kernel.adb
+   [Ada]          flyology_allocators-waits.adb
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms.ads
+   [Ada]          flyology_allocators-allocation_algorithms-contract.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy.ads
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf.ads
+   [Ada]          flyology_allocators-regions.adb
+   [Ada]          flyology_allocators-policy.adb
+   [Ada]          flyology_allocators-arenas.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy_kernel.adb
+   [Ada]          flyology_allocators.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span.ads
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit.ads
+   [Ada]          flyology_allocators-atomics.adb
+   [C]            flyology_object_storage_server_credentials_native.c
+   [Ada]          flyology_object_storage_server_credentials.adb
+flyology_allocators-atomics.adb:1:06: warning: "System.Atomic_Primitives" is an internal GNAT unit [-gnatwi]
+flyology_allocators-atomics.adb:1:06: warning: use of this unit is non-portable and version-dependent [-gnatwi]
+   [Ada]          flyology_object_storage_server_assets.adb
+   [Ada]          flyology_object_storage_server_configuration.adb
+   [Ada]          flyology_object_storage_server_runtime.adb
+   [Ada]          flyology_object_storage_server_sessions.adb
+   [Ada]          flyology_object_storage_server_signals.adb
+Build Libraries
+   [gprlib]       flyology_allocators.lexch
+   [archive]      libflyology_allocators.a
+   [index]        libflyology_allocators.a
+   [gprlib]       Flyology.lexch
+   [archive]      libFlyology.a
+   [index]        libFlyology.a
+   [gprlib]       Flyology_QUIC.lexch
+   [archive]      libFlyology_QUIC.a
+   [index]        libFlyology_QUIC.a
+   [gprlib]       Flyology_HTTP.lexch
+   [archive]      libFlyology_HTTP.a
+   [index]        libFlyology_HTTP.a
+   [gprlib]       Flyology_Object_Storage.lexch
+   [archive]      libFlyology_Object_Storage.a
+   [index]        libFlyology_Object_Storage.a
+   [gprlib]       Flyology_Object_Storage_Sqlite.lexch
+   [archive]      libFlyology_Object_Storage_Sqlite.a
+   [index]        libFlyology_Object_Storage_Sqlite.a
+Bind
+   [gprbind]      flyology_object_storage_server.bexch
+   [gprbind]      flyology_object_storage_server_credentials_corpus.bexch
+   [Ada]          flyology_object_storage_server_credentials_corpus.ali
+   [Ada]          flyology_object_storage_server.ali
+Link
+   [archive]      libflyology_object_storage_server.a
+   [index]        libflyology_object_storage_server.a
+   [link]         flyology_object_storage_server.adb
+   [link]         flyology_object_storage_server_credentials_corpus.adb
+Success: Build finished successfully in 46.26 seconds.

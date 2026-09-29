@@ -1,0 +1,111 @@
+docker.io/chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da: Pulling from chrislusf/seaweedfs
+Digest: sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+Status: Image is up to date for chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+docker.io/chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+
+For enterprise users, please visit https://seaweedfs.com for the SeaweedFS Enterprise Edition,
+which has advanced features, including data recovery, self-healing storage, customizable erasure coding, EC vacuum and repair, etc.
+mb s3://flyology-seaweedfs-corpus-98791-slice
+cp /data/empty.bin s3://flyology-seaweedfs-corpus-98791-slice/empty.bin
+cp /data/small.bin s3://flyology-seaweedfs-corpus-98791-slice/small.bin
+cp /data/large.bin s3://flyology-seaweedfs-corpus-98791-slice/large.bin
+cp /data/multipart.bin s3://flyology-seaweedfs-corpus-98791-slice/multipart.bin
+cp /data/small.bin s3://flyology-seaweedfs-corpus-98791-slice/nested/space + plus-%25.bin
+cp /data/small.bin s3://flyology-seaweedfs-corpus-98791-slice/overwrite.bin
+cp /data/large.bin s3://flyology-seaweedfs-corpus-98791-slice/overwrite.bin
+cp /data/small.bin s3://flyology-seaweedfs-corpus-98791-slice/delete-objects-probe.bin
+rm s3://flyology-seaweedfs-corpus-98791-slice/delete-objects-probe.bin
+independent s5cmd server slice: OK
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903: Pulling from peakcom/s5cmd
+Digest: sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Status: Image is up to date for peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_tests=0.1.0-dev/flyology_object_storage_tests.gpr...
+gprbuild: "flyology_object_storage_tests" up to date
+gprbuild: "files_conditional_symlink_probe" up to date
+gprbuild: "files_crash_probe" up to date
+gprbuild: "files_open_probe" up to date
+gprbuild: "s3_bucket_tagging_benchmark" up to date
+gprbuild: "files_copy_benchmark" up to date
+gprbuild: "s3_checksum_benchmark" up to date
+gprbuild: "s3_multipart_checksum_benchmark" up to date
+gprbuild: "s3_checksum_corpus" up to date
+gprbuild: "s3_multipart_listing_benchmark" up to date
+gprbuild: "s3_files_server" up to date
+gprbuild: "s3_http_socket_corpus" up to date
+gprbuild: "s3_list_object_versions_corpus" up to date
+gprbuild: "s3_delete_bucket_cors_corpus" up to date
+gprbuild: "s3_delete_bucket_configurations_corpus" up to date
+gprbuild: "s3_get_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_delete_object_annotation_corpus" up to date
+gprbuild: "s3_put_object_legal_hold_corpus" up to date
+gprbuild: "s3_put_object_retention_corpus" up to date
+gprbuild: "s3_put_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_object_torrent_corpus" up to date
+gprbuild: "s3_get_object_torrent_socket_corpus" up to date
+gprbuild: "s3_get_object_legal_hold_corpus" up to date
+gprbuild: "s3_get_object_retention_corpus" up to date
+gprbuild: "s3_get_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_get_bucket_cors_corpus" up to date
+gprbuild: "s3_get_bucket_encryption_corpus" up to date
+gprbuild: "s3_get_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_bucket_notification_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_replication_qualification" up to date
+gprbuild: "s3_get_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_corpus" up to date
+gprbuild: "s3_list_bucket_metrics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_analytics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_intelligent_tiering_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_inventory_configurations_qualification" up to date
+gprbuild: "s3_list_object_annotations_qualification" up to date
+gprbuild: "s3_list_directory_buckets_qualification" up to date
+gprbuild: "s3_get_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_logging_qualification" up to date
+gprbuild: "s3_get_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_website_qualification" up to date
+gprbuild: "s3_put_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_acl_corpus" up to date
+gprbuild: "s3_get_object_acl_corpus" up to date
+gprbuild: "s3_create_session_tls_corpus" up to date
+gprbuild: "s3_transfer_many_corpus" up to date
+gprbuild: "s3_implementation_corpus" up to date
+gprbuild: "s3_memory_server" up to date
+gprbuild: "s3_server_application_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_inventory_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_journal_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_annotation_table_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_acl_qualification" up to date
+gprbuild: "s3_put_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_logging_qualification" up to date
+gprbuild: "s3_put_bucket_website_qualification" up to date
+Success: Build finished successfully in 7.27 seconds.
+S3 implementation setup: bucket created, located, headed, listed, and versioning-configured; durable backend routing checked when selected
+S3 implementation corpus failed: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : HeadObject response does not match prepared request
+Load address: 0x102ef8000
+Call stack traceback locations:
+0x10383ae88 0x10383aee8 0x103116ee0 0x102f107f4 0x102f219fc 0x102f2e740 0x1038a8a14
+
+
+Execution of ./bin/s3_implementation_corpus terminated by unhandled exception
+raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : HeadObject response does not match prepared request
+Load address: 0x102ef8000
+Call stack traceback locations:
+0x10383ae88 0x10383aee8 0x103116ee0 0x102f107f4 0x102f219fc 0x102f2e740 0x1038a8a14
+./tests/scripts/test-$s.sh  4.98s user 3.29s system 24% cpu 33.584 total
+exit=1

@@ -1,0 +1,17 @@
+  ok: fixture: CreateBucket /plain-bucket (never versioned)
+  ok: fixture: PutObject /plain-bucket/k
+  -- PutObject on the never-versioned bucket: x-amz-version-id header count 0 value []
+  ok: CONTROL: PutObject omits x-amz-version-id for unversioned publication, as docs/compatibility/s3.md:446-450 states
+  ok: fixture: CreateBucket /versioned-bucket
+  ok: fixture: PutBucketVersioning Enabled
+  ok: fixture: PutObject /versioned-bucket/k
+  -- never-versioned bucket: GET status 200 x-amz-version-id=[] (header count 0)
+  -- never-versioned bucket: HEAD status 200 x-amz-version-id=[null] (header count 1)
+  ok: CONTROL: both reads of the unversioned object are 200
+  FAILED: GET and HEAD report the same x-amz-version-id for the same unversioned object
+  FAILED: HEAD of an object in a never-versioned bucket omits x-amz-version-id, as GetObject already does
+  -- CONTROL versioned bucket: GET x-amz-version-id=[45dda79046d651db6ab22b5ae137da89aebed4224cb052ff10a9d76ab6530b12]  HEAD x-amz-version-id=[45dda79046d651db6ab22b5ae137da89aebed4224cb052ff10a9d76ab6530b12]
+  ok: CONTROL: in a versioned bucket GET and HEAD agree on a real version id
+  -- CONTROL explicit ?versionId=null: GET x-amz-version-id=[null]  HEAD x-amz-version-id=[null]
+  ok: CONTROL: an explicit versionId=null selection reports null on both reads
+BUG REPRODUCED: 2 failed expectation(s)

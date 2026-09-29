@@ -1,0 +1,2 @@
+repro_backend_memory_3.adb:42:04: warning: use clause for type "Byte_Count" defined at flyology-object_storage.ads:10 has no effect [-gnatwu]
+repro_backend_memory_3.adb:43:04: warning: use clause for type "Unix_Time" defined at flyology-object_storage.ads:13 has no effect [-gnatwu]

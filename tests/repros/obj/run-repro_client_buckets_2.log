@@ -1,0 +1,28 @@
+  -- --- typed decoder, 301 with x-amz-bucket-region: eu-west-1 ---
+  -- decode 301: decoded kind HEAD_BUCKET_REJECTED, status 301
+  -- decode 301: every readable field = HTTP301|HeadBucket returned HTTP status 301||AMZREQ1|AMZHOST1
+  FAILED: decode 301: the decoded rejection still reports eu-west-1
+  -- --- typed decoder control, 200 with the same header ---
+  -- decode 200: decoded kind BUCKET_FOUND, status 200
+  -- decode 200: Result.Bucket_Region = "eu-west-1"
+  ok: decode 200: the decoder keeps x-amz-bucket-region
+  -- scripted loopback origin on 127.0.0.1:49798
+  -- --- Client.Buckets.Head over the origin, 301 redirect ---
+  -- convenience 301: Head kind HEAD_REJECTED, status 301
+  -- convenience 301: every readable field = HTTP301|HeadBucket returned HTTP status 301||AMZREQ1|AMZHOST1
+  FAILED: convenience 301: Head still reports eu-west-1 after the redirect
+  -- composable 301: response kind HEAD_BUCKET_REJECTED, status 301, Failure = INVALID_REQUEST
+  -- composable 301: every readable field = HTTP301|HeadBucket returned HTTP status 301|
+  FAILED: composable 301: the composable result still reports eu-west-1
+  -- --- control: the same header on a 200 ---
+  -- convenience 200: Head kind BUCKET_AVAILABLE, status 200
+  -- convenience 200: Region = "eu-west-1"
+  ok: convenience 200: Head reports eu-west-1
+  -- composable 200: response kind BUCKET_FOUND, status 200, Failure = NO_FAILURE
+  ok: composable 200: the composable result reports eu-west-1
+  -- request 1: HEAD /flyology-elsewhere HTTP/1.1
+  -- request 2: HEAD /flyology-elsewhere HTTP/1.1
+  -- request 3: HEAD /flyology-elsewhere HTTP/1.1
+  -- request 4: HEAD /flyology-elsewhere HTTP/1.1
+  ok: the origin served all four exchanges
+BUG REPRODUCED: 3 failed expectation(s)

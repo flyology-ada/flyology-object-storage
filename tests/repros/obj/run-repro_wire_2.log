@@ -1,0 +1,34 @@
+  -- Valid_Object_Read_Entity_Tag_Condition ("9dd4e461268c8034f5c8564e155c67a6") = TRUE
+  ok: CONTROL: a plain quoted entity tag is valid
+  -- trailing empty element: Valid_Object_Read_Entity_Tag_Condition ("9dd4e461268c8034f5c8564e155c67a6",) = FALSE
+  FAILED: trailing empty element: the field is accepted as entity-tag list syntax
+  -- trailing empty element: Evaluate_Object_Read_Conditions = INVALID_REQUEST
+  FAILED: trailing empty element: the read condition evaluates to Success
+  -- trailing empty element: Evaluate_Object_Write_Conditions = INVALID_REQUEST
+  -- leading empty element: Valid_Object_Read_Entity_Tag_Condition (,"9dd4e461268c8034f5c8564e155c67a6") = FALSE
+  FAILED: leading empty element: the field is accepted as entity-tag list syntax
+  -- leading empty element: Evaluate_Object_Read_Conditions = INVALID_REQUEST
+  FAILED: leading empty element: the read condition evaluates to Success
+  -- leading empty element: Evaluate_Object_Write_Conditions = INVALID_REQUEST
+  -- interior empty element: Valid_Object_Read_Entity_Tag_Condition ("9dd4e461268c8034f5c8564e155c67a6",,"other") = FALSE
+  FAILED: interior empty element: the field is accepted as entity-tag list syntax
+  -- interior empty element: Evaluate_Object_Read_Conditions = INVALID_REQUEST
+  FAILED: interior empty element: the read condition evaluates to Success
+  -- interior empty element: Evaluate_Object_Write_Conditions = INVALID_REQUEST
+  -- CreateBucket status 200
+  ok: CreateBucket is 200
+  -- PutObject ETag "9dd4e461268c8034f5c8564e155c67a6"
+  ok: the stored object has the expected ETag
+  -- CONTROL exact tag: If-Match: "9dd4e461268c8034f5c8564e155c67a6" -> status 200
+  ok: CONTROL exact tag answers 200
+  -- CONTROL wildcard: If-Match: * -> status 200
+  ok: CONTROL wildcard answers 200
+  -- trailing empty element: If-Match: "9dd4e461268c8034f5c8564e155c67a6", -> status 400
+  FAILED: trailing empty element answers 200
+  -- leading empty element: If-Match: ,"9dd4e461268c8034f5c8564e155c67a6" -> status 400
+  FAILED: leading empty element answers 200
+  -- interior empty element: If-Match: "9dd4e461268c8034f5c8564e155c67a6",,"other" -> status 400
+  FAILED: interior empty element answers 200
+  -- CONTROL non-matching tag -> status 412
+  ok: CONTROL: a non-matching If-Match is 412
+BUG REPRODUCED: 9 failed expectation(s)

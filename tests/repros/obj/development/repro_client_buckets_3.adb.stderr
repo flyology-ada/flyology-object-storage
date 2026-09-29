@@ -1,0 +1,1 @@
+repro_client_buckets_3.adb:54:04: warning: use clause for type "List_Buckets_Result_Kind" defined at flyology-object_storage-client-buckets.ads:45 has no effect [-gnatwu]

@@ -1,0 +1,13 @@
+  -- control CreateBucket: status 200
+  -- control CreateBucket: body 
+  ok: control: a correctly signed CreateBucket is 200
+  -- x-amz-date 20200101T000000Z: status 403
+  -- x-amz-date 20200101T000000Z: body <?xml version="1.0" encoding="UTF-8"?><Error><Code>RequestTimeTooSkewed</Code><Message>The difference between the request time and the current time is too large</Message><Resource>/skew-bucket</Resource></Error>
+  ok: control: x-amz-date 20200101T000000Z is 403
+  ok: control: x-amz-date 20200101T000000Z is RequestTimeTooSkewed
+  -- x-amz-date 23900101T000000Z: status 500
+  -- x-amz-date 23900101T000000Z: body <?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>We encountered an internal error</Message><Resource>/skew-bucket</Resource></Error>
+  FAILED: x-amz-date 23900101T000000Z is not answered with 500
+  FAILED: x-amz-date 23900101T000000Z is 403
+  FAILED: x-amz-date 23900101T000000Z is RequestTimeTooSkewed
+BUG REPRODUCED: 3 failed expectation(s)

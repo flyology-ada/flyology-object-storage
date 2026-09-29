@@ -1,0 +1,2 @@
+repro_wire_probe.adb:18:04: warning: use clause for type "Range_Parse_Status" defined at flyology-object_storage-s3-core.ads:162 has no effect [-gnatwu]
+repro_wire_probe.adb:23:13: warning: function "Q1" is not referenced [-gnatwu]

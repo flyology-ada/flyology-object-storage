@@ -1,0 +1,20 @@
+  -- CreateBucket 200
+  -- PutObject 200
+  -- GET Range: [bytes=0-1]  parser=RANGE_PARSED  status=206  Content-Range=[bytes 0-1/10]  Content-Length=[2]  body=2 bytes
+  ok: CONTROL: a supported byte range is 206 with the two bytes
+  -- GET Range: [bytes=100-200]  parser=RANGE_PARSED  status=416  Content-Range=[bytes */10]  Content-Length=[178]  body=178 bytes
+  ok: CONTROL: a valid but unsatisfiable byte range is 416
+  ok: CONTROL: a request without Range returns the whole object
+  -- GET Range: [items=0-1]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  FAILED: GET with an unrecognized range unit is 200
+  FAILED: GET with an unrecognized range unit returns the whole object
+  -- HEAD Range: [items=0-1]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=0 bytes
+  FAILED: HEAD with an unrecognized range unit is 200
+  -- GET Range: [bytes=0-1, 4-5]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes=0-1,4-5]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes=abc]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes 0-1]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes=]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes=0-1;q=1]  parser=MALFORMED_RANGE  status=400  Content-Range=[]  Content-Length=[171]  body=171 bytes
+  -- GET Range: [bytes=5-1]  parser=RANGE_PARSED  status=416  Content-Range=[bytes */10]  Content-Length=[178]  body=178 bytes
+BUG REPRODUCED: 3 failed expectation(s)

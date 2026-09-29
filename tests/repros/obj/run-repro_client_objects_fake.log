@@ -1,0 +1,5 @@
+repro_client_objects_fake.adb:1: Repro_Client_Objects_Fake cannot be used as a main program
+gprbind: invocation of gnatbind failed
+gprbuild: unable to bind repro_client_objects_fake.adb
+ERROR: Command ["gprbuild", "-q", "-p", "-P", "repros.gpr", "-XMAIN=repro_client_objects_fake"] exited with code 4
+BUILD FAILED: repro_client_objects_fake

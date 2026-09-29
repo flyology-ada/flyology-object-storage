@@ -1,0 +1,301 @@
+V "GNAT Lib v16"
+M P W=b
+A -O0
+A -gnatA
+A --RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+A -g
+A -gnat2022
+A -gnata
+A -gnatVa
+A -gnatwa
+A -mmacosx-version-min=26.0.0
+A -mcpu=apple-m1
+A -mlittle-endian
+A -mabi=lp64
+A -fPIC
+P SS ZX
+
+RN
+RV NO_EXCEPTION_HANDLERS
+RV NO_EXCEPTION_PROPAGATION
+RV NO_EXCEPTIONS
+RV NO_IMPLICIT_CONDITIONALS
+RV NO_LOCAL_ALLOCATORS
+RV NO_NESTED_FINALIZATION
+RV NO_SECONDARY_STACK
+RV NO_STANDARD_STORAGE_POOLS
+RV NO_DYNAMIC_SIZED_OBJECTS
+RV NO_IMPLEMENTATION_PRAGMAS
+
+U repro_s3_domain_a_5%b	repro_s3_domain_a_5.adb	4b5b7140 NE OO SU
+W ada%s			ada.ads			ada.ali
+W ada.exceptions%s	a-except.adb		a-except.ali
+Z ada.strings.text_buffers%s  a-sttebu.adb	a-sttebu.ali
+W flyology%s		flyology.ads		flyology.ali
+W flyology.bytes%s	flyology-bytes.adb	flyology-bytes.ali
+W flyology.object_storage%s  flyology-object_storage.adb  flyology-object_storage.ali
+W flyology.object_storage.s3%s  flyology-object_storage-s3.ads  flyology-object_storage-s3.ali
+W flyology.object_storage.s3.buckets%s  flyology-object_storage-s3-buckets.adb  flyology-object_storage-s3-buckets.ali
+W flyology.object_storage.s3.checksums%s  flyology-object_storage-s3-checksums.adb  flyology-object_storage-s3-checksums.ali
+W flyology.object_storage.s3.core%s  flyology-object_storage-s3-core.adb  flyology-object_storage-s3-core.ali
+W flyology.object_storage.s3.lifecycle%s  flyology-object_storage-s3-lifecycle.adb  flyology-object_storage-s3-lifecycle.ali
+W flyology.object_storage.s3.notifications%s  flyology-object_storage-s3-notifications.adb  flyology-object_storage-s3-notifications.ali
+W flyology.object_storage.s3.versioning%s  flyology-object_storage-s3-versioning.adb  flyology-object_storage-s3-versioning.ali
+W flyology.object_storage.s3.xml%s  flyology-object_storage-s3-xml.adb  flyology-object_storage-s3-xml.ali
+W repro_s3_server%s	repro_s3_server.adb	repro_s3_server.ali
+W repro_support%s	repro_support.adb	repro_support.ali
+Z system%s		system.ads		system.ali
+Z system.concat_2%s	s-conca2.adb		s-conca2.ali
+Z system.concat_3%s	s-conca3.adb		s-conca3.ali
+Z system.concat_4%s	s-conca4.adb		s-conca4.ali
+Z system.finalization_primitives%s  s-finpri.adb  s-finpri.ali
+Z system.secondary_stack%s  s-secsta.adb	s-secsta.ali
+Z system.soft_links%s	s-soflin.adb		s-soflin.ali
+Z system.standard_library%s  s-stalib.adb	s-stalib.ali
+Z system.storage_elements%s  s-stoele.ads	s-stoele.ali
+
+D ada.ads		20260901211354 76789da1 ada%s
+D a-assert.ads		20260901211354 ba465f5c ada.assertions%s
+D a-charac.ads		20260901211354 2d3ec45b ada.characters%s
+D a-chlat1.ads		20260901211354 e0d72e76 ada.characters.latin_1%s
+D a-contai.ads		20260901211354 61e5e089 ada.containers%s
+D a-conhel.ads		20260901211354 46fe1ce3 ada.containers.helpers%s
+D a-ciorma.ads		20260901211354 45fd5eb7 ada.containers.indefinite_ordered_maps%s
+D a-crbltr.ads		20260901211354 d3d16ba4 ada.containers.red_black_trees%s
+D a-convec.ads		20260901211354 cb0f314a ada.containers.vectors%s
+D a-except.ads		20260901211354 8699d7ff ada.exceptions%s
+D a-finali.ads		20260901211354 099c16e4 ada.finalization%s
+D a-iteint.ads		20260901211354 49a8bee2 ada.iterator_interfaces%s
+D a-reatim.ads		20260901211354 d11673fd ada.real_time%s
+D a-stream.ads		20260901211354 cb01a8f8 ada.streams%s
+D a-string.ads		20260901211354 90ac6797 ada.strings%s
+D a-strmap.ads		20260901211354 f7e6ca10 ada.strings.maps%s
+D a-strsea.ads		20260901211354 18c3c634 ada.strings.search%s
+D a-sttebu.ads		20260901211354 f1ad67a2 ada.strings.text_buffers%s
+D a-strunb.ads		20260901211354 8d6ccba7 ada.strings.unbounded%s
+D a-stuten.ads		20260901211354 c6ced0ae ada.strings.utf_encoding%s
+D a-tags.ads		20260901211354 2dbf449c ada.tags%s
+D a-taside.ads		20260901211354 c0a7c8d8 ada.task_identification%s
+D a-unccon.ads		20260901211354 0e9b276f ada.unchecked_conversion%s
+D flyology.ads		20260901211211 3ef168e6 flyology%s
+D flyology-bytes.ads	20260901211211 442a39a2 flyology.bytes%s
+D flyology-cancellation.ads  20260901211212 1167fdf6 flyology.cancellation%s
+D flyology-object_storage.ads  20260907005920 f08c5a0f flyology.object_storage%s
+D flyology-object_storage-backends.ads  20260907005920 8fab9008 flyology.object_storage.backends%s
+D flyology-object_storage-backends-memory.ads  20260907005920 206764be flyology.object_storage.backends.memory%s
+D flyology-object_storage-s3.ads  20260907005920 db355f2a flyology.object_storage.s3%s
+D flyology-object_storage-s3-buckets.ads  20260907005920 89614a15 flyology.object_storage.s3.buckets%s
+D flyology-object_storage-s3-checksum_crc.ads  20260907005920 afe19d62 flyology.object_storage.s3.checksum_crc%s
+D flyology-object_storage-s3-checksum_policy.ads  20260907005920 38c9220c flyology.object_storage.s3.checksum_policy%s
+D flyology-object_storage-s3-checksums.ads  20260907005920 eb936d4b flyology.object_storage.s3.checksums%s
+D flyology-object_storage-s3-core.ads  20260907005920 ef8f0520 flyology.object_storage.s3.core%s
+D flyology-object_storage-s3-lifecycle.ads  20260907005920 eb01cd7a flyology.object_storage.s3.lifecycle%s
+D flyology-object_storage-s3-notifications.ads  20260907005920 8a209ab5 flyology.object_storage.s3.notifications%s
+D flyology-object_storage-s3-sigv4.ads  20260907005920 26d6c005 flyology.object_storage.s3.sigv4%s
+D flyology-object_storage-s3-versioning.ads  20260907005920 408c45c5 flyology.object_storage.s3.versioning%s
+D flyology-object_storage-s3-xml.ads  20260907005920 838850c3 flyology.object_storage.s3.xml%s
+D flyology-object_storage-tags.ads  20260907005920 273c3a2f flyology.object_storage.tags%s
+D flyology-wake_sources.ads  20260901211212 fcae6c4f flyology.wake_sources%s
+D gnat.ads		20260901211354 b5988c27 gnat%s
+D g-bytswa.ads		20260901211354 a4d21639 gnat.byte_swapping%s
+D g-md5.ads		20260901211354 bb55398e gnat.md5%s
+D g-sechas.ads		20260901211354 302163b5 gnat.secure_hashes%s
+D g-sehamd.ads		20260901211354 d714f185 gnat.secure_hashes.md5%s
+D g-sehash.ads		20260901211354 3c0b3e8a gnat.secure_hashes.sha1%s
+D g-shsh32.ads		20260901211354 ff78221c gnat.secure_hashes.sha2_32%s
+D g-shsh64.ads		20260901211354 3a396822 gnat.secure_hashes.sha2_64%s
+D g-shshco.ads		20260901211354 1144502c gnat.secure_hashes.sha2_common%s
+D g-sha1.ads		20260901211354 077f0b47 gnat.sha1%s
+D g-sha256.ads		20260901211354 c083f050 gnat.sha256%s
+D g-sha512.ads		20260901211354 ddcf5bc4 gnat.sha512%s
+D interfac.ads		20260901211354 9111f9c1 interfaces%s
+D i-c.ads		20260901211354 dbdd3be7 interfaces.c%s
+D repro_s3_domain_a_5.adb  20260907062808 065b3530 repro_s3_domain_a_5%b
+D repro_s3_server.ads	20260907015420 016d1657 repro_s3_server%s
+D repro_support.ads	20260907011658 a186dccd repro_support%s
+D system.ads		20260901211353 8a611ac3 system%s
+D s-atacco.ads		20260901211354 5868e3ba system.address_to_access_conversions%s
+D s-assert.ads		20260901211354 9c4520c7 system.assertions%s
+D s-atocou.ads		20260901211354 dc18efc3 system.atomic_counters%s
+D s-c_time.ads		20260901211354 e502d0c0 system.c_time%s
+D s-conca2.ads		20260901211354 b5fb73f7 system.concat_2%s
+D s-conca3.ads		20260901211354 8a7a19a2 system.concat_3%s
+D s-conca4.ads		20260901211354 33f85f3e system.concat_4%s
+D s-exctab.ads		20260901211354 91bef6ef system.exception_table%s
+D s-finpri.ads		20260901211354 5970d55a system.finalization_primitives%s
+D s-finroo.ads		20260901211354 0a7c3ed4 system.finalization_root%s
+D s-memory.ads		20260901211354 18949c1a system.memory%s
+D s-multip.ads		20260901211354 38ac9f73 system.multiprocessors%s
+D s-oscons.ads		20260901211354 42ad9981 system.os_constants%s
+D s-osinte.ads		20260901211354 6d01fcda system.os_interface%s
+D s-oslock.ads		20260901211354 bcc789d2 system.os_locks%s
+D s-parame.ads		20260901211354 a1aeab5c system.parameters%s
+D s-pooglo.ads		20260901211354 91708d21 system.pool_global%s
+D s-putima.ads		20260901211353 1b989439 system.put_images%s
+D s-putaim.ads		20260901211354 0aad9583 system.put_task_images%s
+D s-retsta.ads		20260901211353 0f6b06cb system.return_stack%s
+D s-secsta.ads		20260901211354 578279f5 system.secondary_stack%s
+D s-soflin.ads		20260901211354 5d88fdea system.soft_links%s
+D s-stache.ads		20260901211354 0b81c1fe system.stack_checking%s
+D s-stausa.ads		20260901211353 f470ae2d system.stack_usage%s
+D s-stalib.ads		20260901211354 1c9580f6 system.standard_library%s
+D s-stalib.adb		20260901211354 eb464a47 system.standard_library%b
+D s-stoele.ads		20260901211354 ccded4e8 system.storage_elements%s
+D s-stopoo.ads		20260901211354 45459446 system.storage_pools%s
+D s-stratt.ads		20260901211354 80b8dafb system.stream_attributes%s
+D s-tasinf.ads		20260901211354 801abd01 system.task_info%s
+D s-taspri.ads		20260901211354 4fd5ef41 system.task_primitives%s
+D s-taprop.ads		20260901211354 6a572f54 system.task_primitives.operations%s
+D s-taskin.ads		20260901211354 e3b5765b system.tasking%s
+D s-taprob.ads		20260901211354 acd6094d system.tasking.protected_objects%s
+D s-tpoben.ads		20260901211354 60ad3dae system.tasking.protected_objects.entries%s
+D s-traent.ads		20260901211354 c81cbf8c system.traceback_entries%s
+D s-unstyp.ads		20260901211354 fa2a7f59 system.unsigned_types%s
+G a e
+G c Z b b [repro_s3_domain_a_5 standard 36 11 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [pair flyology__object_storage__s3__sigv4 24 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [note repro_support 10 14 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [parse flyology__object_storage__s3__lifecycle 230 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [parse flyology__object_storage__s3__notifications 187 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [parse_create_configuration flyology__object_storage__s3__buckets 129 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [parse_response flyology__object_storage__s3__versioning 36 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [parse flyology__object_storage__s3__versioning 25 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [check repro_support 7 14 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [signed_request repro_s3_server 37 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [run repro_s3_server 63 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [status_code repro_support 21 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [image repro_support 36 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [from_byte_string flyology__bytes 28 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [to_array flyology__bytes 33 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [compute flyology__object_storage__s3__checksums 86 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [encode_base64 flyology__object_storage__s3__checksums 38 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [body_of repro_support 29 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [escape repro_support 41 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [contains repro_support 32 13 none]
+G r c none [repro_s3_domain_a_5 standard 36 11 none] [finish repro_support 13 14 none]
+X 1 ada.ads
+18K9*Ada 22e8 57|24r6 162r25
+X 10 a-except.ads
+44K13*Exceptions 309e19 57|24w10 162r29
+84V13*Exception_Message{string} 57|162s40
+X 12 a-iteint.ads
+24h9 Forward_Iterator
+32h9 Reversible_Iterator<24R9[9|119]>
+X 14 a-stream.ads
+42M9*Stream_Element
+54A9*Stream_Element_Array(42M9)<44I9>
+X 24 flyology.ads
+11K9*Flyology 33e13 57|25r6 26r6 27r6 28r6 29r6 30r6 31r6 32r6 38r28 39r30
+. 40r25 41r30 42r34 43r31 44r24 53r13 54r16 138r12 152r12
+X 25 flyology-bytes.ads
+8K18*Bytes 92e19 57|25w15 53r22 54r25
+28V13*From_Byte_String{14R9} 57|54s31
+33V13*To_Array{14|54A9} 57|53s28
+X 27 flyology-object_storage.ads
+5K18*Object_Storage 699e28 57|26r15 27r15 28r15 29r15 30r15 31r15 32r15 38r37
+. 39r39 40r34 41r39 42r43 43r40 44r33 138r21 152r21
+248R9*Bucket_Versioning_Configuration 251e14 57|138r36 152r36
+X 28 flyology-object_storage-backends.ads
+468h9*Backend
+473h9*Object_Annotation_Backend
+558h9*Bucket_Notification_Backend
+564h9*Bucket_Metadata_Backend
+X 30 flyology-object_storage-s3.ads
+3K33*S3 6e31 57|26r30 27r30 28r30 29r30 30r30 31r30 32r30 38r52 39r54 40r49
+. 41r54 42r58 43r55 44r48
+X 31 flyology-object_storage-s3-buckets.ads
+6K36*Buckets 221e39 57|26w33 38r55
+12X4*Malformed_Bucket_Configuration 57|131r20
+102R9*Create_Bucket_Configuration 109e14 57|123r37
+129V13*Parse_Create_Configuration{102R9} 57|124s20
+X 34 flyology-object_storage-s3-checksums.ads
+12K36*Checksums 146e41 57|27w33 39r57
+38V13*Encode_Base64{string} 57|50s17
+86V13*Compute{22R9} 57|51s20
+X 35 flyology-object_storage-s3-core.ads
+2K36*Core 204e36 57|28w33 40r52
+55n68*MD5{54E9} 57|52r18
+X 36 flyology-object_storage-s3-lifecycle.ads
+6K36*Lifecycle 256e41 57|29w33 41r57
+9X4*Malformed_Lifecycle 57|104r22
+220R9*Lifecycle_Configuration 223e14 57|97r39
+230V13*Parse{220R9} 57|98s22
+X 37 flyology-object_storage-s3-notifications.ads
+6K36*Notifications 201e45 57|30w33 42r61
+9X4*Malformed_Notification 57|117r26
+175R9*Notification_Configuration 180e14 57|110r43
+187V13*Parse{175R9} 57|111s26
+X 38 flyology-object_storage-s3-sigv4.ads
+18A9*Name_Value_Array(12R9)<integer> 57|77r38
+24V13*Pair{12R9} 57|78s18
+X 39 flyology-object_storage-s3-versioning.ads
+4K36*Versioning 54e42 57|31w33 43r58
+7X4*Malformed_Configuration 57|145r23 160r27
+25V13*Parse{27|248R9} 57|153s25
+36V13*Parse_Response{27|248R9} 57|139s25
+X 40 flyology-object_storage-s3-xml.ads
+2K36*XML 85e35 57|32w33 44r51
+21r4*Default_Limits{13R9} 57|98r56 111r63 125r39
+X 57 repro_s3_domain_a_5.adb
+36U11*Repro_S3_Domain_A_5 36b11 224l5 224t24
+38K12 Buckets=38:55 123r29 124r12 131r12
+39K12 Checksums=39:57 50r7 51r10
+40K12 Core=40:52 52r13
+41K12 Lifecycle=41:57 97r29 98r12 104r12
+42K12 Notifications=42:61 110r29 111r12 117r12
+43K12 Versioning=43:58 139r14 145r12 153r14 160r16
+44K12 XML=44:51 98r52 111r59 125r35
+46a4 NS{string} 57r44
+48V13 MD5_Header{string} 48b13 48>25 178s13 203s13
+48a25 Value{string} 54r49
+56a4 Qualified_Body{string} 177r28 178r25
+60a4 Unqualified_Body{string} 139r41 153r32 202r34 203r25
+64a4 Unqualified_Lifecycle{string} 98r29
+69a4 Unqualified_Notification{string} 111r33
+72a4 Unqualified_Create{string} 125r15
+77a4 Versioning_Query{38|18A9} 178r42 203r44 214r55
+80a4 Bucket{string} 170r28 171r58 177r20 180r22
+81a4 Other_Bucket{string} 190r37 192r31 202r20 205r22 214r33 216r22
+83U14 Report_Codec 83b14 83>28 83>44 87l8 87t20 101s10 105s10 114s10 118s10
+. 128s10 132s10 142s10 146s10 156s10 161s10
+83a28 Label{string} 85r26
+83b44 Accepted{boolean} 86r17
+97r10 Ignored{36|220R9} 99r31
+110r10 Ignored{37|175R9} 112r31
+123r10 Ignored{31|102R9} 126r31
+137r10 Ignored{27|248R9} 140r31
+151r10 Ignored{27|248R9} 154r31
+160r12 E{10|53R9} 162r59
+175a7 Response{string} 181r33 182r27
+189a7 Response{string} 193r33 194r27
+200a7 Response{string} 206r33 207r43 208r27
+213a7 Response{string} 217r33 218r30 219r33
+X 58 repro_s3_server.ads
+17K9*Repro_S3_Server 57|34w6 34r27 58|78e20
+19K12*SigV4=19:53 57|77r32 78r12
+37V13*Signed_Request{string} 57|171s35 176s10 190s14 201s10 214s10
+63V13*Run{string} 57|171s30 175s37 190s9 200s37 213s37
+X 59 repro_support.ads
+1K9*Repro_Support 57|33w6 33r25 59|44e18
+7U14*Check 57|158s7 163s10 182s7 194s7 208s7 219s7
+10U14*Note 57|85s7 93s4 162s10 169s4 170s4 180s7 192s7 205s7 207s7 216s7
+13U14*Finish 57|223s4
+18a4*CRLF{string} 57|54r61
+21V13*Status_Code{natural} 57|171s17 181s20 182s14 193s20 194s14 206s20 208s14
+. 217s20
+29V13*Body_Of{string} 57|207s34 218s21 219s24
+32V13*Contains{boolean} 57|219s14
+36V13*Image{string} 57|171s10 181s13 193s13 206s13 217s13
+41V13*Escape{string} 57|207s26 218s13
+X 60 system.ads
+67M9*Address
+X 71 s-memory.ads
+51V13*Alloc{60|67M9} 101i<c,__gnat_malloc>22
+66U14*Free 102i<c,__gnat_free>22
+74V13*Realloc{60|67M9} 103i<c,__gnat_realloc>22
+X 84 s-stausa.ads
+206U14*Initialize 207i<c,__gnat_stack_usage_initialize>22
+265U14*Output_Results 269i<c,__gnat_stack_usage_output_results>22
+X 86 s-stalib.adb
+87U14 Break_Start 88i<c,__gnat_break_start>22
+

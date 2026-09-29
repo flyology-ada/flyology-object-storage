@@ -1,0 +1,26 @@
+  -- === fixtures ===
+  ok: CreateBucket /domain-b1 is 200
+  ok: PutObject k1 is 200
+  ok: PutObject k2 is 200
+  ok: PutObject k3 is 200
+  -- 
+  -- === unit level: Deletions.Parse_Request ===
+  -- Parse_Request raised Malformed_Delete: malformed DeleteObjects XML
+  FAILED: Deletions.Parse_Request accepts a namespace-free <Delete>
+  -- 
+  -- === server: stock-client bodies (must be accepted) ===
+  -- mc (minio-go) DeleteObjects    body=<Delete><Quiet>false</Quiet><Object><Key>k1</Key></Object></Delete>
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/domain-b1?delete</Resource></Error>
+  FAILED: mc (minio-go) DeleteObjects    is answered 200
+  FAILED: mc (minio-go) DeleteObjects    reports k1 as deleted
+  -- s3cmd DeleteObjects            body=<Delete><Object><Key>k2</Key></Object></Delete>
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/domain-b1?delete</Resource></Error>
+  FAILED: s3cmd DeleteObjects            is answered 200
+  FAILED: s3cmd DeleteObjects            reports k2 as deleted
+  -- 
+  -- === control: the same request with xmlns (passes today) ===
+  -- boto3/aws-cli DeleteObjects    body=<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Object><Key>k3</Key></Object><Quiet>false</Quiet></Delete>
+  --     status=200 body=<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Deleted><Key>k3</Key></Deleted></DeleteResult>
+  ok: boto3/aws-cli DeleteObjects    is answered 200
+  ok: boto3/aws-cli DeleteObjects    reports k3 as deleted
+BUG REPRODUCED: 5 failed expectation(s)

@@ -1,0 +1,2 @@
+repro_client_objects_probe.adb:12:17: warning: no entities of "Ada.Strings.Unbounded" are referenced [-gnatwu]
+repro_client_objects_probe.adb:24:12: warning: package "US" is not referenced [-gnatwu]

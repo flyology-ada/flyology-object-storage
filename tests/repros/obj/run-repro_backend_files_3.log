@@ -1,0 +1,26 @@
+  -- files root /private/tmp/claude-501/repro-bf3-1467-086457000
+  -- documents: 1048576 bytes and 3145728 bytes; documented admission bound is 16 MiB (backends.ads:2792); GNAT default task stack is 2 MiB
+  ok: memory (control) CreateBucket
+  ok: memory (control) PutBucketPolicy accepts 3 MiB
+  -- memory (control) GetBucketPolicy -> SUCCESS length 3145728
+  ok: memory (control) round-trips the 3 MiB policy
+  ok: files  (subject) CreateBucket small-policy-bucket
+  -- files  (subject) PutBucketPolicy(small-policy-bucket, 1048576 bytes) -> SUCCESS
+  ok: files  (subject) PutBucketPolicy acknowledges small-policy-bucket
+  -- files  (subject) GetBucketPolicy(small-policy-bucket) from the environment task -> SUCCESS length 1048576
+  ok: files  (subject) the environment task reads small-policy-bucket back (the bytes are on disk and intact)
+  ok: files  (subject) CreateBucket large-policy-bucket
+  -- files  (subject) PutBucketPolicy(large-policy-bucket, 3145728 bytes) -> SUCCESS
+  ok: files  (subject) PutBucketPolicy acknowledges large-policy-bucket
+  -- files  (subject) GetBucketPolicy(large-policy-bucket) from the environment task -> SUCCESS length 3145728
+  ok: files  (subject) the environment task reads large-policy-bucket back (the bytes are on disk and intact)
+  -- [child] small-policy-bucket GetBucketPolicy from a default-Storage_Size task -> SUCCESS length 1048576
+  -- [sh] child for small-policy-bucket terminated with status 0 (128+n means signal n)
+/bin/sh: line 1: 69307 Killed: 9               '/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/repros/bin/repro_backend_files_3' worker '/private/tmp/claude-501/repro-bf3-1467-086457000' large-policy-bucket 3145728
+  -- [sh] child for large-policy-bucket terminated with status 137 (128+n means signal n)
+  -- files  (subject) child status for the 1 MiB policy 0
+  ok: files  (subject) a default-stack task reads a 1 MiB policy back (child-process control)
+  -- files  (subject) child status for the 3 MiB policy 137
+  FAILED: files  (subject) a default-stack task reads the acknowledged 3 MiB policy back
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf3-1467-086457000
+BUG REPRODUCED: 1 failed expectation(s)

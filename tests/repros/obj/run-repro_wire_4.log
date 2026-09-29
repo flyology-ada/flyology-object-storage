@@ -1,0 +1,14 @@
+  -- CreateBucket 200
+  -- PutObject /wire-four-bucket/a%0Db -> 200
+  ok: PutObject of a %0D key is accepted (precondition)
+  ok: CONTROL: GetObject of the %0D key returns its body
+  -- ListObjects (no encoding-type) -> 200
+  --   wire bytes of the page: <?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>wire-four-bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a\rb</Key><LastModified>2026-09-07T07:25:15.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass><Owner><ID>repro-principal</ID></Owner></Contents></ListBucketResult>
+  --   stored key:            [a\rb]
+  --   key read back by S3.XML.Parse: [a\nb]
+  ok: the listing answers 200
+  FAILED: the key a conforming XML parser reads back is the stored key
+  -- CONTROL encoding-type=url -> 200  key read back [a%0Db]
+  ok: CONTROL: encoding-type=url reports the key percent-encoded
+  -- DeleteObject of the %0D key -> 204
+BUG REPRODUCED: 1 failed expectation(s)

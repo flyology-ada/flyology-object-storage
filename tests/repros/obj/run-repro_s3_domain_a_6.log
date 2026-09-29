@@ -1,0 +1,18 @@
+  -- CreateBucket /domain-a-6 status 200
+  -- PutObject /domain-a-6/k1 status 200
+  -- GET ?max-keys=1000                  -> 200
+  ok: GET ?max-keys=1000                  is accepted
+  -- GET ?list-type=2&max-keys=1000      -> 200
+  ok: GET ?list-type=2&max-keys=1000      is accepted
+  -- GET ?versions&max-keys=1000         -> 200
+  ok: GET ?versions&max-keys=1000         is accepted
+  -- GET ?max-keys=2000                  -> 400
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The ListObjects request is invalid</Message><Resource>/domain-a-6?max-keys=2000</Resource></Error>
+  FAILED: GET ?max-keys=2000                  is accepted
+  -- GET ?list-type=2&max-keys=2000      -> 400
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The ListObjectsV2 request is invalid</Message><Resource>/domain-a-6?list-type=2&amp;max-keys=2000</Resource></Error>
+  FAILED: GET ?list-type=2&max-keys=2000      is accepted
+  -- GET ?versions&max-keys=2000         -> 400
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The ListObjectVersions request is invalid</Message><Resource>/domain-a-6?max-keys=2000&amp;versions</Resource></Error>
+  FAILED: GET ?versions&max-keys=2000         is accepted
+BUG REPRODUCED: 3 failed expectation(s)

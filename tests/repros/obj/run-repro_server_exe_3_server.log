@@ -1,0 +1,27 @@
+  -- files root /private/tmp/claude-501/repro-server-exe-3-X1BXjN/files-root before:
+       ./notes/readme.txt
+       ./tmp/keep.txt
+       ./tmp/nested/deep.txt
+  -- files server reached READY:
+       READY s3 http://127.0.0.1:50063 backend=files
+       READY admin http://127.0.0.1:50064/
+  -- files root after:
+       ./notes/readme.txt
+  FAILED: files: the server refuses a root that is not a store, or leaves tmp/keep.txt in place
+  FAILED: files: ... and leaves tmp/nested/deep.txt in place
+  ok: control: files: a sibling directory the store does not use survives
+  -- sqlite root /private/tmp/claude-501/repro-server-exe-3-X1BXjN/sqlite-root before:
+       ./notes/readme.txt
+       ./objects/keep.txt
+       ./staging/keep.txt
+  -- sqlite server reached READY:
+       READY s3 http://127.0.0.1:50066 backend=sqlite
+       READY admin http://127.0.0.1:50067/
+  -- sqlite root after:
+       ./.flyology-object-storage.lock
+       ./catalog.sqlite3
+       ./notes/readme.txt
+  FAILED: sqlite: the server refuses a root that is not a store, or leaves objects/keep.txt in place
+  FAILED: sqlite: ... and leaves staging/keep.txt in place
+  ok: control: sqlite: a sibling directory the store does not use survives
+BUG REPRODUCED: 4 failed expectation(s)

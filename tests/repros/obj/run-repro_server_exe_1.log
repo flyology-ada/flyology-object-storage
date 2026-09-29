@@ -1,0 +1,20 @@
+  -- s3 port 49960, management port 49961, loop pool = default (FLYOLOGY_LOOP_POOL_SIZE unset)
+  -- baseline: signed S3 ListBuckets with no other traffic (3 runs)
+     run 1: 0.008 200 184  (seconds status bytes)
+     run 2: 0.002 200 184  (seconds status bytes)
+     run 3: 0.002 200 184  (seconds status bytes)
+  -- worst baseline S3 latency: 0.008s
+  -- one management login on its own (3 runs)
+     run 1: 0.997 200 {"authenticated":true}
+     run 2: 0.993 200 {"authenticated":true}
+     run 3: 0.997 200 {"authenticated":true}
+  -- threshold for a concurrent S3 request: 0.08s (max of 10x baseline and 0.050 s)
+  -- S3 request issued 0.15 s into a valid login (3 runs)
+     run 1: s3=0.829 200 184  tcp-connect=0.001 connected  login=0.994 200 {"authenticated":true}
+     run 2: s3=0.833 200 184  tcp-connect=0.001 connected  login=0.998 200 {"authenticated":true}
+     run 3: s3=0.850 200 184  tcp-connect=0.001 connected  login=0.997 200 {"authenticated":true}
+  -- worst S3 latency during a login: 0.85s
+  FAILED: an S3 request issued during an administrator login stays within 0.08s
+  -- control: S3 request after the logins: 0.002 200 184  (seconds status bytes)
+  ok: control: with no login in flight the same signed S3 request is fast
+BUG REPRODUCED: 1 failed expectation(s)

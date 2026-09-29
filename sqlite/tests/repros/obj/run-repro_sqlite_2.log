@@ -1,0 +1,27 @@
+  -- root /private/tmp/claude-501/repro-sqlite/annotation-copy-1556811-0
+  ok: Create_Bucket succeeds
+  ok: Put_Object plain-src succeeds
+  -- control (no annotation): Copy_Object returned SUCCESS
+  ok: control (no annotation): Copy_Object does not raise
+  ok: control (no annotation): Copy_Object returns Success
+  ok: Put_Object annotated-src succeeds
+  -- Put_Object_Annotation on annotated-src SUCCESS size 24
+  ok: Put_Object_Annotation on annotated-src succeeds
+  -- subject (one annotation): Copy_Object raised FLYOLOGY.OBJECT_STORAGE.SQLITE.DATABASES.SQLITE_ERROR -- CHECK constraint failed: refs>0
+  FAILED: subject (one annotation): Copy_Object does not raise
+  FAILED: subject (one annotation): Copy_Object returns Success
+  -- Get_Object_Annotation on the copy SUCCESS presence ANNOTATION_PRESENT bytes 24
+  ok: Get_Object_Annotation on the copy succeeds
+  ok: the copied annotation is present on the destination
+  ok: the copied annotation payload round-trips
+  -- Head_Object on the copy afterwards SUCCESS size 14
+  ok: Put_Object excluded-src succeeds
+  -- Put_Object_Annotation on excluded-src SUCCESS size 24
+  ok: Put_Object_Annotation on excluded-src succeeds
+  -- subject (EXCLUDE directive): Copy_Object raised FLYOLOGY.OBJECT_STORAGE.SQLITE.DATABASES.SQLITE_ERROR -- CHECK constraint failed: refs>0
+  FAILED: subject (EXCLUDE directive): Copy_Object does not raise
+  FAILED: subject (EXCLUDE directive): Copy_Object returns Success
+  -- second copy of same source: Copy_Object returned SUCCESS
+  ok: second copy of same source: Copy_Object does not raise
+  ok: second copy of same source: Copy_Object returns Success
+BUG REPRODUCED: 4 failed expectation(s)

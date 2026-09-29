@@ -1,0 +1,23 @@
+  -- === fixtures ===
+  ok: CreateBucket /domain-b6 is 200
+  ok: PutObject k is 200
+  -- 
+  -- === the same tag failures on the object XML path ===
+  -- PutObjectTagging  outside the AWS repertoire (key a#b)
+  --     status=400 code=MalformedXML
+  FAILED: PutObjectTagging reports InvalidTag for outside the AWS repertoire (key a#b)
+  -- PutObjectTagging  duplicate key                       
+  --     status=400 code=MalformedXML
+  FAILED: PutObjectTagging reports InvalidTag for duplicate key                       
+  -- PutObjectTagging  eleven tags                         
+  --     status=400 code=MalformedXML
+  FAILED: PutObjectTagging reports InvalidTag for eleven tags                         
+  -- 
+  -- === controls: the other two paths on the same server ===
+  -- control PutObject x-amz-tagging with key a#b
+  --     status=400 code=InvalidTag
+  ok: control: PutObject x-amz-tagging with key a#b already reports InvalidTag
+  -- control PutBucketTagging with key a#b       
+  --     status=400 code=InvalidTag
+  ok: control: PutBucketTagging with key a#b        already reports InvalidTag
+BUG REPRODUCED: 3 failed expectation(s)

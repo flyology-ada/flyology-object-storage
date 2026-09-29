@@ -1,0 +1,11 @@
+  -- === control: a one-tag GetBucketTagging response ===
+  -- control: one tag                     body=<Tagging><TagSet><Tag><Key>k</Key><Value>v</Value></Tag></TagSet></Tagging>
+  --     S3.Tagging.Parse_Bucket_Response: accepted, tags=1
+  --     Client.Low_Level: accepted, kind=BUCKET_TAGS_FOUND
+  -- 
+  -- === MinIO's empty-TagSet GetBucketTagging response ===
+  -- client decodes an empty bucket TagSet body=<Tagging><TagSet></TagSet></Tagging>
+  --     S3.Tagging.Parse_Bucket_Response: FLYOLOGY.OBJECT_STORAGE.S3.TAGGING.INVALID_TAG: invalid bucket tag set
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetBucketTagging response
+  FAILED: client decodes an empty bucket TagSet
+BUG REPRODUCED: 1 failed expectation(s)

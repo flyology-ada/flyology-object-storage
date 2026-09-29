@@ -1,0 +1,110 @@
+S3 oracle matrix: rustfs run 1/1
+ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5: Pulling from rustfs/rustfs
+Digest: sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+Status: Image is up to date for ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+mb s3://flyology-rustfs-corpus-23969-slice
+cp /data/empty.bin s3://flyology-rustfs-corpus-23969-slice/empty.bin
+cp /data/small.bin s3://flyology-rustfs-corpus-23969-slice/small.bin
+cp /data/large.bin s3://flyology-rustfs-corpus-23969-slice/large.bin
+cp /data/multipart.bin s3://flyology-rustfs-corpus-23969-slice/multipart.bin
+cp /data/small.bin s3://flyology-rustfs-corpus-23969-slice/nested/space + plus-%25.bin
+cp /data/small.bin s3://flyology-rustfs-corpus-23969-slice/overwrite.bin
+cp /data/large.bin s3://flyology-rustfs-corpus-23969-slice/overwrite.bin
+cp /data/small.bin s3://flyology-rustfs-corpus-23969-slice/delete-objects-probe.bin
+rm s3://flyology-rustfs-corpus-23969-slice/delete-objects-probe.bin
+independent s5cmd server slice: OK
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903: Pulling from peakcom/s5cmd
+Digest: sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Status: Image is up to date for peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_tests=0.1.0-dev/flyology_object_storage_tests.gpr...
+Link
+   [link]         flyology_object_storage_tests.adb
+   [link]         files_conditional_symlink_probe.adb
+   [link]         files_crash_probe.adb
+   [link]         files_open_probe.adb
+   [link]         s3_bucket_tagging_benchmark.adb
+   [link]         files_copy_benchmark.adb
+   [link]         s3_checksum_benchmark.adb
+   [link]         s3_multipart_checksum_benchmark.adb
+   [link]         s3_checksum_corpus.adb
+   [link]         s3_multipart_listing_benchmark.adb
+   [link]         s3_files_server.adb
+   [link]         s3_http_socket_corpus.adb
+   [link]         s3_list_object_versions_corpus.adb
+   [link]         s3_delete_bucket_cors_corpus.adb
+   [link]         s3_delete_bucket_configurations_corpus.adb
+   [link]         s3_get_bucket_controls_corpus.adb
+   [link]         s3_put_bucket_controls_corpus.adb
+   [link]         s3_put_bucket_ownership_controls_corpus.adb
+   [link]         s3_create_bucket_metadata_table_configuration_corpus.adb
+   [link]         s3_delete_object_annotation_corpus.adb
+   [link]         s3_put_object_legal_hold_corpus.adb
+   [link]         s3_put_object_retention_corpus.adb
+   [link]         s3_put_object_lock_configuration_corpus.adb
+   [link]         s3_get_object_torrent_corpus.adb
+   [link]         s3_get_object_torrent_socket_corpus.adb
+   [link]         s3_get_object_legal_hold_corpus.adb
+   [link]         s3_get_object_retention_corpus.adb
+   [link]         s3_get_object_lock_configuration_corpus.adb
+   [link]         s3_get_bucket_ownership_controls_corpus.adb
+   [link]         s3_get_bucket_cors_corpus.adb
+   [link]         s3_get_bucket_encryption_corpus.adb
+   [link]         s3_get_bucket_lifecycle_configuration_corpus.adb
+   [link]         s3_put_bucket_lifecycle_configuration_corpus.adb
+   [link]         s3_bucket_notification_configuration_corpus.adb
+   [link]         s3_get_bucket_replication_corpus.adb
+   [link]         s3_get_bucket_replication_qualification.adb
+   [link]         s3_get_bucket_metrics_configuration_qualification.adb
+   [link]         s3_put_bucket_metrics_configuration_qualification.adb
+   [link]         s3_put_bucket_metrics_configuration_corpus.adb
+   [link]         s3_put_bucket_analytics_configuration_qualification.adb
+   [link]         s3_put_bucket_analytics_configuration_corpus.adb
+   [link]         s3_put_bucket_intelligent_tiering_configuration_qualification.adb
+   [link]         s3_put_bucket_intelligent_tiering_configuration_corpus.adb
+   [link]         s3_list_bucket_metrics_configurations_qualification.adb
+   [link]         s3_list_bucket_analytics_configurations_qualification.adb
+   [link]         s3_list_bucket_intelligent_tiering_configurations_qualification.adb
+   [link]         s3_list_bucket_inventory_configurations_qualification.adb
+   [link]         s3_list_object_annotations_qualification.adb
+   [link]         s3_list_directory_buckets_qualification.adb
+   [link]         s3_get_bucket_analytics_configuration_qualification.adb
+   [link]         s3_get_bucket_intelligent_tiering_configuration_qualification.adb
+   [link]         s3_get_bucket_inventory_configuration_qualification.adb
+   [link]         s3_get_bucket_logging_qualification.adb
+   [link]         s3_get_bucket_metadata_configuration_qualification.adb
+   [link]         s3_get_bucket_website_qualification.adb
+   [link]         s3_put_bucket_replication_corpus.adb
+   [link]         s3_get_bucket_metadata_table_configuration_corpus.adb
+   [link]         s3_get_bucket_acl_corpus.adb
+   [link]         s3_get_object_acl_corpus.adb
+   [link]         s3_create_session_tls_corpus.adb
+   [link]         s3_transfer_many_corpus.adb
+   [link]         s3_implementation_corpus.adb
+   [link]         s3_memory_server.adb
+   [link]         s3_server_application_corpus.adb
+   [link]         s3_create_bucket_metadata_configuration_qualification.adb
+   [link]         s3_set_metadata_inventory_table_configuration_qualification.adb
+   [link]         s3_set_metadata_journal_table_configuration_qualification.adb
+   [link]         s3_set_metadata_annotation_table_configuration_qualification.adb
+   [link]         s3_put_bucket_acl_qualification.adb
+   [link]         s3_put_bucket_inventory_configuration_qualification.adb
+   [link]         s3_put_bucket_logging_qualification.adb
+   [link]         s3_put_bucket_website_qualification.adb
+Success: Build finished successfully in 16.84 seconds.
+S3 implementation setup: bucket created, located, headed, listed, and versioning-configured; durable backend routing checked when selected
+S3 implementation corpus failed: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : HeadObject response does not match prepared request
+Load address: 0x104058000
+Call stack traceback locations:
+0x10499ae88 0x10499aee8 0x104276ee0 0x1040707f4 0x1040819fc 0x10408e740 0x104a08a14
+
+
+Execution of ./bin/s3_implementation_corpus terminated by unhandled exception
+raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : HeadObject response does not match prepared request
+Load address: 0x104058000
+Call stack traceback locations:
+0x10499ae88 0x10499aee8 0x104276ee0 0x1040707f4 0x1040819fc 0x10408e740 0x104a08a14
+./tests/scripts/test-s3-matrix.sh  27.72s user 10.69s system 63% cpu 1:00.19 total
+exit=1

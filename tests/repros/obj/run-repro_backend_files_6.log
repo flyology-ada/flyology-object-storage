@@ -1,0 +1,25 @@
+  -- files root /private/tmp/claude-501/repro-bf6-1469-234070000
+  ok: memory (control) CreateBucket succeeds
+  ok: memory (control) versioning enabled
+  ok: memory (control) first PUT succeeds
+  -- memory (control) V1 = fda44a6321d0e2d57a2c2c3e611e58b1cb46bb78665b52a0c95fc6eb2d9eff69
+  -- memory (control) DELETE versionId=V1 -> SUCCESS
+  ok: memory (control) exact delete of V1 succeeds
+  ok: memory (control) second PUT succeeds
+  -- memory (control) V2 = 64315f7b3a3cb1d53b86836356810b6115bc08ec33fc24d40663d3d25f2702a7
+  ok: memory (control) the republished version ID differs from the deleted one
+  -- memory (control) GET versionId=V1 -> NOT_FOUND body=""
+  ok: memory (control) GET of the deleted version ID does not serve the new bytes
+  ok: files  (subject) CreateBucket succeeds
+  ok: files  (subject) versioning enabled
+  ok: files  (subject) first PUT succeeds
+  -- files  (subject) V1 = 0972e6ee85f810eaa3704c8907a13fc770ba5d0db58255e6d1b97eef10ac12c4
+  -- files  (subject) DELETE versionId=V1 -> SUCCESS
+  ok: files  (subject) exact delete of V1 succeeds
+  ok: files  (subject) second PUT succeeds
+  -- files  (subject) V2 = 0972e6ee85f810eaa3704c8907a13fc770ba5d0db58255e6d1b97eef10ac12c4
+  FAILED: files  (subject) the republished version ID differs from the deleted one
+  -- files  (subject) GET versionId=V1 -> SUCCESS body="BBBB"
+  FAILED: files  (subject) GET of the deleted version ID does not serve the new bytes
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf6-1469-234070000
+BUG REPRODUCED: 2 failed expectation(s)

@@ -1,0 +1,18 @@
+  -- server 1 owns /private/tmp/claude-501/repro-server-exe-5-jMkUQQ/files-root:
+       READY s3 http://127.0.0.1:50070 backend=files
+       READY admin http://127.0.0.1:50071/
+  -- placed /private/tmp/claude-501/repro-server-exe-5-jMkUQQ/files-root/tmp/owner-staging.tmp while server 1 is live
+  -- server 2 on the same root:
+       READY s3 http://127.0.0.1:50072 backend=files
+       READY admin http://127.0.0.1:50073/
+  -- server 2 reached READY: yes
+  -- server 1's tmp/owner-staging.tmp survived: no
+  -- server 1 still alive: yes
+  FAILED: files: a second server is refused a root a live server already owns
+  FAILED: files: ... or at least leaves the live root's tmp/ contents in place
+  -- control, sqlite: second server on the same root:
+       object-storage server startup failed: raised FLYOLOGY.OBJECT_STORAGE.BACKENDS.SQLITE.CONFIGURATION_ERROR : could not acquire exclusive SQLit
+       raised FLYOLOGY.OBJECT_STORAGE.BACKENDS.SQLITE.CONFIGURATION_ERROR : could not acquire exclusive SQLite backend root lock
+  ok: control: sqlite refuses a second server on a root a live server owns
+  ok: control: the sqlite refusal names the reason
+BUG REPRODUCED: 2 failed expectation(s)

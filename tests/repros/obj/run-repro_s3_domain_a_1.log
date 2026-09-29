@@ -1,0 +1,22 @@
+  -- ListObjectVersions <StorageClass>STANDARD</StorageClass>: decoded, versions=1
+  ok: ListObjectVersions keeps the STANDARD version
+  ok: ListObjectVersions preserves STANDARD
+  -- ListObjectVersions <StorageClass>REDUCED_REDUNDANCY</StorageClass>: REJECTED, malformed ListObjectVersions XML: malformed S3 XML document
+  FAILED: ListObjectVersions accepts a REDUCED_REDUNDANCY version
+  -- ListObjectVersions <StorageClass>STANDARD_IA</StorageClass>: REJECTED, malformed ListObjectVersions XML: malformed S3 XML document
+  FAILED: ListObjectVersions accepts a STANDARD_IA version
+  -- ListObjectVersions <StorageClass>GLACIER</StorageClass>: REJECTED, malformed ListObjectVersions XML: malformed S3 XML document
+  FAILED: ListObjectVersions accepts a GLACIER version
+  -- ListObjectVersions <StorageClass>INTELLIGENT_TIERING</StorageClass>: REJECTED, malformed ListObjectVersions XML: malformed S3 XML document
+  FAILED: ListObjectVersions accepts a INTELLIGENT_TIERING version
+  -- --- same classes through the ListObjects v1 decoder ---
+  --   ListObjects v1 <StorageClass>STANDARD</StorageClass>: decoded, objects=1
+  --   ListObjects v1 <StorageClass>REDUCED_REDUNDANCY</StorageClass>: decoded, objects=1
+  --   ListObjects v1 <StorageClass>STANDARD_IA</StorageClass>: decoded, objects=1
+  --   ListObjects v1 <StorageClass>GLACIER</StorageClass>: decoded, objects=1
+  --   ListObjects v1 <StorageClass>INTELLIGENT_TIERING</StorageClass>: decoded, objects=1
+  -- --- verbatim MinIO RELEASE.2025-09-07T16-13-09Z body ---
+  -- body bytes 1157
+  -- MinIO page REJECTED, malformed ListObjectVersions XML: malformed S3 XML document
+  FAILED: the MinIO ListVersionsResult decodes with both versions
+BUG REPRODUCED: 5 failed expectation(s)

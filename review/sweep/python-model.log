@@ -1,0 +1,198 @@
+==========================================================================
+model differential: pinned JSON vs committed Ada descriptor
+==========================================================================
+model      : /Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/review/baseline/service-2.json
+descriptor : /Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/src/flyology-object_storage-s3-model.adb
+sha256     : 429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9
+operations checked        : 116
+shapes checked            : 718 (718 reachable from operation input/output/errors)
+structure members checked : 1699
+enumeration values checked: 279 in 75 shapes
+error shape links checked : 38 (20 distinct error shapes)
+operations with httpChecksum        : 35
+operations using responseCode 200 default: 96
+requestUri with a query literal     : 99
+requestUri with a greedy label      : 30
+shapes with min / max / pattern     : 8 / 7 / 4
+shapes with timestampFormat         : 8
+shapes with xmlNamespace / flattened: 1 / 35
+payload shapes / streaming members / header maps: 63 / 7 / 6
+descriptor case functions parsed    : 41 (29 flat, 12 indexed)
+descriptor case arms compared       : 30303 value arms + 3607 'when others' defaults = 33910 of the 33910 return statements in the body
+strings screened for non-ASCII      : 7615 (0 unsafe)
+
+--------------------------------------------------------------------------
+consumer ordinal cross-check (literal member ordinals in src/*.adb, resolved against the pinned JSON member order)
+--------------------------------------------------------------------------
+file                                          line via                         shape                            # member                      wire name                         E call site                  verdict
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+flyology-object_storage-client-low_level.adb  2735 Valid_Optional              CreateSessionOutput              1 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb  2736 Valid_Optional              CreateSessionOutput              2 SSEKMSKeyId                 x-amz-server-side-encryption-aws-kms-key-id - SSE_KMS_Key_ID             OK
+flyology-object_storage-client-low_level.adb  2737 Valid_Optional              CreateSessionOutput              3 SSEKMSEncryptionContext     x-amz-server-side-encryption-context - SSE_KMS_Encryption_Context OK
+flyology-object_storage-client-low_level.adb  3258 Valid_Create_Multipart_Enum CreateMultipartUploadOutput      6 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb  3272 Valid_Create_Multipart_Enum CreateMultipartUploadOutput     12 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-client-low_level.adb  3280 Valid_Create_Multipart_Enum CreateMultipartUploadOutput     13 ChecksumAlgorithm           x-amz-checksum-algorithm          E Checksum_Algorithm         OK
+flyology-object_storage-client-low_level.adb  3282 Valid_Create_Multipart_Enum CreateMultipartUploadOutput     14 ChecksumType                x-amz-checksum-type               E Checksum_Type              OK
+flyology-object_storage-client-low_level.adb  5610 Valid_Head_Object_Enum      HeadObjectOutput                 5 ArchiveStatus               x-amz-archive-status              E Archive_Status             OK
+flyology-object_storage-client-low_level.adb  5611 Valid_Head_Object_Enum      HeadObjectOutput                18 ChecksumType                x-amz-checksum-type               E Checksum_Type              OK
+flyology-object_storage-client-low_level.adb  5615 Valid_Head_Object_Enum      HeadObjectOutput                30 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb  5620 Valid_Head_Object_Enum      HeadObjectOutput                36 StorageClass                x-amz-storage-class               E Storage_Class              OK
+flyology-object_storage-client-low_level.adb  5621 Valid_Head_Object_Enum      HeadObjectOutput                37 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-client-low_level.adb  5629 Valid_Head_Object_Enum      HeadObjectOutput                38 ReplicationStatus           x-amz-replication-status          E Replication_Status         OK
+flyology-object_storage-client-low_level.adb  5630 Valid_Head_Object_Enum      HeadObjectOutput                41 ObjectLockMode              x-amz-object-lock-mode            E Object_Lock_Mode           OK
+flyology-object_storage-client-low_level.adb  5631 Valid_Head_Object_Enum      HeadObjectOutput                43 ObjectLockLegalHoldStatus   x-amz-object-lock-legal-hold      E Object_Lock_Legal_Hold_Status OK
+flyology-object_storage-client-low_level.adb  5995 Valid_Get_Object_Enum       GetObjectOutput                 19 ChecksumType                x-amz-checksum-type               E Checksum_Type              OK
+flyology-object_storage-client-low_level.adb  5999 Valid_Get_Object_Enum       GetObjectOutput                 30 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb  6004 Valid_Get_Object_Enum       GetObjectOutput                 36 StorageClass                x-amz-storage-class               E Storage_Class              OK
+flyology-object_storage-client-low_level.adb  6005 Valid_Get_Object_Enum       GetObjectOutput                 37 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-client-low_level.adb  6006 Valid_Get_Object_Enum       GetObjectOutput                 38 ReplicationStatus           x-amz-replication-status          E Replication_Status         OK
+flyology-object_storage-client-low_level.adb  6007 Valid_Get_Object_Enum       GetObjectOutput                 41 ObjectLockMode              x-amz-object-lock-mode            E Object_Lock_Mode           OK
+flyology-object_storage-client-low_level.adb  6008 Valid_Get_Object_Enum       GetObjectOutput                 43 ObjectLockLegalHoldStatus   x-amz-object-lock-legal-hold      E Object_Lock_Legal_Hold_Status OK
+flyology-object_storage-client-low_level.adb  7661 Valid_Put_Object_Enum       PutObjectOutput                 14 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb  7683 Valid_Put_Object_Enum       PutObjectOutput                 22 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-client-low_level.adb 13982 Valid_Upload_Part_Enum      UploadPartOutput                 1 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb 14006 Valid_Upload_Part_Enum      UploadPartOutput                17 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-client-low_level.adb 14356 <direct>                    UploadPartCopyOutput             3 ServerSideEncryption        x-amz-server-side-encryption      E Encryption                 OK
+flyology-object_storage-client-low_level.adb 14725 Valid                       CopyObjectOutput                 2 Expiration                  x-amz-expiration                  - Expiration                 OK
+flyology-object_storage-client-low_level.adb 14726 Valid                       CopyObjectOutput                 3 CopySourceVersionId         x-amz-copy-source-version-id      - Copy_Source_Version_ID     OK
+flyology-object_storage-client-low_level.adb 14727 Valid                       CopyObjectOutput                 4 VersionId                   x-amz-version-id                  - Version_ID                 OK
+flyology-object_storage-client-low_level.adb 14728 Valid                       CopyObjectOutput                 5 ServerSideEncryption        x-amz-server-side-encryption      E Server_Side_Encryption     OK
+flyology-object_storage-client-low_level.adb 14729 Valid                       CopyObjectOutput                 6 SSECustomerAlgorithm        x-amz-server-side-encryption-customer-algorithm - SSE_Customer_Algorithm     OK
+flyology-object_storage-client-low_level.adb 14730 Valid                       CopyObjectOutput                 7 SSECustomerKeyMD5           x-amz-server-side-encryption-customer-key-MD5 - SSE_Customer_Key_MD5       OK
+flyology-object_storage-client-low_level.adb 14731 Valid                       CopyObjectOutput                 8 SSEKMSKeyId                 x-amz-server-side-encryption-aws-kms-key-id - SSE_KMS_Key_ID             OK
+flyology-object_storage-client-low_level.adb 14732 Valid                       CopyObjectOutput                 9 SSEKMSEncryptionContext     x-amz-server-side-encryption-context - SSE_KMS_Encryption_Context OK
+flyology-object_storage-client-low_level.adb 14733 Valid                       CopyObjectOutput                10 BucketKeyEnabled            x-amz-server-side-encryption-bucket-key-enabled - Bucket_Key_Enabled         OK
+flyology-object_storage-client-low_level.adb 14734 Valid                       CopyObjectOutput                11 RequestCharged              x-amz-request-charged             E Request_Charged            OK
+flyology-object_storage-s3-listings.adb        525 <direct>                    ListObjectsOutput                4 Contents                    Contents                          - Contents                   OK
+flyology-object_storage-s3-multipart.adb      1642 Valid_List_Parts_Enumeration ListPartsOutput                 13 StorageClass                StorageClass                      E Storage_Class              OK
+flyology-object_storage-s3-multipart.adb      1647 Valid_List_Parts_Enumeration ListPartsOutput                 15 ChecksumAlgorithm           ChecksumAlgorithm                 E Checksum_Algorithm         OK
+flyology-object_storage-s3-multipart.adb      1654 Valid_List_Parts_Enumeration ListPartsOutput                 16 ChecksumType                ChecksumType                      E Checksum_Type              OK
+flyology-object_storage-s3-multipart_uploads.adb   519 Output_Member_Shape         ListMultipartUploadsOutput      10 Uploads                     Upload                            - Upload                     OK
+flyology-object_storage-s3-multipart_uploads.adb   670 Output_Member_Shape         ListMultipartUploadsOutput      12 EncodingType                EncodingType                      E Encoding_Type              OK
+flyology-object_storage-s3-multipart_uploads.adb   689 Upload_Member_Shape         MultipartUpload                  4 StorageClass                StorageClass                      E Storage_Class              OK
+flyology-object_storage-s3-multipart_uploads.adb   697 Upload_Member_Shape         MultipartUpload                  7 ChecksumAlgorithm           ChecksumAlgorithm                 E Checksum_Algorithm         OK
+flyology-object_storage-s3-multipart_uploads.adb   704 Upload_Member_Shape         MultipartUpload                  8 ChecksumType                ChecksumType                      E Checksum_Type              OK
+flyology-object_storage-s3-versions.adb        358 Output_Member_Shape         ListObjectVersionsOutput         6 Versions                    Version                           - Version                    OK
+flyology-object_storage-s3-versions.adb        766 Output_Member_Shape         ListObjectVersionsOutput        13 EncodingType                EncodingType                      E EncodingType               OK
+flyology-object_storage-s3-versions.adb        778 Version_Member_Shape        ObjectVersion                    2 ChecksumAlgorithm           ChecksumAlgorithm                 E ChecksumAlgorithm          OK
+flyology-object_storage-s3-versions.adb        788 Version_Member_Shape        ObjectVersion                    3 ChecksumType                ChecksumType                      E ChecksumType               OK
+flyology-object_storage-s3-versions.adb        800 Version_Member_Shape        ObjectVersion                    5 StorageClass                StorageClass                      E StorageClass               OK
+flyology-object_storage-s3-versions.adb       1214 Version_Member_Shape        ObjectVersion                    5 StorageClass                StorageClass                      E Storage_Class              OK
+flyology-object_storage-s3-versions.adb       1223 Version_Member_Shape        ObjectVersion                    3 ChecksumType                ChecksumType                      E Checksum_Type              OK
+flyology-object_storage-s3-versions.adb       1254 Version_Member_Shape        ObjectVersion                    2 ChecksumAlgorithm           ChecksumAlgorithm                 E Checksum_Algorithms        OK
+flyology-object_storage-server-s3_applications.adb 11809 Valid_Enumeration           CreateMultipartUploadRequest     1 ACL                         x-amz-acl                         E x-amz-acl                  OK
+flyology-object_storage-server-s3_applications.adb 11831 Valid_Enumeration           CreateMultipartUploadRequest    24 RequestPayer                x-amz-request-payer               E x-amz-request-payer        OK
+flyology-object_storage-server-s3_applications.adb 11842 Valid_Enumeration           CreateMultipartUploadRequest    15 ServerSideEncryption        x-amz-server-side-encryption      E x-amz-server-side-encryption OK
+flyology-object_storage-server-s3_applications.adb 11966 Valid_Enumeration           CreateMultipartUploadRequest    16 StorageClass                x-amz-storage-class               E x-amz-storage-class        OK
+flyology-object_storage-server-s3_applications.adb 12005 Valid_Enumeration           CreateMultipartUploadRequest    26 ObjectLockMode              x-amz-object-lock-mode            E x-amz-object-lock-mode     OK
+flyology-object_storage-server-s3_applications.adb 12015 Valid_Enumeration           CreateMultipartUploadRequest    28 ObjectLockLegalHoldStatus   x-amz-object-lock-legal-hold      E x-amz-object-lock-legal-hold OK
+flyology-object_storage-server-s3_applications.adb 14113 Valid_Enumeration           CopyObjectRequest               23 MetadataDirective           x-amz-metadata-directive          E x-amz-metadata-directive   OK
+flyology-object_storage-server-s3_applications.adb 14122 Valid_Enumeration           CopyObjectRequest               24 TaggingDirective            x-amz-tagging-directive           E x-amz-tagging-directive    OK
+flyology-object_storage-server-s3_applications.adb 14158 Valid_Enumeration           CopyObjectRequest               26 ServerSideEncryption        x-amz-server-side-encryption      E x-amz-server-side-encryption OK
+flyology-object_storage-server-s3_applications.adb 14178 Valid_Enumeration           CopyObjectRequest               40 ObjectLockMode              x-amz-object-lock-mode            E x-amz-object-lock-mode     OK
+flyology-object_storage-server-s3_applications.adb 14186 Valid_Enumeration           CopyObjectRequest               42 ObjectLockLegalHoldStatus   x-amz-object-lock-legal-hold      E x-amz-object-lock-legal-hold OK
+flyology-object_storage-server-s3_applications.adb 14314 Valid_Enumeration           CopyObjectRequest                1 ACL                         x-amz-acl                         E x-amz-acl                  OK
+flyology-object_storage-server-s3_applications.adb 14333 Valid_Enumeration           CopyObjectRequest               27 StorageClass                x-amz-storage-class               E x-amz-storage-class        OK
+flyology-object_storage-server-s3_applications.adb 14348 Valid_Enumeration           CopyObjectRequest               25 AnnotationDirective         x-amz-object-annotation-directive E x-amz-object-annotation-directive OK
+flyology-object_storage-server-s3_applications.adb 14918 Valid_Enumeration           PutObjectRequest                33 StorageClass                x-amz-storage-class               E x-amz-storage-class        OK
+flyology-object_storage-server-s3_applications.adb 14933 Valid_Enumeration           PutObjectRequest                 1 ACL                         x-amz-acl                         E x-amz-acl                  OK
+flyology-object_storage-server-s3_applications.adb 14941 Valid_Enumeration           PutObjectRequest                41 RequestPayer                x-amz-request-payer               E x-amz-request-payer        OK
+flyology-object_storage-server-s3_applications.adb 14949 Valid_Enumeration           PutObjectRequest                32 ServerSideEncryption        x-amz-server-side-encryption      E x-amz-server-side-encryption OK
+flyology-object_storage-server-s3_applications.adb 14959 Valid_Enumeration           PutObjectRequest                43 ObjectLockMode              x-amz-object-lock-mode            E x-amz-object-lock-mode     OK
+flyology-object_storage-server-s3_applications.adb 14967 Valid_Enumeration           PutObjectRequest                45 ObjectLockLegalHoldStatus   x-amz-object-lock-legal-hold      E x-amz-object-lock-legal-hold OK
+(74 literal ordinals resolved in 6 consumer file(s); 57 feed an enumeration lookup; 0 without a call-site name to compare; 'E' marks a member whose shape carries enumeration values)
+
+--------------------------------------------------------------------------
+omitted attributes (present in the JSON, absent from the descriptor)
+--------------------------------------------------------------------------
+  box  x43
+      example  : shape #13 AccessPointAlias.box=True
+      needed by: a boxed-primitive-aware codec
+  deprecated  x4
+      operation GetBucketLifecycle.deprecated=True
+      operation GetBucketNotification.deprecated=True
+      operation PutBucketLifecycle.deprecated=True
+      operation PutBucketNotification.deprecated=True
+      needed by: a deprecation diagnostic
+  endpoint  x1
+      operation WriteGetObjectResponse.endpoint={'hostPrefix': '{RequestRoute}.'}
+      needed by: endpoint host-prefix expansion (WriteGetObjectResponse); the client lane is 'partial' and the server reads x-amz-request-route directly
+  error  x20
+      example  : shape #11 AccessDenied.error={'httpStatusCode': 403}
+      needed by: a generic modeled-error dispatcher
+  errors[*].error.httpStatusCode  x38
+      example  : operation AbortMultipartUpload.errors[NoSuchUpload].error.httpStatusCode=404
+      needed by: a client or server that maps a modeled error shape to an HTTP status without a hand-written table; no src/ consumer reads Error_Shape today
+  event  x5
+      shape #114 ContinuationEvent.event=True
+      shape #193 EndEvent.event=True
+      shape #520 ProgressEvent.event=True
+      shape #572 RecordsEvent.event=True
+      shape #665 StatsEvent.event=True
+      needed by: an event-stream codec (SelectObjectContent)
+  eventstream  x1
+      shape #642 SelectObjectContentEventStream.eventstream=True
+      needed by: an event-stream codec (SelectObjectContent)
+  exception  x20
+      example  : shape #11 AccessDenied.exception=True
+      needed by: a generic modeled-error dispatcher
+  input.locationName  x1
+      operation SelectObjectContent.input.locationName='SelectObjectContentRequest'
+      needed by: a descriptor-driven request-body root element name
+  input.xmlNamespace  x1
+      operation SelectObjectContent.input.xmlNamespace={'uri': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+      needed by: a descriptor-driven request-body root namespace (SelectObjectContent); the generated serializers take the namespace from the JSON at generation time
+  member.box  x1
+      shape #570 RecordExpiration member Days.box=True
+      needed by: a boxed-primitive-aware codec
+  member.deprecated  x5
+      shape #93 CloudFunctionConfiguration member Event.deprecated=True
+      shape #374 LifecycleRule member Prefix.deprecated=True
+      shape #562 QueueConfigurationDeprecated member Event.deprecated=True
+      shape #589 ReplicationRule member Prefix.deprecated=True
+      shape #690 TopicConfigurationDeprecated member Event.deprecated=True
+      needed by: a deprecation diagnostic
+  member.eventpayload  x3
+      shape #520 ProgressEvent member Details.eventpayload=True
+      shape #572 RecordsEvent member Payload.eventpayload=True
+      shape #665 StatsEvent member Details.eventpayload=True
+      needed by: an event-stream codec (SelectObjectContent)
+  member.hostLabel  x1
+      shape #716 WriteGetObjectResponseRequest member RequestRoute.hostLabel=True
+      needed by: endpoint host-prefix expansion (WriteGetObjectResponse RequestRoute); the server reads x-amz-request-route directly
+  member.idempotencyToken  x1
+      shape #577 RenameObjectRequest member ClientToken.idempotencyToken=True
+      needed by: a client that auto-fills an idempotency token (RenameObject ClientToken)
+  member.locationName  x9
+      shape #36 AnnotationList.member.locationName='AnnotationEntry'
+      shape #65 Buckets.member.locationName='Bucket'
+      shape #190 EncryptionTypeList.member.locationName='EncryptionType'
+      shape #300 Grants.member.locationName='Grant'
+      shape #345 InventoryOptionalFields.member.locationName='Field'
+      shape #620 RoutingRules.member.locationName='RoutingRule'
+      shape #674 TagSet.member.locationName='Tag'
+      shape #680 TargetGrants.member.locationName='Grant'
+      shape #709 UserMetadata.member.locationName='MetadataEntry'
+      needed by: an XML codec that names repeated list elements from the descriptor; tools/s3_codegen.py reads the pinned JSON directly
+  staticContextParams  x77
+      example  : operation CopyObject.staticContextParams=['DisableS3ExpressSessionAuth']
+      needed by: endpoint-rule evaluation
+  synthetic  x1
+      shape #11 AccessDenied.synthetic=True
+      needed by: nothing; botocore marks AccessDenied as synthesised rather than modeled
+  union  x1
+      shape #467 ObjectEncryption.union=True
+      needed by: a union-aware codec
+  xmlNamespace.prefix  x1
+      shape #299 Grantee.xmlNamespace.prefix='xsi'
+      needed by: an XML serializer emitting a namespace-prefixed attribute name from the descriptor; the generated serializers resolve the xsi prefix from the JSON at generation time
+
+--------------------------------------------------------------------------
+notes
+--------------------------------------------------------------------------
+  indexed-accessor 'when others' defaults (unreachable under the declared preconditions): Enumeration_Value='', Error_Shape='No_Shape', Location='Body_Location', Member_Context_Parameter='', Member_Flattened=False, Member_Location_Name='', Member_Name='', Member_Required=False, Member_Shape="Shape_Index'First", Member_Streaming=False, Member_XML_Attribute=False, Member_XML_Namespace=''
+
+--------------------------------------------------------------------------
+result
+--------------------------------------------------------------------------
+no mismatch: the committed descriptor agrees with the pinned model on every operation, shape, member, enumeration value and trait checked above, and every literal member ordinal in src/*.adb names the member its call site expects.

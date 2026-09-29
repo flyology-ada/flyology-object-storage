@@ -1,0 +1,23 @@
+  ok: fixture: CreateBucket /md5-bucket
+  ok: fixture: CreateBucket /md5-control
+  ok: fixture: PutObject /md5-bucket/modelled
+  ok: fixture: PutObject /md5-bucket/control
+  -- DeleteObjects flexible checksum headers: x-amz-sdk-checksum-algorithm: CRC32\r\nx-amz-checksum-crc32: YZjakw==\r\n
+  -- DeleteObjects CRC32 only, no Content-MD5: status 400  body <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>DeleteObjects requires one valid Content-MD5 header</Message><Resource>/md5-bucket?delete</Resource></Error>
+  FAILED: DeleteObjects with a valid x-amz-checksum-crc32 and x-amz-sdk-checksum-algorithm: CRC32 and no Content-MD5 is 200
+  FAILED: DeleteObjects CRC32-only response reports the deleted key
+  -- GET /md5-bucket/modelled after the CRC32-only batch: status 200  body payload
+  FAILED: the CRC32-only DeleteObjects actually removed the key
+  -- CONTROL DeleteObjects with Content-MD5: status 200  body <?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Deleted><Key>control</Key></Deleted></DeleteResult>
+  ok: CONTROL: DeleteObjects with Content-MD5 is 200
+  -- PutBucketVersioning CRC32 only, no Content-MD5: status 400  body <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>PutBucketVersioning requires one valid Content-MD5 header</Message><Resource>/md5-bucket?versioning</Resource></Error>
+  FAILED: PutBucketVersioning with a valid flexible checksum and no Content-MD5 is 200
+  -- CONTROL PutBucketVersioning with Content-MD5: status 200  body 
+  ok: CONTROL: PutBucketVersioning with Content-MD5 is 200
+  ok: fixture: PutObject /md5-control/tagged
+  ok: fixture: PutObject /md5-control/tagged-control
+  -- PutObjectTagging CRC32 only, no Content-MD5: status 501  body <?xml version="1.0" encoding="UTF-8"?><Error><Code>NotImplemented</Code><Message>Object tagging SDK checksums are not implemented</Message><Resource>/md5-control/tagged?tagging</Resource></Error>
+  FAILED: PutObjectTagging with a valid flexible checksum and no Content-MD5 is 200
+  -- CONTROL PutObjectTagging with Content-MD5: status 200  body 
+  ok: CONTROL: PutObjectTagging with Content-MD5 is 200
+BUG REPRODUCED: 5 failed expectation(s)

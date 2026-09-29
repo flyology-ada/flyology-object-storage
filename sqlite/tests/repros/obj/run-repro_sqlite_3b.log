@@ -1,0 +1,12 @@
+  -- root /private/tmp/claude-501/repro-sqlite/gate-leak-deadline-1563375-0
+  ok: Create_Bucket succeeds
+  ok: Put_Object src succeeds
+  -- attached 200 annotations to src
+  -- control Head_Bucket SUCCESS
+  ok: control Head_Bucket succeeds
+  -- CopyObject with a 9 us deadline returned BACKEND_UNAVAILABLE (the deadline expired inside the gate-held window)
+  -- attempts rejected at the entry check: 2
+  -- probing the store from a second task (bounded 5 s wait)
+  -- probe Head_Bucket did not return within 5 s: the catalog operation gate was never released
+  FAILED: the store still serves Head_Bucket after a CopyObject whose deadline expired
+BUG REPRODUCED: 1 failed expectation(s)

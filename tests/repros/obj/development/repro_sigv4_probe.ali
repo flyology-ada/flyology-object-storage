@@ -1,0 +1,259 @@
+V "GNAT Lib v16"
+M P W=b
+A -O0
+A -gnatA
+A --RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+A -g
+A -gnat2022
+A -gnata
+A -gnatVa
+A -gnatwa
+A -mmacosx-version-min=26.0.0
+A -mcpu=apple-m1
+A -mlittle-endian
+A -mabi=lp64
+A -fPIC
+P SS ZX
+
+RN
+RV NO_EXCEPTION_HANDLERS
+RV NO_EXCEPTIONS
+RV NO_IMPLICIT_CONDITIONALS
+RV NO_LOCAL_ALLOCATORS
+RV NO_NESTED_FINALIZATION
+RV NO_SECONDARY_STACK
+RV NO_STANDARD_STORAGE_POOLS
+RV NO_DYNAMIC_SIZED_OBJECTS
+RV NO_IMPLEMENTATION_PRAGMAS
+
+U repro_sigv4_probe%b	repro_sigv4_probe.adb	d9400862 NE OO SU
+W ada%s			ada.ads			ada.ali
+Z ada.exceptions%s	a-except.adb		a-except.ali
+W ada.strings%s		a-string.ads		a-string.ali
+W ada.strings.fixed%s	a-strfix.adb		a-strfix.ali
+Z ada.strings.text_buffers%s  a-sttebu.adb	a-sttebu.ali
+W repro_s3_server%s	repro_s3_server.adb	repro_s3_server.ali
+W repro_support%s	repro_support.adb	repro_support.ali
+Z system%s		system.ads		system.ali
+Z system.concat_2%s	s-conca2.adb		s-conca2.ali
+Z system.concat_3%s	s-conca3.adb		s-conca3.ali
+Z system.concat_4%s	s-conca4.adb		s-conca4.ali
+Z system.concat_5%s	s-conca5.adb		s-conca5.ali
+Z system.finalization_primitives%s  s-finpri.adb  s-finpri.ali
+Z system.secondary_stack%s  s-secsta.adb	s-secsta.ali
+Z system.soft_links%s	s-soflin.adb		s-soflin.ali
+Z system.standard_library%s  s-stalib.adb	s-stalib.ali
+Z system.storage_elements%s  s-stoele.ads	s-stoele.ali
+
+D ada.ads		20260901211354 76789da1 ada%s
+D a-charac.ads		20260901211354 2d3ec45b ada.characters%s
+D a-chlat1.ads		20260901211354 e0d72e76 ada.characters.latin_1%s
+D a-contai.ads		20260901211354 61e5e089 ada.containers%s
+D a-conhel.ads		20260901211354 46fe1ce3 ada.containers.helpers%s
+D a-ciorma.ads		20260901211354 45fd5eb7 ada.containers.indefinite_ordered_maps%s
+D a-crbltr.ads		20260901211354 d3d16ba4 ada.containers.red_black_trees%s
+D a-convec.ads		20260901211354 cb0f314a ada.containers.vectors%s
+D a-except.ads		20260901211354 8699d7ff ada.exceptions%s
+D a-finali.ads		20260901211354 099c16e4 ada.finalization%s
+D a-iteint.ads		20260901211354 49a8bee2 ada.iterator_interfaces%s
+D a-reatim.ads		20260901211354 d11673fd ada.real_time%s
+D a-stream.ads		20260901211354 cb01a8f8 ada.streams%s
+D a-string.ads		20260901211354 90ac6797 ada.strings%s
+D a-strfix.ads		20260901211354 8648dedb ada.strings.fixed%s
+D a-strmap.ads		20260901211354 f7e6ca10 ada.strings.maps%s
+D a-strsea.ads		20260901211354 18c3c634 ada.strings.search%s
+D a-sttebu.ads		20260901211354 f1ad67a2 ada.strings.text_buffers%s
+D a-strunb.ads		20260901211354 8d6ccba7 ada.strings.unbounded%s
+D a-stuten.ads		20260901211354 c6ced0ae ada.strings.utf_encoding%s
+D a-tags.ads		20260901211354 2dbf449c ada.tags%s
+D a-taside.ads		20260901211354 c0a7c8d8 ada.task_identification%s
+D a-unccon.ads		20260901211354 0e9b276f ada.unchecked_conversion%s
+D flyology.ads		20260901211211 3ef168e6 flyology%s
+D flyology-cancellation.ads  20260901211212 1167fdf6 flyology.cancellation%s
+D flyology-object_storage.ads  20260907005920 f08c5a0f flyology.object_storage%s
+D flyology-object_storage-backends.ads  20260907005920 8fab9008 flyology.object_storage.backends%s
+D flyology-object_storage-backends-memory.ads  20260907005920 206764be flyology.object_storage.backends.memory%s
+D flyology-object_storage-s3.ads  20260907005920 db355f2a flyology.object_storage.s3%s
+D flyology-object_storage-s3-sigv4.ads  20260907005920 26d6c005 flyology.object_storage.s3.sigv4%s
+D flyology-object_storage-tags.ads  20260907005920 273c3a2f flyology.object_storage.tags%s
+D flyology-wake_sources.ads  20260901211212 fcae6c4f flyology.wake_sources%s
+D interfac.ads		20260901211354 9111f9c1 interfaces%s
+D i-c.ads		20260901211354 dbdd3be7 interfaces.c%s
+D repro_s3_server.ads	20260907011658 76e65d28 repro_s3_server%s
+D repro_sigv4_probe.adb	20260907013658 8868575c repro_sigv4_probe%b
+D repro_support.ads	20260907011658 a186dccd repro_support%s
+D system.ads		20260901211353 8a611ac3 system%s
+D s-atacco.ads		20260901211354 5868e3ba system.address_to_access_conversions%s
+D s-atocou.ads		20260901211354 dc18efc3 system.atomic_counters%s
+D s-c_time.ads		20260901211354 e502d0c0 system.c_time%s
+D s-conca2.ads		20260901211354 b5fb73f7 system.concat_2%s
+D s-conca3.ads		20260901211354 8a7a19a2 system.concat_3%s
+D s-conca4.ads		20260901211354 33f85f3e system.concat_4%s
+D s-conca5.ads		20260901211354 4099d1db system.concat_5%s
+D s-exctab.ads		20260901211354 91bef6ef system.exception_table%s
+D s-finpri.ads		20260901211354 5970d55a system.finalization_primitives%s
+D s-finroo.ads		20260901211354 0a7c3ed4 system.finalization_root%s
+D s-memory.ads		20260901211354 18949c1a system.memory%s
+D s-multip.ads		20260901211354 38ac9f73 system.multiprocessors%s
+D s-oscons.ads		20260901211354 42ad9981 system.os_constants%s
+D s-osinte.ads		20260901211354 6d01fcda system.os_interface%s
+D s-oslock.ads		20260901211354 bcc789d2 system.os_locks%s
+D s-parame.ads		20260901211354 a1aeab5c system.parameters%s
+D s-pooglo.ads		20260901211354 91708d21 system.pool_global%s
+D s-putima.ads		20260901211353 1b989439 system.put_images%s
+D s-putaim.ads		20260901211354 0aad9583 system.put_task_images%s
+D s-retsta.ads		20260901211353 0f6b06cb system.return_stack%s
+D s-secsta.ads		20260901211354 578279f5 system.secondary_stack%s
+D s-soflin.ads		20260901211354 5d88fdea system.soft_links%s
+D s-stache.ads		20260901211354 0b81c1fe system.stack_checking%s
+D s-stausa.ads		20260901211353 f470ae2d system.stack_usage%s
+D s-stalib.ads		20260901211354 1c9580f6 system.standard_library%s
+D s-stalib.adb		20260901211354 eb464a47 system.standard_library%b
+D s-stoele.ads		20260901211354 ccded4e8 system.storage_elements%s
+D s-stopoo.ads		20260901211354 45459446 system.storage_pools%s
+D s-stratt.ads		20260901211354 80b8dafb system.stream_attributes%s
+D s-tasinf.ads		20260901211354 801abd01 system.task_info%s
+D s-taspri.ads		20260901211354 4fd5ef41 system.task_primitives%s
+D s-taprop.ads		20260901211354 6a572f54 system.task_primitives.operations%s
+D s-taskin.ads		20260901211354 e3b5765b system.tasking%s
+D s-taprob.ads		20260901211354 acd6094d system.tasking.protected_objects%s
+D s-tpoben.ads		20260901211354 60ad3dae system.tasking.protected_objects.entries%s
+D s-traent.ads		20260901211354 c81cbf8c system.traceback_entries%s
+D s-unstyp.ads		20260901211354 fa2a7f59 system.unsigned_types%s
+G a e
+G c Z b b [repro_sigv4_probe standard 20 11 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [timestamp repro_s3_server 34 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [sha256_hex flyology__object_storage__s3__sigv4 49 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [signed_request repro_s3_server 37 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [run repro_s3_server 59 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [status_code repro_support 21 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [image repro_support 36 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [note repro_support 10 14 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [body_of repro_support 29 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [escape repro_support 41 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [check repro_support 7 14 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [contains repro_support 32 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [pair flyology__object_storage__s3__sigv4 24 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [repeat repro_support 39 13 none]
+G r c none [repro_sigv4_probe standard 20 11 none] [finish repro_support 13 14 none]
+X 1 ada.ads
+18K9*Ada 22e8 36|16r6 48r38 104r9 106r9
+X 11 a-iteint.ads
+24h9 Forward_Iterator
+32h9 Reversible_Iterator<24R9[6|77]>
+X 14 a-string.ads
+16K13*Strings 35e16 36|16r10 48r42 104r13 106r13
+X 15 a-strfix.ads
+49K21*Fixed 1390e22 36|16w18 48r50 104r21 106r21
+176V13*Index{natural} 36|106s27
+179i7 From{positive} 36|106r48
+252V13*Index{natural} 36|48s56 104s27
+X 27 flyology-object_storage-backends.ads
+468h9*Backend
+473h9*Object_Annotation_Backend
+558h9*Bucket_Notification_Backend
+564h9*Bucket_Metadata_Backend
+X 30 flyology-object_storage-s3-sigv4.ads
+18A9*Name_Value_Array(12R9)<integer> 36|124r29
+24V13*Pair{12R9} 36|125s16 126s16 129s16 130s16 131s16
+49V13*SHA256_Hex{string} 36|27s42 263s49
+X 35 repro_s3_server.ads
+17K9*Repro_S3_Server 74e20 36|18w6 18r27
+19K12*SigV4=19:53 36|27r36 124r23 125r10 126r10 129r10 130r10 131r10 263r43
+21a4*Access_Key{string} 36|127r22 201r26 202r26 239r32
+23a4*Region{string} 36|127r60 240r9
+24a4*Host{string} 36|245r20
+34V13*Timestamp{string} 36|24s31
+37V13*Signed_Request{string} 36|68s41 79s10 91s14 102s35 133s10 146s10 160s35
+. 177s35 194s9 218s35 262s10 274s14
+40a7 Payload{string} 36|80r26 147r40 262r55
+41a7 Extra_Headers{string} 36|148r13 161r25
+42a7 Query{30|18A9} 36|133r41
+43a7 Hash_Override{string} 36|81r26 263r26
+46a7 Timestamp_Value{string} 36|134r26 194r40
+59V13*Run{string} 36|68s36 78s37 91s9 111s37 132s37 145s37 164s37 180s37
+. 203s37 223s37 248s37 261s37 274s9
+X 36 repro_sigv4_probe.adb
+20U11*Repro_SigV4_Probe 20b11 282l5 282t22
+22a4 Bucket{string} 68r64 79r33 91r37 102r58 133r33 147r20 161r17 177r58
+. 194r32 218r58 238r18 262r33 274r37
+24a4 Stamp{string} 25r36 25r43 25r58 129r36 134r45 194r59 241r26
+25a4 Scope_Date{string} 127r41 196r13 196r25 197r15 197r27 197r47 198r15
+. 198r27 198r47 201r45 205r37 239r53
+27a4 Empty_Hash{string} 221r37 222r48 225r60
+29U14 Report 29b14 29>22 29>29 33l8 33t14 70s7 83s7 93s7 113s7 136s7 151s7
+. 166s7 182s7 207s7 226s7 250s7 265s7 276s7
+29a22 Label{string} 31r13 32r13
+29a29 Response{string} 31r55 32r50
+35V13 Uppercase{string} 35b13 35>24 45l8 45t17 222s37 225s49
+35a24 Value{string} 36r24 38r20 40r16 41r48 42r18
+36a7 Result{string} 39m10 44r14
+38i11 Index{integer} 39r18 40r23 41r55 42r25
+47V13 Replace_First{string} 47b13 47>28 47>34 47>40 55l8 55t21 58s7 61s7
+. 199s36 219s34
+47a28 Text{string} 48r63 53r14 53r20 54r9 54r41
+47a34 From{string} 48r69 51r66 54r26
+47a40 To{string} 53r50
+48i7 At_Index{natural} 50r10 53r34 54r15
+57V13 Delete_Field{string} 57b13 57>27 57>33 163s9
+57a27 Text{string} 58r22
+57a33 Field_Line{string} 58r28
+60V13 Insert_Field{string} 60b13 60>27 60>33 179s9
+60a27 Text{string} 61r22
+60a33 Field_Line{string} 61r38
+68a7 Created{string} 70r39 71r27
+78a7 Response{string} 83r53 84r27 86r33
+90a7 Fetched{string} 93r57 94r27
+102a7 Signed{string} 104r34 106r34 108r9 108r17 109r9 110r9 110r43
+103i7 At_Auth{natural} 106r56 109r17
+105i7 Line_End{natural} 108r33 109r28 110r17
+107a7 Doubled=109:56{string} 111r42
+111a7 Response{string} 113r47 114r27 116r27
+124a7 Both{30|18A9} 133r50
+132a7 Response{string} 136r63 137r27
+145a7 Response{string} 151r54 152r27
+160a7 Signed{string} 163r23
+162a7 Stripped{string} 164r42
+164a7 Response{string} 166r56 167r27 169r27
+177a7 Signed{string} 179r23
+178a7 Injected{string} 180r42
+180a7 Response{string} 182r55 183r27 185r27
+193a7 Signed{string} 200r10
+195a7 Other_Date{string} 202r45 206r41
+199a7 Shifted{string} 203r42
+203a7 Response{string} 207r42 208r27 210r27
+218a7 Signed{string} 220r10
+219a7 Upper{string} 223r42
+223a7 Response{string} 226r47 227r27 229r27
+237a7 Presigned=247:36{string} 248r42
+248a7 Response{string} 250r52 251r27 253r27
+261a7 Response{string} 265r57 266r27 268r33
+273a7 Fetched{string} 276r54 277r27
+X 37 repro_support.ads
+1K9*Repro_Support 36|17w6 17r25 37|44e18
+7U14*Check 36|71s7 84s7 86s7 94s7 114s7 116s7 137s7 152s7 167s7 169s7 183s7
+. 185s7 208s7 210s7 227s7 229s7 251s7 253s7 266s7 268s7 277s7
+10U14*Note 36|31s7 32s7 205s7 225s7
+13U14*Finish 36|281s4
+18a4*CRLF{string} 36|58r41 61r51 106r42 108r44 109r39 110r28 149r54 161r65
+. 244r64 245r27 246r31 247r31 247r38
+21V13*Status_Code{natural} 36|31s42 71s14 84s14 94s14 114s14 116s14 137s14
+. 152s14 167s14 169s14 183s14 185s14 208s14 210s14 227s14 229s14 251s14 253s14
+. 266s14 277s14
+29V13*Body_Of{string} 36|32s41 86s24 268s24
+32V13*Contains{boolean} 36|86s14 268s14
+36V13*Image{string} 36|31s35
+39V13*Repeat{string} 36|131s41 244s31
+41V13*Escape{string} 36|32s33
+X 38 system.ads
+67M9*Address
+X 49 s-memory.ads
+51V13*Alloc{38|67M9} 101i<c,__gnat_malloc>22
+66U14*Free 102i<c,__gnat_free>22
+74V13*Realloc{38|67M9} 103i<c,__gnat_realloc>22
+X 62 s-stausa.ads
+206U14*Initialize 207i<c,__gnat_stack_usage_initialize>22
+265U14*Output_Results 269i<c,__gnat_stack_usage_output_results>22
+X 64 s-stalib.adb
+87U14 Break_Start 88i<c,__gnat_break_start>22
+

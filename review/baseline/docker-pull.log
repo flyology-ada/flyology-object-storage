@@ -1,0 +1,140 @@
+docker.io/chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da: Pulling from chrislusf/seaweedfs
+5de55e5ef9c0: Pulling fs layer
+53ffe5be481a: Pulling fs layer
+774cfe2c05af: Pulling fs layer
+cb13931f408f: Pulling fs layer
+ce9f2a8b3deb: Pulling fs layer
+c77e90906552: Pulling fs layer
+7a20ac291708: Pulling fs layer
+0a987331562e: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+ce9f2a8b3deb: Waiting
+c77e90906552: Waiting
+7a20ac291708: Waiting
+0a987331562e: Waiting
+4f4fb700ef54: Waiting
+cb13931f408f: Waiting
+774cfe2c05af: Verifying Checksum
+774cfe2c05af: Download complete
+cb13931f408f: Verifying Checksum
+cb13931f408f: Download complete
+5de55e5ef9c0: Verifying Checksum
+5de55e5ef9c0: Download complete
+ce9f2a8b3deb: Verifying Checksum
+ce9f2a8b3deb: Download complete
+c77e90906552: Verifying Checksum
+c77e90906552: Download complete
+0a987331562e: Verifying Checksum
+0a987331562e: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+7a20ac291708: Verifying Checksum
+7a20ac291708: Download complete
+5de55e5ef9c0: Pull complete
+53ffe5be481a: Verifying Checksum
+53ffe5be481a: Download complete
+53ffe5be481a: Pull complete
+774cfe2c05af: Pull complete
+cb13931f408f: Pull complete
+ce9f2a8b3deb: Pull complete
+c77e90906552: Pull complete
+7a20ac291708: Pull complete
+0a987331562e: Pull complete
+4f4fb700ef54: Pull complete
+Digest: sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+Status: Downloaded newer image for chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+docker.io/chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+docker.io/chrislusf/seaweedfs@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da exit=0
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903: Pulling from peakcom/s5cmd
+9986a736f7d3: Pulling fs layer
+93ef8318357f: Pulling fs layer
+99b30406d3b8: Pulling fs layer
+99b30406d3b8: Verifying Checksum
+99b30406d3b8: Download complete
+9986a736f7d3: Verifying Checksum
+9986a736f7d3: Download complete
+9986a736f7d3: Pull complete
+93ef8318357f: Download complete
+93ef8318357f: Pull complete
+99b30406d3b8: Pull complete
+Digest: sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Status: Downloaded newer image for peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903 exit=0
+ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5: Pulling from rustfs/rustfs
+5de55e5ef9c0: Already exists
+f63d2d340dc8: Pulling fs layer
+0c75ba3c02a7: Pulling fs layer
+ae4ee966007b: Pulling fs layer
+83d6a58a3432: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+09e4ed83fb11: Pulling fs layer
+83d6a58a3432: Waiting
+4f4fb700ef54: Waiting
+09e4ed83fb11: Waiting
+0c75ba3c02a7: Verifying Checksum
+0c75ba3c02a7: Download complete
+83d6a58a3432: Download complete
+f63d2d340dc8: Verifying Checksum
+f63d2d340dc8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+09e4ed83fb11: Verifying Checksum
+09e4ed83fb11: Download complete
+f63d2d340dc8: Pull complete
+0c75ba3c02a7: Pull complete
+ae4ee966007b: Download complete
+ae4ee966007b: Pull complete
+83d6a58a3432: Pull complete
+4f4fb700ef54: Pull complete
+09e4ed83fb11: Pull complete
+Digest: sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+Status: Downloaded newer image for ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5 exit=0
+quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e: Pulling from minio/minio
+4ca31cd8344e: Pulling fs layer
+4e6e13ec1e11: Pulling fs layer
+c75db12fb9c0: Pulling fs layer
+7b79da5d3567: Pulling fs layer
+166b5f0a4239: Pulling fs layer
+7c6ea1bdb2f6: Pulling fs layer
+2f0dae0f0359: Pulling fs layer
+f06361c774fa: Pulling fs layer
+1e1cfd58aa02: Pulling fs layer
+7b79da5d3567: Waiting
+166b5f0a4239: Waiting
+7c6ea1bdb2f6: Waiting
+2f0dae0f0359: Waiting
+f06361c774fa: Waiting
+1e1cfd58aa02: Waiting
+c75db12fb9c0: Verifying Checksum
+c75db12fb9c0: Download complete
+4e6e13ec1e11: Verifying Checksum
+4e6e13ec1e11: Download complete
+4ca31cd8344e: Verifying Checksum
+4ca31cd8344e: Download complete
+166b5f0a4239: Verifying Checksum
+166b5f0a4239: Download complete
+2f0dae0f0359: Verifying Checksum
+2f0dae0f0359: Download complete
+7c6ea1bdb2f6: Verifying Checksum
+7c6ea1bdb2f6: Download complete
+f06361c774fa: Verifying Checksum
+f06361c774fa: Download complete
+1e1cfd58aa02: Download complete
+4ca31cd8344e: Pull complete
+4e6e13ec1e11: Pull complete
+c75db12fb9c0: Pull complete
+7b79da5d3567: Verifying Checksum
+7b79da5d3567: Download complete
+7b79da5d3567: Pull complete
+166b5f0a4239: Pull complete
+7c6ea1bdb2f6: Pull complete
+2f0dae0f0359: Pull complete
+f06361c774fa: Pull complete
+1e1cfd58aa02: Pull complete
+Digest: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+Status: Downloaded newer image for quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e exit=0

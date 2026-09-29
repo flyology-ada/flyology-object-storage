@@ -1,0 +1,14 @@
+  -- canonical CRC32 of "bad" = gis5+w==
+  -- CreateBucket status 200
+  ok: control: CreateBucket is 200
+  -- matching selector status 200
+  ok: control: matching sdk-algorithm/value header is accepted
+  -- value/content mismatch status 400
+  -- value/content mismatch body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>BadDigest</Code><Message>The checksum does not match the request body</Message><Resource>/checksum1-bucket/mismatch-key-wrong</Resource></Error>
+  ok: control: a value/content mismatch is answered BadDigest
+  -- algorithm-name mismatch status 400
+  -- algorithm-name mismatch body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>The checksum algorithm and value header differ</Message><Resource>/checksum1-bucket/mismatch-key</Resource></Error>
+  ok: algorithm-name mismatch is a 400
+  FAILED: model documents BadDigest for an sdk-algorithm/value mismatch
+  FAILED: algorithm-name mismatch is not answered InvalidRequest
+BUG REPRODUCED: 2 failed expectation(s)

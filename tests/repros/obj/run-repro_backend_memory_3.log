@@ -1,0 +1,22 @@
+  ok: setup: bucket created
+  ok: setup: versioning enabled
+  ok: setup: object published
+  -- setup: live version 41b6ea08994cc7f6cbd3be48b86d242d2028e178ac6b576a668acdc4fe92a602
+  ok: setup: simple delete published a delete marker
+  -- setup: marker version 9386a25901aec99598857ac6f2616db093bd4fc09678d8ca98ce1c22bef3b6f3
+  ok: control: List_Object_Versions works
+  -- control: listed version '9386a25901aec99598857ac6f2616db093bd4fc09678d8ca98ce1c22bef3b6f3' is_latest TRUE is_delete_marker TRUE
+  -- control: listed version '41b6ea08994cc7f6cbd3be48b86d242d2028e178ac6b576a668acdc4fe92a602' is_latest FALSE is_delete_marker FALSE
+  ok: control: the listing surface reports the marker generation
+  -- head absent key          : NOT_FOUND size 0 modified 0 version ''
+  -- head marker-hidden key   : NOT_FOUND size 0 modified 0 version ''
+  FAILED: current HEAD distinguishes a delete marker from an absent key
+  -- head unknown version id  : NOT_FOUND size 0 modified 0 version ''
+  -- head exact marker version: NOT_FOUND size 0 modified 0 version ''
+  FAILED: exact HEAD distinguishes a delete marker from an unknown version
+  FAILED: exact HEAD of a marker carries the marker's Last-Modified time
+  -- head exact live version  : SUCCESS size 7 modified 1788765881 version '41b6ea08994cc7f6cbd3be48b86d242d2028e178ac6b576a668acdc4fe92a602'
+  ok: control: exact HEAD of the retained live generation succeeds
+  -- attributes exact marker  : NOT_FOUND
+  FAILED: GetObjectAttributes on a marker generation is not plain Not_Found
+BUG REPRODUCED: 4 failed expectation(s)

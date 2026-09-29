@@ -1,0 +1,23 @@
+  -- DEL byte value 127
+  -- lifecycle plain ASCII ID: Parse accepted (140 bytes)
+  -- lifecycle plain ASCII ID: Serialize produced 188 bytes
+  ok: lifecycle plain ASCII ID: Serialize round-trips Parse
+  -- notifications plain ASCII Id: Parse accepted (196 bytes)
+  -- notifications plain ASCII Id: Serialize produced 244 bytes
+  ok: notifications plain ASCII Id: Serialize round-trips Parse
+  -- replication plain ASCII ID: Parse accepted (211 bytes)
+  -- replication plain ASCII ID: Serialize produced 259 bytes
+  ok: replication plain ASCII ID: Serialize round-trips Parse
+  -- replication ID with U+007F: Parse accepted (210 bytes)
+  -- replication ID with U+007F: Serialize produced 258 bytes
+  ok: replication ID with U+007F: Serialize round-trips Parse
+  -- lifecycle ID with U+007F: Parse accepted (139 bytes)
+  -- lifecycle ID with U+007F: Serialize REJECTED, invalid lifecycle XML text
+  FAILED: lifecycle ID with U+007F: Serialize round-trips Parse
+  -- notifications Id with U+007F: Parse accepted (195 bytes)
+  -- notifications Id with U+007F: Serialize REJECTED, invalid bucket-notification XML text
+  FAILED: notifications Id with U+007F: Serialize round-trips Parse
+  -- lifecycle ID with U+0080: Parse accepted (140 bytes)
+  -- lifecycle ID with U+0080: Serialize produced 188 bytes
+  ok: lifecycle ID with U+0080: Serialize round-trips Parse
+BUG REPRODUCED: 2 failed expectation(s)

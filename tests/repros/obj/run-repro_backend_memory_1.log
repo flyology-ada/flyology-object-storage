@@ -1,0 +1,63 @@
+  ok: backend: bucket created
+  ok: backend: upload1 initiated
+  -- backend: initiation order1 id dc3e6a657ac580f3a4df5f53a1aa570d861b135eabcd560f2e5936367c9cddd5
+  ok: backend: upload2 initiated
+  -- backend: initiation order2 id 6f9a9cb723b61b14f34db49873718b5baeea1eb589c1753782a65e2f07947138
+  ok: backend: upload3 initiated
+  -- backend: initiation order3 id 42d949c57319e756b32d3d1f177824319cfc34b8a5c67dfca60df01a4ad316a8
+  ok: backend: upload4 initiated
+  -- backend: initiation order4 id ccbf3d6b3f1a122555b50f694bd1d9345371752501ee78df4dd560dee418b526
+  ok: backend: upload5 initiated
+  -- backend: initiation order5 id 80440036e843b5fb193a8c428ada1e4235de05b26577d8a8338397f6a97ff0bb
+  ok: backend: upload6 initiated
+  -- backend: initiation order6 id c4dd2ccd99b9625d41552478b4bd692ba625a4db414a4994e09cd6ae36d60da3
+  ok: control: unbounded listing succeeds and is complete
+  ok: control: unbounded listing returns every active upload
+  -- backend: page order1 initiated 1788765870 id dc3e6a657ac580f3a4df5f53a1aa570d861b135eabcd560f2e5936367c9cddd5
+  -- backend: page order2 initiated 1788765871 id 6f9a9cb723b61b14f34db49873718b5baeea1eb589c1753782a65e2f07947138
+  -- backend: page order3 initiated 1788765872 id 42d949c57319e756b32d3d1f177824319cfc34b8a5c67dfca60df01a4ad316a8
+  -- backend: page order4 initiated 1788765873 id ccbf3d6b3f1a122555b50f694bd1d9345371752501ee78df4dd560dee418b526
+  -- backend: page order5 initiated 1788765874 id 80440036e843b5fb193a8c428ada1e4235de05b26577d8a8338397f6a97ff0bb
+  -- backend: page order6 initiated 1788765875 id c4dd2ccd99b9625d41552478b4bd692ba625a4db414a4994e09cd6ae36d60da3
+  -- backend: page1 uploads1 truncated TRUE next-key 'k' next-id 'dc3e6a657ac580f3a4df5f53a1aa570d861b135eabcd560f2e5936367c9cddd5'
+  -- backend: page2 uploads0 truncated FALSE next-key '' next-id ''
+  ok: backend: every page succeeded
+  -- backend: walk returned1 of6 uploads
+  FAILED: backend: paired-cursor walk returns every active upload
+  ok: backend: initiation order1 returned exactly once by the walk
+  FAILED: backend: initiation order2 returned exactly once by the walk
+  FAILED: backend: initiation order3 returned exactly once by the walk
+  FAILED: backend: initiation order4 returned exactly once by the walk
+  FAILED: backend: initiation order5 returned exactly once by the walk
+  FAILED: backend: initiation order6 returned exactly once by the walk
+  ok: wire: CreateBucket is 200
+  ok: wire: CreateMultipartUpload1 is 200
+  -- wire: initiation order1 id 942bb21a5ebfcde5ebd2b01a2554177a62e43461baaccb9ce3061d20b450690e
+  ok: wire: CreateMultipartUpload2 is 200
+  -- wire: initiation order2 id 275b96b9680a79069ec5222dd7c918ba036e2a1a52a19a5af6951548630b5fd7
+  ok: wire: CreateMultipartUpload3 is 200
+  -- wire: initiation order3 id eea53f36e17e5f3ad8155674dc19707d4c5ceaa7311c335b78da5ea3a80d4579
+  ok: wire: CreateMultipartUpload4 is 200
+  -- wire: initiation order4 id 0a462fdd4cacca678c3f6fc11dddeb3d87e6afbf7aef5bb0c1f367aac36674d6
+  ok: wire: CreateMultipartUpload5 is 200
+  -- wire: initiation order5 id 98fccd473ffe584caaf4a4ebf7749a0c8be56bddd4dc7ed73816a44f99656925
+  ok: wire: CreateMultipartUpload6 is 200
+  -- wire: initiation order6 id 7a6185167218316a65353e661e50fcc99f8ac6865c4c51e75fe9c71335a0762c
+  ok: control: wire ListMultipartUploads is 200
+  -- control: unbounded wire listing reported6 uploads, IsTruncated false
+  ok: control: unbounded wire listing returns every upload
+  ok: wire: page1 is 200
+  -- wire: page1 uploads1 IsTruncated TRUE NextKeyMarker 'k' NextUploadIdMarker '942bb21a5ebfcde5ebd2b01a2554177a62e43461baaccb9ce3061d20b450690e'
+  ok: wire: page2 is 200
+  -- wire: page2 uploads1 IsTruncated TRUE NextKeyMarker 'k' NextUploadIdMarker 'eea53f36e17e5f3ad8155674dc19707d4c5ceaa7311c335b78da5ea3a80d4579'
+  ok: wire: page3 is 200
+  -- wire: page3 uploads0 IsTruncated FALSE NextKeyMarker '' NextUploadIdMarker ''
+  -- wire: walk returned2 of6 uploads
+  FAILED: wire: paired-cursor walk returns every active upload
+  ok: wire: initiation order1 returned exactly once by the walk
+  FAILED: wire: initiation order2 returned exactly once by the walk
+  ok: wire: initiation order3 returned exactly once by the walk
+  FAILED: wire: initiation order4 returned exactly once by the walk
+  FAILED: wire: initiation order5 returned exactly once by the walk
+  FAILED: wire: initiation order6 returned exactly once by the walk
+BUG REPRODUCED: 11 failed expectation(s)

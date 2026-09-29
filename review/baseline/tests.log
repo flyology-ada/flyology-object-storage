@@ -1,0 +1,583 @@
+S3 operation generated outputs: current
+S3 operation registry evidence negative oracles: OK
+corpora lock: 8 exact revisions, reviewed licenses, immutable images
+s3t allowlist: 113 exact ceph-compatible node IDs
+benchmark plan: 12 deterministic scenarios
+benchmark matrix: 2 permissive references, 3 Flyology backends
+benchmark eligibility: 11 supported, 1 globally blocked
+benchmark exclusions: SeaweedFS multipart listing defect is explicit
+benchmark launchers: executable and syntax-clean
+benchmark metadata: files commit policy is retained
+bucket-tagging benchmark evidence: 6 roles, 18 samples, 4 requests/lifecycle, derivation/rate mutant rejected, hashes OK
+benchmark ListObjects v1 Marker negative oracle: OK
+coverage ledger: 116 pinned S3 operations
+coverage verifier negative oracle: OK
+composable client fixtures: OK
+composable client fixture verifier self-tests: OK
+CreateSession preparation: 6 request members, 5 top-level response members, 4 credential members, 16 contract vectors; pinned model, references, and composable API match
+ListObjectVersions preparation: 45 modeled members across 7 shapes, 23 reciprocal contract vectors; pinned model matches
+DeleteBucketCors preparation: exact 204 empty response, 2 request members, 12 reciprocal vectors, certainty, lifecycle, server, backend, registry, and docs match
+bucket-configuration DELETE preparation: 13 operations, 30 request members, no modeled success outputs, 8 reciprocal vectors; pinned model, DeleteBucketEncryption/DeleteBucketLifecycle/DeleteBucketReplication/DeleteBucketWebsite/DeleteBucketAnalyticsConfiguration/DeleteBucketIntelligentTieringConfiguration registry/certainty, DeleteBucketInventoryConfiguration/DeleteBucketMetadataConfiguration registry/certainty, and exact public APIs match, including analytics, metadata, metadata-table, metrics, ownership-controls, policy, lifecycle, replication, website, intelligent-tiering, and inventory composable forms
+bucket-control GET preparation: 6 operations, 26 request/output/nested members, 5 exact enum domains, 13 reciprocal vectors; pinned model and exact public APIs match
+scalar bucket-control PUT preparation: 5 operations, 32 request/nested members, 4 exact enum domains, 11 reciprocal vectors; pinned model and exact public APIs match
+PutBucketOwnershipControls preparation: 7 modeled members, one required flattened list, 13 exact enum values, 13 vectors
+PutBucketEncryption preparation: 12 modeled members, two required flattened lists, 17 exact enum values, 13 vectors
+CreateBucketMetadataTableConfiguration preparation: 8 modeled members, 10 exact checksum values, 13 vectors
+DeleteObjectAnnotation preparation: 9 modeled members, 12 vectors
+PutObjectLegalHold preparation: 10 modeled members, 10 exact checksum values, 13 vectors
+PutObjectRetention preparation: 12 modeled members, 10 exact checksum values, 14 vectors
+PutObjectLockConfiguration preparation: 14 modeled members, 10 exact checksum values, 14 vectors
+GetObjectTorrent preparation: 4 request members, 2 output members, 21 reciprocal contract vectors; pinned model matches
+GetObjectLegalHold preparation: 5 request, 1 output, 1 nested member, 2 exact enum domains, 13 reciprocal vectors
+GetObjectRetention preparation: 5 request, 1 output, 2 nested members, requester and retention enum domains, 13 reciprocal vectors
+GetObjectLockConfiguration preparation: 2 request, 1 output, 6 nested members, exact enums, unbounded integer shapes, 13 reciprocal vectors
+GetBucketOwnershipControls preparation: 2 request, 1 output, 2 nested members, flattened Rule list, exact enum, 13 reciprocal vectors
+GetBucketCors preparation: 9 modeled members, four flattened string lists, unbounded integer text, 13 vectors; registry, persistence, routing, and docs match
+PutBucketCors preparation: 12 modeled members, five flattened lists, unbounded integer text, 10 checksum values, 13 vectors; registry, persistence, routing, and docs match
+GetBucketEncryption preparation: 10 modeled members, two flattened lists, 7 exact enum values, 13 vectors
+GetBucketLifecycleConfiguration preparation: legacy exact wire subset; 36 modeled members, four exact list projections, 10 enum values, five unbounded numeric shapes, 13 vectors
+PutBucketLifecycleConfiguration preparation: maintained five-member request/one-member response plus the legacy five-member exact prefix-rule compatibility subset, current operation identity, generated checksum, exact legacy server route, and lifecycle graph
+Bucket notification configuration preparation: deprecated GET and PUT partial boundaries; legacy PUT five-member checksum request, current PUT four-member unchecksummed request, complete current destination/filter graph, 30-event exact domain, shared backend persistence, and exact current/legacy server routes
+GetBucketReplication preparation: current 2-member input, complete required Role/rules graph, full nested destination/filter controls, and exact 15-value storage-class domain
+GetBucketReplication preparation: current 2-member input, complete required Role/rules graph, full nested destination/filter controls, and exact 15-value storage-class domain
+PutBucketReplication preparation: six request members, required replication payload, required request checksum, exact token/owner/MD5 headers, and shared complete replication graph
+GetBucketMetadataTableConfiguration preparation: 13 modeled members, no lists or enums, 13 vectors
+GetBucketAcl preparation: 13 modeled members, one nonflattened list, 8 exact enum values, 13 vectors
+GetObjectAcl preparation: 17 modeled members, one nonflattened list, 10 exact enum values, 13 vectors
+GetObjectAnnotation model review: 7 request and 19 response members
+PutObjectAcl model review: 14 request and 1 response members
+PutObjectAnnotation model review: 20 request and 17 response members
+RenameObject model review: 12 request and 0 response members
+RestoreObject model review: 7 request, 2 response, 63 shapes
+SelectObjectContent model review: 12 request, 5 events, 44 shapes
+UpdateObjectEncryption model review: 8 request, 1 response, 17 shapes
+WriteGetObjectResponse model review: 46 request, 0 response, 49 shapes
+Note: Synchronizing workspace...
+Dependencies automatically updated as follows:
+
+   +  aunit                   26.0.0    (new)
+   +  flyology                0.1.1-dev (new,indirect)
+   +  flyology_allocators     0.1.0     (new,indirect)
+   +  flyology_cachelines     0.1.0     (new,indirect)
+   +  flyology_http           0.1.3-dev (new,indirect)
+   +. flyology_object_storage 0.1.0-dev (new,path=..)
+   +  flyology_quic           0.1.3-dev (new,indirect)
+   +b gnat                    16.1.0    (new,gnat_native,indirect,binary)
+   +  xmlada                  26.0.0    (new,indirect)
+
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_tests=0.1.0-dev/flyology_object_storage_tests.gpr...
+Setup
+   [mkdir]        object directory for project Flyology_Object_Storage_Tests
+   [mkdir]        exec directory for project Flyology_Object_Storage_Tests
+Compile
+   [Ada]          flyology_object_storage_tests.adb
+   [Ada]          files_conditional_symlink_probe.adb
+   [Ada]          files_crash_probe.adb
+   [Ada]          files_open_probe.adb
+   [Ada]          s3_bucket_tagging_benchmark.adb
+   [Ada]          files_copy_benchmark.adb
+   [Ada]          s3_checksum_benchmark.adb
+   [Ada]          s3_multipart_checksum_benchmark.adb
+   [Ada]          s3_checksum_corpus.adb
+   [Ada]          s3_multipart_listing_benchmark.adb
+   [Ada]          s3_files_server.adb
+   [Ada]          s3_http_socket_corpus.adb
+   [Ada]          s3_list_object_versions_corpus.adb
+   [Ada]          s3_delete_bucket_cors_corpus.adb
+   [Ada]          s3_delete_bucket_configurations_corpus.adb
+   [Ada]          s3_get_bucket_controls_corpus.adb
+   [Ada]          s3_put_bucket_controls_corpus.adb
+   [Ada]          s3_put_bucket_ownership_controls_corpus.adb
+   [Ada]          s3_create_bucket_metadata_table_configuration_corpus.adb
+   [Ada]          s3_delete_object_annotation_corpus.adb
+   [Ada]          s3_put_object_legal_hold_corpus.adb
+   [Ada]          s3_put_object_retention_corpus.adb
+   [Ada]          s3_put_object_lock_configuration_corpus.adb
+   [Ada]          s3_get_object_torrent_corpus.adb
+   [Ada]          s3_get_object_torrent_socket_corpus.adb
+   [Ada]          s3_get_object_legal_hold_corpus.adb
+   [Ada]          s3_get_object_retention_corpus.adb
+   [Ada]          s3_get_object_lock_configuration_corpus.adb
+   [Ada]          s3_get_bucket_ownership_controls_corpus.adb
+   [Ada]          s3_get_bucket_cors_corpus.adb
+   [Ada]          s3_get_bucket_encryption_corpus.adb
+   [Ada]          s3_get_bucket_lifecycle_configuration_corpus.adb
+   [Ada]          s3_put_bucket_lifecycle_configuration_corpus.adb
+   [Ada]          s3_bucket_notification_configuration_corpus.adb
+   [Ada]          s3_get_bucket_replication_corpus.adb
+   [Ada]          s3_get_bucket_replication_qualification.adb
+   [Ada]          s3_get_bucket_metrics_configuration_qualification.adb
+   [Ada]          s3_put_bucket_metrics_configuration_qualification.adb
+   [Ada]          s3_put_bucket_metrics_configuration_corpus.adb
+   [Ada]          s3_put_bucket_analytics_configuration_qualification.adb
+   [Ada]          s3_put_bucket_analytics_configuration_corpus.adb
+   [Ada]          s3_put_bucket_intelligent_tiering_configuration_qualification.adb
+   [Ada]          s3_put_bucket_intelligent_tiering_configuration_corpus.adb
+   [Ada]          s3_list_bucket_metrics_configurations_qualification.adb
+   [Ada]          s3_list_bucket_analytics_configurations_qualification.adb
+   [Ada]          s3_list_bucket_intelligent_tiering_configurations_qualification.adb
+   [Ada]          s3_list_bucket_inventory_configurations_qualification.adb
+   [Ada]          s3_list_object_annotations_qualification.adb
+   [Ada]          s3_list_directory_buckets_qualification.adb
+   [Ada]          s3_get_bucket_analytics_configuration_qualification.adb
+   [Ada]          s3_get_bucket_intelligent_tiering_configuration_qualification.adb
+   [Ada]          s3_get_bucket_inventory_configuration_qualification.adb
+   [Ada]          s3_get_bucket_logging_qualification.adb
+   [Ada]          s3_get_bucket_metadata_configuration_qualification.adb
+   [Ada]          s3_get_bucket_website_qualification.adb
+   [Ada]          s3_put_bucket_replication_corpus.adb
+   [Ada]          s3_get_bucket_metadata_table_configuration_corpus.adb
+   [Ada]          s3_get_bucket_acl_corpus.adb
+   [Ada]          s3_get_object_acl_corpus.adb
+   [Ada]          s3_create_session_tls_corpus.adb
+   [Ada]          s3_transfer_many_corpus.adb
+   [Ada]          s3_implementation_corpus.adb
+   [Ada]          s3_memory_server.adb
+   [Ada]          s3_server_application_corpus.adb
+   [Ada]          s3_create_bucket_metadata_configuration_qualification.adb
+   [Ada]          s3_set_metadata_inventory_table_configuration_qualification.adb
+   [Ada]          s3_set_metadata_journal_table_configuration_qualification.adb
+   [Ada]          s3_set_metadata_annotation_table_configuration_qualification.adb
+   [Ada]          s3_put_bucket_acl_qualification.adb
+   [Ada]          s3_put_bucket_inventory_configuration_qualification.adb
+   [Ada]          s3_put_bucket_logging_qualification.adb
+   [Ada]          s3_put_bucket_website_qualification.adb
+   [Ada]          flyology_allocators-layouts.adb
+   [Ada]          flyology_allocators-storage.adb
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span_kernel.adb
+   [Ada]          flyology_allocators-waits.adb
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms.ads
+   [Ada]          flyology_allocators-allocation_algorithms-contract.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy.ads
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf.ads
+   [Ada]          flyology_allocators-regions.adb
+   [Ada]          flyology_allocators-policy.adb
+   [Ada]          flyology_allocators-arenas.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy_kernel.adb
+   [Ada]          flyology_allocators.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span.ads
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit.ads
+   [Ada]          flyology_allocators-atomics.adb
+   [Ada]          flyology_object_storage_config.ads
+   [Ada]          object_storage_test_cases.adb
+   [Ada]          flyology-object_storage-durability_testing.adb
+   [Ada]          flyology-object_storage-backends-files-testing.adb
+   [Ada]          s3_paginated_rest_xml_read_qualification.adb
+flyology_allocators-atomics.adb:1:06: warning: "System.Atomic_Primitives" is an internal GNAT unit [-gnatwi]
+flyology_allocators-atomics.adb:1:06: warning: use of this unit is non-portable and version-dependent [-gnatwi]
+   [Ada]          s3_server_harness.adb
+   [Ada]          conditional_put_conformance.adb
+   [Ada]          copy_object_conformance.adb
+   [Ada]          flyology-object_storage-backends-testing.adb
+   [Ada]          multipart_part_conformance.adb
+   [Ada]          versioned_object_conformance.adb
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_http_socket_corpus.adb: In function 'S3_Http_Socket_Corpus.Raw_S3_Server':
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_http_socket_corpus.adb:898:4: note: variable tracking size limit exceeded with '-fvar-tracking-assignments', retrying without
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_http_socket_corpus.adb: In function 'S3_Http_Socket_Corpus.Run_Client':
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_http_socket_corpus.adb:8103:4: note: variable tracking size limit exceeded with '-fvar-tracking-assignments', retrying without
+   [Ada]          flyology-object_storage-client-buckets-testing.adb
+   [Ada]          flyology-object_storage-client-objects-testing.adb
+   [Ada]          flyology-object_storage-client-transfers-testing.adb
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_server_application_corpus.adb: In function 'S3_Server_Application_Corpus':
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/src/s3_server_application_corpus.adb:63:1: note: variable tracking size limit exceeded with '-fvar-tracking-assignments', retrying without
+Build Libraries
+   [gprlib]       flyology_allocators.lexch
+   [archive]      libflyology_allocators.a
+   [index]        libflyology_allocators.a
+   [gprlib]       Flyology.lexch
+   [archive]      libFlyology.a
+   [index]        libFlyology.a
+   [gprlib]       Flyology_QUIC.lexch
+   [archive]      libFlyology_QUIC.a
+   [index]        libFlyology_QUIC.a
+   [gprlib]       Flyology_HTTP.lexch
+   [archive]      libFlyology_HTTP.a
+   [gprlib]       Flyology_Object_Storage.lexch
+   [index]        libFlyology_HTTP.a
+   [archive]      libFlyology_Object_Storage.a
+   [index]        libFlyology_Object_Storage.a
+Bind
+   [gprbind]      flyology_object_storage_tests.bexch
+   [gprbind]      files_conditional_symlink_probe.bexch
+   [gprbind]      files_crash_probe.bexch
+   [Ada]          flyology_object_storage_tests.ali
+   [Ada]          files_conditional_symlink_probe.ali
+   [Ada]          files_crash_probe.ali
+   [gprbind]      files_open_probe.bexch
+   [Ada]          files_open_probe.ali
+   [gprbind]      s3_bucket_tagging_benchmark.bexch
+   [Ada]          s3_bucket_tagging_benchmark.ali
+   [gprbind]      files_copy_benchmark.bexch
+   [Ada]          files_copy_benchmark.ali
+   [gprbind]      s3_checksum_benchmark.bexch
+   [Ada]          s3_checksum_benchmark.ali
+   [gprbind]      s3_multipart_checksum_benchmark.bexch
+   [Ada]          s3_multipart_checksum_benchmark.ali
+   [gprbind]      s3_checksum_corpus.bexch
+   [Ada]          s3_checksum_corpus.ali
+   [gprbind]      s3_multipart_listing_benchmark.bexch
+   [Ada]          s3_multipart_listing_benchmark.ali
+   [gprbind]      s3_files_server.bexch
+   [Ada]          s3_files_server.ali
+   [gprbind]      s3_http_socket_corpus.bexch
+   [gprbind]      s3_list_object_versions_corpus.bexch
+   [Ada]          s3_http_socket_corpus.ali
+   [Ada]          s3_list_object_versions_corpus.ali
+   [gprbind]      s3_delete_bucket_cors_corpus.bexch
+   [gprbind]      s3_delete_bucket_configurations_corpus.bexch
+   [Ada]          s3_delete_bucket_cors_corpus.ali
+   [gprbind]      s3_get_bucket_controls_corpus.bexch
+   [Ada]          s3_delete_bucket_configurations_corpus.ali
+   [Ada]          s3_get_bucket_controls_corpus.ali
+   [gprbind]      s3_put_bucket_controls_corpus.bexch
+   [Ada]          s3_put_bucket_controls_corpus.ali
+   [gprbind]      s3_put_bucket_ownership_controls_corpus.bexch
+   [Ada]          s3_put_bucket_ownership_controls_corpus.ali
+   [gprbind]      s3_create_bucket_metadata_table_configuration_corpus.bexch
+   [Ada]          s3_create_bucket_metadata_table_configuration_corpus.ali
+   [gprbind]      s3_delete_object_annotation_corpus.bexch
+   [Ada]          s3_delete_object_annotation_corpus.ali
+   [gprbind]      s3_put_object_legal_hold_corpus.bexch
+   [Ada]          s3_put_object_legal_hold_corpus.ali
+   [gprbind]      s3_put_object_retention_corpus.bexch
+   [Ada]          s3_put_object_retention_corpus.ali
+   [gprbind]      s3_put_object_lock_configuration_corpus.bexch
+   [Ada]          s3_put_object_lock_configuration_corpus.ali
+   [gprbind]      s3_get_object_torrent_corpus.bexch
+   [Ada]          s3_get_object_torrent_corpus.ali
+   [gprbind]      s3_get_object_torrent_socket_corpus.bexch
+   [Ada]          s3_get_object_torrent_socket_corpus.ali
+   [gprbind]      s3_get_object_legal_hold_corpus.bexch
+   [Ada]          s3_get_object_legal_hold_corpus.ali
+   [gprbind]      s3_get_object_retention_corpus.bexch
+   [Ada]          s3_get_object_retention_corpus.ali
+   [gprbind]      s3_get_object_lock_configuration_corpus.bexch
+   [gprbind]      s3_get_bucket_ownership_controls_corpus.bexch
+   [Ada]          s3_get_object_lock_configuration_corpus.ali
+   [Ada]          s3_get_bucket_ownership_controls_corpus.ali
+   [gprbind]      s3_get_bucket_cors_corpus.bexch
+   [gprbind]      s3_get_bucket_encryption_corpus.bexch
+   [Ada]          s3_get_bucket_cors_corpus.ali
+   [gprbind]      s3_get_bucket_lifecycle_configuration_corpus.bexch
+   [Ada]          s3_get_bucket_encryption_corpus.ali
+   [Ada]          s3_get_bucket_lifecycle_configuration_corpus.ali
+   [gprbind]      s3_put_bucket_lifecycle_configuration_corpus.bexch
+   [Ada]          s3_put_bucket_lifecycle_configuration_corpus.ali
+   [gprbind]      s3_bucket_notification_configuration_corpus.bexch
+   [Ada]          s3_bucket_notification_configuration_corpus.ali
+   [gprbind]      s3_get_bucket_replication_corpus.bexch
+   [Ada]          s3_get_bucket_replication_corpus.ali
+   [gprbind]      s3_get_bucket_replication_qualification.bexch
+   [Ada]          s3_get_bucket_replication_qualification.ali
+   [gprbind]      s3_get_bucket_metrics_configuration_qualification.bexch
+   [Ada]          s3_get_bucket_metrics_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_metrics_configuration_qualification.bexch
+   [Ada]          s3_put_bucket_metrics_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_metrics_configuration_corpus.bexch
+   [Ada]          s3_put_bucket_metrics_configuration_corpus.ali
+   [gprbind]      s3_put_bucket_analytics_configuration_qualification.bexch
+   [Ada]          s3_put_bucket_analytics_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_analytics_configuration_corpus.bexch
+   [Ada]          s3_put_bucket_analytics_configuration_corpus.ali
+   [gprbind]      s3_put_bucket_intelligent_tiering_configuration_qualification.bexch
+   [Ada]          s3_put_bucket_intelligent_tiering_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_intelligent_tiering_configuration_corpus.bexch
+   [Ada]          s3_put_bucket_intelligent_tiering_configuration_corpus.ali
+   [gprbind]      s3_list_bucket_metrics_configurations_qualification.bexch
+   [Ada]          s3_list_bucket_metrics_configurations_qualification.ali
+   [gprbind]      s3_list_bucket_analytics_configurations_qualification.bexch
+   [Ada]          s3_list_bucket_analytics_configurations_qualification.ali
+   [gprbind]      s3_list_bucket_intelligent_tiering_configurations_qualification.bexch
+   [Ada]          s3_list_bucket_intelligent_tiering_configurations_qualification.ali
+   [gprbind]      s3_list_bucket_inventory_configurations_qualification.bexch
+   [Ada]          s3_list_bucket_inventory_configurations_qualification.ali
+   [gprbind]      s3_list_object_annotations_qualification.bexch
+   [Ada]          s3_list_object_annotations_qualification.ali
+   [gprbind]      s3_list_directory_buckets_qualification.bexch
+   [Ada]          s3_list_directory_buckets_qualification.ali
+   [gprbind]      s3_get_bucket_analytics_configuration_qualification.bexch
+   [Ada]          s3_get_bucket_analytics_configuration_qualification.ali
+   [gprbind]      s3_get_bucket_intelligent_tiering_configuration_qualification.bexch
+   [Ada]          s3_get_bucket_intelligent_tiering_configuration_qualification.ali
+   [gprbind]      s3_get_bucket_inventory_configuration_qualification.bexch
+   [Ada]          s3_get_bucket_inventory_configuration_qualification.ali
+   [gprbind]      s3_get_bucket_logging_qualification.bexch
+   [Ada]          s3_get_bucket_logging_qualification.ali
+   [gprbind]      s3_get_bucket_metadata_configuration_qualification.bexch
+   [Ada]          s3_get_bucket_metadata_configuration_qualification.ali
+   [gprbind]      s3_get_bucket_website_qualification.bexch
+   [Ada]          s3_get_bucket_website_qualification.ali
+   [gprbind]      s3_put_bucket_replication_corpus.bexch
+   [Ada]          s3_put_bucket_replication_corpus.ali
+   [gprbind]      s3_get_bucket_metadata_table_configuration_corpus.bexch
+   [Ada]          s3_get_bucket_metadata_table_configuration_corpus.ali
+   [gprbind]      s3_get_bucket_acl_corpus.bexch
+   [gprbind]      s3_get_object_acl_corpus.bexch
+   [Ada]          s3_get_bucket_acl_corpus.ali
+   [Ada]          s3_get_object_acl_corpus.ali
+   [gprbind]      s3_create_session_tls_corpus.bexch
+   [Ada]          s3_create_session_tls_corpus.ali
+   [gprbind]      s3_transfer_many_corpus.bexch
+   [Ada]          s3_transfer_many_corpus.ali
+   [gprbind]      s3_implementation_corpus.bexch
+   [Ada]          s3_implementation_corpus.ali
+   [gprbind]      s3_memory_server.bexch
+   [Ada]          s3_memory_server.ali
+   [gprbind]      s3_server_application_corpus.bexch
+   [Ada]          s3_server_application_corpus.ali
+   [gprbind]      s3_create_bucket_metadata_configuration_qualification.bexch
+   [Ada]          s3_create_bucket_metadata_configuration_qualification.ali
+   [gprbind]      s3_set_metadata_inventory_table_configuration_qualification.bexch
+   [Ada]          s3_set_metadata_inventory_table_configuration_qualification.ali
+   [gprbind]      s3_set_metadata_journal_table_configuration_qualification.bexch
+   [Ada]          s3_set_metadata_journal_table_configuration_qualification.ali
+   [gprbind]      s3_set_metadata_annotation_table_configuration_qualification.bexch
+   [Ada]          s3_set_metadata_annotation_table_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_acl_qualification.bexch
+   [Ada]          s3_put_bucket_acl_qualification.ali
+   [gprbind]      s3_put_bucket_inventory_configuration_qualification.bexch
+   [Ada]          s3_put_bucket_inventory_configuration_qualification.ali
+   [gprbind]      s3_put_bucket_logging_qualification.bexch
+   [Ada]          s3_put_bucket_logging_qualification.ali
+   [gprbind]      s3_put_bucket_website_qualification.bexch
+   [Ada]          s3_put_bucket_website_qualification.ali
+Link
+   [link]         flyology_object_storage_tests.adb
+   [link]         files_conditional_symlink_probe.adb
+   [link]         files_crash_probe.adb
+   [link]         files_open_probe.adb
+   [link]         s3_bucket_tagging_benchmark.adb
+   [link]         files_copy_benchmark.adb
+   [link]         s3_checksum_benchmark.adb
+   [link]         s3_multipart_checksum_benchmark.adb
+   [link]         s3_checksum_corpus.adb
+   [link]         s3_multipart_listing_benchmark.adb
+   [link]         s3_files_server.adb
+   [link]         s3_http_socket_corpus.adb
+   [link]         s3_list_object_versions_corpus.adb
+   [link]         s3_delete_bucket_cors_corpus.adb
+   [link]         s3_delete_bucket_configurations_corpus.adb
+   [link]         s3_get_bucket_controls_corpus.adb
+   [link]         s3_put_bucket_controls_corpus.adb
+   [link]         s3_put_bucket_ownership_controls_corpus.adb
+   [link]         s3_create_bucket_metadata_table_configuration_corpus.adb
+   [link]         s3_delete_object_annotation_corpus.adb
+   [link]         s3_put_object_legal_hold_corpus.adb
+   [link]         s3_put_object_retention_corpus.adb
+   [link]         s3_put_object_lock_configuration_corpus.adb
+   [link]         s3_get_object_torrent_corpus.adb
+   [link]         s3_get_object_torrent_socket_corpus.adb
+   [link]         s3_get_object_legal_hold_corpus.adb
+   [link]         s3_get_object_retention_corpus.adb
+   [link]         s3_get_object_lock_configuration_corpus.adb
+   [link]         s3_get_bucket_ownership_controls_corpus.adb
+   [link]         s3_get_bucket_cors_corpus.adb
+   [link]         s3_get_bucket_encryption_corpus.adb
+   [link]         s3_get_bucket_lifecycle_configuration_corpus.adb
+   [link]         s3_put_bucket_lifecycle_configuration_corpus.adb
+   [link]         s3_bucket_notification_configuration_corpus.adb
+   [link]         s3_get_bucket_replication_corpus.adb
+   [link]         s3_get_bucket_replication_qualification.adb
+   [link]         s3_get_bucket_metrics_configuration_qualification.adb
+   [link]         s3_put_bucket_metrics_configuration_qualification.adb
+   [link]         s3_put_bucket_metrics_configuration_corpus.adb
+   [link]         s3_put_bucket_analytics_configuration_qualification.adb
+   [link]         s3_put_bucket_analytics_configuration_corpus.adb
+   [link]         s3_put_bucket_intelligent_tiering_configuration_qualification.adb
+   [link]         s3_put_bucket_intelligent_tiering_configuration_corpus.adb
+   [link]         s3_list_bucket_metrics_configurations_qualification.adb
+   [link]         s3_list_bucket_analytics_configurations_qualification.adb
+   [link]         s3_list_bucket_intelligent_tiering_configurations_qualification.adb
+   [link]         s3_list_bucket_inventory_configurations_qualification.adb
+   [link]         s3_list_object_annotations_qualification.adb
+   [link]         s3_list_directory_buckets_qualification.adb
+   [link]         s3_get_bucket_analytics_configuration_qualification.adb
+   [link]         s3_get_bucket_intelligent_tiering_configuration_qualification.adb
+   [link]         s3_get_bucket_inventory_configuration_qualification.adb
+   [link]         s3_get_bucket_logging_qualification.adb
+   [link]         s3_get_bucket_metadata_configuration_qualification.adb
+   [link]         s3_get_bucket_website_qualification.adb
+   [link]         s3_put_bucket_replication_corpus.adb
+   [link]         s3_get_bucket_metadata_table_configuration_corpus.adb
+   [link]         s3_get_bucket_acl_corpus.adb
+   [link]         s3_get_object_acl_corpus.adb
+   [link]         s3_create_session_tls_corpus.adb
+   [link]         s3_transfer_many_corpus.adb
+   [link]         s3_implementation_corpus.adb
+   [link]         s3_memory_server.adb
+   [link]         s3_server_application_corpus.adb
+   [link]         s3_create_bucket_metadata_configuration_qualification.adb
+   [link]         s3_set_metadata_inventory_table_configuration_qualification.adb
+   [link]         s3_set_metadata_journal_table_configuration_qualification.adb
+   [link]         s3_set_metadata_annotation_table_configuration_qualification.adb
+   [link]         s3_put_bucket_acl_qualification.adb
+   [link]         s3_put_bucket_inventory_configuration_qualification.adb
+   [link]         s3_put_bucket_logging_qualification.adb
+   [link]         s3_put_bucket_website_qualification.adb
+Success: Build finished successfully in 191.94 seconds.
+files staging and bucket-tag deletion symlink rejection: OK
+files conditional put/delete object-path symlink rejection: live/dangling OK
+files abrupt-crash matrix: 140 pre/post-barrier cases including retained generations, bucket CORS, and metadata state OK
+[32m
+OK domain.validator-corpus (in 0.000177 sec.)
+OK memory.lifecycle (in 0.043995 sec.)
+OK memory.multipart (in 0.340145 sec.)
+OK memory.ranges-and-bounds (in 0.000784 sec.)
+OK files.persistence-and-safety (in 2.039453 sec.)
+OK files.durability-fault-barriers (in 0.881687 sec.)
+OK files.bucket-metadata-state (in 0.029667 sec.)
+OK backends.listing-conformance (in 0.147000 sec.)
+OK backends.delete-objects-conformance (in 0.857226 sec.)
+OK memory.object-version-conformance (in 0.002605 sec.)
+OK files.object-version-conformance (in 0.316476 sec.)
+OK memory.object-version-capacity (in 0.000337 sec.)
+OK backends.conditional-put-conformance (in 4.268978 sec.)
+OK backends.copy-object-conformance (in 0.601314 sec.)
+OK backends.object-tagging-conformance (in 0.021649 sec.)
+OK backends.object-annotation-conformance (in 0.035031 sec.)
+OK backends.object-lock-conformance (in 0.051511 sec.)
+OK s3.object-annotation-codec (in 0.001156 sec.)
+OK s3.core-rules (in 0.004410 sec.)
+OK s3.request-target-adversarial (in 0.000035 sec.)
+OK s3.sigv4-official-vectors (in 0.001263 sec.)
+OK s3.xml-security-and-limits (in 0.016920 sec.)
+OK s3.list-objects-v1-codec (in 0.010214 sec.)
+OK s3.list-objects-v2-codec (in 0.003677 sec.)
+OK s3.multipart-completion-codec (in 0.010369 sec.)
+OK s3.list-parts-codec (in 0.003988 sec.)
+OK s3.get-object-attributes-codec (in 0.005451 sec.)
+OK s3.list-multipart-uploads-codec (in 0.007181 sec.)
+OK s3.bucket-tagging-codec (in 0.007641 sec.)
+OK s3.delete-objects-result-codec (in 0.015222 sec.)
+OK s3.object-tagging-codec-adversarial (in 0.007217 sec.)
+OK s3.low-level-list-request (in 0.004897 sec.)
+OK s3.low-level-multipart-request (in 0.015674 sec.)
+OK s3.low-level-create-session (in 0.006105 sec.)
+OK s3.low-level-copy-object (in 0.008065 sec.)
+OK s3.low-level-bucket-lifecycle (in 0.036542 sec.)
+OK s3.low-level-delete-requests (in 0.004779 sec.)
+OK s3.low-level-object-tagging (in 0.000176 sec.)
+OK s3.bucket-versioning-core (in 0.112242 sec.)
+OK s3.metadata-configuration-codecs (in 0.019504 sec.)
+OK s3.generated-model-exhaustive (in 0.001025 sec.)
+OK s3.put-object-required-disposition (in 0.000007 sec.)
+OK s3.put-object-response-decoder-adversarial (in 0.001831 sec.)
+OK s3.upload-part-client-adversarial (in 0.002843 sec.)
+OK s3.model-request-projection-all-operations (in 0.007184 sec.)
+OK s3.sigv4-verification-adversarial (in 0.000184 sec.)
+[0m[35m[0m[31m[0m
+Total Tests Run:   46
+Successful Tests:  46
+Failed Assertions: 0
+Unexpected Errors: 0
+Cumulative Time: 9.953935 sec. seconds
+bucket tagging benchmark stale-put/no-op-delete/status oracle: OK
+S3 checksum corpus: 320 oracle vectors, 210 chunk boundaries, strict wire, composite, and 64 GiB CRC linearization OK
+S3 server application corpus: OK
+S3 PutBucketOwnershipControls deterministic corpus: OK
+S3 CreateBucketMetadataTableConfiguration deterministic corpus: OK
+S3 DeleteObjectAnnotation deterministic corpus: OK
+S3 PutObjectLegalHold deterministic corpus: OK
+S3 PutObjectRetention deterministic corpus: OK
+S3 PutObjectLockConfiguration deterministic corpus: OK
+S3 GetObjectTorrent deterministic corpus: OK
+S3 GetObjectTorrent socket corpus: OK
+S3 GetObjectLegalHold deterministic corpus: OK
+S3 GetObjectRetention deterministic corpus: OK
+S3 GetObjectLockConfiguration deterministic corpus: OK
+S3 GetBucketOwnershipControls deterministic corpus: OK
+S3 Get/PutBucketCors deterministic corpus: OK
+S3 Get/PutBucketEncryption deterministic corpus: OK
+S3 GetBucketLifecycleConfiguration deterministic corpus: OK
+S3 PutBucketLifecycleConfiguration deterministic corpus: OK
+S3 bucket notification configuration deterministic corpus: OK
+S3 GetBucketReplication deterministic corpus: OK
+S3 PutBucketReplication deterministic corpus: OK
+S3 PutBucketMetricsConfiguration deterministic corpus: OK
+S3 PutBucketAnalyticsConfiguration deterministic corpus: OK
+S3 PutBucketIntelligentTieringConfiguration deterministic corpus: OK
+S3 GetBucketMetadataTableConfiguration deterministic corpus: OK
+S3 GetBucketAcl deterministic corpus: OK
+S3 GetObjectAcl deterministic corpus: OK
+S3 HTTP socket corpus: OK
+S3 CreateSession TLS corpus: OK
+S3 PutBucketOwnershipControls deterministic corpus: OK
+S3 CreateBucketMetadataTableConfiguration deterministic corpus: OK
+S3 DeleteObjectAnnotation deterministic corpus: OK
+S3 PutObjectLegalHold deterministic corpus: OK
+S3 PutObjectRetention deterministic corpus: OK
+S3 PutObjectLockConfiguration deterministic corpus: OK
+S3 GetObjectTorrent deterministic corpus: OK
+S3 GetObjectTorrent socket corpus: OK
+S3 GetObjectLegalHold deterministic corpus: OK
+S3 GetObjectRetention deterministic corpus: OK
+S3 GetObjectLockConfiguration deterministic corpus: OK
+S3 GetBucketOwnershipControls deterministic corpus: OK
+S3 Get/PutBucketCors deterministic corpus: OK
+S3 Get/PutBucketEncryption deterministic corpus: OK
+S3 GetBucketLifecycleConfiguration deterministic corpus: OK
+S3 PutBucketLifecycleConfiguration deterministic corpus: OK
+S3 bucket notification configuration deterministic corpus: OK
+S3 GetBucketReplication deterministic corpus: OK
+S3 PutBucketReplication deterministic corpus: OK
+S3 PutBucketMetricsConfiguration deterministic corpus: OK
+S3 PutBucketAnalyticsConfiguration deterministic corpus: OK
+S3 PutBucketIntelligentTieringConfiguration deterministic corpus: OK
+S3 GetBucketMetadataTableConfiguration deterministic corpus: OK
+S3 GetBucketAcl deterministic corpus: OK
+S3 GetObjectAcl deterministic corpus: OK
+S3 HTTP socket corpus: OK
+S3 CreateSession TLS corpus: OK
+S3 PutBucketOwnershipControls deterministic corpus: OK
+S3 CreateBucketMetadataTableConfiguration deterministic corpus: OK
+S3 DeleteObjectAnnotation deterministic corpus: OK
+S3 PutObjectLegalHold deterministic corpus: OK
+S3 PutObjectRetention deterministic corpus: OK
+S3 PutObjectLockConfiguration deterministic corpus: OK
+S3 GetObjectTorrent deterministic corpus: OK
+S3 GetObjectTorrent socket corpus: OK
+S3 GetObjectLegalHold deterministic corpus: OK
+S3 GetObjectRetention deterministic corpus: OK
+S3 GetObjectLockConfiguration deterministic corpus: OK
+S3 GetBucketOwnershipControls deterministic corpus: OK
+S3 Get/PutBucketCors deterministic corpus: OK
+S3 Get/PutBucketEncryption deterministic corpus: OK
+S3 GetBucketLifecycleConfiguration deterministic corpus: OK
+S3 PutBucketLifecycleConfiguration deterministic corpus: OK
+S3 bucket notification configuration deterministic corpus: OK
+S3 GetBucketReplication deterministic corpus: OK
+S3 PutBucketReplication deterministic corpus: OK
+S3 PutBucketMetricsConfiguration deterministic corpus: OK
+S3 PutBucketAnalyticsConfiguration deterministic corpus: OK
+S3 PutBucketIntelligentTieringConfiguration deterministic corpus: OK
+S3 GetBucketMetadataTableConfiguration deterministic corpus: OK
+S3 GetBucketAcl deterministic corpus: OK
+S3 GetObjectAcl deterministic corpus: OK
+S3 HTTP socket corpus: OK
+S3 CreateSession TLS corpus: OK
+S3 signed socket qualification: CreateBucketMetadataConfiguration 9 cases OK
+S3 signed socket qualification: UpdateBucketMetadataInventoryTableConfiguration 9 cases OK
+S3 signed socket qualification: UpdateBucketMetadataJournalTableConfiguration 9 cases OK
+S3 signed socket qualification: UpdateBucketMetadataAnnotationTableConfiguration 9 cases OK
+S3 signed socket qualification: GetBucketReplication 23 cases OK
+S3 signed socket qualification: GetBucketMetricsConfiguration 24 cases OK
+S3 signed socket qualification: PutBucketMetricsConfiguration 9 cases OK
+S3 signed socket qualification: PutBucketAnalyticsConfiguration 10 cases OK
+S3 signed socket qualification: PutBucketIntelligentTieringConfiguration 10 cases OK
+S3 signed socket qualification: ListBucketMetricsConfigurations 25 cases OK
+S3 signed socket qualification: ListBucketAnalyticsConfigurations 21 cases OK
+S3 signed socket qualification: ListBucketIntelligentTieringConfigurations 28 cases OK
+S3 signed socket qualification: ListBucketInventoryConfigurations 38 cases OK
+S3 signed socket qualification: GetBucketAnalyticsConfiguration 40 cases OK
+S3 signed socket qualification: GetBucketIntelligentTieringConfiguration 37 cases OK
+S3 signed socket qualification: GetBucketInventoryConfiguration 48 cases OK
+S3 signed socket qualification: GetBucketLogging 45 cases OK
+S3 signed socket qualification: GetBucketWebsite 39 cases OK
+S3 signed socket qualification: GetBucketMetadataConfiguration 57 cases OK
+S3 signed socket qualification: ListObjectAnnotations 34 cases OK
+S3 signed socket qualification: ListDirectoryBuckets 18 cases OK
+./tests/scripts/test.sh  498.39s user 145.35s system 129% cpu 8:15.63 total
+exit=0

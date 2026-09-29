@@ -1,0 +1,10 @@
+  -- Static_Credentials.Create with a 300-byte principal accepted: TRUE
+  -- control (200-byte principal) CreateBucket: status 200
+  -- control (200-byte principal) CreateBucket: body 
+  ok: control: a 200-byte principal authenticates (200)
+  -- 300-byte principal CreateBucket: status 403
+  -- 300-byte principal CreateBucket: body <?xml version="1.0" encoding="UTF-8"?><Error><Code>SignatureDoesNotMatch</Code><Message>The request signature does not match</Message><Resource>/principal-bucket</Resource></Error>
+  FAILED: a principal Create accepted is not rejected at admission
+  FAILED: a 300-byte principal accepted by Create authenticates (200)
+  FAILED: a correct signature is never reported as SignatureDoesNotMatch
+BUG REPRODUCED: 3 failed expectation(s)

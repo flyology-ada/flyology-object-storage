@@ -1,0 +1,17 @@
+  -- CreateBucket status 200
+  ok: CreateBucket is 200
+  ok: PutObject of an ordinary key is 200
+  -- CONTROL ListObjects status 200
+  ok: CONTROL: an ordinary listing body is valid UTF-8
+  -- CONTROL listing: parsed, keys [plain.txt]
+  ok: CONTROL: the crate parses its own ordinary listing
+  -- PutObject /wire-one-b-bucket/h%FF status 200
+  ok: PutObject of a %FF key is accepted (precondition)
+  -- ListObjects (no encoding-type) status 200
+  --   body: <?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>wire-one-b-bucket</Name><Prefix></Prefix><Marker></Marker><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>h\xff</Key><LastModified>2026-09-07T07:25:13.000Z</LastModified><ETag>"415290769594460e2e485922904f345d"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass><Owner><ID>repro-principal</ID></Owner></Contents><Contents><Key>plain.txt</Key><LastModified>2026-09-07T07:25:13.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass><Owner><ID>repro-principal</ID></Owner></Contents></ListBucketResult>
+  ok: the listing answers 200
+  FAILED: the listing body is valid UTF-8 as its declaration claims
+  -- listing with the %FF key: S3.XML.Parse raised XML_Error
+  FAILED: the crate's own S3 XML parser accepts the listing it emitted
+  -- DeleteObject of the %FF key status 204
+BUG REPRODUCED: 2 failed expectation(s)

@@ -1,0 +1,28 @@
+  -- === fixtures ===
+  ok: CreateBucket /domain-b4 is 200
+  -- CreateMultipartUpload key=[a9] status=200 uploadId=4fb6a2da4e6e6bdcf9f54177bb76c1f3d8d1b2bf182692ac255249bf1d4e006b
+  ok: CreateMultipartUpload for key [a9] is 200
+  -- CreateMultipartUpload key=[a:] status=200 uploadId=59ac7c6c3e2d4b00fcf084f9785a4153804a8fd2ff79d2806000c02cc61391ad
+  ok: CreateMultipartUpload for key [a:] is 200
+  -- CreateMultipartUpload key=[az] status=200 uploadId=113f3b58679a9186d5e447368e08eb4422e85e1e144467160063ae57c71a5d10
+  ok: CreateMultipartUpload for key [az] is 200
+  -- 
+  -- === client decoder: a conforming truncated url-encoded page ===
+  -- Parse_List_Multipart_Uploads raised Malformed_Upload_Listing: ListMultipartUploads next cursor does not advance
+  FAILED: client decodes an encoded truncated page
+  -- 
+  -- === server: paging with encoding-type=url&max-uploads=1 ===
+  -- page 1 status=200
+  --     body=<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>domain-b4</Bucket><NextKeyMarker>a9</NextKeyMarker><NextUploadIdMarker>4fb6a2da4e6e6bdcf9f54177bb76c1f3d8d1b2bf182692ac255249bf1d4e006b</NextUploadIdMarker><MaxUploads>1</MaxUploads><IsTruncated>true</IsTruncated><Upload><UploadId>4fb6a2da4e6e6bdcf9f54177bb76c1f3d8d1b2bf182692ac255249bf1d4e006b</UploadId><Key>a9</Key><Initiated>2026-09-07T07:25:01.000Z</Initiated><StorageClass>STANDARD</StorageClass><ChecksumAlgorithm>CRC64NVME</ChecksumAlgorithm><ChecksumType>FULL_OBJECT</ChecksumType></Upload><EncodingType>url</EncodingType></ListMultipartUploadsResult>
+  ok: page 1 is 200
+  ok: page 1 NextKeyMarker is a9
+  -- page 2 (key-marker=a9) status=500
+  --     body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>We encountered an internal error</Message><Resource>/domain-b4?uploads&amp;encoding-type=url&amp;max-uploads=1&amp;key-marker=a9&amp;upload-id-marker=4fb6a2da4e6e6bdcf9f54177bb76c1f3d8d1b2bf182692ac255249bf1d4e006b</Resource></Error>
+  FAILED: page 2 of a url-encoded listing is 200
+  FAILED: page 2 reports the encoded next key marker a%3A
+  -- 
+  -- === control: the same paging without encoding-type ===
+  -- plain page 2 status=200
+  --     body=<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>domain-b4</Bucket><KeyMarker>a9</KeyMarker><NextKeyMarker>a:</NextKeyMarker><NextUploadIdMarker>59ac7c6c3e2d4b00fcf084f9785a4153804a8fd2ff79d2806000c02cc61391ad</NextUploadIdMarker><MaxUploads>1</MaxUploads><IsTruncated>true</IsTruncated><Upload><UploadId>59ac7c6c3e2d4b00fcf084f9785a4153804a8fd2ff79d2806000c02cc61391ad</UploadId><Key>a:</Key><Initiated>2026-09-07T07:25:01.000Z</Initiated><StorageClass>STANDARD</StorageClass><ChecksumAlgorithm>CRC64NVME</ChecksumAlgorithm><ChecksumType>FULL_OBJECT</ChecksumType></Upload></ListMultipartUploadsResult>
+  ok: control: page 2 without encoding-type is 200
+BUG REPRODUCED: 3 failed expectation(s)

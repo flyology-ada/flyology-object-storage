@@ -1,0 +1,18 @@
+  -- scripted loopback origin on 127.0.0.1:49829
+  -- --- a prepared DeleteObject handed to Execute_Create_Multipart_Upload ---
+  -- unguarded: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_REQUEST : prepared request operation mismatch
+  ok: unguarded: a mismatched prepared request is rejected as Invalid_Request
+  -- unguarded: origin exchanges before 0, after 1
+  -- unguarded: the origin received DELETE /example-bucket/irreplaceable-object HTTP/1.1
+  FAILED: unguarded: no request reached the origin
+  -- --- control: the same mismatched request through a guarded executor (Execute_List_Parts) ---
+  -- guarded: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_REQUEST : prepared request operation mismatch
+  ok: guarded: a mismatched prepared request is rejected as Invalid_Request
+  ok: guarded: no request reached the origin
+  -- --- control: a genuine DeleteObject must reach the origin ---
+  -- genuine: Kind = OBJECT_DELETED, status 204
+  ok: genuine: Execute_Delete_Object succeeds
+  ok: genuine: exactly one request reached the origin
+  -- origin exchange 1: DELETE /example-bucket/irreplaceable-object HTTP/1.1
+  -- origin exchange 2: DELETE /example-bucket/irreplaceable-object HTTP/1.1
+BUG REPRODUCED: 1 failed expectation(s)

@@ -1,0 +1,15 @@
+  -- scripted loopback origin on 127.0.0.1:49809
+  -- model: HeadObjectOutput required = [], VersionId is an optional x-amz-version-id header (review/baseline/service-2.json)
+  -- --- absent x-amz-version-id (RustFS/MinIO/SeaweedFS/AWS shape) ---
+  -- no-header: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : HeadObject response does not match prepared request
+  FAILED: no-header: a 200 HeadObject without x-amz-version-id is a modeled success
+  -- --- control: the origin echoes x-amz-version-id: null ---
+  -- control: Execute_Head_Object Kind = OBJECT_FOUND, status 200
+  -- control: ETag = "014842d480b571495a4a0363793f7367", Content-Length = 64, Version_ID = "null"
+  ok: control: a 200 HeadObject without x-amz-version-id is a modeled success
+  ok: control: decoded Version_ID is "null"
+  ok: control: the ETag reaches the caller
+  -- request 1: HEAD /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 2: HEAD /never-versioned/native-object?versionId=null HTTP/1.1
+  ok: the origin served both scripted exchanges
+BUG REPRODUCED: 1 failed expectation(s)

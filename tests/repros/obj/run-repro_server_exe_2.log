@@ -1,0 +1,12 @@
+  -- management port 49980; declared policy on /api/login is Concurrency => 1, Rate_Per_Second => 2
+  -- 50 simultaneous POST /api/login with a wrong 48-hex password:
+      48 x 401
+       2 x transport-error RemoteDisconnected
+     wall=48.61s min=1.00s median=26.28s max=48.61s
+  -- fully processed by a handler (200/401): 48; rejected by a limiter (429/503): 0
+  FAILED: a per-client rate limit or bulkhead rejects some of 50 simultaneous logins with 429/503
+  -- burst capacity of the declared policy is 2; observed admissions: 48 (wall 48.61s)
+  FAILED: a simultaneous burst from one peer admits at most the declared burst of 2
+  -- control: one wrong-password login on its own: 401 {"authenticated":false}
+  ok: control: a single wrong-password login is answered 401
+BUG REPRODUCED: 2 failed expectation(s)

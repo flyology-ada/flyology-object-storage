@@ -1,0 +1,26 @@
+  -- === fixtures ===
+  ok: CreateBucket /domain-b2 is 200
+  ok: PutObject k is 200
+  -- 
+  -- === unit level: the two bucket entry points on one document ===
+  -- Parse_Bucket_Response accepted it, tags=1
+  ok: control: Parse_Bucket_Response decodes the mc document
+  -- Parse_Bucket raised FLYOLOGY.OBJECT_STORAGE.S3.TAGGING.MALFORMED_TAGGING: malformed bucket tagging XML
+  FAILED: Tagging.Parse_Bucket accepts a namespace-free <Tagging>
+  -- 
+  -- === server: the same document on both tagging paths ===
+  -- PutObjectTagging, mc document (accepted today)
+  --     PUT /domain-b2/k?tagging body=<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>
+  --     status=200 body=
+  ok: PutObjectTagging, mc document (accepted today) is answered 200
+  -- PutBucketTagging, mc document                 
+  --     PUT /domain-b2?tagging body=<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/domain-b2?tagging</Resource></Error>
+  FAILED: PutBucketTagging, mc document                  is answered 200
+  -- 
+  -- === control: PutBucketTagging with xmlns (passes today) ===
+  -- PutBucketTagging, boto3/aws-cli document      
+  --     PUT /domain-b2?tagging body=<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>
+  --     status=200 body=
+  ok: PutBucketTagging, boto3/aws-cli document       is answered 200
+BUG REPRODUCED: 2 failed expectation(s)

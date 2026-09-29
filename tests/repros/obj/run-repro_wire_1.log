@@ -1,0 +1,42 @@
+  -- Valid_Object_Key ("a" & SOH & "b") = TRUE
+  -- XML.Escape_Text of the same key raised XML_Error
+  -- CreateBucket -> status 200
+  ok: CreateBucket is 200
+  -- PutObject plain.txt -> status 200
+  ok: PutObject of an ordinary key is 200
+  -- CONTROL ListObjectsV2 with only ordinary keys -> status 200
+  ok: CONTROL: listing a bucket of ordinary keys is 200
+  ok: CONTROL: the ordinary key appears in the page
+  -- PutObject /wire-one-bucket/a%01b -> status 200
+  ok: PutObject of a %01 key is accepted (precondition)
+  -- CONTROL GetObject of the %01 key -> status 200
+  ok: CONTROL: GetObject of the %01 key returns its body
+  -- CONTROL HeadObject of the %01 key -> status 200
+  ok: CONTROL: HeadObject of the %01 key is 200
+  -- ListObjectsV2 (no encoding-type) -> status 500  <Code>InternalError</Code>
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>We encountered an internal error</Message><Resource>/wire-one-bucket?list-type=2</Resource></Error>
+  FAILED: ListObjectsV2 without encoding-type is 200
+  FAILED: ListObjectsV2 without encoding-type returns a listing page
+  -- ListObjects v1 (no encoding-type) -> status 500  <Code>InternalError</Code>
+  FAILED: ListObjects v1 without encoding-type is 200
+  -- ListObjectVersions (no encoding-type) -> status 500  <Code>InternalError</Code>
+  FAILED: ListObjectVersions without encoding-type is 200
+  -- ListObjectsV2 with encoding-type=url -> status 200
+  --   body: <?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>wire-one-bucket</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><EncodingType>url</EncodingType><Contents><Key>a%01b</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>plain.txt</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>
+  -- DeleteObjects with a raw U+0001 in the request XML -> status 400  <Code>MalformedXML</Code>
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/wire-one-bucket?delete</Resource></Error>
+  -- DeleteObjects with &#1; in the request XML -> status 400  <Code>MalformedXML</Code>
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/wire-one-bucket?delete</Resource></Error>
+  -- PutObject /wire-one-bucket/h%FF -> status 200
+  -- ListObjectsV2 encoding-type=url with the %FF key too -> status 200
+  --   body valid UTF-8: TRUE
+  --   body: <?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>wire-one-bucket</Name><Prefix></Prefix><KeyCount>3</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><EncodingType>url</EncodingType><Contents><Key>a%01b</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>h%FF</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"415290769594460e2e485922904f345d"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>plain.txt</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>
+  -- CONTROL DeleteObject of the %01 key -> status 204
+  ok: CONTROL: DELETE of the %01 key succeeds
+  -- ListObjectsV2 (no encoding-type) with only the %FF key -> status 200
+  --   body valid UTF-8: FALSE
+  --   body: <?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>wire-one-bucket</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>h\xff</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"415290769594460e2e485922904f345d"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>plain.txt</Key><LastModified>2026-09-07T07:25:12.000Z</LastModified><ETag>"9dd4e461268c8034f5c8564e155c67a6"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>
+  -- DeleteObject of the %FF key -> status 204
+  -- CONTROL ListObjectsV2 after the keys are removed -> status 200
+  ok: CONTROL: the listing works again once the keys are gone
+BUG REPRODUCED: 4 failed expectation(s)

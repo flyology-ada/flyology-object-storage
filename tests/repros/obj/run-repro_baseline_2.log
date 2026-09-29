@@ -1,0 +1,8 @@
+  -- default shell 'bash -e', script exits 1 through '| tee': step status 0
+  FAILED: a failing conformance script fails the CI step as written (bash -e, pipe to tee)
+  -- control 'bash -eo pipefail': step status 1
+  ok: control: with pipefail the same step fails
+  -- docker port for '--publish 127.0.0.1::9000': 127.0.0.1:32809
+  -- the published port is bound to the host loopback only
+  FAILED: ci.yml sets 'shell: bash' or pipefail for the piped steps
+BUG REPRODUCED: 2 failed expectation(s)

@@ -1,0 +1,35 @@
+  -- === the pinned model's ListObjectAnnotations query names ===
+  ok: control: the model has a ListObjectAnnotations input shape
+  --     VersionId -> "versionId" (what Client.Low_Level puts on the wire)
+  --     MaxAnnotationResults -> "max-annotation-results" (what Client.Low_Level puts on the wire)
+  --     AnnotationPrefix -> "annotation-prefix" (what Client.Low_Level puts on the wire)
+  --     ContinuationToken -> "continuation-token" (what Client.Low_Level puts on the wire)
+  -- 
+  -- === fixtures ===
+  ok: CreateBucket /domain-b3 is 200
+  ok: PutObject obj is 200
+  ok: PutObjectAnnotation alpha is 200
+  ok: PutObjectAnnotation beta is 200
+  -- 
+  -- === control: the codec's camelCase spellings (accepted today) ===
+  -- control  GET /domain-b3/obj?annotation&maxAnnotationResults=1
+  --     status=200 body=<ListObjectAnnotationsOutput xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Annotations><AnnotationEntry><AnnotationName>alpha</AnnotationName><LastModified>2026-09-07T07:25:00.000Z</LastModified><ETag>"252d283e44867cbe49f6aa57c020ecdf"</ETag><ChecksumAlgorithm>SHA256</ChecksumAlgorithm><Size>13</Size></AnnotationEntry></Annotations><Bucket>domain-b3</Bucket><Key>obj</Key><MaxAnnotationResults>1</MaxAnnotationResults><AnnotationCount>1</AnnotationCount><NextContinuationToken>fos1.5073ca3abd4a8ffc65e51385fca7513b2c3a2c5015c9debcaa3ecaf577636496.616c706861</NextContinuationToken></ListObjectAnnotationsOutput>
+  -- control  GET /domain-b3/obj?annotation&annotationPrefix=al
+  --     status=200 body=<ListObjectAnnotationsOutput xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Annotations><AnnotationEntry><AnnotationName>alpha</AnnotationName><LastModified>2026-09-07T07:25:00.000Z</LastModified><ETag>"252d283e44867cbe49f6aa57c020ecdf"</ETag><ChecksumAlgorithm>SHA256</ChecksumAlgorithm><Size>13</Size></AnnotationEntry></Annotations><Bucket>domain-b3</Bucket><Key>obj</Key><AnnotationPrefix>al</AnnotationPrefix><AnnotationCount>1</AnnotationCount></ListObjectAnnotationsOutput>
+  -- 
+  -- === the model's spellings, as the crate's own client sends ===
+  -- model    GET /domain-b3/obj?annotation&max-annotation-results=1
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The object annotation request query is invalid</Message><Resource>/domain-b3/obj?annotation&amp;max-annotation-results=1</Resource></Error>
+  FAILED: the model's spelling "max-annotation-results" is accepted
+  -- model    GET /domain-b3/obj?annotation&annotation-prefix=al
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The object annotation request query is invalid</Message><Resource>/domain-b3/obj?annotation&amp;annotation-prefix=al</Resource></Error>
+  FAILED: the model's spelling "annotation-prefix" is accepted
+  -- 
+  -- === pagination with the model's continuation-token ===
+  -- first page (camelCase) status=200
+  ok: control: the first page returns a continuation token
+  -- token=fos1.5073ca3abd4a8ffc65e51385fca7513b2c3a2c5015c9debcaa3ecaf577636496.616c706861
+  -- model    GET /domain-b3/obj?annotation&continuation-token=fos1.5073ca3abd4a8ffc65e51385fca7513b2c3a2c5015c9debcaa3ecaf577636496.616c706861
+  --     status=400 body=<?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidArgument</Code><Message>The object annotation request query is invalid</Message><Resource>/domain-b3/obj?annotation&amp;continuation-token=fos1.5073ca3abd4a8ffc65e51385fca7513b2c3a2c5015c9debcaa3ecaf577636496.616c706861</Resource></Error>
+  FAILED: the model's spelling "continuation-token" is accepted
+BUG REPRODUCED: 3 failed expectation(s)

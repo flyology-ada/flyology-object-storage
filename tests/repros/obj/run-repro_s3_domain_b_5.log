@@ -1,0 +1,38 @@
+  -- === the pinned model's StorageClass enumeration ===
+  ok: control: the model has a GetObjectAttributes output shape
+  ok: control: the output shape has a StorageClass member
+  -- model StorageClass values (15):
+  --     STANDARD
+  --     REDUCED_REDUNDANCY
+  --     STANDARD_IA
+  --     ONEZONE_IA
+  --     INTELLIGENT_TIERING
+  --     GLACIER
+  --     DEEP_ARCHIVE
+  --     OUTPOSTS
+  --     GLACIER_IR
+  --     SNOW
+  --     EXPRESS_ONEZONE
+  --     FSX_OPENZFS
+  --     FSX_ONTAP
+  --     AWS_BACKUP_WARM
+  --     AWS_BACKUP_LOW_COST_WARM
+  -- 
+  -- === control: a class the codec knows ===
+  -- STANDARD
+  --   S3.Attributes.Parse_Result: accepted, StorageClass=[STANDARD]
+  --   Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  -- GLACIER_IR
+  --   S3.Attributes.Parse_Result: accepted, StorageClass=[GLACIER_IR]
+  --   Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  -- 
+  -- === the two modeled classes the codec does not know ===
+  -- AWS_BACKUP_WARM
+  --   S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid storage class
+  --   Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: client decodes StorageClass AWS_BACKUP_WARM
+  -- AWS_BACKUP_LOW_COST_WARM
+  --   S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid storage class
+  --   Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: client decodes StorageClass AWS_BACKUP_LOW_COST_WARM
+BUG REPRODUCED: 2 failed expectation(s)

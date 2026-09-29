@@ -1,0 +1,37 @@
+  -- === controls: shapes the decoder accepts today ===
+  -- FULL_OBJECT CRC32, parts container present   
+  --     S3.Attributes.Parse_Result: accepted, Has_Checksum=TRUE Has_Object_Parts=TRUE
+  --     Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  -- FULL_OBJECT SHA256, no parts container       
+  --     S3.Attributes.Parse_Result: accepted, Has_Checksum=TRUE Has_Object_Parts=FALSE
+  --     Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  -- 
+  -- === the modeled combinations the decoder rejects ===
+  -- FULL_OBJECT SHA256 + parts (MinIO's answer)  
+  --     S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid full-object checksum
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: FULL_OBJECT SHA256 + parts (MinIO's answer)  
+  -- FULL_OBJECT MD5 + parts                      
+  --     S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid full-object checksum
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: FULL_OBJECT MD5 + parts                      
+  -- FULL_OBJECT XXHASH64 + parts                 
+  --     S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid full-object checksum
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: FULL_OBJECT XXHASH64 + parts                 
+  -- untyped raw SHA256 + parts (type omitted)    
+  --     S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: invalid full-object checksum
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: untyped raw SHA256 + parts (type omitted)    
+  -- 
+  -- === self-interop: what this crate's own server emits ===
+  ok: CreateBucket /domain-b7 is 200
+  ok: PutObject with x-amz-checksum-sha256 is 200
+  -- GetObjectAttributes status=200
+  --     body=<?xml version="1.0" encoding="UTF-8"?><GetObjectAttributesResponse xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ETag>5eb63bbbe01eeed093cb22bb8f5acdc3</ETag><Checksum><ChecksumSHA256>uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=</ChecksumSHA256><ChecksumType>FULL_OBJECT</ChecksumType></Checksum><ObjectSize>11</ObjectSize></GetObjectAttributesResponse>
+  ok: control: the crate's own GetObjectAttributes is 200
+  -- this crate's own answer, read by its own client
+  --     S3.Attributes.Parse_Result: accepted, Has_Checksum=TRUE Has_Object_Parts=FALSE
+  --     Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  ok: this crate's own answer, read by its own client
+BUG REPRODUCED: 4 failed expectation(s)

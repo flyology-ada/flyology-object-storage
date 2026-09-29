@@ -1,0 +1,39 @@
+  ok: exact: bucket created
+  ok: exact: versioning enabled
+  ok: exact: first PUT published
+  ok: exact: second PUT published
+  -- exact: v1 41b6ea08994cc7f6cbd3be48b86d242d2028e178ac6b576a668acdc4fe92a602 v2 9386a25901aec99598857ac6f2616db093bd4fc09678d8ca98ce1c22bef3b6f3
+  ok: exact: current body is v2
+  -- control: same-key copy without a selector -> INVALID_REQUEST
+  ok: control: unselected same-key copy is still Invalid_Request
+  -- exact: same-key copy with Source_Selector = (Exact_Version, v1) -> INVALID_REQUEST
+  FAILED: exact: same-key copy of an exact source generation succeeds
+  FAILED: exact: Source_Identity names the selected generation
+  -- exact: destination identity 
+  -- exact: current body after restore 'v2'
+  FAILED: exact: restore republished the v1 bytes as current
+  ok: null: bucket created
+  ok: null: unconfigured PUT published the null generation
+  ok: null: versioning enabled
+  ok: null: enabled PUT published
+  ok: null: current body is e1
+  -- null: same-key copy with Null_Version_Selector -> INVALID_REQUEST
+  FAILED: null: same-key copy of the null generation succeeds
+  -- null: current body after restore 'e1'
+  FAILED: null: restore republished the null-generation bytes
+  ok: wire: CreateBucket is 200
+  ok: wire: PutBucketVersioning is 200
+  ok: wire: first PUT is 200
+  -- wire: v1 version id 1705f7127d0e471eb4a961a3b1f49d8b4192533a28aaf416a5fcba966bee7b4b
+  ok: wire: second PUT is 200
+  -- wire: v2 version id 28305ded3ed79f37c4548decbe8c69e3621949effc3587027dbb21c0c87da392
+  ok: wire: current body is v2
+  -- control: wire same-key copy without versionId -> 400
+  ok: control: wire unselected same-key copy is still 400
+  -- wire: CopyObject /copy-restore/k?versionId=1705f7127d0e471eb4a961a3b1f49d8b4192533a28aaf416a5fcba966bee7b4b -> 400
+  -- wire: response body <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>Invalid request</Message><Resource>/copy-restore/k</Resource></Error>
+  FAILED: wire: versioned same-key CopyObject is 200
+  FAILED: wire: response names the selected source generation
+  -- wire: current body after restore 'v2'
+  FAILED: wire: restore republished the v1 bytes as current
+BUG REPRODUCED: 8 failed expectation(s)

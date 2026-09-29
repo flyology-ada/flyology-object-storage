@@ -1,0 +1,17 @@
+  -- MaxKeys is an Integer_Shape ListObjectsV2 member bound to the max-keys query parameter; Valid_Model_Scalar validates it with Long_Long_Integer'Value and forwards the raw text
+  -- --- control: a plain decimal value ---
+  -- MaxKeys="500" prepared; target = /example-bucket?list-type=2&max-keys=500
+  ok: control MaxKeys="500" reaches the wire verbatim
+  -- --- control: text that is not a number at all ---
+  -- MaxKeys="not-a-number" rejected: invalid modeled request scalar
+  ok: MaxKeys="not-a-number" is not a wire-valid decimal integer and must be rejected at preparation
+  -- --- Ada literal forms that 'Value accepts and S3 does not ---
+  -- MaxKeys="1_000" prepared; target = /example-bucket?list-type=2&max-keys=1_000
+  FAILED: MaxKeys="1_000" is not a wire-valid decimal integer and must be rejected at preparation
+  -- MaxKeys="16#3E8#" prepared; target = /example-bucket?list-type=2&max-keys=16%233E8%23
+  FAILED: MaxKeys="16#3E8#" is not a wire-valid decimal integer and must be rejected at preparation
+  -- MaxKeys="1E3" prepared; target = /example-bucket?list-type=2&max-keys=1E3
+  FAILED: MaxKeys="1E3" is not a wire-valid decimal integer and must be rejected at preparation
+  -- MaxKeys="+1000" prepared; target = /example-bucket?list-type=2&max-keys=%2B1000
+  FAILED: MaxKeys="+1000" is not a wire-valid decimal integer and must be rejected at preparation
+BUG REPRODUCED: 4 failed expectation(s)

@@ -1,0 +1,35 @@
+  -- scripted loopback origin on 127.0.0.1:49839
+  -- responses carry ETag, Last-Modified, Content-Length and the RustFS request-id headers
+  -- --- absent x-amz-version-id (MinIO/RustFS/SeaweedFS/AWS shape) ---
+  -- no-header HEAD: Head_Object Kind = HEAD_EXCHANGE_FAILED
+  -- no-header HEAD: Failure = CORRUPT_OR_INVALID_RESPONSE, HTTP_Result = RESPONSE_INVALID
+  FAILED: no-header HEAD: HeadObject 200 without x-amz-version-id is a complete response
+  -- no-header GET: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : GetObject response does not match prepared request
+  FAILED: no-header GET: GetObject 200 without x-amz-version-id yields the object bytes
+  -- no-header GET/dest: Get_Whole (destination) Kind = WHOLE_GET_EXCHANGE_FAILED, Failure = CORRUPT_OR_INVALID_RESPONSE, destination length 0
+  -- no-header GET/dest: HTTP_Result = RESPONSE_INVALID, phase RECEIVING_RESPONSE_BODY
+  FAILED: no-header GET/dest: composable whole GetObject keeps the received bytes
+  -- --- control: server echoes x-amz-version-id: null ---
+  -- control HEAD: Head_Object Kind = HEAD_RESPONSE_AVAILABLE
+  -- control HEAD: status 200, Version_ID = "null", ETag = "014842d480b571495a4a0363793f7367"
+  ok: control HEAD: HeadObject 200 without x-amz-version-id is a complete response
+  ok: control HEAD: HeadObject outcome is Object_Found
+  ok: control HEAD: decoded Version_ID is "null"
+  -- control GET: Get_Whole (outcome) Kind = WHOLE_OBJECT_READ, status 200
+  ok: control GET: GetObject 200 without x-amz-version-id yields the object bytes
+  -- control GET: body length 64, Version_ID = "null"
+  ok: control GET: whole body round-trips
+  ok: control GET: decoded Version_ID is "null"
+  -- control GET/dest: Get_Whole (destination) Kind = WHOLE_GET_RESPONSE_AVAILABLE, Failure = NO_FAILURE, destination length 64
+  ok: control GET/dest: composable whole GetObject keeps the received bytes
+  ok: control GET/dest: GetObject head outcome is Object_Opened
+  ok: control GET/dest: destination holds all 64 body octets
+  ok: control GET/dest: decoded Version_ID is "null"
+  -- request 1: HEAD /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 2: GET /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 3: GET /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 4: HEAD /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 5: GET /never-versioned/native-object?versionId=null HTTP/1.1
+  -- request 6: GET /never-versioned/native-object?versionId=null HTTP/1.1
+  ok: the origin served all six scripted exchanges
+BUG REPRODUCED: 3 failed expectation(s)

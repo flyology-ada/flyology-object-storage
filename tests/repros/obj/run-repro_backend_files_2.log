@@ -1,0 +1,16 @@
+  -- files root /private/tmp/claude-501/repro-bf2-1466-360457000 (48 bytes)
+  ok: a 1,024-byte key satisfies the documented storage boundary
+  ok: 1,024 bytes is the documented maximum
+  ok: memory (control) CreateBucket
+  -- memory (control) PUT 1024-byte key -> SUCCESS
+  ok: memory (control) accepts a 1,024-byte key
+  ok: files  (subject) CreateBucket
+  -- files  (subject) PUT 8-byte key -> SUCCESS
+  ok: files  (subject) accepts a short key (harness control)
+  -- files  (subject) PUT 1024-byte key -> BACKEND_UNAVAILABLE
+  FAILED: files  (subject) accepts a 1,024-byte key
+  -- files  (subject) largest accepted key length on this host = 464 bytes; 465 bytes already fails
+  -- files  (subject) status at 465 bytes -> BACKEND_UNAVAILABLE
+  -- the S3 adapter maps Backend_Unavailable to 503 SlowDown (server-s3_applications.adb:1951-1954)
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf2-1466-360457000
+BUG REPRODUCED: 1 failed expectation(s)

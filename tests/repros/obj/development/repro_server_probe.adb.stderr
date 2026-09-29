@@ -1,0 +1,6 @@
+repro_server_probe.adb:93:27: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_probe.adb:97:27: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_probe.adb:106:26: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_probe.adb:137:25: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_probe.adb:152:29: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_probe.adb:203:26: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]

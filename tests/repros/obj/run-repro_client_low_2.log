@@ -1,0 +1,20 @@
+  -- in-process CreateBucket status 200
+  ok: setup: CreateBucket is 200
+  -- in-process PutObject status 200, x-amz-version-id = ""
+  ok: setup: PutObject is 200
+  ok: setup: the never-versioned publication returns no version id
+  -- raw GET ?attributes&versionId=null -> status 200, x-amz-version-id count 0
+  ok: setup: the in-repo server answers the versioned attributes request with 200
+  ok: setup: that 200 carries no x-amz-version-id
+  -- loopback S3 application on 127.0.0.1:49812
+  -- model: GetObjectAttributesOutput required = [], VersionId is an optional x-amz-version-id header (review/baseline/service-2.json)
+  -- --- explicit versionId=null against a never-versioned bucket ---
+  -- versioned: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : GetObjectAttributes response does not match request
+  FAILED: versioned: a 200 GetObjectAttributes without x-amz-version-id is a modeled success
+  -- --- control: no version selector, same object ---
+  -- control: Execute_Get_Object_Attributes Kind = OBJECT_ATTRIBUTES_FOUND, status 200
+  -- control: ETag = 6b344779a83cd6a352fbfcec796f62f2, ObjectSize set = TRUE, Version_ID = ""
+  ok: control: a 200 GetObjectAttributes without x-amz-version-id is a modeled success
+  ok: control: the requested ETag attribute reaches the caller
+  ok: control: ObjectSize is 16
+BUG REPRODUCED: 1 failed expectation(s)

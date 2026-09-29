@@ -1,0 +1,4 @@
+repro_s3_domain_a_minio_probe.adb:54:17: warning: unit "Ada.Strings.Fixed" is not referenced [-gnatwu]
+repro_s3_domain_a_minio_probe.adb:250:06: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_s3_domain_a_minio_probe.adb:252:06: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_s3_domain_a_minio_probe.adb:420:15: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]

@@ -1,0 +1,1 @@
+repro_checksum_2.adb:24:09: warning: unit "Ada.Streams" is not referenced [-gnatwu]

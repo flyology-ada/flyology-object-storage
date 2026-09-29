@@ -1,0 +1,49 @@
+  -- --- what this crate's own S3 server answers ---
+  -- own server, unknown access key: HTTP 403 <Code> = "SignatureDoesNotMatch"
+  -- own server, wrong signature: HTTP 403 <Code> = "SignatureDoesNotMatch"
+  -- scripted loopback origin on 127.0.0.1:49786
+  -- --- MinIO shape: 403 InvalidAccessKeyId / SignatureDoesNotMatch ---
+  -- 403 InvalidAccessKeyId/location: status 403, Error.Code = "InvalidAccessKeyId", Failure = CORRUPT_OR_INVALID_RESPONSE
+  FAILED: 403 InvalidAccessKeyId/location: GetBucketLocation Failure is AUTHENTICATION_FAILED
+  -- 403 SignatureDoesNotMatch/location: status 403, Error.Code = "SignatureDoesNotMatch", Failure = CORRUPT_OR_INVALID_RESPONSE
+  FAILED: 403 SignatureDoesNotMatch/location: GetBucketLocation Failure is AUTHENTICATION_FAILED
+  -- 403 InvalidAccessKeyId/put-tags: status 403, Error.Code = "InvalidAccessKeyId", Failure = CORRUPT_OR_INVALID_RESPONSE, Disposition = BUCKET_TAG_MUTATION_OUTCOME_UNKNOWN
+  FAILED: 403 InvalidAccessKeyId/put-tags: PutBucketTagging Failure is AUTHENTICATION_FAILED
+  FAILED: 403 InvalidAccessKeyId/put-tags: PutBucketTagging Disposition is BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  -- 403 SignatureDoesNotMatch/put-tags: status 403, Error.Code = "SignatureDoesNotMatch", Failure = CORRUPT_OR_INVALID_RESPONSE, Disposition = BUCKET_TAG_MUTATION_OUTCOME_UNKNOWN
+  FAILED: 403 SignatureDoesNotMatch/put-tags: PutBucketTagging Failure is AUTHENTICATION_FAILED
+  FAILED: 403 SignatureDoesNotMatch/put-tags: PutBucketTagging Disposition is BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  -- 403 InvalidAccessKeyId/create: status 403, Error.Code = "InvalidAccessKeyId", Failure = CORRUPT_OR_INVALID_RESPONSE, Disposition = BUCKET_CREATION_OUTCOME_UNKNOWN
+  FAILED: 403 InvalidAccessKeyId/create: CreateBucket Failure is AUTHENTICATION_FAILED
+  FAILED: 403 InvalidAccessKeyId/create: CreateBucket Disposition is BUCKET_DEFINITELY_NOT_CREATED
+  -- --- control: the enumerated 401 InvalidAccessKeyId pair ---
+  -- 401 InvalidAccessKeyId/location: status 401, Error.Code = "InvalidAccessKeyId", Failure = AUTHENTICATION_FAILED
+  ok: 401 InvalidAccessKeyId/location: GetBucketLocation Failure is AUTHENTICATION_FAILED
+  -- 401 InvalidAccessKeyId/put-tags: status 401, Error.Code = "InvalidAccessKeyId", Failure = AUTHENTICATION_FAILED, Disposition = BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  ok: 401 InvalidAccessKeyId/put-tags: PutBucketTagging Failure is AUTHENTICATION_FAILED
+  ok: 401 InvalidAccessKeyId/put-tags: PutBucketTagging Disposition is BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  -- 401 InvalidAccessKeyId/create: status 401, Error.Code = "InvalidAccessKeyId", Failure = AUTHENTICATION_FAILED, Disposition = BUCKET_DEFINITELY_NOT_CREATED
+  ok: 401 InvalidAccessKeyId/create: CreateBucket Failure is AUTHENTICATION_FAILED
+  ok: 401 InvalidAccessKeyId/create: CreateBucket Disposition is BUCKET_DEFINITELY_NOT_CREATED
+  -- --- control: the enumerated 403 AccessDenied pair ---
+  -- 403 AccessDenied/location: status 403, Error.Code = "AccessDenied", Failure = AUTHORIZATION_FAILED
+  ok: 403 AccessDenied/location: GetBucketLocation Failure is AUTHORIZATION_FAILED
+  -- 403 AccessDenied/put-tags: status 403, Error.Code = "AccessDenied", Failure = AUTHORIZATION_FAILED, Disposition = BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  ok: 403 AccessDenied/put-tags: PutBucketTagging Failure is AUTHORIZATION_FAILED
+  ok: 403 AccessDenied/put-tags: PutBucketTagging Disposition is BUCKET_TAG_MUTATION_DEFINITELY_NOT_APPLIED
+  -- 403 AccessDenied/create: status 403, Error.Code = "AccessDenied", Failure = AUTHORIZATION_FAILED, Disposition = BUCKET_DEFINITELY_NOT_CREATED
+  ok: 403 AccessDenied/create: CreateBucket Failure is AUTHORIZATION_FAILED
+  ok: 403 AccessDenied/create: CreateBucket Disposition is BUCKET_DEFINITELY_NOT_CREATED
+  -- request 1: GET /flyology-review-buckets?location HTTP/1.1
+  -- request 2: GET /flyology-review-buckets?location HTTP/1.1
+  -- request 3: PUT /flyology-review-buckets?tagging HTTP/1.1
+  -- request 4: PUT /flyology-review-buckets?tagging HTTP/1.1
+  -- request 5: PUT /flyology-review-buckets HTTP/1.1
+  -- request 6: GET /flyology-review-buckets?location HTTP/1.1
+  -- request 7: PUT /flyology-review-buckets?tagging HTTP/1.1
+  -- request 8: PUT /flyology-review-buckets HTTP/1.1
+  -- request 9: GET /flyology-review-buckets?location HTTP/1.1
+  -- request 10: PUT /flyology-review-buckets?tagging HTTP/1.1
+  -- request 11: PUT /flyology-review-buckets HTTP/1.1
+  ok: the origin served all eleven exchanges
+BUG REPRODUCED: 8 failed expectation(s)

@@ -1,0 +1,14 @@
+name = "repros"
+description = "Bug reproduction programs for Flyology Object Storage findings"
+version = "0.0.0"
+
+authors = ["Yurii Rashkovskii"]
+maintainers = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+maintainers-logins = ["yrashk"]
+licenses = "MIT OR Apache-2.0"
+
+[[depends-on]]
+flyology_object_storage = "*"
+
+[[pins]]
+flyology_object_storage = { path = "../.." }

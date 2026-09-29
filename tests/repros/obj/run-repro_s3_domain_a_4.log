@@ -1,0 +1,18 @@
+  -- --- controls: the shape-name roots the crate pins today ---
+  -- Inventory.Parse_List <ListBucketInventoryConfigurationsOutput>: accepted, has_is_truncated=TRUE
+  -- Metrics.Parse_List <ListBucketMetricsConfigurationsOutput>: accepted, has_is_truncated=TRUE
+  -- Analytics.Parse_List <ListBucketAnalyticsConfigurationsOutput>: accepted, has_is_truncated=TRUE
+  -- ListDirectoryBuckets <ListDirectoryBucketsOutput>: accepted, buckets=1
+  -- --- control: Intelligent-Tiering, where AWS really does document the shape name as the root ---
+  -- Intelligent_Tiering.Parse_List <ListBucketIntelligentTieringConfigurationsOutput>: accepted, has_is_truncated=TRUE
+  ok: Intelligent_Tiering.Parse_List accepts <ListBucketIntelligentTieringConfigurationsOutput>
+  -- --- the finding: the roots the AWS API Reference documents ---
+  -- Inventory.Parse_List <ListInventoryConfigurationsResult>: REJECTED, malformed inventory-list XML
+  FAILED: Inventory.Parse_List accepts <ListInventoryConfigurationsResult>
+  -- Metrics.Parse_List <ListMetricsConfigurationsResult>: REJECTED, malformed metrics-list XML
+  FAILED: Metrics.Parse_List accepts <ListMetricsConfigurationsResult>
+  -- Analytics.Parse_List <ListBucketAnalyticsConfigurationResult>: REJECTED, malformed analytics-list XML
+  FAILED: Analytics.Parse_List accepts <ListBucketAnalyticsConfigurationResult>
+  -- ListDirectoryBuckets <ListAllMyDirectoryBucketsResult>: REJECTED, flyology-object_storage-s3-generated_list_directory_buckets_xml.adb:274
+  FAILED: ListDirectoryBuckets decoder accepts <ListAllMyDirectoryBucketsResult>
+BUG REPRODUCED: 4 failed expectation(s)

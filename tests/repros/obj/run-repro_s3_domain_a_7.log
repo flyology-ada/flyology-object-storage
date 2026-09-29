@@ -1,0 +1,7 @@
+  -- untruncated, no NextVersionIdMarker: decoded, versions=1 truncated=FALSE
+  ok: untruncated, no NextVersionIdMarker: the page keeps its version
+  -- truncated, both next markers set   : decoded, versions=1 truncated=TRUE
+  ok: truncated, both next markers set   : the page keeps its version
+  -- MinIO untruncated, empty NextVersionIdMarker: REJECTED, inconsistent ListObjectVersions next markers
+  FAILED: MinIO untruncated, empty NextVersionIdMarker: the page is accepted
+BUG REPRODUCED: 1 failed expectation(s)

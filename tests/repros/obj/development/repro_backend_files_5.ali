@@ -1,0 +1,267 @@
+V "GNAT Lib v16"
+M P W=b
+A -O0
+A -gnatA
+A --RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+A -g
+A -gnat2022
+A -gnata
+A -gnatVa
+A -gnatwa
+A -mmacosx-version-min=26.0.0
+A -mcpu=apple-m1
+A -mlittle-endian
+A -mabi=lp64
+A -fPIC
+P SS ZX
+
+RN
+RV NO_DISPATCH
+RV NO_DISPATCHING_CALLS
+RV NO_ENUMERATION_MAPS
+RV NO_EXCEPTION_HANDLERS
+RV NO_EXCEPTION_PROPAGATION
+RV NO_EXCEPTIONS
+RV NO_LOCAL_PROTECTED_OBJECTS
+RV NO_NESTED_FINALIZATION
+RV NO_SECONDARY_STACK
+RV NO_STANDARD_STORAGE_POOLS
+RV NO_DEFAULT_INITIALIZATION
+RV NO_DYNAMIC_SIZED_OBJECTS
+RV NO_IMPLEMENTATION_PRAGMAS
+
+U repro_backend_files_5%b  repro_backend_files_5.adb  fa169799 NE OO SU
+W ada%s			ada.ads			ada.ali
+Z ada.exceptions%s	a-except.adb		a-except.ali
+W ada.real_time%s	a-reatim.adb		a-reatim.ali
+W ada.strings%s		a-string.ads		a-string.ali
+Z ada.strings.text_buffers%s  a-sttebu.adb	a-sttebu.ali
+W ada.strings.unbounded%s  a-strunb.adb		a-strunb.ali
+Z ada.tags%s		a-tags.adb		a-tags.ali
+W flyology%s		flyology.ads		flyology.ali
+W flyology.object_storage%s  flyology-object_storage.adb  flyology-object_storage.ali
+W flyology.object_storage.backends%s  flyology-object_storage-backends.adb  flyology-object_storage-backends.ali
+W flyology.object_storage.backends.files%s  flyology-object_storage-backends-files.adb  flyology-object_storage-backends-files.ali
+W flyology.object_storage.backends.memory%s  flyology-object_storage-backends-memory.adb  flyology-object_storage-backends-memory.ali
+W repro_backend_files_support%s  repro_backend_files_support.adb  repro_backend_files_support.ali
+W repro_support%s	repro_support.adb	repro_support.ali
+Z system%s		system.ads		system.ali
+Z system.concat_2%s	s-conca2.adb		s-conca2.ali
+Z system.concat_3%s	s-conca3.adb		s-conca3.ali
+Z system.finalization_primitives%s  s-finpri.adb  s-finpri.ali
+Z system.img_int%s	s-imgint.ads		s-imgint.ali
+Z system.secondary_stack%s  s-secsta.adb	s-secsta.ali
+Z system.soft_links%s	s-soflin.adb		s-soflin.ali
+Z system.standard_library%s  s-stalib.adb	s-stalib.ali
+
+D ada.ads		20260901211354 76789da1 ada%s
+D a-charac.ads		20260901211354 2d3ec45b ada.characters%s
+D a-chlat1.ads		20260901211354 e0d72e76 ada.characters.latin_1%s
+D a-contai.ads		20260901211354 61e5e089 ada.containers%s
+D a-conhel.ads		20260901211354 46fe1ce3 ada.containers.helpers%s
+D a-ciorma.ads		20260901211354 45fd5eb7 ada.containers.indefinite_ordered_maps%s
+D a-crbltr.ads		20260901211354 d3d16ba4 ada.containers.red_black_trees%s
+D a-convec.ads		20260901211354 cb0f314a ada.containers.vectors%s
+D a-except.ads		20260901211354 8699d7ff ada.exceptions%s
+D a-finali.ads		20260901211354 099c16e4 ada.finalization%s
+D a-iteint.ads		20260901211354 49a8bee2 ada.iterator_interfaces%s
+D a-reatim.ads		20260901211354 d11673fd ada.real_time%s
+D a-stream.ads		20260901211354 cb01a8f8 ada.streams%s
+D a-string.ads		20260901211354 90ac6797 ada.strings%s
+D a-strmap.ads		20260901211354 f7e6ca10 ada.strings.maps%s
+D a-strsea.ads		20260901211354 18c3c634 ada.strings.search%s
+D a-sttebu.ads		20260901211354 f1ad67a2 ada.strings.text_buffers%s
+D a-strunb.ads		20260901211354 8d6ccba7 ada.strings.unbounded%s
+D a-stuten.ads		20260901211354 c6ced0ae ada.strings.utf_encoding%s
+D a-tags.ads		20260901211354 2dbf449c ada.tags%s
+D a-taside.ads		20260901211354 c0a7c8d8 ada.task_identification%s
+D a-unccon.ads		20260901211354 0e9b276f ada.unchecked_conversion%s
+D flyology.ads		20260901211211 3ef168e6 flyology%s
+D flyology-cancellation.ads  20260901211212 1167fdf6 flyology.cancellation%s
+D flyology-object_storage.ads  20260907005920 f08c5a0f flyology.object_storage%s
+D flyology-object_storage-backends.ads  20260907005920 8fab9008 flyology.object_storage.backends%s
+D flyology-object_storage-backends-files.ads  20260907005920 522b3f78 flyology.object_storage.backends.files%s
+D flyology-object_storage-backends-memory.ads  20260907005920 206764be flyology.object_storage.backends.memory%s
+D flyology-object_storage-tags.ads  20260907005920 273c3a2f flyology.object_storage.tags%s
+D flyology-wake_sources.ads  20260901211212 fcae6c4f flyology.wake_sources%s
+D interfac.ads		20260901211354 9111f9c1 interfaces%s
+D i-c.ads		20260901211354 dbdd3be7 interfaces.c%s
+D repro_backend_files_5.adb  20260907013316 499d750e repro_backend_files_5%b
+D repro_backend_files_support.ads  20260907013510 431c17c1 repro_backend_files_support%s
+D repro_support.ads	20260907011658 a186dccd repro_support%s
+D system.ads		20260901211353 8a611ac3 system%s
+D s-atacco.ads		20260901211354 5868e3ba system.address_to_access_conversions%s
+D s-atocou.ads		20260901211354 dc18efc3 system.atomic_counters%s
+D s-c_time.ads		20260901211354 e502d0c0 system.c_time%s
+D s-conca2.ads		20260901211354 b5fb73f7 system.concat_2%s
+D s-conca3.ads		20260901211354 8a7a19a2 system.concat_3%s
+D s-exctab.ads		20260901211354 91bef6ef system.exception_table%s
+D s-finpri.ads		20260901211354 5970d55a system.finalization_primitives%s
+D s-finroo.ads		20260901211354 0a7c3ed4 system.finalization_root%s
+D s-imagei.ads		20260901211354 11a376a2 system.image_i%s
+D s-imgint.ads		20260901211354 86836590 system.img_int%s
+D s-memory.ads		20260901211354 18949c1a system.memory%s
+D s-multip.ads		20260901211354 38ac9f73 system.multiprocessors%s
+D s-oscons.ads		20260901211354 42ad9981 system.os_constants%s
+D s-osinte.ads		20260901211354 6d01fcda system.os_interface%s
+D s-oslock.ads		20260901211354 bcc789d2 system.os_locks%s
+D s-parame.ads		20260901211354 a1aeab5c system.parameters%s
+D s-pooglo.ads		20260901211354 91708d21 system.pool_global%s
+D s-putima.ads		20260901211353 1b989439 system.put_images%s
+D s-putaim.ads		20260901211354 0aad9583 system.put_task_images%s
+D s-retsta.ads		20260901211353 0f6b06cb system.return_stack%s
+D s-secsta.ads		20260901211354 578279f5 system.secondary_stack%s
+D s-soflin.ads		20260901211354 5d88fdea system.soft_links%s
+D s-stache.ads		20260901211354 0b81c1fe system.stack_checking%s
+D s-stausa.ads		20260901211353 f470ae2d system.stack_usage%s
+D s-stalib.ads		20260901211354 1c9580f6 system.standard_library%s
+D s-stalib.adb		20260901211354 eb464a47 system.standard_library%b
+D s-stoele.ads		20260901211354 ccded4e8 system.storage_elements%s
+D s-stopoo.ads		20260901211354 45459446 system.storage_pools%s
+D s-stratt.ads		20260901211354 80b8dafb system.stream_attributes%s
+D s-tasinf.ads		20260901211354 801abd01 system.task_info%s
+D s-taspri.ads		20260901211354 4fd5ef41 system.task_primitives%s
+D s-taprop.ads		20260901211354 6a572f54 system.task_primitives.operations%s
+D s-taskin.ads		20260901211354 e3b5765b system.tasking%s
+D s-taprob.ads		20260901211354 acd6094d system.tasking.protected_objects%s
+D s-tpoben.ads		20260901211354 60ad3dae system.tasking.protected_objects.entries%s
+D s-traent.ads		20260901211354 c81cbf8c system.traceback_entries%s
+D s-unstyp.ads		20260901211354 fa2a7f59 system.unsigned_types%s
+D s-wchcon.ads		20260901211354 d9032363 system.wch_con%s
+D s-wchstw.ads		20260901211354 2d112c01 system.wch_stw%s
+G a e
+G c Z b b [repro_backend_files_5 standard 19 11 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [make_root repro_backend_files_support 17 13 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [note repro_support 10 14 none]
+G r s store [repro_backend_files_5 standard 19 11 none] [storeIP flyology__object_storage__backends__memory 1849 9 none]
+G r l store [repro_backend_files_5 standard 19 11 none] [storeDI flyology__object_storage__backends__memory 1849 9 none]
+G r k store [repro_backend_files_5 standard 19 11 none] [storeDF flyology__object_storage__backends__memory 1849 9 none]
+G r s object_information [repro_backend_files_5 standard 19 11 none] [object_informationIP flyology__object_storage 554 9 none]
+G r l object_information [repro_backend_files_5 standard 19 11 none] [object_informationDI flyology__object_storage 554 9 none]
+G r k object_information [repro_backend_files_5 standard 19 11 none] [object_informationDF flyology__object_storage 554 9 none]
+G r s multipart_part_page [repro_backend_files_5 standard 19 11 none] [multipart_part_pageIP flyology__object_storage__backends 672 9 none]
+G r l multipart_part_page [repro_backend_files_5 standard 19 11 none] [multipart_part_pageDI flyology__object_storage__backends 672 9 none]
+G r k multipart_part_page [repro_backend_files_5 standard 19 11 none] [multipart_part_pageDF flyology__object_storage__backends 672 9 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [check repro_support 7 14 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [source_of repro_backend_files_support 41 13 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [put_multipart_part flyology__object_storage__backends 2686 14 none]
+G r j checksum_information [repro_backend_files_5 standard 19 11 none] [checksum_informationDA flyology__object_storage 102 9 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [complete_multipart_upload flyology__object_storage__backends 2760 14 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [open flyology__object_storage__backends__files 29 13 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [failures repro_support 16 13 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [drop_root repro_backend_files_support 20 14 none]
+G r c none [repro_backend_files_5 standard 19 11 none] [finish repro_support 13 14 none]
+X 1 ada.ads
+18K9*Ada 22e8 33|10r6 11r6 24r23 31r26 31r48
+X 8 a-convec.ads
+91R9*Vector<10|43R9>
+483U14*Append 33|83s13[26|650]
+X 11 a-iteint.ads
+24h9 Forward_Iterator
+32h9 Reversible_Iterator<24R9[6|77]>
+X 12 a-reatim.ads
+46K13*Real_Time 193e18 33|10w10 31r30 31r52
+57O9*Time<duration> 33|31r40
+59o4*Time_Last{57O9} 33|31r62
+X 14 a-string.ads
+16K13*Strings 35e16 33|11r10 24r27
+X 18 a-strunb.ads
+91K21*Unbounded 1641e26 33|11w18 24r35
+105R9*Unbounded_String<10|43R9> 1620e15 33|37r22
+111V13*Length{natural} 33|50s31
+135V13*To_String{string} 33|57s35 68s35 76s32 89s32 97s32
+X 23 flyology.ads
+11K9*Flyology 33e13 33|12r6 13r6 14r6 15r6 20r28 21r29 22r26 23r27
+X 25 flyology-object_storage.ads
+5K18*Object_Storage 699e28 33|12w15 13r15 14r15 15r15 20r37 21r38 22r35 23r36
+39E9*Status 62e27 33|26r21 36r27
+40n7*Success{39E9} 33|43r31 47r31 60r34
+41n7*Not_Found{39E9} 33|71r34 80r31 93r31 100r31
+109r4*No_Checksum_Information{102R9} 33|87r35
+554R9*Object_Information 562e14 33|38r27
+557r7*Entity_Tag{18|105R9} 33|86r32
+X 26 flyology-object_storage-backends.ads
+10K33*Backends 2878e37 33|13w30 14r30 15r30 21r53 22r50 23r51
+13I12*List_Limit{natural} 33|77r43
+429h9*Byte_Source
+445h9*Byte_Sink
+468h9*Backend 33|34r31
+476h9*Annotation_Byte_Sink
+595I12*Multipart_Part_Number{positive}
+614r4*Default_Multipart_Options{609R9} 33|45r38
+634r4*No_Abort_Multipart_Conditions{629R9} 33|98r19
+636R9*Multipart_Part_Reference 640e14 33|84r19
+637i7*Number{595I12} 33|85m13
+638r7*Entity_Tag{18|105R9} 33|86m13
+639r7*Checksum{25|102R9} 33|87m13
+653R12*Multipart_Part_References{8|91R9[650]} 33|40r28
+656I12*Multipart_Part_Marker{natural}
+660i7*After{656I12} 33|77m11
+661i7*Maximum{13I12} 33|77m23
+672R9*Multipart_Part_Page 677e14 33|39r28
+739x14*Create_Bucket 33|42R13
+2660x14*Create_Multipart_Upload 33|44R13
+2686U14*Put_Multipart_Part 33|56s16 67s16
+2700x14*List_Multipart_Parts 33|75R13
+2760U14*Complete_Multipart_Upload 33|88s13
+2774x14*Abort_Multipart_Upload 33|96R13
+X 27 flyology-object_storage-backends-files.ads
+8K42*Files 1369e43 33|14w39 22r59
+14R9*Store<26|468R9><26|558R9><26|564R9><26|473R9> 1367e14 33|116r23
+29V13*Open{14R9} 33|116s38
+X 28 flyology-object_storage-backends-memory.ads
+21K42*Memory 1859e44 33|15w39 23r60
+23R9*Store<26|468R9><26|558R9><26|564R9><26|473R9> 1857e14 33|108r24
+X 33 repro_backend_files_5.adb
+19U11*Repro_Backend_Files_5 19b11 126l5 126t26
+20K12 Storage=20:37 26r13 36r19 38r19 43r23 47r23 60r26 71r26 80r23 87r27
+. 93r23 100r23
+21K12 Backends=21:53 34r22 39r19 40r19 45r29 77r34 84r10 98r10
+22K12 Files=22:59 116r17 116r32
+23K12 Memory=23:60 108r17
+24K12 US=24:35 37r19 50r28 57r32 68r32 76r29 89r29 97r29
+25K12 Support=25:28 54r20 54r45 65r20 65r45 104r30 121r7
+28a4 Bucket{string} 42r28 45r10 57r13 68r13 76r10 89r10 97r10
+29a4 Right_Key{string} 45r18 57r21
+30a4 Wrong_Key{string} 68r21 76r18 89r18 97r18
+31o4 Forever{12|57O9} 42r42 46r10 58r19 69r19 77r67 89r68 98r56
+33U14 Exercise 33b14 34=7 34>46 102l8 102t16 113s7 118s7
+34c7 Store<26|468R9> 42m7 42r7 44m7 44r7 56m10 56r10 67m10 67r10 75m7 75r7
+. 88m7 88r7 96m7 96r7
+34a46 Label{string} 43r40 48r14 49r13 59r16 61r17 70r16 72r17 79r13 81r14
+. 91r13 94r14 99r13 101r14
+36e7 Result{25|39E9} 42m51 43r14 46m30 47r14 58m34 59r57 60r17 69m34 70r55
+. 71r17 78m16 79r51 80r14 90m16 92r13 93r14 98m65 99r62 100r14
+37r7 Upload_ID{18|105R9} 46m19 50r39 57r46 68r46 76r43 89r43 97r43
+38r7 Info{25|554R9} 58m28 69m28 86r27 90m10
+39r7 Page{26|672R9} 78m10
+40r7 Parts{26|653R12} 83m7 83r7 89r55
+54r10 Payload{34|24R9} 57r61
+65r10 Payload{34|24R9} 68r61
+104a4 Root{string} 106r26 116r44 121r26 123r54
+108r7 Control{28|23R9} 113m17 113r17
+116r7 Subject{27|14R9} 118m17 118r17
+X 34 repro_backend_files_support.ads
+11K9*Repro_Backend_Files_Support 33|16w6 25r28 34|90e32
+17V13*Make_Root{string} 33|104s38
+20U14*Drop_Root 33|121s15
+24R9*String_Source<26|429R9> 33|54r28 65r28 34|28e14
+41V13*Source_Of{24R9} 33|54s53 65s53
+X 35 repro_support.ads
+1K9*Repro_Support 33|17w6 17r25 35|44e18
+7U14*Check 33|43s7 47s7 60s10 71s10 80s7 93s7 100s7
+10U14*Note 33|49s7 59s10 70s10 79s7 91s7 99s7 106s4 123s7
+13U14*Finish 33|125s4
+16V13*Failures{natural} 33|120s7
+X 36 system.ads
+67M9*Address
+X 47 s-memory.ads
+51V13*Alloc{36|67M9} 101i<c,__gnat_malloc>22
+66U14*Free 102i<c,__gnat_free>22
+74V13*Realloc{36|67M9} 103i<c,__gnat_realloc>22
+X 60 s-stausa.ads
+206U14*Initialize 207i<c,__gnat_stack_usage_initialize>22
+265U14*Output_Results 269i<c,__gnat_stack_usage_output_results>22
+X 62 s-stalib.adb
+87U14 Break_Start 88i<c,__gnat_break_start>22
+

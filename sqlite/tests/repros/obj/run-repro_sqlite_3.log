@@ -1,0 +1,13 @@
+  -- root /private/tmp/claude-501/repro-sqlite/gate-leak-1557631-0
+  ok: Create_Bucket succeeds
+  ok: Put_Object src succeeds
+  ok: exactly one payload file before annotating
+  ok: Put_Object_Annotation succeeds
+  -- control Head_Bucket SUCCESS
+  ok: control Head_Bucket succeeds
+  -- removed the source body payload /private/tmp/claude-501/repro-sqlite/gate-leak-1557631-0/objects/d15da0c877c71b9521e81000c9fc25761d6653a76cdac32b4bcb8460e889926a.blob
+  -- Copy_Object with a missing source body returned BACKEND_UNAVAILABLE
+  -- probing the store from a second task (bounded 5 s wait)
+  -- probe Head_Bucket did not return within 5 s: the catalog operation gate was never released
+  FAILED: the store still serves Head_Bucket after a failed Copy_Object
+BUG REPRODUCED: 1 failed expectation(s)

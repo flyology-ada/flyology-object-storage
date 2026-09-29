@@ -1,0 +1,177 @@
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_tests=0.1.0-dev/flyology_object_storage_tests.gpr...
+gprbuild: "flyology_object_storage_tests" up to date
+gprbuild: "files_conditional_symlink_probe" up to date
+gprbuild: "files_crash_probe" up to date
+gprbuild: "files_open_probe" up to date
+gprbuild: "s3_bucket_tagging_benchmark" up to date
+gprbuild: "files_copy_benchmark" up to date
+gprbuild: "s3_checksum_benchmark" up to date
+gprbuild: "s3_multipart_checksum_benchmark" up to date
+gprbuild: "s3_checksum_corpus" up to date
+gprbuild: "s3_multipart_listing_benchmark" up to date
+gprbuild: "s3_files_server" up to date
+gprbuild: "s3_http_socket_corpus" up to date
+gprbuild: "s3_list_object_versions_corpus" up to date
+gprbuild: "s3_delete_bucket_cors_corpus" up to date
+gprbuild: "s3_delete_bucket_configurations_corpus" up to date
+gprbuild: "s3_get_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_delete_object_annotation_corpus" up to date
+gprbuild: "s3_put_object_legal_hold_corpus" up to date
+gprbuild: "s3_put_object_retention_corpus" up to date
+gprbuild: "s3_put_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_object_torrent_corpus" up to date
+gprbuild: "s3_get_object_torrent_socket_corpus" up to date
+gprbuild: "s3_get_object_legal_hold_corpus" up to date
+gprbuild: "s3_get_object_retention_corpus" up to date
+gprbuild: "s3_get_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_get_bucket_cors_corpus" up to date
+gprbuild: "s3_get_bucket_encryption_corpus" up to date
+gprbuild: "s3_get_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_bucket_notification_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_replication_qualification" up to date
+gprbuild: "s3_get_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_corpus" up to date
+gprbuild: "s3_list_bucket_metrics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_analytics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_intelligent_tiering_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_inventory_configurations_qualification" up to date
+gprbuild: "s3_list_object_annotations_qualification" up to date
+gprbuild: "s3_list_directory_buckets_qualification" up to date
+gprbuild: "s3_get_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_logging_qualification" up to date
+gprbuild: "s3_get_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_website_qualification" up to date
+gprbuild: "s3_put_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_acl_corpus" up to date
+gprbuild: "s3_get_object_acl_corpus" up to date
+gprbuild: "s3_create_session_tls_corpus" up to date
+gprbuild: "s3_transfer_many_corpus" up to date
+gprbuild: "s3_implementation_corpus" up to date
+gprbuild: "s3_memory_server" up to date
+gprbuild: "s3_server_application_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_inventory_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_journal_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_annotation_table_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_acl_qualification" up to date
+gprbuild: "s3_put_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_logging_qualification" up to date
+gprbuild: "s3_put_bucket_website_qualification" up to date
+Success: Build finished successfully in 9.02 seconds.
+mb s3://flyology-files-slice-60203
+cp /data/empty.bin s3://flyology-files-slice-60203/empty.bin
+cp /data/small.bin s3://flyology-files-slice-60203/small.bin
+cp /data/large.bin s3://flyology-files-slice-60203/large.bin
+cp /data/multipart.bin s3://flyology-files-slice-60203/multipart.bin
+cp /data/small.bin s3://flyology-files-slice-60203/nested/space + plus-%25.bin
+cp /data/small.bin s3://flyology-files-slice-60203/overwrite.bin
+cp /data/large.bin s3://flyology-files-slice-60203/overwrite.bin
+cp /data/small.bin s3://flyology-files-slice-60203/delete-objects-probe.bin
+rm s3://flyology-files-slice-60203/delete-objects-probe.bin
+independent s5cmd server slice: OK
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903: Pulling from peakcom/s5cmd
+Digest: sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Status: Image is up to date for peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_tests=0.1.0-dev/flyology_object_storage_tests.gpr...
+gprbuild: "flyology_object_storage_tests" up to date
+gprbuild: "files_conditional_symlink_probe" up to date
+gprbuild: "files_crash_probe" up to date
+gprbuild: "files_open_probe" up to date
+gprbuild: "s3_bucket_tagging_benchmark" up to date
+gprbuild: "files_copy_benchmark" up to date
+gprbuild: "s3_checksum_benchmark" up to date
+gprbuild: "s3_multipart_checksum_benchmark" up to date
+gprbuild: "s3_checksum_corpus" up to date
+gprbuild: "s3_multipart_listing_benchmark" up to date
+gprbuild: "s3_files_server" up to date
+gprbuild: "s3_http_socket_corpus" up to date
+gprbuild: "s3_list_object_versions_corpus" up to date
+gprbuild: "s3_delete_bucket_cors_corpus" up to date
+gprbuild: "s3_delete_bucket_configurations_corpus" up to date
+gprbuild: "s3_get_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_controls_corpus" up to date
+gprbuild: "s3_put_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_delete_object_annotation_corpus" up to date
+gprbuild: "s3_put_object_legal_hold_corpus" up to date
+gprbuild: "s3_put_object_retention_corpus" up to date
+gprbuild: "s3_put_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_object_torrent_corpus" up to date
+gprbuild: "s3_get_object_torrent_socket_corpus" up to date
+gprbuild: "s3_get_object_legal_hold_corpus" up to date
+gprbuild: "s3_get_object_retention_corpus" up to date
+gprbuild: "s3_get_object_lock_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_ownership_controls_corpus" up to date
+gprbuild: "s3_get_bucket_cors_corpus" up to date
+gprbuild: "s3_get_bucket_encryption_corpus" up to date
+gprbuild: "s3_get_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_lifecycle_configuration_corpus" up to date
+gprbuild: "s3_bucket_notification_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_replication_qualification" up to date
+gprbuild: "s3_get_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_metrics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_analytics_configuration_corpus" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_intelligent_tiering_configuration_corpus" up to date
+gprbuild: "s3_list_bucket_metrics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_analytics_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_intelligent_tiering_configurations_qualification" up to date
+gprbuild: "s3_list_bucket_inventory_configurations_qualification" up to date
+gprbuild: "s3_list_object_annotations_qualification" up to date
+gprbuild: "s3_list_directory_buckets_qualification" up to date
+gprbuild: "s3_get_bucket_analytics_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_intelligent_tiering_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_logging_qualification" up to date
+gprbuild: "s3_get_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_get_bucket_website_qualification" up to date
+gprbuild: "s3_put_bucket_replication_corpus" up to date
+gprbuild: "s3_get_bucket_metadata_table_configuration_corpus" up to date
+gprbuild: "s3_get_bucket_acl_corpus" up to date
+gprbuild: "s3_get_object_acl_corpus" up to date
+gprbuild: "s3_create_session_tls_corpus" up to date
+gprbuild: "s3_transfer_many_corpus" up to date
+gprbuild: "s3_implementation_corpus" up to date
+gprbuild: "s3_memory_server" up to date
+gprbuild: "s3_server_application_corpus" up to date
+gprbuild: "s3_create_bucket_metadata_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_inventory_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_journal_table_configuration_qualification" up to date
+gprbuild: "s3_set_metadata_annotation_table_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_acl_qualification" up to date
+gprbuild: "s3_put_bucket_inventory_configuration_qualification" up to date
+gprbuild: "s3_put_bucket_logging_qualification" up to date
+gprbuild: "s3_put_bucket_website_qualification" up to date
+Success: Build finished successfully in 7.37 seconds.
+S3 implementation setup: bucket created, located, headed, listed, and versioning-configured; durable backend routing checked when selected
+S3 implementation corpus: native and lightweight clients OK
+independent s5cmd DeleteObjects oracle: OK
+independent s5cmd byte oracle: OK
+S3 implementation cleanup: objects and bucket deleted
+independent s5cmd deletion oracle: OK
+durable backend restart fixture prepared
+durable backend restart fixture verified and removed
+Flyology files authenticated restart routing: OK
+Flyology files black-box server slice: OK
+./tests/scripts/test-flyology-server.sh $b  12.36s user 7.64s system 41% cpu 48.197 total
+exit=0

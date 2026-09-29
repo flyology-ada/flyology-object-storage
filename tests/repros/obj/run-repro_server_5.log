@@ -1,0 +1,14 @@
+  ok: fixture: CreateBucket /stream-bucket
+  -- PutObject with STREAMING-UNSIGNED-PAYLOAD-TRAILER + aws-chunked: status 400
+  --    body <?xml version="1.0" encoding="UTF-8"?><Error><Code>AuthorizationHeaderMalformed</Code><Message>The authorization header is malformed</Message><Resource>/stream-bucket/o</Resource></Error>
+  FAILED: an unimplemented streaming payload encoding is not reported as a malformed authorization header
+  FAILED: PutObject with STREAMING-UNSIGNED-PAYLOAD-TRAILER is 501 NotImplemented, like the aws-chunked path it belongs to
+  -- UploadPart with STREAMING-UNSIGNED-PAYLOAD-TRAILER + aws-chunked: status 400
+  --    body <?xml version="1.0" encoding="UTF-8"?><Error><Code>AuthorizationHeaderMalformed</Code><Message>The authorization header is malformed</Message><Resource>/stream-bucket/o?partNumber=1&amp;uploadId=0123456789abcdef</Resource></Error>
+  FAILED: UploadPart does not report the streaming sentinel as a malformed authorization header
+  -- CONTROL aws-chunked with an ordinary signed payload hash: status 501 body <?xml version="1.0" encoding="UTF-8"?><Error><Code>NotImplemented</Code><Message>aws-chunked payloads are not implemented</Message><Resource>/stream-bucket/o</Resource></Error>
+  ok: CONTROL: aws-chunked with an ordinary hash is 501 NotImplemented
+  ok: CONTROL: an ordinary PutObject still succeeds
+  -- CONTROL a genuinely wrong (but well-shaped) payload hash: status 400 body <?xml version="1.0" encoding="UTF-8"?><Error><Code>XAmzContentSHA256Mismatch</Code><Message>The provided payload hash does not match the request body</Message><Resource>/stream-bucket/bad</Resource></Error>
+  ok: CONTROL: a wrong payload hash is still rejected
+BUG REPRODUCED: 3 failed expectation(s)

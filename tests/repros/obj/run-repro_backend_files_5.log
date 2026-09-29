@@ -1,0 +1,29 @@
+  -- files root /private/tmp/claude-501/repro-bf5-1468-477941000
+  ok: memory (control) CreateBucket succeeds
+  ok: memory (control) CreateMultipartUpload succeeds
+  -- memory (control) upload id length 64
+  -- memory (control) UploadPart(correct key) -> SUCCESS
+  ok: memory (control) UploadPart with the correct key succeeds
+  -- memory (control) UploadPart(wrong key) -> NOT_FOUND
+  ok: memory (control) UploadPart with a mismatched key is Not_Found
+  -- memory (control) ListParts(wrong key) -> NOT_FOUND
+  ok: memory (control) ListParts with a mismatched key is Not_Found
+  -- memory (control) CompleteMultipartUpload(wrong key) -> NOT_FOUND
+  ok: memory (control) Complete with a mismatched key is Not_Found
+  -- memory (control) AbortMultipartUpload(wrong key) -> NOT_FOUND
+  ok: memory (control) Abort with a mismatched key is Not_Found
+  ok: files  (subject) CreateBucket succeeds
+  ok: files  (subject) CreateMultipartUpload succeeds
+  -- files  (subject) upload id length 64
+  -- files  (subject) UploadPart(correct key) -> SUCCESS
+  ok: files  (subject) UploadPart with the correct key succeeds
+  -- files  (subject) UploadPart(wrong key) -> BACKEND_UNAVAILABLE
+  FAILED: files  (subject) UploadPart with a mismatched key is Not_Found
+  -- files  (subject) ListParts(wrong key) -> BACKEND_UNAVAILABLE
+  FAILED: files  (subject) ListParts with a mismatched key is Not_Found
+  -- files  (subject) CompleteMultipartUpload(wrong key) -> BACKEND_UNAVAILABLE
+  FAILED: files  (subject) Complete with a mismatched key is Not_Found
+  -- files  (subject) AbortMultipartUpload(wrong key) -> BACKEND_UNAVAILABLE
+  FAILED: files  (subject) Abort with a mismatched key is Not_Found
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf5-1468-477941000
+BUG REPRODUCED: 4 failed expectation(s)

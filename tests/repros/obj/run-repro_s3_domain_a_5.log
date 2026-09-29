@@ -1,0 +1,20 @@
+  -- --- unqualified request bodies through their own parsers ---
+  --   codec Lifecycle.Parse: accepted
+  --   codec Notifications.Parse: accepted
+  --   codec Buckets.Parse_Create_Configuration: accepted
+  --   codec Versioning.Parse_Response: accepted
+  --   codec Versioning.Parse: REJECTED
+  --     malformed bucket versioning XML
+  FAILED: Versioning.Parse accepts an unqualified root
+  -- --- signed requests through the S3 application ---
+  -- CreateBucket /domain-a-5 status 200
+  -- PUT /domain-a-5?versioning  (xmlns present) -> 200
+  ok: namespaced PutBucketVersioning is accepted
+  -- CreateBucket /domain-a-5-other status 200
+  ok: the second bucket is created
+  -- PUT /domain-a-5-other?versioning (no xmlns) -> 400
+  --   body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>MalformedXML</Code><Message>The XML provided was not well-formed or did not validate against the published schema</Message><Resource>/domain-a-5-other?versioning</Resource></Error>
+  FAILED: namespace-free PutBucketVersioning is accepted
+  -- GET /domain-a-5-other?versioning -> 200 body <?xml version="1.0" encoding="UTF-8"?><VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></VersioningConfiguration>
+  FAILED: the bucket ends up with versioning enabled
+BUG REPRODUCED: 3 failed expectation(s)

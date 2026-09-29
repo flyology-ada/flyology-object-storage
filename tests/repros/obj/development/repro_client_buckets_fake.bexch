@@ -1,0 +1,64 @@
+[QUIET]
+[MAPPING FILE]
+/private/var/folders/wm/m8k4mfkj6gbd32qf9v04pfkw0000gn/T/GPR.47005/GNAT-TEMP-000001.TMP
+[TOOLCHAIN VERSION]
+ada
+GNAT 16
+[MAIN BASE NAME]
+repro_client_buckets_fake
+[COMPILER PATH]
+/users/yrashk/.local/share/alire/toolchains/gnat_native_16.1.0_657cf254/bin/gcc
+[COMPILER LEADING SWITCHES]
+-c
+-x
+ada
+-gnatA
+--RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+[MAIN DEPENDENCY FILE]
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/repros/obj/development/repro_client_buckets_fake.ali
+[DEPENDENCY FILES]
+[BINDING OPTIONS]
+gnatbind_prefix=
+--RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+-Es
+[PROJECT FILES]
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/repros/repros.gpr
+20260907010959 86d54570fec3fc51bd27dc5652c6c050
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/schema/xmlada_schema.gpr
+20260821130015 565bb2da0c11df9f1490bee498bc3ee2
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/dom/xmlada_dom.gpr
+20260821130015 6a4f187431722d8dcc208738b22b6eea
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/distrib/xmlada.gpr
+20260821130015 651120cb69cdcf9f15399eee14e53316
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/config/flyology_object_storage_config.gpr
+20260907011042 913328dbdc358d89f4572bd44f25fbd3
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/sax/xmlada_sax.gpr
+20260821130014 b9e16d7bdd7292d7dcad566d604db598
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/unicode/xmlada_unicode.gpr
+20260821130014 504f98a30d6a474b9aab62a1f6cb2b24
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/xmlada_shared.gpr
+20260821130015 bc2bb95477847cf6406171854ee3449d
+/Users/yrashk/.local/share/alire/builds/xmlada_26.0.0_b140ed4a/203717355baa29ae6df321c0e5fe208e221ec4ffd0b5c962070039c4a9ab04c4/input_sources/xmlada_input.gpr
+20260821130015 d4bb673bc09f529c60b2f6653c8bb6d6
+/Users/yrashk/.local/share/alire/builds/flyology_http_0.1.3_eb09a80a/2f83c58c79352aa9f7aaef1fe9a0e7c4e52d7a004e2f2764ac40177b16ad26e0/config/flyology_http_config.gpr
+20260905124150 5df87dfdce038f9c289ae0573b5b3eb4
+/Users/yrashk/.local/share/alire/builds/flyology_http_eb09a80a/6e5388c72c69e5c647114cc8d4babdfe646f5a3add69c618e82a20d8bdd53e4a/flyology_quic/config/flyology_quic_config.gpr
+20260905124150 727162078b9958b2d29be5c3008fd66d
+/Users/yrashk/.local/share/alire/builds/flyology_http_eb09a80a/6e5388c72c69e5c647114cc8d4babdfe646f5a3add69c618e82a20d8bdd53e4a/flyology_quic/flyology_quic.gpr
+20260901211212 7dfec5bf4a94a386b467fb17f1922ebc
+/Users/yrashk/.local/share/alire/builds/flyology_8e046108/5bdda21efbfd816d0f8f932767afd5a893ef9566a97c274902fcb27e88cc9956/flyology_cachelines/config/flyology_cachelines_config.gpr
+20260905124150 b1367f0f8e1a1a577852b06e778ca768
+/Users/yrashk/.local/share/alire/builds/flyology_8e046108/5bdda21efbfd816d0f8f932767afd5a893ef9566a97c274902fcb27e88cc9956/flyology_cachelines/flyology_cachelines.gpr
+20260821151008 182bc67f820d7fe052d8a7a284d6eff4
+/Users/yrashk/.local/share/alire/builds/flyology_6f91b1af/ce5a6cb5c23b9204ed30aafa3511ec1573b30b3a1b47dd8721b7721c266f17ae/flyology_allocators/flyology_allocators.gpr
+20260901181123 1d628e89092fb730072f3b9af08caffa
+/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/config/flyology_config.gpr
+20260905124150 ec4568a61825d49cb25e174476221b91
+/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/flyology.gpr
+20260901211211 384e917761c828c4217a92c987510814
+/Users/yrashk/.local/share/alire/builds/flyology_http_0.1.3_eb09a80a/2f83c58c79352aa9f7aaef1fe9a0e7c4e52d7a004e2f2764ac40177b16ad26e0/flyology_http.gpr
+20260901211212 33a5231d650ed8e0ea1aef426f3bc483
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/flyology_object_storage.gpr
+20260907005920 3efe0f06044aa81046c23ef84058140d
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/repros/config/repros_config.gpr
+20260907011631 a00f7106e7dedb920ac74219ece6bd27

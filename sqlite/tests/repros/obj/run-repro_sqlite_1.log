@@ -1,0 +1,21 @@
+  -- root /private/tmp/claude-501/repro-sqlite/get-race-1515854-0
+  ok: Create_Bucket succeeds
+  ok: Put_Object seeds the key
+  -- entity tag 9dd4e461268c8034f5c8564e155c67a6 (constant: every writer publishes the same bytes)
+  -- control Get_Object SUCCESS bytes 1
+  ok: control Get_Object succeeds
+  ok: control Get_Object round-trips the body
+  -- phase A (plain reads) GET total 366546: SUCCESS=360529 BACKEND_UNAVAILABLE=6017
+  -- phase A (plain reads) PUT total 1976: SUCCESS=1976
+  ok: phase A (plain reads): the writers made progress
+  ok: phase A (plain reads): tally is consistent
+  FAILED: phase A (plain reads): no concurrent Get_Object reports Backend_Unavailable for a key that always exists
+  ok: phase A (plain reads): no concurrent Get_Object reports Not_Found for a key that always exists
+  -- phase B If-Match list length 14284 (matching, evaluated after the gate release)
+  -- phase B (long matching If-Match) GET total 352519: SUCCESS=345778 BACKEND_UNAVAILABLE=6741
+  -- phase B (long matching If-Match) PUT total 1716: SUCCESS=1716
+  ok: phase B (long matching If-Match): the writers made progress
+  ok: phase B (long matching If-Match): tally is consistent
+  FAILED: phase B (long matching If-Match): no concurrent Get_Object reports Backend_Unavailable for a key that always exists
+  ok: phase B (long matching If-Match): no concurrent Get_Object reports Not_Found for a key that always exists
+BUG REPRODUCED: 2 failed expectation(s)

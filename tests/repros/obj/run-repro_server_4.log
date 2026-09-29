@@ -1,0 +1,13 @@
+  ok: fixture: CreateBucket /mpu-bucket
+  ok: fixture: CreateMultipartUpload returns an UploadId
+  ok: fixture: UploadPart is 200
+  -- CompleteMultipartUpload status 200
+  --    body <?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>/mpu-bucket/dir/object.bin</Location><Bucket>mpu-bucket</Bucket><Key>dir/object.bin</Key><ETag>"dba2eb2ed95ff6ac73da0388b617482b-1"</ETag><ChecksumCRC64NVME>6d18xdZ10Zg=</ChecksumCRC64NVME><ChecksumType>FULL_OBJECT</ChecksumType></CompleteMultipartUploadResult>
+  --    <Location> = [/mpu-bucket/dir/object.bin]
+  ok: CONTROL: CompleteMultipartUpload is 200
+  ok: CONTROL: the result names the bucket
+  ok: CONTROL: the result names the key
+  ok: CONTROL: the result carries a composite ETag
+  FAILED: CompleteMultipartUpload <Location> is an absolute URI (the model documents 'The URI that identifies the newly created object')
+  ok: CONTROL: <Location> at least names the object
+BUG REPRODUCED: 1 failed expectation(s)

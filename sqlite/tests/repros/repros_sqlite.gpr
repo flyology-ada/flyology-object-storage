@@ -1,0 +1,26 @@
+with "config/repros_sqlite_config.gpr";
+with "flyology_object_storage";
+with "flyology_object_storage_sqlite";
+project Repros_SQLite is
+
+   --  Shares the support units of the root harness (Repro_Support,
+   --  Repro_S3_Server) by source directory; only the selected main and its
+   --  closure are built.
+   for Source_Dirs use ("src/", "config/", "../../../tests/repros/src/");
+   for Object_Dir use "obj/" & Repros_SQLite_Config.Build_Profile;
+   for Create_Missing_Dirs use "True";
+   for Exec_Dir use "bin";
+
+   Main_Name := external ("MAIN", "repro_sqlite_smoke");
+   for Main use (Main_Name & ".adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-g", "-O0", "-gnat2022", "-gnata", "-gnatVa", "-gnatwa");
+   end Compiler;
+
+   package Binder is
+      for Switches ("Ada") use ("-Es");
+   end Binder;
+
+end Repros_SQLite;

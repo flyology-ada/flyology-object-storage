@@ -1,0 +1,169 @@
+Note: Synchronizing workspace...
+Dependencies automatically updated as follows:
+
+   +  flyology                       0.1.1-dev (new,indirect)
+   +  flyology_allocators            0.1.0     (new,indirect)
+   +  flyology_cachelines            0.1.0     (new,indirect)
+   +  flyology_http                  0.1.3-dev (new,indirect)
+   +. flyology_object_storage        0.1.0-dev (new,path=../..)
+   +. flyology_object_storage_sqlite 0.1.0-dev (new,path=..)
+   +  flyology_quic                  0.1.3-dev (new,indirect)
+   +b gnat                           16.1.0    (new,gnat_native,indirect,binary)
+   +  xmlada                         26.0.0    (new,indirect)
+
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building flyology_object_storage_sqlite_tests=0.1.0-dev/flyology_object_storage_sqlite_tests.gpr...
+Setup
+   [mkdir]        object directory for project Flyology_Object_Storage
+   [mkdir]        object directory for project Flyology_Object_Storage_Sqlite
+   [mkdir]        library directory for project Flyology_Object_Storage_Sqlite
+   [mkdir]        object directory for project Flyology_Object_Storage_Sqlite_Tests
+   [mkdir]        exec directory for project Flyology_Object_Storage_Sqlite_Tests
+Compile
+   [Ada]          flyology_object_storage_sqlite_tests.adb
+   [Ada]          s3_sqlite_server.adb
+   [Ada]          flyology_allocators-layouts.adb
+   [Ada]          flyology_allocators-storage.adb
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span_kernel.adb
+   [Ada]          flyology_allocators-waits.adb
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms.ads
+   [Ada]          flyology_allocators-allocation_algorithms-contract.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy.ads
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf.ads
+   [Ada]          flyology_allocators-regions.adb
+   [Ada]          flyology_allocators-policy.adb
+   [Ada]          flyology_allocators-arenas.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy_kernel.adb
+   [Ada]          flyology_allocators.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span.ads
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit.ads
+   [Ada]          flyology_allocators-atomics.adb
+   [C]            flyology_object_storage_durability.c
+   [C]            flyology_object_storage_xxhash.c
+   [C]            flyology_object_storage_secure_erase.c
+   [Ada]          flyology_object_storage_config.ads
+   [Ada]          flyology-object_storage-s3-annotations.adb
+   [Ada]          flyology-object_storage-s3-logging.adb
+   [Ada]          flyology-object_storage-s3-imf_dates.adb
+   [Ada]          flyology-object_storage-client-paginated_rest_xml_reads.adb
+   [Ada]          flyology-object_storage-backends.adb
+flyology_allocators-atomics.adb:1:06: warning: "System.Atomic_Primitives" is an internal GNAT unit [-gnatwi]
+flyology_allocators-atomics.adb:1:06: warning: use of this unit is non-portable and version-dependent [-gnatwi]
+   [Ada]          flyology-object_storage-server-s3_applications.adb
+   [Ada]          flyology-object_storage-s3-metadata_tables.adb
+   [Ada]          flyology-object_storage-backends-files.adb
+   [Ada]          flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.adb
+   [Ada]          flyology-object_storage-s3-xml_writers.adb
+   [Ada]          flyology-object_storage-s3.ads
+   [Ada]          flyology-object_storage-checksum_engine.adb
+   [Ada]          flyology-object_storage-secrets.adb
+   [Ada]          flyology-object_storage-s3-errors.adb
+   [Ada]          flyology-object_storage-server.ads
+   [Ada]          flyology-object_storage-s3-xml.adb
+   [Ada]          flyology-object_storage-server-authentication.adb
+   [Ada]          flyology-object_storage-server-static_credentials.adb
+   [Ada]          flyology-object_storage-s3-generated_put_bucket_website_xml.adb
+   [Ada]          flyology-object_storage-s3-object_reads.adb
+   [Ada]          flyology-object_storage-s3-metrics.adb
+   [Ada]          flyology-object_storage-s3-multipart.adb
+   [Ada]          flyology-object_storage-client-buckets.adb
+   [Ada]          flyology-object_storage-s3-sigv4_verification.adb
+   [Ada]          flyology-object_storage-s3-listings.adb
+   [Ada]          flyology-object_storage-s3-wire_core.adb
+   [Ada]          flyology-object_storage-server-mfa.adb
+   [Ada]          flyology-object_storage-s3-encryption.adb
+   [Ada]          flyology-object_storage.adb
+   [Ada]          flyology-object_storage-s3-checksum_crc.adb
+   [Ada]          flyology-object_storage-s3-sigv4_encoding.adb
+   [Ada]          flyology-object_storage-s3-attributes.adb
+   [Ada]          flyology-object_storage-s3-intelligent_tiering.adb
+   [Ada]          flyology-object_storage-backends-memory.adb
+   [Ada]          flyology-object_storage-s3-inventory.adb
+   [Ada]          flyology-object_storage-s3-sigv4.adb
+   [Ada]          flyology-object_storage-s3-checksums.adb
+   [Ada]          flyology-object_storage-backends-listing.adb
+   [Ada]          flyology-object_storage-s3-generated_put_bucket_acl_xml.adb
+   [Ada]          flyology-object_storage-s3-strict_xml_codecs.adb
+   [Ada]          flyology-object_storage-backends-multipart_listing.adb
+   [Ada]          flyology-object_storage-s3-generated_list_directory_buckets_xml.adb
+   [Ada]          flyology-object_storage-server-metadata_results.ads
+   [Ada]          flyology-object_storage-durability.adb
+   [Ada]          flyology-object_storage-s3-core.adb
+   [Ada]          flyology-object_storage-s3-notifications.adb
+   [Ada]          flyology-object_storage-s3-generated_put_bucket_logging_xml.adb
+   [Ada]          flyology-object_storage-client-bounded_rest_xml_reads.adb
+   [Ada]          flyology-object_storage-client-low_level.adb
+   [Ada]          flyology-object_storage-s3-deletions.adb
+   [Ada]          flyology-object_storage-client-rest_xml_mutations.adb
+   [Ada]          flyology-object_storage-s3-checksum_policy.adb
+   [Ada]          flyology-object_storage-s3-copies.adb
+   [Ada]          flyology-object_storage-s3-model.adb
+   [Ada]          flyology-object_storage-s3-versioning.adb
+   [Ada]          flyology-object_storage-s3-replication.adb
+   [Ada]          flyology-object_storage-s3-metadata_configurations.adb
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/sqlite/tests/src/flyology_object_storage_sqlite_tests.adb: In function 'Flyology_Object_Storage_Sqlite_Tests':
+/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/sqlite/tests/src/flyology_object_storage_sqlite_tests.adb:26:1: note: variable tracking size limit exceeded with '-fvar-tracking-assignments', retrying without
+   [Ada]          flyology-object_storage-tags.adb
+   [Ada]          flyology-object_storage-client-objects.adb
+   [Ada]          flyology-object_storage-s3-lifecycle.adb
+   [Ada]          flyology-object_storage-s3-tagging.adb
+   [Ada]          flyology-object_storage-s3-website.adb
+   [Ada]          flyology-object_storage-server-object_lambda_responses.ads
+   [Ada]          flyology-object_storage-s3-object_lock.adb
+   [Ada]          flyology-object_storage-backends-bucket_listing.adb
+   [Ada]          flyology-object_storage-client-transfers.adb
+   [Ada]          flyology-object_storage-s3-bucket_controls.adb
+   [Ada]          flyology-object_storage-s3-multipart_uploads.adb
+   [Ada]          flyology-object_storage-client.ads
+   [Ada]          flyology-object_storage-s3-requests.adb
+   [Ada]          flyology-object_storage-s3-buckets.adb
+   [Ada]          flyology-object_storage-s3-acl.adb
+   [Ada]          flyology-object_storage-s3-analytics.adb
+   [Ada]          flyology-object_storage-s3-versions.adb
+   [Ada]          flyology-object_storage-s3-paginated_rest_xml_reads.adb
+   [C]            sqlite3.c
+   [C]            flyology_object_storage_sqlite_durability.c
+   [Ada]          flyology_object_storage_sqlite_config.ads
+   [Ada]          flyology-object_storage-backends-sqlite.adb
+   [Ada]          flyology-object_storage-sqlite.adb
+   [Ada]          flyology-object_storage-sqlite-c.ads
+   [Ada]          flyology-object_storage-sqlite-catalogs.adb
+   [Ada]          flyology-object_storage-sqlite-databases.adb
+   [Ada]          conditional_put_conformance.adb
+   [Ada]          copy_object_conformance.adb
+   [Ada]          multipart_part_conformance.adb
+   [Ada]          versioned_object_conformance.adb
+   [Ada]          s3_server_harness.adb
+Build Libraries
+   [gprlib]       flyology_allocators.lexch
+   [archive]      libflyology_allocators.a
+   [index]        libflyology_allocators.a
+   [gprlib]       Flyology.lexch
+   [archive]      libFlyology.a
+   [index]        libFlyology.a
+   [gprlib]       Flyology_QUIC.lexch
+   [archive]      libFlyology_QUIC.a
+   [index]        libFlyology_QUIC.a
+   [gprlib]       Flyology_HTTP.lexch
+   [archive]      libFlyology_HTTP.a
+   [gprlib]       Flyology_Object_Storage.lexch
+   [index]        libFlyology_HTTP.a
+   [gprlib]       Flyology_Object_Storage_Sqlite.lexch
+   [archive]      libFlyology_Object_Storage.a
+   [index]        libFlyology_Object_Storage.a
+   [archive]      libFlyology_Object_Storage_Sqlite.a
+   [index]        libFlyology_Object_Storage_Sqlite.a
+Bind
+   [gprbind]      flyology_object_storage_sqlite_tests.bexch
+   [gprbind]      s3_sqlite_server.bexch
+   [Ada]          flyology_object_storage_sqlite_tests.ali
+   [Ada]          s3_sqlite_server.ali
+Link
+   [link]         flyology_object_storage_sqlite_tests.adb
+   [link]         s3_sqlite_server.adb
+Success: Build finished successfully in 92.80 seconds.
+SQLite wrapper, catalog, and backend: OK
+./sqlite/tests/scripts/test.sh  394.21s user 32.09s system 415% cpu 1:42.58 total
+exit=0

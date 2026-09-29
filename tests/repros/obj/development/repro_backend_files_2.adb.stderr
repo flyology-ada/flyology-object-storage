@@ -1,0 +1,2 @@
+repro_backend_files_2.adb:16:17: warning: no entities of "Ada.Strings.Unbounded" are referenced [-gnatwu]
+repro_backend_files_2.adb:29:12: warning: package "US" is not referenced [-gnatwu]

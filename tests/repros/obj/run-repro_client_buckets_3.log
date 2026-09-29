@@ -1,0 +1,19 @@
+  -- scripted loopback origin on 127.0.0.1:49803
+  -- --- MinIO shape: 200 ListAllMyBucketsResult with no <Prefix> ---
+  -- minio/convenience: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : ListBuckets response is invalid or exceeds the XML limit
+  FAILED: minio/convenience: the prefix-filtered page is returned
+  -- minio/composable: kind LIST_BUCKETS_EXCHANGE_FAILED, Failure = CORRUPT_OR_INVALID_RESPONSE
+  FAILED: minio/composable: the composable listing succeeds
+  -- --- control: the same document echoing <Prefix>flyology</Prefix> ---
+  -- echoed/convenience: kind PAGE_AVAILABLE, status 200
+  ok: echoed/convenience: the prefix-filtered page is returned
+  -- echoed/convenience: buckets in page = 1
+  ok: echoed/convenience: the page holds the one matching bucket
+  -- echoed/composable: kind LIST_BUCKETS_RESPONSE_AVAILABLE, Failure = NO_FAILURE
+  ok: echoed/composable: the composable listing succeeds
+  -- request 1: GET /?max-buckets=10&prefix=flyology HTTP/1.1
+  -- request 2: GET /?max-buckets=10&prefix=flyology HTTP/1.1
+  -- request 3: GET /?max-buckets=10&prefix=flyology HTTP/1.1
+  -- request 4: GET /?max-buckets=10&prefix=flyology HTTP/1.1
+  ok: the origin served all four exchanges
+BUG REPRODUCED: 2 failed expectation(s)

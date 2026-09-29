@@ -1,0 +1,14 @@
+  -- Core.Page_Size'Last  = 1000
+  -- Core.Part_Number'Last= 10000
+  -- 
+  -- === control: a MaxParts echo inside the crate's bound ===
+  -- control: MaxParts within Page_Size (MaxParts=1000)
+  --     S3.Attributes.Parse_Result: accepted, MaxParts=1000
+  --     Client.Low_Level: accepted, kind=OBJECT_ATTRIBUTES_FOUND
+  -- 
+  -- === MinIO's actual MaxParts echo ===
+  -- MinIO's GetObjectAttributes answer (MaxParts=10000)
+  --     S3.Attributes.Parse_Result: FLYOLOGY.OBJECT_STORAGE.S3.ATTRIBUTES.MALFORMED_ATTRIBUTES: malformed GetObjectAttributes XML
+  --     Client.Low_Level: FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE: malformed GetObjectAttributes response
+  FAILED: MinIO's GetObjectAttributes answer
+BUG REPRODUCED: 1 failed expectation(s)

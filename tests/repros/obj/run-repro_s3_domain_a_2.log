@@ -1,0 +1,11 @@
+  -- MinIO max-keys=1 delimiter=/  : decoded, objects=1 truncated=TRUE has_next_marker=TRUE next_marker="k1[minio_cache:v2,return:]"
+  ok: MinIO max-keys=1 delimiter=/  : the page keeps its one object
+  ok: MinIO max-keys=1 delimiter=/  : the page is truncated
+  ok: MinIO max-keys=1 delimiter=/  : the page keeps NextMarker
+  ok: MinIO max-keys=1 delimiter=/  : NextMarker text is preserved
+  -- Flyology-shaped page, no NextMarker: decoded, objects=1 truncated=TRUE has_next_marker=FALSE next_marker=""
+  -- MinIO max-keys=1 no delimiter   : REJECTED, inconsistent S3 next marker
+  FAILED: MinIO max-keys=1 no delimiter   : the page is accepted
+  -- minimal truncated no-delimiter  : REJECTED, inconsistent S3 next marker
+  FAILED: minimal truncated no-delimiter  : the page is accepted
+BUG REPRODUCED: 2 failed expectation(s)

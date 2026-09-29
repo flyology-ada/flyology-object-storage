@@ -1,0 +1,18 @@
+  -- root /private/tmp/claude-501/repro-sqlite/delete-bucket-1571128-0
+  ok: memory: Create_Bucket succeeds
+  ok: memory: Put_Bucket_Versioning Enabled succeeds
+  ok: memory: Put_Object succeeds
+  -- memory: Delete_Object (publishes a delete marker) SUCCESS
+  ok: memory: Delete_Object succeeds
+  -- memory: Head_Object after the marker NOT_FOUND
+  -- memory: Delete_Bucket BUCKET_NOT_EMPTY
+  ok: memory: Delete_Bucket reports Bucket_Not_Empty (control)
+  ok: sqlite: Create_Bucket succeeds
+  ok: sqlite: Put_Bucket_Versioning Enabled succeeds
+  ok: sqlite: Put_Object succeeds
+  -- sqlite: Delete_Object (publishes a delete marker) SUCCESS
+  ok: sqlite: Delete_Object succeeds
+  -- sqlite: Head_Object after the marker NOT_FOUND
+  -- sqlite: Delete_Bucket BACKEND_UNAVAILABLE
+  FAILED: sqlite: Delete_Bucket reports Bucket_Not_Empty
+BUG REPRODUCED: 1 failed expectation(s)

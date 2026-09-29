@@ -1,0 +1,61 @@
+  -- files root /private/tmp/claude-501/repro-bf1-1465-665827000
+  ok: memory (control) CreateBucket succeeds
+  ok: memory (control) PutObject succeeds
+  ok: memory (control) PutObjectAnnotation put-then-complete/alpha
+  ok: memory (control) ListObjectAnnotations put-then-complete succeeds
+  ok: memory (control) the annotation is visible before replacement
+  ok: memory (control) CreateMultipartUpload put-then-complete
+  ok: memory (control) UploadPart put-then-complete
+  ok: memory (control) CompleteMultipartUpload put-then-complete
+  ok: memory (control) ListObjectAnnotations put-then-complete succeeds
+  -- memory (control) A: annotations after COMPLETE replaced a PUT = 0
+  ok: memory (control) ListObjectAnnotations put-then-complete succeeds
+  ok: memory (control) A: the completed object starts with no annotations
+  ok: memory (control) A: GetObjectAnnotation reports the annotation absent
+  ok: memory (control) CreateMultipartUpload complete-twice
+  ok: memory (control) UploadPart complete-twice
+  ok: memory (control) CompleteMultipartUpload complete-twice
+  ok: memory (control) PutObjectAnnotation complete-twice/beta
+  ok: memory (control) ListObjectAnnotations complete-twice succeeds
+  ok: memory (control) the annotation is visible before the second completion
+  ok: memory (control) CreateMultipartUpload complete-twice
+  ok: memory (control) UploadPart complete-twice
+  ok: memory (control) CompleteMultipartUpload complete-twice
+  ok: memory (control) ListObjectAnnotations complete-twice succeeds
+  -- memory (control) B: annotations after the second COMPLETE = 0
+  ok: memory (control) ListObjectAnnotations complete-twice succeeds
+  ok: memory (control) B: the second completed object starts with no annotations
+  ok: memory (control) B: GetObjectAnnotation reports the annotation absent
+  ok: files  (subject) CreateBucket succeeds
+  ok: files  (subject) PutObject succeeds
+  ok: files  (subject) PutObjectAnnotation put-then-complete/alpha
+  ok: files  (subject) ListObjectAnnotations put-then-complete succeeds
+  ok: files  (subject) the annotation is visible before replacement
+  ok: files  (subject) CreateMultipartUpload put-then-complete
+  ok: files  (subject) UploadPart put-then-complete
+  ok: files  (subject) CompleteMultipartUpload put-then-complete
+  ok: files  (subject) ListObjectAnnotations put-then-complete succeeds
+  -- files  (subject) A: annotations after COMPLETE replaced a PUT = 0
+  ok: files  (subject) ListObjectAnnotations put-then-complete succeeds
+  ok: files  (subject) A: the completed object starts with no annotations
+  ok: files  (subject) A: GetObjectAnnotation reports the annotation absent
+  ok: files  (subject) CreateMultipartUpload complete-twice
+  ok: files  (subject) UploadPart complete-twice
+  ok: files  (subject) CompleteMultipartUpload complete-twice
+  ok: files  (subject) PutObjectAnnotation complete-twice/beta
+  ok: files  (subject) ListObjectAnnotations complete-twice succeeds
+  ok: files  (subject) the annotation is visible before the second completion
+  ok: files  (subject) CreateMultipartUpload complete-twice
+  ok: files  (subject) UploadPart complete-twice
+  ok: files  (subject) CompleteMultipartUpload complete-twice
+  ok: files  (subject) ListObjectAnnotations complete-twice succeeds
+  -- files  (subject) B: annotations after the second COMPLETE = 1
+  ok: files  (subject) ListObjectAnnotations complete-twice succeeds
+  FAILED: files  (subject) B: the second completed object starts with no annotations
+  FAILED: files  (subject) B: GetObjectAnnotation reports the annotation absent
+  -- files A: sidecar generation- directories left under /private/tmp/claude-501/repro-bf1-1465-665827000/buckets/anno-bucket/annotations/7075742D7468656E2D636F6D706C657465.annotations = 1
+  FAILED: files  (subject) A: the PUT generation's sidecar directory is removed by the completion that replaced it (no orphan)
+  -- files B: sidecar generation- directories left under /private/tmp/claude-501/repro-bf1-1465-665827000/buckets/anno-bucket/annotations/636F6D706C6574652D7477696365.annotations = 1
+  FAILED: files  (subject) B: the replaced completion's sidecar directory is removed by the second completion
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf1-1465-665827000
+BUG REPRODUCED: 4 failed expectation(s)

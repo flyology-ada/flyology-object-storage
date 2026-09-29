@@ -1,0 +1,33 @@
+  ok: fixture: CreateBucket /marker-bucket
+  ok: fixture: PutBucketVersioning Enabled
+  ok: fixture: PutObject /marker-bucket/k
+  ok: fixture: PutObject /marker-bucket/live
+  -- CONTROL DELETE /marker-bucket/k: status 204  x-amz-delete-marker=[true]  x-amz-version-id=[f37f4dffd982f843741984a21d253e64aa73d8a80500283bd999f2928f6f4eed]  Last-Modified=[]
+  --    body 
+  ok: CONTROL: DELETE of a versioned key is 204
+  ok: CONTROL: DELETE reports x-amz-delete-marker: true
+  ok: CONTROL: DELETE reports the marker version id
+  -- GET a key whose current version is a delete marker: status 404  x-amz-delete-marker=[]  x-amz-version-id=[]  Last-Modified=[]
+  --    body <?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist</Message><Resource>/marker-bucket/k</Resource></Error>
+  ok: GET of a current delete marker is 404
+  FAILED: GET of a current delete marker carries x-amz-delete-marker: true
+  -- HEAD a key whose current version is a delete marker: status 404  x-amz-delete-marker=[]  x-amz-version-id=[]  Last-Modified=[]
+  --    body 
+  ok: HEAD of a current delete marker is 404
+  FAILED: HEAD of a current delete marker carries x-amz-delete-marker: true
+  -- GET ?versionId=<the marker itself>: status 404  x-amz-delete-marker=[]  x-amz-version-id=[]  Last-Modified=[]
+  --    body <?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist</Message><Resource>/marker-bucket/k?versionId=f37f4dffd982f843741984a21d253e64aa73d8a80500283bd999f2928f6f4eed</Resource></Error>
+  FAILED: GET of an exact delete-marker version is 405 MethodNotAllowed
+  FAILED: GET of an exact delete-marker version carries x-amz-delete-marker: true
+  FAILED: GET of an exact delete-marker version carries Last-Modified
+  -- HEAD ?versionId=<the marker itself>: status 404  x-amz-delete-marker=[]  x-amz-version-id=[]  Last-Modified=[]
+  --    body 
+  FAILED: HEAD of an exact delete-marker version is 405 MethodNotAllowed
+  FAILED: HEAD of an exact delete-marker version carries x-amz-delete-marker: true
+  -- CONTROL GET of a live key: status 200  x-amz-delete-marker=[]  x-amz-version-id=[77d55163c888e8ba05bf5972434e4870281279b1f5546f8145f9158af0f53a58]  Last-Modified=[Mon, 07 Sep 2026 07:25:06 GMT]
+  ok: CONTROL: GET of a live key still reads 200
+  -- CONTROL GET of a key that never existed: status 404  x-amz-delete-marker=[]  x-amz-version-id=[]  Last-Modified=[]
+  --    body <?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist</Message><Resource>/marker-bucket/never-existed</Resource></Error>
+  ok: CONTROL: GET of an absent key is 404
+  ok: CONTROL: GET of an absent key carries no delete-marker header
+BUG REPRODUCED: 7 failed expectation(s)

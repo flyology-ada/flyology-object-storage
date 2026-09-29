@@ -1,0 +1,25 @@
+  -- scripted loopback origin on 127.0.0.1:49821
+  -- every *_Outcome type already carries a Rejected variant with the wire Status; Head_Error (low_level.adb:4856-4872) synthesises Code = "HTTP<status>" for exactly this case
+  -- --- 503 Service Unavailable with a text/html body ---
+  -- html 503 ListObjectsV2: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : malformed ListObjectsV2 response
+  FAILED: html 503 ListObjectsV2: a non-XML 5xx is a typed rejection carrying the wire status
+  -- --- 403 Forbidden with Content-Length: 0 ---
+  -- empty 403 DeleteObject: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : malformed DeleteObject response
+  FAILED: empty 403 DeleteObject: a bodyless 4xx is a typed rejection carrying the wire status
+  -- --- control: HeadObject, the route that already tolerates it ---
+  -- control HEAD 503: Kind = HEAD_OBJECT_REJECTED, status 503
+  ok: control HEAD 503: HEAD already maps a bodyless 5xx to the typed rejection
+  -- control HEAD 503: Error.Code = HTTP503, Message = HeadObject returned HTTP status 503
+  ok: control HEAD 503: Error.Code is "HTTP503"
+  -- --- control: 503 carrying a well-formed <Error> document ---
+  -- modeled 503 ListObjectsV2: Kind = REJECTED, status 503
+  ok: modeled 503 ListObjectsV2: a non-XML 5xx is a typed rejection carrying the wire status
+  -- modeled 503 ListObjectsV2: Error.Code = SlowDown, Message = Please reduce your request rate
+  ok: modeled 503 ListObjectsV2: status is 503
+  ok: modeled 503 ListObjectsV2: Error.Code is "SlowDown"
+  -- request 1: GET /example-bucket?list-type=2&max-keys=1000 HTTP/1.1
+  -- request 2: DELETE /example-bucket/native-object HTTP/1.1
+  -- request 3: HEAD /example-bucket/native-object HTTP/1.1
+  -- request 4: GET /example-bucket?list-type=2&max-keys=1000 HTTP/1.1
+  ok: the origin served all four scripted exchanges
+BUG REPRODUCED: 2 failed expectation(s)

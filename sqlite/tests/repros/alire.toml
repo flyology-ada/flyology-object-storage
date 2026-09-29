@@ -1,0 +1,16 @@
+name = "repros_sqlite"
+description = "Bug reproduction programs for the Flyology Object Storage SQLite backend"
+version = "0.0.0"
+
+authors = ["Yurii Rashkovskii"]
+maintainers = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+maintainers-logins = ["yrashk"]
+licenses = "MIT OR Apache-2.0"
+
+[[depends-on]]
+flyology_object_storage = "*"
+flyology_object_storage_sqlite = "*"
+
+[[pins]]
+flyology_object_storage = { path = "../../.." }
+flyology_object_storage_sqlite = { path = "../.." }

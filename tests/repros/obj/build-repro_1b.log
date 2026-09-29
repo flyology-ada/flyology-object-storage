@@ -1,0 +1,3 @@
+repros.gpr:13:18: "repro_1b.adb" is not a source of project "repros"
+gprbuild: problems with main sources
+ERROR: Command ["gprbuild", "-q", "-p", "-P", "repros.gpr", "-XMAIN=repro_1b"] exited with code 1

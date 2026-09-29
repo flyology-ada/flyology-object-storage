@@ -1,0 +1,31 @@
+  -- scripted loopback origin on 127.0.0.1:49855
+  -- --- GetObjectTorrent: well-formed transient S3 rejections ---
+  -- 503 SlowDown torrent: Get_Torrent Kind = GET_OBJECT_TORRENT_RESPONSE_AVAILABLE, Failure = NO_FAILURE
+  -- 503 SlowDown torrent: response Kind = GET_OBJECT_TORRENT_REJECTED, status 503, code SlowDown, destination length 0
+  ok: 503 SlowDown torrent: the rejection is a complete modeled response
+  FAILED: 503 SlowDown torrent: Failure is UNAVAILABLE_OR_RETRYABLE, as every sibling normalizer assigns for this status and code
+  -- 500 InternalError torrent: Get_Torrent Kind = GET_OBJECT_TORRENT_RESPONSE_AVAILABLE, Failure = NO_FAILURE
+  -- 500 InternalError torrent: response Kind = GET_OBJECT_TORRENT_REJECTED, status 500, code InternalError, destination length 0
+  ok: 500 InternalError torrent: the rejection is a complete modeled response
+  FAILED: 500 InternalError torrent: Failure is UNAVAILABLE_OR_RETRYABLE, as every sibling normalizer assigns for this status and code
+  -- --- reported only: 404 is asserted as No_Failure by tests/src/s3_get_object_torrent_socket_corpus.adb:703 ---
+  -- 404 NoSuchKey torrent: Get_Torrent Kind = GET_OBJECT_TORRENT_RESPONSE_AVAILABLE, Failure = NO_FAILURE
+  -- 404 NoSuchKey torrent: response Kind = GET_OBJECT_TORRENT_REJECTED, status 404, code NoSuchKey, destination length 0
+  -- --- control: the identical 503 answered to GetObjectAcl ---
+  -- 503 SlowDown ACL: Get_ACL Kind = GET_OBJECT_ACL_RESPONSE_AVAILABLE, Failure = UNAVAILABLE_OR_RETRYABLE
+  -- 503 SlowDown ACL: response Kind = GET_OBJECT_ACL_REJECTED, status 503, code SlowDown
+  ok: 503 SlowDown ACL: the rejection is a complete modeled response
+  ok: 503 SlowDown ACL: Failure is UNAVAILABLE_OR_RETRYABLE
+  -- --- control: a 200 GetObjectTorrent success ---
+  -- 200 torrent: Get_Torrent Kind = GET_OBJECT_TORRENT_RESPONSE_AVAILABLE, Failure = NO_FAILURE, destination length 18
+  ok: 200 torrent: a 200 torrent read is a complete response
+  ok: 200 torrent: a success carries No_Failure
+  ok: 200 torrent: outcome is Torrent_Opened
+  ok: 200 torrent: destination holds the torrent bytes
+  -- request 1: GET /example-bucket/busy-object?torrent HTTP/1.1
+  -- request 2: GET /example-bucket/faulted-object?torrent HTTP/1.1
+  -- request 3: GET /example-bucket/absent-object?torrent HTTP/1.1
+  -- request 4: GET /example-bucket/native-object?acl HTTP/1.1
+  -- request 5: GET /example-bucket/native-object?torrent HTTP/1.1
+  ok: the origin served all five scripted exchanges
+BUG REPRODUCED: 2 failed expectation(s)

@@ -1,0 +1,56 @@
+Note: Synchronizing workspace...
+Dependencies automatically updated as follows:
+
+   +  flyology                0.1.1-dev (new,indirect)
+   +  flyology_allocators     0.1.0     (new,indirect)
+   +  flyology_cachelines     0.1.0     (new,indirect)
+   +  flyology_http           0.1.3-dev (new,indirect)
+   +. flyology_object_storage 0.1.0-dev (new,path=../..)
+   +  flyology_quic           0.1.3-dev (new,indirect)
+   +b gnat                    16.1.0    (new,gnat_native,indirect,binary)
+   +  xmlada                  26.0.0    (new,indirect)
+
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building repros=0.0.0/repros.gpr...
+Setup
+   [mkdir]        object directory for project Repros
+Compile
+   [Ada]          repro_smoke.adb
+   [Ada]          flyology_allocators-layouts.adb
+   [Ada]          flyology_allocators-storage.adb
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span_kernel.adb
+   [Ada]          flyology_allocators-waits.adb
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms.ads
+   [Ada]          flyology_allocators-allocation_algorithms-contract.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy.ads
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf.ads
+   [Ada]          flyology_allocators-regions.adb
+   [Ada]          flyology_allocators-policy.adb
+   [Ada]          flyology_allocators-arenas.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy_kernel.adb
+   [Ada]          flyology_allocators.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span.ads
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit.ads
+   [Ada]          flyology_allocators-atomics.adb
+   [Ada]          repro_s3_server.adb
+   [Ada]          repro_support.adb
+flyology_allocators-atomics.adb:1:06: warning: "System.Atomic_Primitives" is an internal GNAT unit [-gnatwi]
+flyology_allocators-atomics.adb:1:06: warning: use of this unit is non-portable and version-dependent [-gnatwi]
+repro_s3_server.adb:61:68: error: subtype mark required in this context
+repro_s3_server.adb:61:68: error: found "UTC_Time_Offset" declared at a-catizo.ads:29
+repro_s3_server.adb:115:28: error: ambiguous expression (cannot resolve "Image")
+repro_s3_server.adb:115:28: error: possible interpretation at repro_support.ads:37
+repro_s3_server.adb:115:28: error: possible interpretation at repro_support.ads:36
+repro_s3_server.adb:169:28: error: ambiguous expression (cannot resolve "Image")
+repro_s3_server.adb:169:28: error: possible interpretation at repro_support.ads:37
+repro_s3_server.adb:169:28: error: possible interpretation at repro_support.ads:36
+repro_s3_server.adb:208:15: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_s3_server.ads:33:06: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+
+   compilation of repro_s3_server.adb failed
+
+gprbuild: *** compilation phase failed
+ERROR: Command ["gprbuild", "-s", "-j0", "-p", "-P", "/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/tests/repros/repros.gpr"] exited with code 4
+ERROR: Compilation failed.

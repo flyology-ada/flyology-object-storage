@@ -1,0 +1,5 @@
+dependency:flyology_object_storage=0.1.0-dev=e1a0f81b918f7c8a2e609b49a13a98b52476d2dd9d03420325815f0ce2e5f988
+external:LIBRARY_TYPE=default
+external:REPROS_LIBRARY_TYPE=default
+profile:repros=DEVELOPMENT
+switches:repros=-Og,-fdata-sections,-ffunction-sections,-g,-gnatVa,-gnatW8,-gnatw.X,-gnatwa,-gnaty-d,-gnaty3,-gnatyA,-gnatyB,-gnatyI,-gnatyO,-gnatyS,-gnatya,-gnatyb,-gnatyc,-gnatye,-gnatyf,-gnatyh,-gnatyi,-gnatyk,-gnatyl,-gnatym,-gnatyn,-gnatyp,-gnatyr,-gnatyt,-gnatyu,-gnatyx

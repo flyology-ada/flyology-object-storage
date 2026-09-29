@@ -1,0 +1,87 @@
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Success: Partial build finished successfully in 1.56 seconds.
+Note: Build was requested to stop after stage: pre_build; build artifacts may be missing.
+Phase 1 of 3: generation of data representation information ...
+Phase 2 of 3: generation of Global contracts ...
+Phase 3 of 3: flow analysis and proof ...
+flyology-object_storage-s3-checksum_crc.adb:23:13: info: local subprogram "Make_Table" only analyzed in the context of calls [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:23:13: info: add a contract to analyze it separately from calling contexts
+flyology-object_storage-s3-checksum_crc.adb:40:48: info: analyzing call to "Make_Table" in context
+flyology-object_storage-s3-checksum_crc.adb:40:48: info: in inlined body at line 27
+flyology-object_storage-s3-checksum_crc.adb:40:48: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:40:48: info: in inlined body at line 29
+flyology-object_storage-s3-checksum_crc.adb:40:48: info: unrolling loop [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:41:48: info: analyzing call to "Make_Table" in context
+flyology-object_storage-s3-checksum_crc.adb:41:48: info: in inlined body at line 27
+flyology-object_storage-s3-checksum_crc.adb:41:48: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:41:48: info: in inlined body at line 29
+flyology-object_storage-s3-checksum_crc.adb:41:48: info: unrolling loop [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:43:06: info: analyzing call to "Make_Table" in context
+flyology-object_storage-s3-checksum_crc.adb:43:06: info: in inlined body at line 27
+flyology-object_storage-s3-checksum_crc.adb:43:06: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:43:06: info: in inlined body at line 29
+flyology-object_storage-s3-checksum_crc.adb:43:06: info: unrolling loop [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:60:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:95:35: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-checksum_crc.adb:120:35: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-wire_core.adb:11:35: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-wire_core.adb:31:35: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-wire_core.adb:71:41: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-wire_core.adb:78:54: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-wire_core.adb:88:54: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-requests.adb:48:04: info: no contextual analysis of "Decode" (unconstrained return type)
+flyology-object_storage-s3-requests.adb:136:36: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:29:35: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:395:04: info: no contextual analysis of "Looks_Like_IPv4" (object renaming)
+flyology-object_storage.adb:404:36: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:443:17: info: no contextual analysis of "Looks_Like_IPv4" (in potentially unevaluated context)
+flyology-object_storage.adb:457:36: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:484:36: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:523:16: info: local subprogram "Allowed" only analyzed in the context of calls [info-unrolling-inlining]
+flyology-object_storage.adb:523:16: info: add a contract to analyze it separately from calling contexts
+flyology-object_storage.adb:578:20: info: analyzing call to "Allowed" in context
+flyology-object_storage.adb:661:07: info: no contextual analysis of "Validate_System_Value" (unconstrained return type)
+flyology-object_storage.adb:686:42: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:704:12: info: no contextual analysis of "Include_System_Value" (call returns unconstrained type)
+flyology-object_storage.adb:712:07: info: no contextual analysis of "Valid_User_Key" (object renaming)
+flyology-object_storage.adb:717:39: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:736:43: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:788:40: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:801:30: info: no contextual analysis of "Valid_UTF8_Header_Value" (in potentially unevaluated context)
+flyology-object_storage.adb:805:47: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:824:37: info: cannot unroll loop (local non-scalar declaration at line 826) [info-unrolling-inlining]
+flyology-object_storage.adb:834:40: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:839:42: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:844:44: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage.adb:878:16: info: local subprogram "Allowed" only analyzed in the context of calls [info-unrolling-inlining]
+flyology-object_storage.adb:878:16: info: add a contract to analyze it separately from calling contexts
+flyology-object_storage.adb:944:20: info: analyzing call to "Allowed" in context
+flyology-object_storage-s3-core.adb:64:14: info: local subprogram "Parse_Decimal" only analyzed in the context of calls [info-unrolling-inlining]
+flyology-object_storage-s3-core.adb:64:14: info: add a contract to analyze it separately from calling contexts
+flyology-object_storage-s3-core.adb:154:10: info: analyzing call to "Parse_Decimal" in context
+flyology-object_storage-s3-core.adb:154:10: info: in inlined body at line 81
+flyology-object_storage-s3-core.adb:154:10: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-core.adb:165:07: info: analyzing call to "Parse_Decimal" in context
+flyology-object_storage-s3-core.adb:165:07: info: in inlined body at line 81
+flyology-object_storage-s3-core.adb:165:07: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-core.adb:178:07: info: analyzing call to "Parse_Decimal" in context
+flyology-object_storage-s3-core.adb:178:07: info: in inlined body at line 81
+flyology-object_storage-s3-core.adb:178:07: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-core.adb:200:53: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-core.adb:217:53: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:51:32: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:98:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:129:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:145:29: info: unrolling loop [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:204:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:220:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-sigv4_encoding.adb:236:25: info: cannot unroll loop (too many loop iterations) [info-unrolling-inlining]
+flyology-object_storage-s3-imf_dates.adb:176:13: info: local subprogram "Month_Number" only analyzed in the context of calls [info-unrolling-inlining]
+flyology-object_storage-s3-imf_dates.adb:176:13: info: add a contract to analyze it separately from calling contexts
+flyology-object_storage-s3-imf_dates.adb:202:39: info: analyzing call to "Month_Number" in context
+flyology-object_storage-s3-imf_dates.adb:202:39: info: in inlined body at line 178
+flyology-object_storage-s3-imf_dates.adb:202:39: info: unrolling loop [info-unrolling-inlining]
+Success: all checks proved (999 checks).
+Summary logged in /Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/obj/proof/gnatprove/gnatprove.out
+./tools/prove.sh  194.74s user 45.19s system 384% cpu 1:02.44 total
+exit=0

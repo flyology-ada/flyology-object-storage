@@ -1,0 +1,20 @@
+  -- another process holds 127.0.0.1:50068 (a port already in use is the common operator mistake)
+  -- server exit status: 1
+  -- stdout:
+       READY s3 http://127.0.0.1:50069 backend=memory
+  -- stderr:
+       BOOTSTRAP ADMIN username=admin password=bde0dbb19b280907e4479d300258b3cbb9a1d497fcf1b30b
+       Store this password now; it will not be shown again. credentials=/private/tmp/claude-501/repro-server-exe-4-etusHE/admin.credentials
+       object-storage server stopped: STARTUP_FAILED
+  -- failure diagnostic under test:
+       object-storage server stopped: STARTUP_FAILED
+  ok: control: a management bind failure gives a non-zero exit status
+  ok: control: the executable reports that the server stopped
+  -- diagnostic names the failing child: no
+  -- diagnostic names the endpoint 127.0.0.1:50068: no
+  -- diagnostic names the exception: no
+  FAILED: the startup-failure diagnostic names the failing child, the endpoint, or the exception
+  -- control (pre-supervisor failure, bad backend name), stderr:
+       raised CONSTRAINT_ERROR : FLYOLOGY_OBJECT_STORAGE_BACKEND must be memory, files, or sqlite
+  ok: control: a configuration failure before the supervisor names its cause
+BUG REPRODUCED: 1 failed expectation(s)

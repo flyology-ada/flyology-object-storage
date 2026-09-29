@@ -1,0 +1,2 @@
+model_differential.py exit=0 (0 expected: no model finding)
+checksum_boto3_probe.py exit=1 (1 expected: stock boto3 rejected)

@@ -1,0 +1,1 @@
+repro_wire_3.adb:18:04: warning: use clause for type "Range_Parse_Status" defined at flyology-object_storage-s3-core.ads:162 has no effect [-gnatwu]

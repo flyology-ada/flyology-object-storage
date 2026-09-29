@@ -1,0 +1,21 @@
+  -- fake HTTP/1.1 server on 127.0.0.1:49909 answers every GET with 200 and the whole 27-byte body
+  -- control unranged request: GET /example-bucket/range-ignored HTTP/1.1
+  -- control unranged outcome: status 200, bytes 27
+  ok: control: unranged Download_File publishes the 200 body
+  ok: control: published bytes round-trip
+  -- ranged request line: GET /example-bucket/range-ignored HTTP/1.1
+  -- ranged request Range header: bytes=7-13
+  -- server answered: HTTP/1.1 200 OK, Content-Length 27, no Content-Range
+  -- Invalid_Response raised: TRUE
+  -- message: "GetObject returned an unsolicited representation interval"
+  ok: control: a 200 answer to a ranged request is refused
+  ok: control: the refused ranged download leaves the destination untouched
+  FAILED: ranged-200 diagnostic does not claim an UNSOLICITED interval (no interval was returned at all)
+  FAILED: ranged-200 diagnostic names the actual event: the server ignored the Range and returned the whole representation
+  -- unsolicited-206 message: "GetObject returned an unsolicited representation interval"
+  ok: control: an unrequested 206 is refused
+  ok: control: the unrequested-206 case is the one the 'unsolicited representation interval' text describes
+  ok: control: the refused 206 leaves the destination untouched
+  -- files left in the scratch directory: 3 (the three destinations)
+  ok: control: no download temporary is left behind
+BUG REPRODUCED: 2 failed expectation(s)

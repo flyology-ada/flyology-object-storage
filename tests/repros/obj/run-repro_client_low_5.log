@@ -1,0 +1,18 @@
+  -- model: CreateSessionRequest.BucketKeyEnabled is a boolean bound to x-amz-server-side-encryption-bucket-key-enabled (review/baseline/service-2.json)
+  -- spec: low_level.ads:6402-6404 -- "Bucket_Key_Enabled preserves absent versus explicit false"
+  -- --- explicit false, exactly what the spec says is preserved ---
+  -- explicit false: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_REQUEST : invalid CreateSession parameters
+  FAILED: explicit false: Prepare_Create_Session accepts the presence-preserving flag
+  FAILED: explicit false: the canonical request carries "x-amz-server-side-encryption-bucket-key-enabled:false"
+  -- --- control: flag absent ---
+  -- absent: prepared, target /?session
+  -- absent: signed headers = host;x-amz-content-sha256;x-amz-create-session-mode;x-amz-date;x-amz-server-side-encryption;x-amz-server-side-encryption-aws-kms-key-id
+  ok: absent: Prepare_Create_Session accepts the presence-preserving flag
+  ok: absent: the canonical request omits x-amz-server-side-encryption-bucket-key-enabled
+  -- --- control: explicit true ---
+  -- explicit true: prepared, target /?session
+  -- explicit true: signed headers = host;x-amz-content-sha256;x-amz-create-session-mode;x-amz-date;x-amz-server-side-encryption;x-amz-server-side-encryption-aws-kms-key-id;x-amz-server-side-encryption-bucket-key-enabled
+  ok: explicit true: Prepare_Create_Session accepts the presence-preserving flag
+  -- explicit true: looking for "x-amz-server-side-encryption-bucket-key-enabled:true"
+  ok: explicit true: the canonical request carries "x-amz-server-side-encryption-bucket-key-enabled:true"
+BUG REPRODUCED: 2 failed expectation(s)

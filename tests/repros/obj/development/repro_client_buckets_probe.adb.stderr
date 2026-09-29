@@ -1,0 +1,1 @@
+repro_client_buckets_probe.adb:61:04: warning: use clause for type "List_Outcome_Kind" defined at flyology-object_storage-client-buckets.ads:933 has no effect [-gnatwu]

@@ -1,0 +1,225 @@
+Reference smoke (rustfs)	UNKNOWN STEP	﻿2026-09-06T11:45:15.7370451Z Current runner version: '2.337.0'
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7395189Z ##[group]Runner Image Provisioner
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7396270Z Hosted Compute Agent
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7396948Z Version: 20260828.587
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7397620Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7398325Z Build Date: 2026-08-28T16:44:25Z
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7399106Z Worker ID: {db9482d1-b966-43ce-a982-321b9705d275}
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7399817Z Azure Region: westcentralus
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7400456Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7402155Z ##[group]Operating System
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7403036Z Ubuntu
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7403671Z 24.04.4
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7404175Z LTS
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7404718Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7405316Z ##[group]Runner Image
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7405931Z Image: ubuntu-24.04
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7406551Z Version: 20260831.293.1
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7407781Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260831.293/images/ubuntu/Ubuntu2404-Readme.md
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7409439Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260831.293
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7410934Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7412098Z ##[group]GITHUB_TOKEN Permissions
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7414824Z Contents: read
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7415510Z Metadata: read
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7416068Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7418145Z Secret source: Actions
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7419234Z Prepare workflow directory
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7771218Z Prepare all required actions
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:15.7818622Z Getting action download info
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.0848052Z Download action repository 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' (SHA:de0fac2e4500dabe0009e67214ff5f5447ce83dd)
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.2082292Z Download action repository 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4225253Z Complete job name: Reference smoke (rustfs)
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4971724Z ##[group]Run actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4973112Z with:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4973683Z   persist-credentials: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4974288Z   repository: flyology-ada/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4978029Z   token: ***
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4978462Z   ssh-strict: true
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4978897Z   ssh-user: git
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4979313Z   clean: true
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4979762Z   sparse-checkout-cone-mode: true
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4980284Z   fetch-depth: 1
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4980719Z   fetch-tags: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4981161Z   show-progress: true
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4981602Z   lfs: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4982011Z   submodules: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4982681Z   set-safe-directory: true
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.4983477Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6011580Z Syncing repository: flyology-ada/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6013989Z ##[group]Getting Git version info
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6015161Z Working directory is '/home/runner/work/flyology-object-storage/flyology-object-storage'
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6016437Z [command]/usr/bin/git version
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6081917Z git version 2.55.0
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6115074Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6131435Z Temporarily overriding HOME='/home/runner/work/_temp/118a0c4f-5322-49e8-a71c-51fc6c41ab1e' before making global git config changes
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6143139Z Adding repository directory to the temporary git global config as a safe directory
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6145920Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flyology-object-storage/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6191813Z Deleting the contents of '/home/runner/work/flyology-object-storage/flyology-object-storage'
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6198593Z ##[group]Initializing the repository
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6204093Z [command]/usr/bin/git init /home/runner/work/flyology-object-storage/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6316088Z hint: Using 'master' as the name for the initial branch. This default branch name
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6318144Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6320152Z hint: to use in all of your new repositories, which will suppress this warning,
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6321948Z hint: call:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6323009Z hint:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6324114Z hint: 	git config --global init.defaultBranch <name>
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6325379Z hint:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6326531Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6328297Z hint: 'development'. The just-created branch can be renamed via this command:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6329676Z hint:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6330512Z hint: 	git branch -m <name>
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6331399Z hint:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6332862Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6335166Z Initialized empty Git repository in /home/runner/work/flyology-object-storage/flyology-object-storage/.git/
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6338953Z [command]/usr/bin/git remote add origin https://github.com/flyology-ada/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6387355Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6388557Z ##[group]Disabling automatic garbage collection
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6390727Z [command]/usr/bin/git config --local gc.auto 0
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6423276Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6424408Z ##[group]Setting up auth
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6425228Z Removing SSH command configuration
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6430971Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6465836Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6821464Z Removing HTTP extra header
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6828397Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.6871701Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7099988Z Removing includeIf entries pointing to credentials config files
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7108873Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7148468Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7375243Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7415889Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git.path /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7450137Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7485841Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7520544Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7551405Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7552167Z ##[group]Fetching the repository
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:16.7561000Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5fe6e3ed846cfbdb90c23a2d511ca6410a58a103:refs/remotes/origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2416835Z From https://github.com/flyology-ada/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2419033Z  * [new ref]         5fe6e3ed846cfbdb90c23a2d511ca6410a58a103 -> origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2428175Z [command]/usr/bin/git branch --list --remote origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2457047Z   origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2468340Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2496439Z 5fe6e3ed846cfbdb90c23a2d511ca6410a58a103
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2505509Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2507024Z ##[group]Determining the checkout info
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2508664Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2509580Z [command]/usr/bin/git sparse-checkout disable
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2568071Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2600425Z ##[group]Checking out the ref
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.2604016Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3765777Z Switched to a new branch 'main'
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3768484Z branch 'main' set up to track 'origin/main'.
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3782834Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3829271Z [command]/usr/bin/git log -1 --format=%H
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3857715Z 5fe6e3ed846cfbdb90c23a2d511ca6410a58a103
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3868728Z ##[group]Removing auth
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3870160Z Removing SSH command configuration
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3873114Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.3908945Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4134544Z Removing HTTP extra header
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4137906Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4176726Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4397131Z Removing includeIf entries pointing to credentials config files
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4400807Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4432192Z includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4436502Z includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git/worktrees/*.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4439380Z includeif.gitdir:/github/workspace/.git.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4441830Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4446979Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4468975Z /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4481992Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git.path /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4521183Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git/worktrees/*.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4547154Z /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4560069Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/flyology-object-storage/flyology-object-storage/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4600303Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4629830Z /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4641776Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4682183Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4713423Z /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4728630Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4756108Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4978626Z Removing credentials config '/home/runner/work/_temp/git-credentials-6d2ae4c8-df28-4133-8a0b-20ee334bcf1a.config'
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.4986399Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5249991Z ##[group]Run mkdir -p obj/ci
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5251239Z [36;1mmkdir -p obj/ci[0m
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5252374Z [36;1m./tests/scripts/test-rustfs.sh \[0m
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5253927Z [36;1m  2>&1 | tee obj/ci/reference-rustfs.log[0m
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5295727Z shell: /usr/bin/bash -e {0}
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5296792Z env:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5298842Z   FLYOLOGY_S3_SERVER_RUNNER: /home/runner/work/flyology-object-storage/flyology-object-storage/tests/scripts/run-s3-server-slice.sh
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:18.5301170Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.1849059Z ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5: Pulling from rustfs/rustfs
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3778068Z 55afa1ecc21d: Already exists
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3813712Z 4d81a2eee50d: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3814573Z c73efc4bd94e: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3815135Z 3dea67bb4fe6: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3815623Z 83d6a58a3432: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3816495Z 4f4fb700ef54: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3817273Z dfb49b172069: Pulling fs layer
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3817737Z 83d6a58a3432: Waiting
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3818158Z 4f4fb700ef54: Waiting
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.3818557Z dfb49b172069: Waiting
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.7096692Z c73efc4bd94e: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.7097689Z c73efc4bd94e: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.8715594Z 4d81a2eee50d: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.8717628Z 4d81a2eee50d: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.9763051Z 83d6a58a3432: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:19.9764680Z 83d6a58a3432: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:20.0961316Z 4f4fb700ef54: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:20.0961869Z 4f4fb700ef54: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:20.4431348Z dfb49b172069: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:20.4432058Z dfb49b172069: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:21.3427183Z 3dea67bb4fe6: Verifying Checksum
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:21.3428220Z 3dea67bb4fe6: Download complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:22.1079706Z 4d81a2eee50d: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:22.1983270Z c73efc4bd94e: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5051799Z 3dea67bb4fe6: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5173865Z 83d6a58a3432: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5309302Z 4f4fb700ef54: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5455757Z dfb49b172069: Pull complete
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5501108Z Digest: sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5509860Z Status: Downloaded newer image for ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:23.5516518Z ghcr.io/rustfs/rustfs@sha256:800cf3f352a0a27e3275ca854a51f0027975d7acc7a0d52089a35bcc9fcbf0b5
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.6251385Z ERROR "mb s3://flyology-rustfs-corpus-2326": RequestError: send request failed caused by: Put "http://host.docker.internal:32768/flyology-rustfs-corpus-2326": dial tcp 172.17.0.1:32768: connect: connection refused
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8447805Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8450073Z ##[group]Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8450494Z with:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8450703Z   name: reference-rustfs-smoke
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8450973Z   path: obj/ci/reference-rustfs.log
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8451241Z   if-no-files-found: warn
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8451470Z   retention-days: 14
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8451681Z   compression-level: 6
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8451890Z   overwrite: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8452102Z   include-hidden-files: false
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:26.8452338Z ##[endgroup]
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.0069970Z (node:2931) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.0070804Z (Use `node --trace-deprecation ...` to show where the warning was created)
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.0119008Z With the provided path, there will be 1 file uploaded
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.0126626Z Artifact name is valid!
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.0127202Z Root directory input is valid!
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.3409889Z Beginning upload of artifact content to blob storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.3594473Z (node:2931) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.5721084Z Uploaded bytes 614
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.6350608Z Finished uploading artifact content to blob storage!
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.6352060Z SHA256 digest of uploaded artifact zip is 778e2da0af4daebcf62821ad59351f29bf793eb7c28380c64e4cfdd736c191aa
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.6354192Z Finalizing artifact upload
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.8663979Z Artifact reference-rustfs-smoke.zip successfully finalized. Artifact ID 9988635350
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.8665678Z Artifact reference-rustfs-smoke has been successfully uploaded! Final size is 614 bytes. Artifact ID is 9988635350
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.8668764Z Artifact download URL: https://github.com/flyology-ada/flyology-object-storage/actions/runs/34031107803/artifacts/9988635350
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.8888796Z Post job cleanup.
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9718245Z [command]/usr/bin/git version
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9762960Z git version 2.55.0
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9807365Z Temporarily overriding HOME='/home/runner/work/_temp/ec4b1a2d-fea6-4f9d-9b09-d44da36a77eb' before making global git config changes
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9808797Z Adding repository directory to the temporary git global config as a safe directory
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9814228Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flyology-object-storage/flyology-object-storage
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9846922Z Removing SSH command configuration
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9854090Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:27.9889914Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0132709Z Removing HTTP extra header
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0139170Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0175785Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0430145Z Removing includeIf entries pointing to credentials config files
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0438398Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0476531Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.0881388Z Cleaning up orphan processes
+Reference smoke (rustfs)	UNKNOWN STEP	2026-09-06T11:45:28.1256782Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

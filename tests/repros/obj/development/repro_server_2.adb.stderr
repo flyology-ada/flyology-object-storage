@@ -1,0 +1,4 @@
+repro_server_2.adb:16:09: warning: unit "Ada.Streams" is not referenced [-gnatwu]
+repro_server_2.adb:41:06: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_2.adb:130:19: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]
+repro_server_2.adb:148:19: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]

@@ -1,0 +1,31 @@
+  -- scripted loopback origin on 127.0.0.1:49814
+  -- no request carries a versionId selector; the model marks VersionId optional in all three tagging output shapes
+  -- --- no x-amz-version-id (RustFS/MinIO/SeaweedFS/AWS shape) ---
+  -- no-header PUT: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : invalid object tagging version header multiplicity
+  FAILED: no-header PUT: a successful tagging response without x-amz-version-id is TAGS_PUT
+  -- no-header GET: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : invalid object tagging version header multiplicity
+  FAILED: no-header GET: a successful tagging response without x-amz-version-id is TAGS_GOTTEN
+  -- no-header DELETE: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : invalid object tagging version header multiplicity
+  FAILED: no-header DELETE: a successful tagging response without x-amz-version-id is TAGS_DELETED
+  -- --- control: the origin echoes x-amz-version-id ---
+  -- control PUT: Kind = TAGS_PUT, status 200
+  ok: control PUT: a successful tagging response without x-amz-version-id is TAGS_PUT
+  -- control PUT: Version_ID = "opaque-version-1", tags 0
+  ok: control PUT: decoded Version_ID is "opaque-version-1"
+  -- control GET: Kind = TAGS_GOTTEN, status 200
+  ok: control GET: a successful tagging response without x-amz-version-id is TAGS_GOTTEN
+  -- control GET: Version_ID = "opaque-version-1", tags 1
+  ok: control GET: decoded Version_ID is "opaque-version-1"
+  ok: control GET: the decoded tag set reaches the caller
+  -- control DELETE: Kind = TAGS_DELETED, status 204
+  ok: control DELETE: a successful tagging response without x-amz-version-id is TAGS_DELETED
+  -- control DELETE: Version_ID = "opaque-version-1", tags 0
+  ok: control DELETE: decoded Version_ID is "opaque-version-1"
+  -- request 1: PUT /never-versioned/native-object?tagging HTTP/1.1
+  -- request 2: GET /never-versioned/native-object?tagging HTTP/1.1
+  -- request 3: DELETE /never-versioned/native-object?tagging HTTP/1.1
+  -- request 4: PUT /never-versioned/native-object?tagging HTTP/1.1
+  -- request 5: GET /never-versioned/native-object?tagging HTTP/1.1
+  -- request 6: DELETE /never-versioned/native-object?tagging HTTP/1.1
+  ok: the origin served all six scripted exchanges
+BUG REPRODUCED: 3 failed expectation(s)

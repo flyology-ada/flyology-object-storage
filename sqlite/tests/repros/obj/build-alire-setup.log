@@ -1,0 +1,45 @@
+Note: Synchronizing workspace...
+Dependencies automatically updated as follows:
+
+   +  flyology                       0.1.1-dev (new,indirect)
+   +  flyology_allocators            0.1.0     (new,indirect)
+   +  flyology_cachelines            0.1.0     (new,indirect)
+   +  flyology_http                  0.1.3-dev (new,indirect)
+   +. flyology_object_storage        0.1.0-dev (new,path=../../..)
+   +. flyology_object_storage_sqlite 0.1.0-dev (new,path=../..)
+   +  flyology_quic                  0.1.3-dev (new,indirect)
+   +b gnat                           16.1.0    (new,gnat_native,indirect,binary)
+   +  xmlada                         26.0.0    (new,indirect)
+
+Note: Running pre-build actions for flyology=0.1.1-dev...
+Note: Building repros_sqlite=0.0.0/repros_sqlite.gpr...
+Setup
+   [mkdir]        object directory for project Repros_SQLite
+Compile
+   [Ada]          repro_sqlite_smoke.adb
+   [Ada]          flyology_allocators-layouts.adb
+   [Ada]          flyology_allocators-storage.adb
+   [Ada]          flyology_allocators-allocation_algorithms-best_fit_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms-slab_span_kernel.adb
+   [Ada]          flyology_allocators-waits.adb
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf_kernel.adb
+   [Ada]          flyology_allocators-allocation_algorithms.ads
+   [Ada]          flyology_allocators-allocation_algorithms-contract.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy.ads
+   [Ada]          flyology_allocators-allocation_algorithms-tlsf.ads
+   [Ada]          flyology_allocators-regions.adb
+   [Ada]          flyology_allocators-policy.adb
+   [Ada]          flyology_allocators-arenas.ads
+   [Ada]          flyology_allocators-allocation_algorithms-buddy_kernel.adb
+   [Ada]          flyology_allocators.adb
+repro_sqlite_support.ads:65:09: error: type must be declared abstract or "BEGIN_ANNOTATION" overridden
+repro_sqlite_support.ads:65:09: error: "BEGIN_ANNOTATION" has been inherited from subprogram at flyology-object_storage-backends.ads:483
+repro_sqlite_support.ads:68:23: error: "Object_Annotation_Information" not declared in "Backends"
+repro_sqlite_support.ads:72:15: error: subprogram "Begin_Annotation" is not overriding
+repro_sqlite_support.ads:74:20: error: "Object_Annotation_Information" not declared in "Backends"
+
+   compilation of repro_sqlite_smoke.adb failed
+
+gprbuild: *** compilation phase failed
+ERROR: Command ["gprbuild", "-s", "-j0", "-p", "-P", "/Users/yrashk/Projects/flyology-ada/flyology-object-storage/.claude/worktrees/flyology-object-storage-review-b1846d/sqlite/tests/repros/repros_sqlite.gpr"] exited with code 4
+ERROR: Compilation failed.

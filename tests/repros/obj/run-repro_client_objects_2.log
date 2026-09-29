@@ -1,0 +1,46 @@
+  -- scripted loopback origin on 127.0.0.1:49846
+  -- no leg requests a version: every Parameters.Version_ID is empty
+  -- --- absent x-amz-version-id (RustFS shape, baseline section 8) ---
+  -- no-header PUT: Put_Tags Kind = PUT_OBJECT_TAGGING_EXCHANGE_FAILED, Disposition = OBJECT_TAG_MUTATION_OUTCOME_UNKNOWN, Failure = CORRUPT_OR_INVALID_RESPONSE
+  -- no-header PUT: HTTP_Result = RESPONSE_INVALID, phase RECEIVING_RESPONSE_BODY
+  FAILED: no-header PUT: PutObjectTagging 200 without x-amz-version-id is a complete response
+  FAILED: no-header PUT: the applied tag replacement is reported as completed
+  -- no-header GET: Get_Tags Kind = GET_OBJECT_TAGGING_EXCHANGE_FAILED, Failure = CORRUPT_OR_INVALID_RESPONSE
+  -- no-header GET: HTTP_Result = RESPONSE_INVALID, phase RECEIVING_RESPONSE_BODY
+  FAILED: no-header GET: GetObjectTagging 200 without x-amz-version-id is a complete response
+  -- no-header DELETE: Delete_Tags Kind = DELETE_OBJECT_TAGGING_EXCHANGE_FAILED, Disposition = OBJECT_TAG_MUTATION_OUTCOME_UNKNOWN, Failure = CORRUPT_OR_INVALID_RESPONSE
+  -- no-header DELETE: HTTP_Result = RESPONSE_INVALID
+  FAILED: no-header DELETE: DeleteObjectTagging 204 without x-amz-version-id is a complete response
+  FAILED: no-header DELETE: the applied tag deletion is reported as completed
+  -- no-header PUT/convenience: raised FLYOLOGY.OBJECT_STORAGE.CLIENT.LOW_LEVEL.INVALID_RESPONSE : PutObjectTagging response is invalid or exceeds the XML limit
+  FAILED: no-header PUT/convenience: the convenience overload reports Tags_Replaced
+  -- --- control: server echoes x-amz-version-id: null ---
+  -- control PUT: Put_Tags Kind = PUT_OBJECT_TAGGING_RESPONSE_AVAILABLE, Disposition = OBJECT_TAG_MUTATION_COMPLETED, Failure = NO_FAILURE
+  -- control PUT: status 200, Version_ID = "null"
+  ok: control PUT: PutObjectTagging 200 without x-amz-version-id is a complete response
+  ok: control PUT: the applied tag replacement is reported as completed
+  ok: control PUT: outcome is Tags_Put
+  ok: control PUT: decoded Version_ID is "null"
+  -- control GET: Get_Tags Kind = GET_OBJECT_TAGGING_RESPONSE_AVAILABLE, Failure = NO_FAILURE
+  -- control GET: status 200, tags 1, Version_ID = "null"
+  ok: control GET: GetObjectTagging 200 without x-amz-version-id is a complete response
+  ok: control GET: outcome is Tags_Gotten
+  ok: control GET: the served tag set is returned
+  ok: control GET: decoded Version_ID is "null"
+  -- control DELETE: Delete_Tags Kind = DELETE_OBJECT_TAGGING_RESPONSE_AVAILABLE, Disposition = OBJECT_TAG_MUTATION_COMPLETED, Failure = NO_FAILURE
+  -- control DELETE: status 204, Version_ID = "null"
+  ok: control DELETE: DeleteObjectTagging 204 without x-amz-version-id is a complete response
+  ok: control DELETE: the applied tag deletion is reported as completed
+  ok: control DELETE: decoded Version_ID is "null"
+  -- control PUT/convenience: Put_Tags (Tagging_Outcome) Kind = TAGS_REPLACED, status 200
+  ok: control PUT/convenience: the convenience overload reports Tags_Replaced
+  -- request 1: PUT /never-versioned/native-object?tagging HTTP/1.1
+  -- request 2: GET /never-versioned/native-object?tagging HTTP/1.1
+  -- request 3: DELETE /never-versioned/native-object?tagging HTTP/1.1
+  -- request 4: PUT /never-versioned/native-object?tagging HTTP/1.1
+  -- request 5: PUT /never-versioned/native-object?tagging HTTP/1.1
+  -- request 6: GET /never-versioned/native-object?tagging HTTP/1.1
+  -- request 7: DELETE /never-versioned/native-object?tagging HTTP/1.1
+  -- request 8: PUT /never-versioned/native-object?tagging HTTP/1.1
+  ok: the origin served all eight scripted exchanges
+BUG REPRODUCED: 6 failed expectation(s)

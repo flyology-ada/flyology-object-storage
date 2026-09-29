@@ -1,0 +1,5 @@
+  -- CreateBucket /stock-versioning status 200
+  -- CreateBucket /stock-versioning-2 status 200
+  -- CreateBucket /stock-versioning-3 status 200
+LISTENING 60541
+STOPPED

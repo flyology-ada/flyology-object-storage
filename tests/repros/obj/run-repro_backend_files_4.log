@@ -1,0 +1,22 @@
+  -- files root /private/tmp/claude-501/repro-bf4-1467-802469000
+  ok: CreateBucket
+  ok: PutObject control-key
+  ok: PutObjectAnnotation control-key/alpha
+  ok: control: the annotation is listed before the delete
+  -- control: DeleteObject -> SUCCESS
+  ok: control: the uninjected delete succeeds
+  ok: control: the object is gone after a successful delete
+  ok: PutObject doomed-key
+  ok: PutObjectAnnotation doomed-key/alpha
+  ok: the annotation is listed before the injected delete
+  ok: chmod 0500 /private/tmp/claude-501/repro-bf4-1467-802469000/buckets/delete-bucket/objects succeeds
+  -- injected: DeleteObject -> BACKEND_UNAVAILABLE
+  ok: chmod 0700 /private/tmp/claude-501/repro-bf4-1467-802469000/buckets/delete-bucket/objects succeeds
+  ok: the injected delete is reported as failed
+  ok: the object survives the failed delete
+  -- annotations listed for the surviving object = 0
+  FAILED: the surviving object keeps the annotation that no request ever asked to delete
+  -- GetObjectAnnotation(doomed-key/alpha) -> SUCCESS presence ANNOTATION_ABSENT
+  FAILED: the annotation payload is still readable after the failed delete
+  -- files root retained for inspection: /private/tmp/claude-501/repro-bf4-1467-802469000
+BUG REPRODUCED: 2 failed expectation(s)

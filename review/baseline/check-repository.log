@@ -1,0 +1,26 @@
+dependency policy: exact indexed Flyology.HTTP 0.1.3-dev, no HTTP/QUIC pin
+shell scripts: executable and syntax-clean
+Python sources: syntax-clean
+workflow policy: immutable actions, exact tools, pinned test model, documented API gate
+workflow policy negative oracle: 26 unsafe mutations rejected
+conflict markers: none
+changed lines: whitespace-clean
+Markdown links: 91 tracked files OK
+S3 operation generated outputs: current
+S3 operation registry evidence negative oracles: OK
+corpora lock: 8 exact revisions, reviewed licenses, immutable images
+s3t allowlist: 113 exact ceph-compatible node IDs
+benchmark plan: 12 deterministic scenarios
+benchmark matrix: 2 permissive references, 3 Flyology backends
+benchmark eligibility: 11 supported, 1 globally blocked
+benchmark exclusions: SeaweedFS multipart listing defect is explicit
+benchmark launchers: executable and syntax-clean
+benchmark metadata: files commit policy is retained
+bucket-tagging benchmark evidence: 6 roles, 18 samples, 4 requests/lifecycle, derivation/rate mutant rejected, hashes OK
+benchmark ListObjects v1 Marker negative oracle: OK
+coverage ledger: 116 pinned S3 operations
+coverage verifier negative oracle: OK
+botocore model: pinned hash, 116 operations, and generated schema match
+repository integrity: OK
+./tools/ci/check-repository.sh review/baseline/service-2.json  93.79s user 80.04s system 67% cpu 4:18.50 total
+exit=0

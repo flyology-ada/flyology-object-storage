@@ -1,0 +1,1 @@
+repro_server_5.adb:83:14: warning: array aggregate using () is an obsolescent syntax, use [] instead [-gnatwj]

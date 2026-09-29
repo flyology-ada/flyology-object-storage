@@ -1,0 +1,6 @@
+repro_sqlite_1                         1  BUG REPRODUCED
+repro_sqlite_2                         1  BUG REPRODUCED
+repro_sqlite_3                         1  BUG REPRODUCED
+repro_sqlite_3b                        1  BUG REPRODUCED
+repro_sqlite_4                         1  BUG REPRODUCED
+sqlite exit=0

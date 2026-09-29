@@ -1,0 +1,16 @@
+  -- foreign root = /private/tmp/claude-501/repro-server-exe-3-foreign-1508-955812000
+  --   before: tmp/keep.txt exists        = TRUE
+  --   before: tmp/nested/deep.txt exists = TRUE
+  --   before: notes/readme.txt exists    = TRUE
+  -- control: dedicated empty root /private/tmp/claude-501/repro-server-exe-3-dedicated-1508-957008000
+  --   Create_Bucket status = SUCCESS
+  ok: control: a dedicated empty root opens and accepts a bucket
+  -- Files.Open (foreign root) returned normally
+  --   after:  tmp/keep.txt exists        = FALSE
+  --   after:  tmp/nested/deep.txt exists = FALSE
+  --   after:  notes/readme.txt exists    = TRUE
+  --   Open refused the root (Configuration_Error) = FALSE
+  FAILED: Files.Open either refuses a root that is not a store or leaves <root>/tmp/keep.txt in place
+  FAILED: Files.Open either refuses a root that is not a store or leaves <root>/tmp/nested/deep.txt in place
+  ok: control: a sibling directory the store does not use survives
+BUG REPRODUCED: 2 failed expectation(s)

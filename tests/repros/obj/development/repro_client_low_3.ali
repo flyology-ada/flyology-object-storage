@@ -1,0 +1,388 @@
+V "GNAT Lib v16"
+M P W=b
+A -O0
+A -gnatA
+A --RTS=/Users/yrashk/.local/share/alire/builds/flyology_0.1.1_bd95746d/3cf1f8e431e0343b4154ab650e51121b9e3441939b55a10702aab1165f04bd0a/build/alire-rts/
+A -g
+A -gnat2022
+A -gnata
+A -gnatVa
+A -gnatwa
+A -mmacosx-version-min=26.0.0
+A -mcpu=apple-m1
+A -mlittle-endian
+A -mabi=lp64
+A -fPIC
+P SS ZX
+
+RN
+RV NO_CALENDAR
+RV NO_DELAY
+RV NO_ENUMERATION_MAPS
+RV NO_EXCEPTION_HANDLERS
+RV NO_EXCEPTION_PROPAGATION
+RV NO_EXCEPTIONS
+RV NO_FIXED_POINT
+RV NO_LOCAL_ALLOCATORS
+RV NO_NESTED_FINALIZATION
+RV NO_SECONDARY_STACK
+RV NO_STANDARD_STORAGE_POOLS
+RV NO_DEFAULT_INITIALIZATION
+RV NO_DYNAMIC_SIZED_OBJECTS
+RV NO_IMPLEMENTATION_PRAGMAS
+
+U repro_client_low_3%b	repro_client_low_3.adb	e6714012 NE OO SU
+W ada%s			ada.ads			ada.ali
+W ada.calendar%s	a-calend.adb		a-calend.ali
+W ada.calendar.formatting%s  a-calfor.adb	a-calfor.ali
+W ada.exceptions%s	a-except.adb		a-except.ali
+W ada.strings%s		a-string.ads		a-string.ali
+Z ada.strings.text_buffers%s  a-sttebu.adb	a-sttebu.ali
+W ada.strings.unbounded%s  a-strunb.adb		a-strunb.ali
+W flyology%s		flyology.ads		flyology.ali
+W flyology.http%s	flyology-http.adb	flyology-http.ali
+W flyology.http.client%s  flyology-http-client.adb  flyology-http-client.ali
+W flyology.object_storage%s  flyology-object_storage.adb  flyology-object_storage.ali
+W flyology.object_storage.client%s  flyology-object_storage-client.ads  flyology-object_storage-client.ali
+W flyology.object_storage.client.low_level%s  flyology-object_storage-client-low_level.adb  flyology-object_storage-client-low_level.ali
+W repro_client_objects_fake%s  repro_client_objects_fake.adb  repro_client_objects_fake.ali
+W repro_support%s	repro_support.adb	repro_support.ali
+Z system%s		system.ads		system.ali
+Z system.concat_2%s	s-conca2.adb		s-conca2.ali
+Z system.concat_3%s	s-conca3.adb		s-conca3.ali
+Z system.concat_4%s	s-conca4.adb		s-conca4.ali
+Z system.concat_5%s	s-conca5.adb		s-conca5.ali
+Z system.concat_8%s	s-conca8.adb		s-conca8.ali
+Z system.finalization_primitives%s  s-finpri.adb  s-finpri.ali
+Z system.img_uns%s	s-imguns.ads		s-imguns.ali
+Z system.secondary_stack%s  s-secsta.adb	s-secsta.ali
+Z system.soft_links%s	s-soflin.adb		s-soflin.ali
+Z system.standard_library%s  s-stalib.adb	s-stalib.ali
+Z system.unsigned_types%s  s-unstyp.ads		s-unstyp.ali
+
+D ada.ads		20260901211354 76789da1 ada%s
+D a-assert.ads		20260901211354 ba465f5c ada.assertions%s
+D a-calend.ads		20260901211354 bf7f3cc9 ada.calendar%s
+D a-calfor.ads		20260901211354 0f4707d1 ada.calendar.formatting%s
+D a-catizo.ads		20260901211354 eaa56756 ada.calendar.time_zones%s
+D a-charac.ads		20260901211354 2d3ec45b ada.characters%s
+D a-chlat1.ads		20260901211354 e0d72e76 ada.characters.latin_1%s
+D a-contai.ads		20260901211354 61e5e089 ada.containers%s
+D a-conhel.ads		20260901211354 46fe1ce3 ada.containers.helpers%s
+D a-coinve.ads		20260901211354 2d0a9a0e ada.containers.indefinite_vectors%s
+D a-convec.ads		20260901211354 cb0f314a ada.containers.vectors%s
+D a-except.ads		20260901211354 8699d7ff ada.exceptions%s
+D a-finali.ads		20260901211354 099c16e4 ada.finalization%s
+D a-iteint.ads		20260901211354 49a8bee2 ada.iterator_interfaces%s
+D a-reatim.ads		20260901211354 d11673fd ada.real_time%s
+D a-stream.ads		20260901211354 cb01a8f8 ada.streams%s
+D a-string.ads		20260901211354 90ac6797 ada.strings%s
+D a-strmap.ads		20260901211354 f7e6ca10 ada.strings.maps%s
+D a-strsea.ads		20260901211354 18c3c634 ada.strings.search%s
+D a-sttebu.ads		20260901211354 f1ad67a2 ada.strings.text_buffers%s
+D a-strunb.ads		20260901211354 8d6ccba7 ada.strings.unbounded%s
+D a-stuten.ads		20260901211354 c6ced0ae ada.strings.utf_encoding%s
+D a-tags.ads		20260901211354 2dbf449c ada.tags%s
+D a-unccon.ads		20260901211354 0e9b276f ada.unchecked_conversion%s
+D flyology.ads		20260901211211 3ef168e6 flyology%s
+D flyology-buffers.ads	20260901211211 1f59b7cd flyology.buffers%s
+D flyology-bytes.ads	20260901211211 442a39a2 flyology.bytes%s
+D flyology-cancellation.ads  20260901211212 1167fdf6 flyology.cancellation%s
+D flyology-http.ads	20260901211212 bb45eeca flyology.http%s
+D flyology-http-client.ads  20260901211212 d7246f0f flyology.http.client%s
+D flyology-http-headers.ads  20260901211212 513e6bdd flyology.http.headers%s
+D flyology-io.ads	20260901211211 f255445f flyology.io%s
+D flyology-io-sockets.ads  20260901211211 51f2edd2 flyology.io.sockets%s
+D flyology-io-tls.ads	20260901211211 bd621ab1 flyology.io.tls%s
+D flyology-object_storage.ads  20260907005920 f08c5a0f flyology.object_storage%s
+D flyology-object_storage-client.ads  20260907005920 359bb751 flyology.object_storage.client%s
+D flyology-object_storage-client-low_level.ads  20260907005920 39711efb flyology.object_storage.client.low_level%s
+D flyology-object_storage-s3.ads  20260907005920 db355f2a flyology.object_storage.s3%s
+D flyology-object_storage-s3-acl.ads  20260907005920 d6f5008d flyology.object_storage.s3.acl%s
+D flyology-object_storage-s3-analytics.ads  20260907005920 6606c40f flyology.object_storage.s3.analytics%s
+D flyology-object_storage-s3-annotations.ads  20260907005920 a61b5166 flyology.object_storage.s3.annotations%s
+D flyology-object_storage-s3-attributes.ads  20260907005920 167f8a5a flyology.object_storage.s3.attributes%s
+D flyology-object_storage-s3-bucket_controls.ads  20260907005920 3bcf7ac8 flyology.object_storage.s3.bucket_controls%s
+D flyology-object_storage-s3-buckets.ads  20260907005920 89614a15 flyology.object_storage.s3.buckets%s
+D flyology-object_storage-s3-copies.ads  20260907005920 c8583d0b flyology.object_storage.s3.copies%s
+D flyology-object_storage-s3-core.ads  20260907005920 ef8f0520 flyology.object_storage.s3.core%s
+D flyology-object_storage-s3-deletions.ads  20260907005920 35a18209 flyology.object_storage.s3.deletions%s
+D flyology-object_storage-s3-encryption.ads  20260907005920 dc46e146 flyology.object_storage.s3.encryption%s
+D flyology-object_storage-s3-errors.ads  20260907005920 9719dcdd flyology.object_storage.s3.errors%s
+D flyology-object_storage-s3-intelligent_tiering.ads  20260907005920 5fce9ca7 flyology.object_storage.s3.intelligent_tiering%s
+D flyology-object_storage-s3-inventory.ads  20260907005920 4e0f1d0a flyology.object_storage.s3.inventory%s
+D flyology-object_storage-s3-lifecycle.ads  20260907005920 eb01cd7a flyology.object_storage.s3.lifecycle%s
+D flyology-object_storage-s3-listings.ads  20260907005920 7ffe6824 flyology.object_storage.s3.listings%s
+D flyology-object_storage-s3-logging.ads  20260907005920 c4897431 flyology.object_storage.s3.logging%s
+D flyology-object_storage-s3-metadata_configurations.ads  20260907005920 2b41b973 flyology.object_storage.s3.metadata_configurations%s
+D flyology-object_storage-s3-metadata_tables.ads  20260907005920 c89a41f1 flyology.object_storage.s3.metadata_tables%s
+D flyology-object_storage-s3-metrics.ads  20260907005920 dfc41944 flyology.object_storage.s3.metrics%s
+D flyology-object_storage-s3-model.ads  20260907005920 b918c044 flyology.object_storage.s3.model%s
+D flyology-object_storage-s3-multipart.ads  20260907005920 920687f3 flyology.object_storage.s3.multipart%s
+D flyology-object_storage-s3-multipart_uploads.ads  20260907005920 c26ab536 flyology.object_storage.s3.multipart_uploads%s
+D flyology-object_storage-s3-notifications.ads  20260907005920 8a209ab5 flyology.object_storage.s3.notifications%s
+D flyology-object_storage-s3-object_lock.ads  20260907005920 4e125813 flyology.object_storage.s3.object_lock%s
+D flyology-object_storage-s3-replication.ads  20260907005920 59eeeda5 flyology.object_storage.s3.replication%s
+D flyology-object_storage-s3-sigv4.ads  20260907005920 26d6c005 flyology.object_storage.s3.sigv4%s
+D flyology-object_storage-s3-versioning.ads  20260907005920 408c45c5 flyology.object_storage.s3.versioning%s
+D flyology-object_storage-s3-versions.ads  20260907005920 fa030309 flyology.object_storage.s3.versions%s
+D flyology-object_storage-s3-website.ads  20260907005920 f0ae9435 flyology.object_storage.s3.website%s
+D flyology-object_storage-s3-xml.ads  20260907005920 838850c3 flyology.object_storage.s3.xml%s
+D flyology-object_storage-tags.ads  20260907005920 273c3a2f flyology.object_storage.tags%s
+D flyology-operations.ads  20260901211211 9e34ec43 flyology.operations%s
+D flyology-wake_sources.ads  20260901211212 fcae6c4f flyology.wake_sources%s
+D interfac.ads		20260901211354 9111f9c1 interfaces%s
+D i-c.ads		20260901211354 dbdd3be7 interfaces.c%s
+D repro_client_low_3.adb  20260907060050 1ffc0004 repro_client_low_3%b
+D repro_client_objects_fake.ads  20260907020825 465a7eaa repro_client_objects_fake%s
+D repro_support.ads	20260907011658 a186dccd repro_support%s
+D system.ads		20260901211353 8a611ac3 system%s
+D s-atacco.ads		20260901211354 5868e3ba system.address_to_access_conversions%s
+D s-arit64.ads		20260901211354 60e313f7 system.arith_64%s
+D s-assert.ads		20260901211354 9c4520c7 system.assertions%s
+D s-atocou.ads		20260901211354 dc18efc3 system.atomic_counters%s
+D s-c_time.ads		20260901211354 e502d0c0 system.c_time%s
+D s-conca2.ads		20260901211354 b5fb73f7 system.concat_2%s
+D s-conca3.ads		20260901211354 8a7a19a2 system.concat_3%s
+D s-conca4.ads		20260901211354 33f85f3e system.concat_4%s
+D s-conca5.ads		20260901211354 4099d1db system.concat_5%s
+D s-conca8.ads		20260901211354 8d8f50c1 system.concat_8%s
+D s-exctab.ads		20260901211354 91bef6ef system.exception_table%s
+D s-finpri.ads		20260901211354 5970d55a system.finalization_primitives%s
+D s-finroo.ads		20260901211354 0a7c3ed4 system.finalization_root%s
+D s-imagef.ads		20260901211354 08b63c8e system.image_f%s
+D s-imageu.ads		20260901211354 95851461 system.image_u%s
+D s-imfi64.ads		20260901211354 99ebeefa system.img_fixed_64%s
+D s-imguns.ads		20260901211354 34f2a7d6 system.img_uns%s
+D s-memory.ads		20260901211354 18949c1a system.memory%s
+D s-multip.ads		20260901211354 38ac9f73 system.multiprocessors%s
+D s-oscons.ads		20260901211354 42ad9981 system.os_constants%s
+D s-osinte.ads		20260901211354 6d01fcda system.os_interface%s
+D s-oslock.ads		20260901211354 bcc789d2 system.os_locks%s
+D s-parame.ads		20260901211354 a1aeab5c system.parameters%s
+D s-pooglo.ads		20260901211354 91708d21 system.pool_global%s
+D s-putima.ads		20260901211353 1b989439 system.put_images%s
+D s-retsta.ads		20260901211353 0f6b06cb system.return_stack%s
+D s-secsta.ads		20260901211354 578279f5 system.secondary_stack%s
+D s-soflin.ads		20260901211354 5d88fdea system.soft_links%s
+D s-stache.ads		20260901211354 0b81c1fe system.stack_checking%s
+D s-stausa.ads		20260901211353 f470ae2d system.stack_usage%s
+D s-stalib.ads		20260901211354 1c9580f6 system.standard_library%s
+D s-stalib.adb		20260901211354 eb464a47 system.standard_library%b
+D s-stoele.ads		20260901211354 ccded4e8 system.storage_elements%s
+D s-stopoo.ads		20260901211354 45459446 system.storage_pools%s
+D s-stratt.ads		20260901211354 80b8dafb system.stream_attributes%s
+D s-tasinf.ads		20260901211354 801abd01 system.task_info%s
+D s-taspri.ads		20260901211354 4fd5ef41 system.task_primitives%s
+D s-taprop.ads		20260901211354 6a572f54 system.task_primitives.operations%s
+D s-taskin.ads		20260901211354 e3b5765b system.tasking%s
+D s-taprob.ads		20260901211354 acd6094d system.tasking.protected_objects%s
+D s-tpoben.ads		20260901211354 60ad3dae system.tasking.protected_objects.entries%s
+D s-traent.ads		20260901211354 c81cbf8c system.traceback_entries%s
+D s-unstyp.ads		20260901211354 fa2a7f59 system.unsigned_types%s
+D s-wchcon.ads		20260901211354 d9032363 system.wch_con%s
+D s-wchstw.ads		20260901211354 2d112c01 system.wch_stw%s
+G a e
+G c Z b b [repro_client_low_3 standard 39 11 none]
+G r c none [repro_client_low_3 standard 39 11 none] [make_credentials flyology__object_storage__client__low_level 59 13 none]
+G r s client [repro_client_low_3 standard 39 11 none] [clientIP flyology__http__client 1316 9 none]
+G r l client [repro_client_low_3 standard 39 11 none] [clientDI flyology__http__client 1316 9 none]
+G r k client [repro_client_low_3 standard 39 11 none] [clientDF flyology__http__client 1316 9 none]
+G r s object_tag_set [repro_client_low_3 standard 39 11 none] [object_tag_setIP flyology__object_storage 616 9 none]
+G r l object_tag_set [repro_client_low_3 standard 39 11 none] [object_tag_setDI flyology__object_storage 616 9 none]
+G r k object_tag_set [repro_client_low_3 standard 39 11 none] [object_tag_setDF flyology__object_storage 616 9 none]
+G r c none [repro_client_low_3 standard 39 11 none] [script repro_client_objects_fake 17 14 none]
+G r c none [repro_client_low_3 standard 39 11 none] [start repro_client_objects_fake 21 14 none]
+G r c none [repro_client_low_3 standard 39 11 none] [image repro_support 36 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [note repro_support 10 14 none]
+G r c none [repro_client_low_3 standard 39 11 none] [parse_origin flyology__http 60 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [configure flyology__http__client 343 14 none]
+G r s put_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [put_object_tagging_parametersIP flyology__object_storage__client__low_level 6082 9 none]
+G r l put_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [put_object_tagging_parametersDI flyology__object_storage__client__low_level 6082 9 none]
+G r k put_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [put_object_tagging_parametersDF flyology__object_storage__client__low_level 6082 9 none]
+G r c none [repro_client_low_3 standard 39 11 none] [prepare_put_object_tagging flyology__object_storage__client__low_level 6118 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [execute_put_object_tagging flyology__object_storage__client__low_level 6246 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [check repro_support 7 14 none]
+G r s get_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [get_object_tagging_parametersIP flyology__object_storage__client__low_level 6093 9 none]
+G r l get_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [get_object_tagging_parametersDI flyology__object_storage__client__low_level 6093 9 none]
+G r k get_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [get_object_tagging_parametersDF flyology__object_storage__client__low_level 6093 9 none]
+G r c none [repro_client_low_3 standard 39 11 none] [prepare_get_object_tagging flyology__object_storage__client__low_level 6134 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [execute_get_object_tagging flyology__object_storage__client__low_level 6260 13 none]
+G r s delete_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [delete_object_tagging_parametersIP flyology__object_storage__client__low_level 6102 9 none]
+G r l delete_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [delete_object_tagging_parametersDI flyology__object_storage__client__low_level 6102 9 none]
+G r k delete_object_tagging_parameters [repro_client_low_3 standard 39 11 none] [delete_object_tagging_parametersDF flyology__object_storage__client__low_level 6102 9 none]
+G r c none [repro_client_low_3 standard 39 11 none] [prepare_delete_object_tagging flyology__object_storage__client__low_level 6150 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [execute_delete_object_tagging flyology__object_storage__client__low_level 6274 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [served repro_client_objects_fake 27 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [request_line repro_client_objects_fake 33 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [server_error repro_client_objects_fake 36 13 none]
+G r c none [repro_client_low_3 standard 39 11 none] [stop repro_client_objects_fake 24 14 none]
+G r c none [repro_client_low_3 standard 39 11 none] [finish repro_support 13 14 none]
+X 1 ada.ads
+18K9*Ada 22e8 74|28r6 29r6 30r6 31r6 41r23 80r9 80r40 135r18 136r18 163r18
+. 164r18 185r18 186r18
+X 3 a-calend.ads
+36K13*Calendar 440e17 74|29w10 30r10 80r13 80r44
+42I9*Time<226I9>
+56V13*Clock{42I9} 74|80s53
+226I9 Time_Rep<long_long_integer>
+X 4 a-calfor.ads
+24K22*Formatting 223e28 74|30w19 80r22
+176V13*Image{string} 74|80s33
+179i7 Time_Zone{5|23I9} 74|80r60
+X 5 a-catizo.ads
+23I9*Time_Offset<short_integer>
+X 12 a-except.ads
+44K13*Exceptions 309e19 74|28w10 135r22 136r22 163r22 164r22 185r22 186r22
+62V13*Exception_Name{string} 74|135s33 163s33 185s33
+84V13*Exception_Message{string} 74|136s33 164s33 186s33
+X 14 a-iteint.ads
+24h9 Forward_Iterator
+32h9 Reversible_Iterator<24R9[10|84]>
+X 17 a-string.ads
+16K13*Strings 35e16 74|31r10 41r27
+X 21 a-strunb.ads
+91K21*Unbounded 1641e26 74|31w18 41r35
+122V13*To_Unbounded_String{105R9} 74|193s29 194s31
+135V13*To_String{string} 74|112s21 114s20 155s34
+X 25 flyology.ads
+11K9*Flyology 33e13 74|32r6 33r6 34r6 35r6 42r32 43r30 44r23 92r27 93r7
+X 29 flyology-http.ads
+4K18*HTTP 124e18 74|32w15 33r15 42r41 92r36 93r16
+51R9*Origin 117e14 74|92r41
+60V13*Parse_Origin{51R9} 74|93s21
+101I12*Status_Code{positive}
+X 30 flyology-http-client.ads
+19K23*Client 1335e25 74|33w20 42r46
+333R9*Client 1318e14 74|89r31
+343U14*Configure 74|207s16
+X 35 flyology-object_storage.ads
+5K18*Object_Storage 699e28 74|34w15 35r15 43r39 44r32
+596I12*Object_Tag_Count{natural}
+605r7*Key{21|105R9} 74|155r75 193m19
+606r7*Value{21|105R9} 74|194m19
+610A9*Object_Tag_Array(604R9)<integer>
+616R9*Object_Tag_Set 619e14 74|95r14
+617i7*Length{596I12} 74|113r54 154r40 192m9
+618a7*Items{610A9} 74|155r65 193m9 194m9
+X 36 flyology-object_storage-client.ads
+4K33*Client 53e35 74|35r30 43r54
+X 37 flyology-object_storage-client-low_level.ads
+41K40*Low_Level 10604e45 74|35w37 43r61
+49n30*Path_Style{49E9} 74|125r33 147r33 175r33
+52R9*Credentials<13|50R9> 10424e14 74|86r34
+59V13*Make_Credentials{52R9} 74|86s59
+122R9*Prepared_Request 10602e14 74|123r40 145r40 173r40
+301X4*Invalid_Response 74|133r35 161r35 183r35
+6082R9*Put_Object_Tagging_Parameters 6087e14 74|120r30
+6093R9*Get_Object_Tagging_Parameters 6097e14 74|142r30
+6102R9*Delete_Object_Tagging_Parameters 6105e14 74|170r30
+6118V13*Prepare_Put_Object_Tagging{122R9} 74|124s22
+6134V13*Prepare_Get_Object_Tagging{122R9} 74|146s22
+6150V13*Prepare_Delete_Object_Tagging{122R9} 74|174s22
+6160r7*Tags{35|616R9} 74|113r49 154r35 155r60
+6161r7*Version_ID{21|105R9} 74|112r47 114r46
+6169E9*Object_Tagging_Outcome_Kind 6170e68 74|47r23 100r27 104r25 109r26
+6170n7*Tags_Put{6169E9} 74|130r44
+6170n17*Tags_Gotten{6169E9} 74|152r44 153r38
+6170n30*Tags_Deleted{6169E9} 74|180r44
+6177R9*Object_Tagging_Outcome 6186e14 74|99r27 127r39 149r39 177r39
+6178e7*Kind{6169E9} 74|104r68 106r22 110r18 153r21
+6179i7*Status{29|101I12} 74|105r53
+6182r13*Result{6159R9} 74|112r40 113r42 114r39 154r28 155r53
+6246V13*Execute_Put_Object_Tagging{6177R9} 74|128s22
+6260V13*Execute_Get_Object_Tagging{6177R9} 74|150s22
+6274V13*Execute_Delete_Object_Tagging{6177R9} 74|178s22
+X 72 interfac.ads
+68I9*Integer_64<long_long_integer>
+95M9*Unsigned_64
+X 74 repro_client_low_3.adb
+39U11*Repro_Client_Low_3 39b11 227l5 227t23
+41K12 US=41:35 112r18 114r17 155r31 193r26 194r28
+42K12 HTTP_Client=42:46 89r19 207r4
+43K12 Low_Level=43:61 47r13 86r24 86r49 99r17 100r17 104r15 109r16 120r20
+. 123r30 124r12 125r23 127r29 128r12 130r34 133r25 142r20 145r30 146r12 147r23
+. 149r29 150r12 152r34 153r28 161r25 170r20 173r30 174r12 175r23 177r29 178r12
+. 180r34 183r25
+44K12 OS=44:32 95r11
+45K12 Fake=45:25 197r4 198r4 199r4 200r4 201r4 202r4 203r4 218r22 219r49
+. 221r11 222r7 223r37 225r4
+49a4 Bucket{string} 125r45 147r45 175r45
+50a4 Key{string} 125r53 147r53 175r53
+52a4 Tagging_XML{string} 71r27 72r43
+58a4 Request_IDs{string} 65r34 69r34 75r42
+62a4 Echoed{string} 200r31 201r31 202r34
+64V13 Put_Response{string} 64b13 64>27 197s17 200s17
+64a27 Extra{string} 66r7
+68V13 Get_Response{string} 68b13 68>27 198s17 201s17
+68a27 Extra{string} 71r61
+74V13 Delete_Response{string} 74b13 74>30 199s17 202s17
+74a30 Extra{string} 75r56
+78V13 Timestamp{string} 78b13 84l8 84t17 126s38 148s38 176s38
+79a7 Text{string} 82r14 82r30 82r46 83r9 83r27 83r45
+86r4 Identity{37|52R9} 126r15 148r15 176r15
+89r4 HTTP{30|333R9} 128m50 128r50 150m50 150r50 178m53 178r53 207m27 207r27
+90i4 Port{natural} 93r64 203m16 204r60
+92V13 Origin{29|51R9} 92b13 125s15 147s15 175s15 207s33
+95r4 Tags{35|616R9} 125r58 192m4 193m4 194m4
+97U14 Report 97b14 98>7 99>7 100>7 101>7 117l8 117t14 130s10 152s10 180s10
+98a7 Label{string} 103r13 107r14 111r16 115r17
+99r7 Outcome{37|6177R9} 104r60 105r45 106r14 110r10 112r32 113r34 114r31
+100e7 Wanted{37|6169E9} 106r29 109r61 110r25
+101a7 Expect_Version{string} 114r60 115r56
+119U14 Run_Put 119b14 119>23 119>39 139l8 139t15 210s4 214s4
+119a23 Label{string} 130r18 134r16 137r24
+119a39 Expect_Version{string} 130r54
+120r7 Parameters{37|6082R9} 125r64
+123r10 Prepared{37|122R9} 128r56
+127r10 Outcome{37|6177R9} 130r25
+133r12 Occurrence{12|53R9} 135r49 136r52
+141U14 Run_Get 141b14 141>23 141>39 167l8 167t15 211s4 215s4
+141a23 Label{string} 152r18 157r20 162r16 165r24
+141a39 Expect_Version{string} 152r57
+142r7 Parameters{37|6093R9} 147r58
+145r10 Prepared{37|122R9} 150r56
+149r10 Outcome{37|6177R9} 152r25 153r13 154r20 155r45
+161r12 Occurrence{12|53R9} 163r49 164r52
+169U14 Run_Delete 169b14 169>26 169>42 189l8 189t18 212s4 216s4
+169a26 Label{string} 180r18 184r16 187r24
+169a42 Expect_Version{string} 180r58
+170r7 Parameters{37|6102R9} 175r58
+173r10 Prepared{37|122R9} 178r59
+177r10 Outcome{37|6177R9} 180r25
+183r12 Occurrence{12|53R9} 185r49 186r52
+218i8 Index{integer} 219r33 219r68
+X 75 repro_client_objects_fake.ads
+15K9*Repro_Client_Objects_Fake 74|36w6 45r25 75|39e30
+17U14*Script 74|197s9 198s9 199s9 200s9 201s9 202s9
+21U14*Start 74|203s9
+24U14*Stop 74|225s9
+27V13*Served{natural} 74|218s27 221s16
+33V13*Request_Line{string} 74|219s54
+36V13*Server_Error{string} 74|222s12 223s42
+X 76 repro_support.ads
+1K9*Repro_Support 74|37w6 37r25 76|44e18
+7U14*Check 74|106s7 114s10 137s10 154s13 165s10 187s10 221s4
+10U14*Note 74|103s7 111s10 134s10 162s10 184s10 204s4 205s4 209s4 213s4 219s7
+. 223s7
+13U14*Finish 74|226s4
+18a4*CRLF{string} 74|59r61 60r65 62r71 65r27 65r70 66r37 66r44 69r27 70r41
+. 71r54 72r29 72r36 75r35 76r29 76r36
+36V13*Image{string} 74|93s57 105s29 113s18 204s53 219s26
+X 77 system.ads
+67M9*Address
+X 79 s-arit64.ads
+48I12*Int64{72|68I9}
+74V13*Multiply_With_Ovflo_Check64{48I12} 75i<c,__gnat_mulv64>22
+158M12*Uns64{72|95M9}
+180V13*Uns_Multiply_With_Ovflo_Check64{158M12} 181i<c,__gnat_uns_mulv64>22
+X 95 s-memory.ads
+51V13*Alloc{77|67M9} 101i<c,__gnat_malloc>22
+66U14*Free 102i<c,__gnat_free>22
+74V13*Realloc{77|67M9} 103i<c,__gnat_realloc>22
+X 107 s-stausa.ads
+206U14*Initialize 207i<c,__gnat_stack_usage_initialize>22
+265U14*Output_Results 269i<c,__gnat_stack_usage_output_results>22
+X 109 s-stalib.adb
+87U14 Break_Start 88i<c,__gnat_break_start>22
+

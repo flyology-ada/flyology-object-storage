@@ -1,0 +1,12 @@
+  ok: control: CreateBucket is 200
+  -- PutBucketVersioning with Content-MD5: status 200
+  ok: control: PutBucketVersioning with Content-MD5 is accepted
+  -- PutBucketVersioning, boto3 default headers: status 400
+  -- body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>PutBucketVersioning requires one valid Content-MD5 header</Message><Resource>/checksum2-bucket?versioning</Resource></Error>
+  FAILED: stock boto3 PutBucketVersioning (CRC32, no Content-MD5) is accepted
+  -- PutBucketTagging with Content-MD5: status 200
+  ok: control: PutBucketTagging with Content-MD5 is accepted
+  -- PutBucketTagging, boto3 default headers: status 400
+  -- body: <?xml version="1.0" encoding="UTF-8"?><Error><Code>InvalidRequest</Code><Message>PutBucketTagging requires a valid Content-MD5</Message><Resource>/checksum2-bucket?tagging</Resource></Error>
+  FAILED: stock boto3 PutBucketTagging (CRC32, no Content-MD5) is accepted
+BUG REPRODUCED: 2 failed expectation(s)
